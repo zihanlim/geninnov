@@ -63,4 +63,4 @@ All weights and lookbacks are stored in the `scoring_config` Supabase table — 
 
 ## Design decisions
 
-See `ADR.md` for the reasoning behind all major choices.
+See `docs/superpowers/adrs/2026-07-21-architecture-decisions.md` for the reasoning behind all major choices.

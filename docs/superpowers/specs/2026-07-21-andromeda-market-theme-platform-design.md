@@ -94,22 +94,29 @@ VADER (Valence Aware Dictionary and sEntiment Reasoner) is used for financial te
 - Pre-trained on financial news; well-suited for headline-level analysis
 - No API cost — runs entirely local via NLTK
 
-### 4.4 Theme Taxonomy (v1)
+### 4.4 Theme Taxonomy
 
-```
-THEMES = [
-  "AI Capex",           # AI infrastructure spending
-  "Fed Pivot",          # Central bank rate cuts
-  "Dollar Debasement",  # USD weakness / commodity inflation
-  "China Stimulus",     # PBOC easing
-  "EV Slowdown",        # EV demand concerns
-  "Energy Transition",  # Clean energy capex
-  "Healthcare Reform",  # Policy-driven healthcare
-  "Real Estate Stress", # Commercial RE distress
-  "Mag 7 Fatigue",      # Concentration risk in large caps
-  "Value Revival",     # Value factor rotation
-]
-```
+Theme taxonomy has three tiers:
+
+**Tier 1 — Macro Anchors (fixed):**
+Always tracked. Defined by practitioner judgment, not discovered. These are the themes that drive cross-asset moves.
+
+| Theme | Coverage |
+|-------|---------|
+| Fed Policy | FOMC, rate decisions, guidance, dot plot |
+| Inflation | CPI, PPI, PCE, breakevens, input costs |
+| China Growth | GDP, PBOC policy, property sector, EM spillover |
+| US Dollar | DXY, EUR/USD, EM currency stress |
+| Geopolitical Risk | Wars, sanctions, trade tensions, elections |
+| Corporate Credit | IG/XO spreads, default rates, financing conditions |
+| Energy Prices | Crude, nat gas, refining margins, energy equities |
+| US Election | Policy uncertainty, regulatory impact by sector |
+
+**Tier 2 — Data-Driven Themes (discovered):**
+Discovered from 6-month corpus of Brave News + Reddit posts. Found via both LDA topic modeling AND sentence embeddings + clustering (UMAP + HDBSCAN). Only themes that both methods agree on are added. Discovery runs at bootstrap and monthly.
+
+**Tier 3 — Flagged for Review:**
+Themes found by only one method are surfaced as candidate themes for human review before being added to Tier 2.
 
 ### 4.5 Scoring Configuration
 
@@ -222,22 +229,60 @@ Where:
 
 ### 6.3 Asset Mapping
 
-Each theme maps to a set of tradeable instruments:
+**Tier 1 (Macro Anchors)** have fixed asset mappings defined by practitioner judgment:
 
 ```
-THEME_ASSET_MAP = {
-    "AI Capex":        ["NVDA", "MSFT", "AIQ", "SMCI", "XSD"],
-    "Fed Pivot":       ["TLT", "GLD", "SVXY", "DGZ"],
-    "Dollar Debasement": ["GLD", "SLV", "UUP", "FXE"],
-    "China Stimulus":  ["FXI", "MCHI", "BABA", "KWEB"],
-    "EV Slowdown":     ["TSLA", "RIVN", "LCID", "XLE"],
-    "Energy Transition": ["ICLN", "FAN", "QCLN", "ENPH"],
-    "Healthcare Reform": ["UNH", "CVS", "XLV", "IHF"],
-    "Real Estate Stress": ["XLRE", "VNQ", "IYR", "REM"],
-    "Mag 7 Fatigue":   ["QQQ", "SPXL", "SOXX", "ARKK"],
-    "Value Revival":   ["VTV", "RFV", "IWD", "SPYV"],
+THEME_ASSET_MAP_TIER1 = {
+    "Fed Policy":       ["TLT", "GLD", "SVXY", "DXY"],
+    "Inflation":         ["GLD", "SLV", "TIPS", "Commodity ETFs"],
+    "China Growth":     ["FXI", "MCHI", "BABA", "KWEB"],
+    "US Dollar":        ["UUP", "FXE", "GLD", "EWZ"],
+    "Geopolitical Risk":["GLD", "TLT", "SLV", "EWJ"],
+    "Corporate Credit": ["HYG", "LQD", "CDX", "SPX"],
+    "Energy Prices":    ["XLE", "OIH", "CL", "UNG"],
+    "US Election":      ["QQQ", "XLV", "XLF", "ARKK"],
 }
 ```
+
+**Tier 2 (Data-Driven)** asset mappings are defined when the theme is discovered — mapped to the most correlated asset(s) from a universe of liquid ETFs and equities at discovery time.
+
+All asset mappings stored in `theme_assets` table (Section 9) with a `run_date` so historical re-scoring uses the correct assets for that period.
+
+### 4.5 Theme Discovery Methodology
+
+At bootstrap and monthly, run discovery on a 6-month rolling corpus of Brave News headlines + Reddit post titles. Goal: find themes that are emergent, recurring, and correlated with asset moves.
+
+**Step 1 — Corpus assembly:**
+- Scrape Brave News for financial/market headlines (6-month lookback)
+- Scrape Reddit (r/wallstreetbets, r/investing, r/stocks, r/economy) for post titles
+- Deduplicate, remove spam, keep only English financial content
+- Output: ~50k–200k documents depending on activity level
+
+**Step 2 — LDA Topic Modeling:**
+- Use `gensim` or `sklearn` Latent Dirichlet Allocation
+- Range topics from 10–30, select k using coherence score (c_v)
+- Each topic = distribution over words + distribution over documents
+- Label each topic by its top-10 weighted words
+- Output: 10–20 candidate themes
+
+**Step 3 — Sentence Embedding Clustering:**
+- Encode each document with `sentence-transformers` (e.g., `all-MiniLM-L6-v2`)
+- Reduce dimensionality with UMAP (preserve local structure)
+- Cluster with HDBSCAN (density-based, no k needed)
+- Each cluster = candidate theme
+- Output: clusters with representative documents
+
+**Step 4 — Agreement & Selection:**
+- Compare LDA topics and embedding clusters
+- Themes found by **both** methods → auto-add to Tier 2
+- Themes found by **only one** method → surface to Tier 3 (human review)
+- Filter out: themes with <50 documents, themes correlated >0.85 with existing Tier 1, themes covering <3 asset correlations
+
+**Step 5 — Asset mapping (Tier 2 only):**
+- For each new Tier 2 theme, compute Pearson correlation of mention count with returns of all assets in a liquid universe (50 ETFs)
+- Map to top-3 most correlated assets as the initial `theme_assets` entry
+
+**Discovery is not real-time.** It runs at system bootstrap (one-time) and then monthly or after major market events (rate decisions, crises, elections). Discovered themes are added to the `themes` table and tracked like any Tier 1 theme from that point forward.
 
 ---
 
@@ -343,8 +388,10 @@ The frontend reads directly from Supabase — no custom backend API. Data is wri
 
 ```sql
 -- themes (current snapshot, updated daily)
-themes (id, name, hype_score, volume_score, sentiment_score,
-        corr_score, momentum_score, updated_at)
+themes (id, name, tier, hype_score, volume_score, sentiment_score,
+        corr_score, momentum_score, source, discovered_at, updated_at)
+-- tier: 'anchor' (Tier 1) | 'discovered' (Tier 2) | 'review' (Tier 3)
+-- source: 'practitioner' | 'lda' | 'embedding' | 'both_agreement'
 
 -- theme_assets (asset mapping per theme — versioned so historical re-scoring uses correct assets)
 theme_assets (id, theme_id, ticker, weight, run_date, created_at)
@@ -404,6 +451,7 @@ const { data: themes } = await supabase.from('themes').select('*').order('hype_s
 | Database | **Supabase** (managed PostgreSQL) — reads directly from frontend via `@supabase/supabase-js` |
 | Data ingestion | `yfinance`, `PRAW` (Reddit), Brave Search MCP, `pandas-datareader` |
 | NLP / Sentiment | `nltk` + VADER (local, no API cost) |
+| Theme discovery | `sentence-transformers` (`all-MiniLM-L6-v2`), `umap-learn`, `hdbscan`, `gensim` |
 | Calculations | Pandas, NumPy |
 | Cron scheduler | **cron-job.org** (free) or $3/mo VPS with `cron` |
 | Future upgrade | Add FastAPI backend + Redis on VPS for real-time updates |
@@ -431,7 +479,8 @@ andromeda/
 │   │   └── supabase.ts            # Supabase client for frontend reads
 │   └── package.json
 ├── scripts/
-│   └── daily_refresh.py           # Daily cron script: pull data → score → write to Supabase
+│   ├── theme_discovery.py        # One-time/bootstrap: LDA + embedding → discover Tier 2 themes
+│   └── daily_refresh.py          # Daily cron: pull data → score → write to Supabase
 ├── supabase/
 │   └── migrations/
 │       └── 001_initial_schema.sql  # PostgreSQL schema (themes, signals, positions)
@@ -452,7 +501,8 @@ andromeda/
 - Q1 research output
 
 ### Phase 2: Data Pipeline (2-3 days)
-- `daily_refresh.py` script working end-to-end
+- `daily_refresh.py` script working end-to-end (sentinel-scraping + theme scoring)
+- Theme discovery run at bootstrap (LDA + embedding clustering on 6-month corpus)
 - Pull Brave News + Reddit via Brave Search MCP + PRAW
 - Compute VADER sentiment + hype scores + trade rankings
 - Write results to Supabase

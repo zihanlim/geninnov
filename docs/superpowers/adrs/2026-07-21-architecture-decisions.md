@@ -50,6 +50,8 @@ Documenting the *why* behind major choices — so future maintainers (human or A
 
 **Status**: Accepted. Real-time (Phase 4) would reintroduce FastAPI + Redis on VPS.
 
+**Superseded by**: ADR-009 (Phase 4 — adding FastAPI backend) when that decision is made. Do not edit this record; write a new ADR that supersedes it.
+
 ---
 
 ## ADR-004: No Redis for caching

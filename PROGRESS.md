@@ -4,14 +4,46 @@ _Last updated: 2026-07-21_
 
 ## Current status
 
-**Project bootstrapped.** Andromeda is a greenfield project. See `ROADMAP.md` for the forward plan.
+**Project bootstrapped.** Andromeda is a greenfield project. See `ROADMAP.md` (future) for the forward plan.
+
+## Project structure
+
+```
+.github/workflows/ci.yml       ← GitHub Actions CI
+CLAUDE.md                       ← AI/project onboarding (read this first)
+PROGRESS.md                     ← this file
+docs/
+├── adrs/                      ← Architecture Decision Records (im-Jarvis format)
+│   ├── README.md               ← index
+│   ├── 0001-supabase-over-postgres.md
+│   ├── 0002-vercel-for-frontend.md
+│   ├── 0003-daily-cron-over-fastapi.md
+│   ├── 0004-no-redis-in-phase1.md
+│   ├── 0005-vader-over-paid-sentiment.md
+│   ├── 0006-minmax-over-zscore-hypescore.md
+│   ├── 0007-two-method-theme-discovery.md
+│   └── 0008-tier1-macro-anchors-practitioner.md
+└── superpowers/
+    ├── specs/
+    │   └── 2026-07-21-andromeda-market-theme-platform-design.md
+    └── plans/
+        └── 2026-07-21-andromeda-implementation-plan.md
+```
 
 ## Completed
 
 | Date | Entry |
 |---|---|
-| 2026-07-21 | Project scaffolded: `CLAUDE.md`, `ADR-0001–0008` (docs/adrs/), `docs/superpowers/specs/` (design spec), `docs/superpowers/plans/` (implementation plan). Decisions: Supabase + Vercel + daily cron (no FastAPI/Redis/VPS backend). |
+| 2026-07-21 | Project scaffolded: `CLAUDE.md`, `PROGRESS.md`, `ADR-0001–0008` (individual files, im-Jarvis format), design spec, implementation plan, GitHub Actions CI. |
 
-## Active work
+## Build tasks
 
-- Task #1: Project scaffolding (pending start)
+| # | Task | Status |
+|---|---|---|
+| 1 | Project scaffolding: environment, schema, env vars | pending |
+| 2 | Python scoring pipeline: sentiment, data fetchers, calculators | pending |
+| 3 | Next.js frontend: all 4 pages and components | pending |
+| 4 | Deploy to Vercel + Supabase | pending |
+| 5 | Phase 1 complete: working frontend reading sample data | pending |
+| 6 | Phase 2 complete: daily_refresh.py runs end-to-end via cron | pending |
+| 7 | Theme discovery bootstrap: run LDA + embedding clustering | pending |

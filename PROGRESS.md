@@ -35,7 +35,8 @@ docs/
 | Date | Entry |
 |---|---|
 | 2026-07-21 | Project scaffolded: `CLAUDE.md`, `PROGRESS.md`, `ADR-0001–0008` (individual files, im-Jarvis format), design spec, implementation plan, GitHub Actions CI. |
-| 2026-07-21 | Python pipeline complete: B1 VADER sentiment, B2 Brave News, B3 Reddit, B4 Yahoo Finance, B5 HypeScore, B6 TradeScore, B7 daily refresh, B8 theme discovery — all tests passing. |
+| 2026-07-21 | Python pipeline complete: B1 VADER sentiment, B2 Brave News, B3 Reddit, B4 Yahoo Finance, B5 HypeScore, B6 TradeScore, B7 daily refresh, B8 theme discovery — 59 tests passing. |
+| 2026-07-21 | Frontend complete: C1 layout+Supabase, C2 dashboard+ThemeFeed+HypeGauge+MarketCorrelationChart+DataSourceStatus, C3 trades page, C4 portfolio page, C5 research page, D1 vercel.json. Build passes. |
 
 ## Build tasks
 
@@ -43,7 +44,7 @@ docs/
 |---|---|---|
 | 1 | Project scaffolding: environment, schema, env vars | completed |
 | 2 | Python scoring pipeline: sentiment, data fetchers, calculators | completed |
-| 3 | Next.js frontend: all 4 pages and components | pending |
+| 3 | Next.js frontend: all 4 pages and components | completed |
 | 4 | Deploy to Vercel + Supabase | pending |
 | 5 | Phase 1 complete: working frontend reading sample data | pending |
 | 6 | Phase 2 complete: daily_refresh.py runs end-to-end via cron | pending |

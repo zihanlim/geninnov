@@ -24,7 +24,7 @@ All project documentation lives under `docs/superpowers/`:
 |------|---------|
 | `docs/superpowers/specs/2026-07-21-andromeda-market-theme-platform-design.md` | Full design spec — architecture, scoring formulas, data model, frontend pages |
 | `docs/superpowers/plans/2026-07-21-andromeda-implementation-plan.md` | Implementation plan — task-by-task build guide |
-| `docs/superpowers/adrs/2026-07-21-architecture-decisions.md` | Architecture Decision Records — why each major choice was made |
+| `docs/adrs/2026-07-21-architecture-decisions.md` | Architecture Decision Records — why each major choice was made |
 
 ## Key source files
 

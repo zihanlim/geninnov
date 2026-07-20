@@ -2,17 +2,15 @@
 Theme discovery using two-method agreement: LDA + embedding clustering.
 Runs at bootstrap and monthly. Populates Tier 2 (discovered) and Tier 3 (review) themes.
 """
-import pandas as pd
-from gensim import corpora, models
+from gensim import corpora
+from gensim import models
 from sentence_transformers import SentenceTransformer
-import umap, hdbscan
-import numpy as np
-from datetime import date, timedelta
-import os, sys
+import umap
+import hdbscan
+import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
-from tools.sentiment import batch_sentiment
 from data.brave_client import fetch_news_for_theme
 from data.reddit_client import fetch_posts_for_theme
 

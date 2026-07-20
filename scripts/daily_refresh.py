@@ -6,7 +6,6 @@ writes results to Supabase.
 """
 import os
 import sys
-import json
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -47,10 +46,8 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
     - Compute average VADER sentiment
     - Compute price correlation for each mapped asset
     """
-    cfg = load_config()
     results = []
     today_str = run_date.isoformat()
-    date_7d = (run_date - timedelta(days=7)).isoformat()
 
     for theme in themes:
         theme_name = theme["name"]

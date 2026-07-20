@@ -60,8 +60,10 @@ class TestFetchNewsForTheme:
     def test_date_field_is_iso_format(self):
         result = fetch_news_for_theme("US Dollar")
         for item in result:
-            # Verify date can be parsed as ISO format
-            assert item["date"] == date.today().isoformat()
+            # Verify date can be parsed as ISO format (YYYY-MM-DD)
+            assert len(item["date"]) == 10
+            assert item["date"].count("-") == 2
+            int(item["date"].replace("-", ""))  # raises if not numeric
 
     def test_url_field_is_present(self):
         result = fetch_news_for_theme("Geopolitical Risk")

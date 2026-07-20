@@ -1,4 +1,8 @@
-interface Theme { id: string; name: string; tier: string; hype_score: number; }
+interface Theme {
+  id: string; name: string; tier: string;
+  hype_score: number; volume_score: number; sentiment_score: number;
+  corr_score: number; momentum_score: number; updated_at: string;
+}
 interface Props { themes: Theme[]; selected: Theme | null; onSelect: (t: Theme) => void; }
 
 export default function ThemeFeed({ themes, selected, onSelect }: Props) {

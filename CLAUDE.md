@@ -14,9 +14,19 @@ Andromeda ingests news and social media daily, scores themes by "hype" (attentio
 - **Theme discovery**: `theme_discovery.py` runs at bootstrap and monthly
 - **Cron**: cron-job.org (free) triggers `daily_refresh.py` daily
 
-**No FastAPI, no Redis, no VPS for the backend** — see `ADR.md` for why.
+**No FastAPI, no Redis, no VPS for the backend** — see ADRs for why.
 
-## Key files
+## Project docs
+
+All project documentation lives under `docs/superpowers/`:
+
+| Path | Purpose |
+|------|---------|
+| `docs/superpowers/specs/2026-07-21-andromeda-market-theme-platform-design.md` | Full design spec — architecture, scoring formulas, data model, frontend pages |
+| `docs/superpowers/plans/2026-07-21-andromeda-implementation-plan.md` | Implementation plan — task-by-task build guide |
+| `docs/superpowers/adrs/2026-07-21-architecture-decisions.md` | Architecture Decision Records — why each major choice was made |
+
+## Key source files
 
 | Path | Purpose |
 |------|---------|
@@ -24,8 +34,6 @@ Andromeda ingests news and social media daily, scores themes by "hype" (attentio
 | `scripts/theme_discovery.py` | Bootstrap + monthly theme discovery |
 | `frontend/lib/supabase.ts` | Supabase client for frontend reads |
 | `supabase/migrations/001_initial_schema.sql` | Full database schema |
-| `docs/superpowers/specs/` | Design spec |
-| `docs/superpowers/plans/` | Implementation plan |
 
 ## Running locally
 
@@ -60,7 +68,3 @@ REDDIT_USER_AGENT=Andromeda/1.0
 ## Scoring weights
 
 All weights and lookbacks are stored in the `scoring_config` Supabase table — not hardcoded. To change how themes are scored, update the database, don't edit Python code.
-
-## Design decisions
-
-See `docs/superpowers/adrs/2026-07-21-architecture-decisions.md` for the reasoning behind all major choices.

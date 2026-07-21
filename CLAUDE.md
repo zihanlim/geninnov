@@ -65,6 +65,26 @@ REDDIT_CLIENT_SECRET=...
 REDDIT_USER_AGENT=Andromeda/1.0
 ```
 
+## MCP tools
+
+Use these to interact with external services directly:
+
+- **Supabase MCP** (`plugin:supabase:supabase`): For all Supabase work — running SQL queries, checking table data, applying migrations, verifying data was seeded correctly. Authenticate once via browser OAuth flow.
+- **Vercel MCP** (`plugin:vercel`): For Vercel work — listing projects, setting env vars, checking deployments, fetching build logs, triggering redeploys. Requires `vercel login` in the terminal first.
+- **Playwright MCP** (`plugin:playwright`): For frontend verification — navigate to a URL, take a screenshot, check the page snapshot, inspect console errors. Use this whenever the user asks to "check if it's working" or "see the frontend".
+
+```bash
+# Typical verification flow with Playwright MCP:
+# 1. Navigate to the URL
+mcp__playwright__browser_navigate({ url: "https://..." })
+# 2. Take a screenshot
+mcp__playwright__browser_take_screenshot({ type: "png" })
+# 3. Get the page snapshot
+mcp__playwright__browser_snapshot({})
+# 4. Check for console errors
+mcp__playwright__browser_console_messages({ level: "error" })
+```
+
 ## Scoring weights
 
 All weights and lookbacks are stored in the `scoring_config` Supabase table — not hardcoded. To change how themes are scored, update the database, don't edit Python code.

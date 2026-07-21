@@ -60,7 +60,7 @@ function CrossThemeCorrelations({ themeId }: { themeId: string }) {
       // We do not have a dedicated cross-theme corr table; the call below returns the
       // single highest-impact sibling themes (top 3 by mention-count correlation).
       const { data: allSignals } = await supabase
-        .from("theme_signals")
+        .from("theme_signals_history")
         .select("theme_id, mention_count_1d, run_date, themes(name)")
         .order("run_date", { ascending: false })
         .limit(60);
@@ -137,7 +137,7 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
       const runDate = theme.run_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
       const [sigRes, cfgRes] = await Promise.all([
         supabase
-          .from("theme_signals")
+          .from("theme_signals_history")
           .select("mention_count_1d, mention_count_7d_avg, mention_count_7d_std, avg_sentiment, price_corr, momentum_raw, run_date")
           .eq("theme_id", theme.id)
           .eq("run_date", runDate)

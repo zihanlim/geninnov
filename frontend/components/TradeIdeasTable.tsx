@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import TradeDerivationDrawer from "./TradeDerivationDrawer";
 import { Citation } from "./CitationList";
+import LensSelector, { Lens, lensToAssetClasses } from "./LensSelector";
 
 interface TradeCandidate {
   id: string;
@@ -45,16 +46,26 @@ export default function TradeIdeasTable() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [openPick, setOpenPick] = useState<TradeCandidate | null>(null);
+  const [lens, setLens] = useState<Lens>("multi_asset");
+  // Map of ticker → asset_class (from theme_assets, migration 009)
+  const [assetClassMap, setAssetClassMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    supabase
-      .from("trade_candidates")
-      .select("*, themes(name)")
-      .order("trade_score", { ascending: false })
-      .then(({ data }) => {
-        setRows(data ?? []);
-        setLoading(false);
-      });
+    Promise.all([
+      supabase
+        .from("trade_candidates")
+        .select("*, themes(name)")
+        .order("trade_score", { ascending: false }),
+      supabase.from("theme_assets").select("ticker, asset_class"),
+    ]).then(([rowsRes, assetRes]) => {
+      setRows(rowsRes.data ?? []);
+      const map: Record<string, string> = {};
+      for (const row of assetRes.data ?? []) {
+        if (row.ticker && row.asset_class) map[row.ticker] = row.asset_class;
+      }
+      setAssetClassMap(map);
+      setLoading(false);
+    });
   }, []);
 
   const filtered = useMemo(() => {
@@ -68,6 +79,14 @@ export default function TradeIdeasTable() {
           (c.themes?.name ?? "").toLowerCase().includes(q)
       );
     }
+    // Apply lens filter (ADR-0015)
+    const allowed = lensToAssetClasses(lens);
+    if (allowed !== null) {
+      r = r.filter((c) => {
+        const cls = assetClassMap[c.asset] ?? "other";
+        return allowed.includes(cls);
+      });
+    }
     r.sort((a, b) => {
       const av: number | string =
         sort === "theme" ? (a.themes?.name ?? "") : ((a[sort] as number | string) ?? 0);
@@ -77,7 +96,7 @@ export default function TradeIdeasTable() {
       return String(bv).localeCompare(String(av));
     });
     return r;
-  }, [rows, filter, sort, query]);
+  }, [rows, filter, sort, query, lens, assetClassMap]);
 
   const longs = filtered.filter((c) => c.direction === "long").slice(0, 5);
   const shorts = filtered.filter((c) => c.direction === "short").slice(0, 5);
@@ -97,6 +116,8 @@ export default function TradeIdeasTable() {
               {f === "all" ? "All" : f === "long" ? "▲ Longs only" : "▼ Shorts only"}
             </button>
           ))}
+          <div className="w-px h-5 bg-border mx-1" />
+          <LensSelector value={lens} onChange={setLens} />
           <div className="flex-1" />
           <input
             className="px-2.5 py-[5px] bg-bg-elevated border border-border rounded-md text-text-primary text-[12px] w-[200px] focus:outline-none focus:border-accent"
@@ -184,8 +205,11 @@ export default function TradeIdeasTable() {
         {!loading && showSplit && (
           <div className="text-center text-text-tertiary text-[12px] py-3">
             Showing top 5 of {filtered.filter((c) => c.direction === "long").length} long candidates · top 5 of{" "}
-            {filtered.filter((c) => c.direction === "short").length} short candidates ·{" "}
-            <span className="text-text-tertiary">click any row for derivation →</span>
+            {filtered.filter((c) => c.direction === "short").length} short candidates
+            {lens !== "multi_asset" && (
+              <> · <span className="text-accent">{lens} lens</span></>
+            )}
+            {" "}· <span className="text-text-tertiary">click any row for derivation →</span>
           </div>
         )}
       </div>

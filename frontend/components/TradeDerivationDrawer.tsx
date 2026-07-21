@@ -71,15 +71,14 @@ export default function TradeDerivationDrawer({ pick, open, onClose, totalNotion
       // Pull the prior-day HypeScore for momentum delta
       const today = pick.run_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
       const { data: hist } = await supabase
-        .from("theme_signals")
-        .select("hype_score, run_date")
-        .eq("theme_id", pick.theme_id ?? "")
-        .lt("run_date", today)
-        .order("run_date", { ascending: false })
-        .limit(1)
+        .from("themes")
+        .select("hype_score, updated_at")
+        .eq("id", pick.theme_id ?? "")
+        .limit(2)
         .maybeSingle();
       if (cancelled) return;
-      setYesterdayHype((hist as any)?.hype_score ?? null);
+      // updated_at of the same row is a proxy for "last run"; theme has no historical hype scores
+      setYesterdayHype(null); // will show "—" in the UI; real historical track needs theme_signals_history
     })();
     return () => {
       cancelled = true;

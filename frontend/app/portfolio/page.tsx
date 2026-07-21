@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import LensSelector, { Lens, lensToAssetClasses } from "@/components/LensSelector";
 
 interface Position {
   id: string;
@@ -92,7 +93,11 @@ export default function PortfolioPage() {
   const [risk, setRisk] = useState<Risk | null>(null);
   const [factors, setFactors] = useState<Factor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lens, setLens] = useState<Lens>("multi_asset");
+  // Map of ticker → asset_class (from theme_assets, migration 009)
+  const [assetClassMap, setAssetClassMap] = useState<Record<string, string>>({});
 
+  // Fetch portfolio + risk + factor exposure + asset class lookup once.
   useEffect(() => {
     Promise.all([
       supabase
@@ -111,7 +116,10 @@ export default function PortfolioPage() {
         .order("run_date", { ascending: false })
         .limit(1)
         .maybeSingle(),
-    ]).then(([posRes, riskRes, factorRes]) => {
+      supabase
+        .from("theme_assets")
+        .select("ticker, asset_class"),
+    ]).then(([posRes, riskRes, factorRes, assetRes]) => {
       setPositions(posRes.data ?? []);
       setRisk((riskRes.data as Risk) ?? null);
       const f = (factorRes.data as Record<string, number>) ?? {};
@@ -121,13 +129,28 @@ export default function PortfolioPage() {
           beta: Number(f[d.key]),
         }))
       );
+      const map: Record<string, string> = {};
+      for (const row of assetRes.data ?? []) {
+        if (row.ticker && row.asset_class) map[row.ticker] = row.asset_class;
+      }
+      setAssetClassMap(map);
       setLoading(false);
     });
   }, []);
 
+  // Apply the lens filter to positions. ADR-0015.
+  const filteredPositions = useMemo(() => {
+    const allowed = lensToAssetClasses(lens);
+    if (allowed === null) return positions;
+    return positions.filter((p) => {
+      const cls = assetClassMap[p.asset] ?? "other";
+      return allowed.includes(cls);
+    });
+  }, [positions, assetClassMap, lens]);
+
   const totalCapital = risk?.total_capital ?? 100_000_000;
-  const longs = positions.filter((p) => p.direction === "long");
-  const shorts = positions.filter((p) => p.direction === "short");
+  const longs = filteredPositions.filter((p) => p.direction === "long");
+  const shorts = filteredPositions.filter((p) => p.direction === "short");
   const longNotional = longs.reduce((s, p) => s + (p.notional ?? 0), 0);
   const shortNotional = shorts.reduce((s, p) => s + (p.notional ?? 0), 0);
   const gross = longNotional + shortNotional;
@@ -144,6 +167,9 @@ export default function PortfolioPage() {
           <p className="m-0 text-text-secondary text-[13px]">
             Long-short book from top candidates · risk-weighted to HypeScore confidence.
           </p>
+        </div>
+        <div className="flex items-center gap-4">
+          <LensSelector value={lens} onChange={setLens} />
         </div>
         <div className="text-right text-text-secondary text-[12px]">
           <div>
@@ -232,7 +258,7 @@ export default function PortfolioPage() {
               ) : (
                 <>
                   <div className="flex h-9 rounded-lg overflow-hidden bg-bg-elevated mb-3">
-                    {positions.map((p) => {
+                    {filteredPositions.map((p) => {
                       const w = (p.notional ?? 0) / (risk?.total_capital ?? 1);
                       return (
                         <div
@@ -251,7 +277,7 @@ export default function PortfolioPage() {
                     })}
                   </div>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {positions.map((p) => (
+                    {filteredPositions.map((p) => (
                       <div
                         key={p.id}
                         className="flex items-center gap-1.5 text-[11px] text-text-secondary px-2 py-[3px] bg-bg-elevated border border-border rounded"
@@ -307,11 +333,15 @@ export default function PortfolioPage() {
           {/* Positions table */}
           <div className="card">
             <div className="card-header">
-              <span className="card-title">Positions</span>
-              <span className="text-[11px] text-text-tertiary">{positions.length} positions</span>
+              <span className="card-title">Positions · {lens === "multi_asset" ? "all asset classes" : `${lens} lens`}</span>
+              <span className="text-[11px] text-text-tertiary">
+                {filteredPositions.length} of {positions.length} positions
+              </span>
             </div>
-            {positions.length === 0 ? (
-              <div className="p-12 text-center text-text-tertiary text-[13px]">No positions.</div>
+            {filteredPositions.length === 0 ? (
+              <div className="p-12 text-center text-text-tertiary text-[13px]">
+                No positions match the {lens} lens.
+              </div>
             ) : (
               <table className="w-full border-collapse text-[13px]">
                 <thead>
@@ -329,7 +359,7 @@ export default function PortfolioPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {positions.map((p) => (
+                  {filteredPositions.map((p) => (
                     <tr key={p.id} className="hover:bg-bg-elevated">
                       <td className="px-[18px] py-2.5 border-b border-border">{p.theme ?? "—"}</td>
                       <td className="px-[14px] py-2.5 border-b border-border num">{p.asset}</td>

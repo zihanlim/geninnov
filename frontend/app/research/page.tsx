@@ -20,7 +20,6 @@ interface Pick {
   hype_score?: number;
   trade_score?: number;
   weight?: number;
-  citations?: Citation[];
 }
 
 interface ResearchRecommendation {
@@ -28,24 +27,34 @@ interface ResearchRecommendation {
   picks: Pick[];
   book_view: string;
   book_risks: string[];
-  book_metrics_summary?: string;
-  scenario_table?: string;
+  agent_run_id?: string;
 }
 
 interface Regime { cycle: string; sentiment: string; narrative?: string }
 
 const TOTAL_NOTIONAL = 100_000_000;
 
-function PickCard({ pick, rank, onOpen }: { pick: Pick; rank: number; onOpen: (p: Pick) => void }) {
+function PickCard({
+  pick,
+  rank,
+  citations,
+  onOpen,
+}: {
+  pick: Pick;
+  rank: number;
+  citations?: Citation[];
+  onOpen: (p: Pick) => void;
+}) {
   const isLong = pick.direction === "long";
   const notional = pick.notional ? `$${(pick.notional / 1_000_000).toFixed(1)}M` : null;
-  const weight = pick.weight !== undefined
-    ? `${(pick.weight * 100).toFixed(1)}%`
-    : pick.notional
-    ? `${((pick.notional / 100_000_000) * 100).toFixed(1)}%`
-    : null;
+  const weight =
+    pick.weight !== undefined
+      ? `${(pick.weight * 100).toFixed(1)}%`
+      : pick.notional
+        ? `${((pick.notional / 100_000_000) * 100).toFixed(1)}%`
+        : null;
 
-  const hasCitations = (pick.citations?.length ?? 0) > 0;
+  const hasCitations = (citations?.length ?? 0) > 0;
 
   return (
     <div
@@ -79,11 +88,13 @@ function PickCard({ pick, rank, onOpen }: { pick: Pick; rank: number; onOpen: (p
       <div className="text-text-secondary text-[13px] mb-5">
         HypeScore {pick.hype_score?.toFixed(1) ?? "—"} · TradeScore{" "}
         <span style={{ color: isLong ? "var(--long)" : "var(--short)" }}>
-          {pick.trade_score !== undefined ? `${pick.trade_score >= 0 ? "+" : ""}${pick.trade_score.toFixed(2)}` : "—"}
+          {pick.trade_score !== undefined
+            ? `${pick.trade_score >= 0 ? "+" : ""}${pick.trade_score.toFixed(2)}`
+            : "—"}
         </span>{" "}
         · Conviction: <span className="text-long">HIGH</span>
         {hasCitations && (
-          <span className="text-accent text-[11px] ml-1.5">· {pick.citations!.length} citations</span>
+          <span className="text-accent text-[11px] ml-1.5">· {citations!.length} citations</span>
         )}
         <span className="text-text-tertiary text-[11px] ml-2">· click for derivation</span>
       </div>
@@ -94,17 +105,19 @@ function PickCard({ pick, rank, onOpen }: { pick: Pick; rank: number; onOpen: (p
             Thesis
             {hasCitations && (
               <span className="text-accent normal-case font-normal text-[10.5px]">
-                ({pick.citations!.length} sources)
+                ({citations!.length} sources)
               </span>
             )}
           </div>
-          <CitationList text={pick.thesis} citations={pick.citations} />
+          <CitationList text={pick.thesis} citations={citations} />
         </div>
       )}
 
       {pick.factor_tilts && Object.keys(pick.factor_tilts).length > 0 && (
         <div className="mb-4">
-          <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2">Factor tilts</div>
+          <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2">
+            Factor tilts
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {Object.entries(pick.factor_tilts).map(([k, v]) => (
               <span
@@ -128,7 +141,9 @@ function PickCard({ pick, rank, onOpen }: { pick: Pick; rank: number; onOpen: (p
               color: "var(--text-primary)",
             }}
           >
-            <span className="text-[10px] uppercase tracking-[0.12em] text-short font-semibold mr-2">Counter-thesis</span>
+            <span className="text-[10px] uppercase tracking-[0.12em] text-short font-semibold mr-2">
+              Counter-thesis
+            </span>
             {pick.counter_thesis}
           </div>
         </div>
@@ -137,15 +152,21 @@ function PickCard({ pick, rank, onOpen }: { pick: Pick; rank: number; onOpen: (p
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {pick.catalysts && pick.catalysts.length > 0 && (
           <div>
-            <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2">Catalysts</div>
+            <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2">
+              Catalysts
+            </div>
             <ul className="m-0 pl-[18px] leading-[1.7] text-[13px] text-text-primary">
-              {pick.catalysts.map((c, i) => <li key={i}>{c}</li>)}
+              {pick.catalysts.map((c, i) => (
+                <li key={i}>{c}</li>
+              ))}
             </ul>
           </div>
         )}
         {pick.risk && (
           <div>
-            <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2">Risk</div>
+            <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2">
+              Risk
+            </div>
             <p className="m-0 leading-[1.7] text-[13px] text-text-primary">{pick.risk}</p>
           </div>
         )}
@@ -156,11 +177,17 @@ function PickCard({ pick, rank, onOpen }: { pick: Pick; rank: number; onOpen: (p
 
 function RegimeBadge({ cycle, sentiment }: { cycle: string; sentiment: string }) {
   const cycleClass =
-    cycle === "early" || cycle === "late" ? "badge-warning" :
-    cycle === "recession" ? "badge-short" : "badge-tier-anchor";
+    cycle === "early" || cycle === "late"
+      ? "badge-warning"
+      : cycle === "recession"
+        ? "badge-short"
+        : "badge-tier-anchor";
   const sentClass =
-    sentiment === "risk-on" ? "badge-long" :
-    sentiment === "risk-off" ? "badge-short" : "badge-neutral";
+    sentiment === "risk-on"
+      ? "badge-long"
+      : sentiment === "risk-off"
+        ? "badge-short"
+        : "badge-neutral";
   return (
     <div className="flex items-center gap-2 text-[12px]">
       <span className="text-text-tertiary uppercase tracking-[0.1em]">Cycle</span>
@@ -177,13 +204,14 @@ export default function ResearchPage() {
   const [loading, setLoading] = useState(true);
   const [regime, setRegime] = useState<Regime | null>(null);
   const [openPick, setOpenPick] = useState<Pick | null>(null);
+  const [citations, setCitations] = useState<Citation[] | undefined>(undefined);
 
   useEffect(() => {
     async function load() {
       const [recRes, regimeRes] = await Promise.all([
         supabase
-          .from("q1_recommendations")
-          .select("*")
+          .from("research_recommendations")
+          .select("run_date, picks, book_view, book_risks, agent_run_id")
           .order("run_date", { ascending: false })
           .limit(1)
           .maybeSingle(),
@@ -194,7 +222,37 @@ export default function ResearchPage() {
           .limit(1)
           .maybeSingle(),
       ]);
-      setRec((recRes.data as ResearchRecommendation) ?? null);
+
+      const recData = recRes.data as ResearchRecommendation | null;
+      if (recData) {
+        // Ensure picks is an array (JSONB may be array or null)
+        if (Array.isArray(recData.picks)) {
+          setRec(recData);
+        } else if (typeof recData.picks === "string") {
+          try {
+            setRec({ ...recData, picks: JSON.parse(recData.picks) });
+          } catch {
+            setRec({ ...recData, picks: [] });
+          }
+        } else {
+          setRec({ ...recData, picks: [] });
+        }
+        // Ensure book_risks is an array
+        if (recData.agent_run_id) {
+          const { data: runData } = await supabase
+            .from("research_agent_runs")
+            .select("citations")
+            .eq("id", recData.agent_run_id)
+            .maybeSingle();
+          if (runData) {
+            const c = (runData as { citations?: Citation[] }).citations;
+            setCitations(Array.isArray(c) ? c : undefined);
+          }
+        }
+      } else {
+        setRec(null);
+      }
+
       setRegime((regimeRes.data as Regime) ?? null);
       setLoading(false);
     }
@@ -208,10 +266,14 @@ export default function ResearchPage() {
     <main className="max-w-[1320px] mx-auto px-8 pt-7 pb-20">
       <div className="flex justify-between items-end mb-7 gap-4 flex-wrap">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">Q1 Research · $100M Long-Short Book</h1>
+          <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
+            Q1 Research · $100M Long-Short Book
+          </h1>
           <p className="m-0 text-text-secondary text-[13px]">
             Top 5 long + top 5 short with macro view, factor tilts, and book risks.{" "}
-            <span className="text-text-tertiary text-[12px]">Click any pick for full derivation.</span>
+            <span className="text-text-tertiary text-[12px]">
+              Click any pick for full derivation.
+            </span>
           </p>
         </div>
         <div className="text-right text-text-secondary text-[12px]">
@@ -243,8 +305,12 @@ export default function ResearchPage() {
         <div className="card p-12 text-center text-text-tertiary text-[13px]">
           <p className="m-0 mb-2">No Q1 recommendations yet.</p>
           <p className="m-0 text-text-secondary text-[12px]">
-            Run the daily pipeline (<code className="num">daily_refresh.py</code>) to generate the book. See{" "}
-            <Link href="/" className="text-accent hover:underline">Conviction dashboard</Link> for theme status.
+            Run the daily pipeline (<code className="num">daily_refresh.py</code>) to generate the book.
+            See{" "}
+            <Link href="/" className="text-accent hover:underline">
+              Conviction dashboard
+            </Link>{" "}
+            for theme status.
           </p>
         </div>
       ) : (
@@ -253,40 +319,26 @@ export default function ResearchPage() {
           {rec.book_view && (
             <div
               className="card p-7 mb-4"
-              style={{ background: "linear-gradient(180deg, #1a2230 0%, #11151c 100%)", borderColor: "var(--border-strong)" }}
+              style={{
+                background: "linear-gradient(180deg, #1a2230 0%, #11151c 100%)",
+                borderColor: "var(--border-strong)",
+              }}
             >
               <div className="flex items-baseline gap-2.5 mb-1">
                 <h3 className="text-[20px] font-semibold m-0">Book View</h3>
-                <span className="badge badge-neutral" style={{ fontSize: 10 }}>DETERMINISTIC L0-L4 + LLM L5</span>
+                <span
+                  className="badge badge-neutral"
+                  style={{ fontSize: 10 }}
+                >
+                  DETERMINISTIC L0-L4 + LLM L5
+                </span>
               </div>
               <div className="text-text-secondary text-[13px] mb-5">
                 {rec.run_date} · Agent run · verified ✓
               </div>
-              <p className="m-0 leading-[1.7] text-text-primary text-[14px] whitespace-pre-line">{rec.book_view}</p>
-            </div>
-          )}
-
-          {/* Book metrics summary (v2) */}
-          {rec.book_metrics_summary && (
-            <div className="card p-6 mb-4">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-3">
-                Book factor tilts (value-weighted FF5 + UMD)
-              </div>
-              <pre className="m-0 text-[12px] text-text-secondary leading-[1.6] whitespace-pre-wrap font-mono">
-                {rec.book_metrics_summary}
-              </pre>
-            </div>
-          )}
-
-          {/* Scenario table (v2) */}
-          {rec.scenario_table && (
-            <div className="card p-6 mb-4">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-3">
-                Scenario stress test (4 scenarios, direction-aware P&L)
-              </div>
-              <pre className="m-0 text-[12px] text-text-secondary leading-[1.6] whitespace-pre-wrap font-mono">
-                {rec.scenario_table}
-              </pre>
+              <p className="m-0 leading-[1.7] text-text-primary text-[14px] whitespace-pre-line">
+                {rec.book_view}
+              </p>
             </div>
           )}
 
@@ -295,7 +347,15 @@ export default function ResearchPage() {
               <h2 className="text-[16px] font-semibold m-0 mb-4 flex items-center gap-2">
                 <span style={{ color: "var(--long)" }}>▲</span> Top {longs.length} Longs
               </h2>
-              {longs.map((p, i) => <PickCard key={`long-${i}`} pick={p} rank={i + 1} onOpen={setOpenPick} />)}
+              {longs.map((p, i) => (
+                <PickCard
+                  key={`long-${i}`}
+                  pick={p}
+                  rank={i + 1}
+                  citations={citations}
+                  onOpen={setOpenPick}
+                />
+              ))}
             </section>
           )}
 
@@ -304,7 +364,15 @@ export default function ResearchPage() {
               <h2 className="text-[16px] font-semibold m-0 mb-4 flex items-center gap-2">
                 <span style={{ color: "var(--short)" }}>▼</span> Top {shorts.length} Shorts
               </h2>
-              {shorts.map((p, i) => <PickCard key={`short-${i}`} pick={p} rank={i + 1} onOpen={setOpenPick} />)}
+              {shorts.map((p, i) => (
+                <PickCard
+                  key={`short-${i}`}
+                  pick={p}
+                  rank={i + 1}
+                  citations={citations}
+                  onOpen={setOpenPick}
+                />
+              ))}
             </section>
           )}
 
@@ -314,9 +382,13 @@ export default function ResearchPage() {
               style={{ background: "var(--bg-elevated)", borderColor: "rgba(248,81,73,0.3)" }}
             >
               <h3 className="text-[20px] font-semibold m-0 mb-1">Cross-cutting book risks</h3>
-              <div className="text-text-secondary text-[13px] mb-5">What kills the book if it goes wrong.</div>
+              <div className="text-text-secondary text-[13px] mb-5">
+                What kills the book if it goes wrong.
+              </div>
               <ul className="m-0 pl-[18px] leading-[1.8] text-text-primary text-[13.5px]">
-                {rec.book_risks.map((r, i) => <li key={i}>{r}</li>)}
+                {rec.book_risks.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
               </ul>
             </div>
           )}

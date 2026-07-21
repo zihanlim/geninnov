@@ -169,3 +169,42 @@ INSERT INTO themes (name, tier, source) VALUES
     ('Corporate Credit', 'anchor', 'practitioner'),
     ('Energy Prices', 'anchor', 'practitioner'),
     ('US Election', 'anchor', 'practitioner');
+
+-- Insert Tier 1 asset mappings (practitioner-defined, versioned by run_date).
+-- daily_refresh.py falls back to the most recent entry per theme if today's is empty.
+INSERT INTO theme_assets (theme_id, ticker, weight, run_date)
+SELECT t.id, v.ticker, 1.0, CURRENT_DATE
+FROM themes t
+CROSS JOIN LATERAL (VALUES
+    ('Fed Policy',        'TLT'),
+    ('Fed Policy',        'GLD'),
+    ('Fed Policy',        'SVXY'),
+    ('Fed Policy',        'DXY'),
+    ('Inflation',         'GLD'),
+    ('Inflation',         'SLV'),
+    ('Inflation',         'TIPS'),
+    ('China Growth',      'FXI'),
+    ('China Growth',      'MCHI'),
+    ('China Growth',      'BABA'),
+    ('China Growth',      'KWEB'),
+    ('US Dollar',         'UUP'),
+    ('US Dollar',         'FXE'),
+    ('US Dollar',         'GLD'),
+    ('US Dollar',         'EWZ'),
+    ('Geopolitical Risk', 'GLD'),
+    ('Geopolitical Risk', 'TLT'),
+    ('Geopolitical Risk', 'SLV'),
+    ('Geopolitical Risk', 'EWJ'),
+    ('Corporate Credit',  'HYG'),
+    ('Corporate Credit',  'LQD'),
+    ('Energy Prices',     'XLE'),
+    ('Energy Prices',     'OIH'),
+    ('Energy Prices',     'CL'),
+    ('Energy Prices',     'UNG'),
+    ('US Election',       'QQQ'),
+    ('US Election',       'XLV'),
+    ('US Election',       'XLF'),
+    ('US Election',       'ARKK')
+) AS v(theme_name, ticker)
+ON t.name = v.theme_name
+WHERE t.tier = 'anchor';

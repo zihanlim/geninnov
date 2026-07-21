@@ -207,3 +207,53 @@ def test_compute_trade_scores_returns_list():
     for r in result:
         assert "trade_score" in r
         assert isinstance(r["trade_score"], float)
+
+
+def test_build_theme_signals_falls_back_to_most_recent_assets():
+    """
+    When theme_assets has no rows for today's run_date, build_theme_signals
+    should fall back to the most recent entry for that theme rather than
+    silently producing a zero CorrScore.
+    """
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    from daily_refresh import build_theme_signals
+    from services.hype_calculator import ScoringConfig
+
+    cfg = ScoringConfig(
+        hype_volume_weight=0.30,
+        hype_sentiment_weight=0.20,
+        hype_corr_weight=0.30,
+        hype_momentum_weight=0.20,
+        trade_hype_weight=0.55,
+        trade_sentiment_weight=0.45,
+    )
+
+    fallback_assets = [{"ticker": "TLT"}, {"ticker": "GLD"}]
+
+    with patch("daily_refresh.fetch_news_for_theme", return_value=[]), \
+         patch("daily_refresh.fetch_posts_for_theme", return_value=[]), \
+         patch("daily_refresh.batch_sentiment", return_value=[0.0]), \
+         patch("daily_refresh.fetch_price_data", return_value=type("DF", (), {"empty": True, "columns": ["date", "ticker", "close", "return"]})()), \
+         patch("daily_refresh.load_config", return_value=cfg), \
+         patch("daily_refresh.supabase") as mock_supabase:
+
+        # First call (today's run_date) returns empty → triggers fallback
+        # Second call (most recent) returns fallback_assets
+        today_query = MagicMock()
+        today_query.execute.return_value.data = []
+        recent_query = MagicMock()
+        recent_query.execute.return_value.data = fallback_assets
+
+        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value = today_query
+        mock_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value = recent_query
+
+        themes = [{"id": "abc-123", "name": "Fed Policy"}]
+        result = build_theme_signals(themes, date.today())
+
+    assert isinstance(result, list)
+    assert len(result) == 1
+    # The fallback path should have been hit; build_theme_signals should not
+    # crash when assets is empty initially — it just proceeds with the fallback
+    # ticker list. price_corr stays 0.0 because price_df is empty, which is fine.

@@ -6,7 +6,7 @@ writes results to Supabase.
 """
 import os
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -82,8 +82,12 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
         mention_count_7d_std = float(np.std(daily_counts)) if len(daily_counts) > 1 else 0.0
         momentum_raw = (mention_count_1d - mention_count_7d_avg) / mention_count_7d_std if mention_count_7d_std > 0 else 0.0
 
-        # Price correlation per mapped asset
+        # Price correlation per mapped asset.
+        # Prefer assets for today's run_date; fall back to the most recent
+        # entry for this theme so bootstrap timing doesn't zero out CorrScore.
         assets = supabase.table("theme_assets").select("ticker").eq("theme_id", theme["id"]).eq("run_date", today_str).execute().data
+        if not assets:
+            assets = supabase.table("theme_assets").select("ticker").eq("theme_id", theme["id"]).order("run_date", desc=True).limit(20).execute().data
         tickers = [a["ticker"] for a in assets]
         price_df = fetch_price_data(tickers, lookback_days=30)
 
@@ -171,7 +175,7 @@ def persist(run_date: date, scored: list[dict]):
             "sentiment_score": rescale_vader(r["avg_sentiment"]),
             "corr_score": minmax_norm(abs(r["price_corr"]), [abs(s["price_corr"]) for s in scored]),
             "momentum_score": minmax_norm(r["momentum_raw"], [s["momentum_raw"] for s in scored]),
-            "updated_at": "NOW()",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", theme_id).execute()
 
         # Insert signals history

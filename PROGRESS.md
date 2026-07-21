@@ -4,7 +4,7 @@ _Last updated: 2026-07-21_
 
 ## Current status
 
-**Project bootstrapped.** Andromeda is a greenfield project. See `ROADMAP.md` (future) for the forward plan.
+**Phase 1–3 implemented.** Theme detection, trade ranking, position sizing, daily P&L, and risk metrics are all wired into `scripts/daily_refresh.py`. Frontend pages can read live data from the four pipeline-output tables. See "Pending" below for what's left to actually run against the deployed environment.
 
 ## Project structure
 
@@ -38,6 +38,8 @@ docs/
 | 2026-07-21 | Python pipeline complete: B1 VADER sentiment, B2 Brave News, B3 Reddit, B4 Yahoo Finance, B5 HypeScore, B6 TradeScore, B7 daily refresh, B8 theme discovery — 59 tests passing. |
 | 2026-07-21 | Frontend complete: C1 layout+Supabase, C2 dashboard+ThemeFeed+HypeGauge+MarketCorrelationChart+DataSourceStatus, C3 trades page, C4 portfolio page, C5 research page, D1 vercel.json. Build passes. |
 | 2026-07-21 | Deployed to Vercel + Supabase: schema applied, RLS configured, seed data loaded. Phase 1 live. |
+| 2026-07-21 | Bug fix pass on Phase B pipeline: replaced `"NOW()"` string with real ISO timestamp, added asset-map fallback for bootstrap timing, rewrote `call_brave_mcp.js` to actually call the Brave News API, added the missing Tier 1 asset seed (`LATERAL VALUES` INSERT for 29 rows). 60 tests passing. |
+| 2026-07-21 | Phase 3 implemented: `backend/services/trade_ranker.py` (rank top 5 longs/shorts + size $100M portfolio) + `backend/services/risk_engine.py` (VaR, CVaR, Sharpe, Beta, HHI, daily P&L). `scripts/daily_refresh.py` now persists to `trade_candidates`, `portfolio_positions`, `portfolio_risk`, `portfolio_returns`. 106 tests passing. |
 
 ## Build tasks
 
@@ -48,5 +50,7 @@ docs/
 | 3 | Next.js frontend: all 4 pages and components | completed |
 | 4 | Deploy to Vercel + Supabase | completed |
 | 5 | Phase 1 complete: working frontend reading sample data | completed |
-| 6 | Phase 2 complete: daily_refresh.py runs end-to-end via cron | pending |
+| 6 | Phase 2 complete: daily_refresh.py runs end-to-end via cron | pending (code done; needs cron-job.org trigger + live run) |
 | 7 | Theme discovery bootstrap: run LDA + embedding clustering | pending |
+| 8 | Phase 3: trade ranking + position sizing + risk engine + daily P&L | completed (2026-07-21) |
+| 9 | Phase 4: real-time upgrade (FastAPI + Redis) | deferred |

@@ -8,6 +8,9 @@ class ScoringConfig:
     hype_momentum_weight: float
     trade_hype_weight: float
     trade_sentiment_weight: float
+    hype_score_threshold: float = 50.0
+    total_capital: float = 100_000_000.0
+    risk_free_annual: float = 0.045
 
     @classmethod
     def from_db_rows(cls, rows: list[dict]) -> "ScoringConfig":
@@ -19,6 +22,9 @@ class ScoringConfig:
             hype_momentum_weight=vals["hype_momentum_weight"],
             trade_hype_weight=vals["trade_hype_weight"],
             trade_sentiment_weight=vals["trade_sentiment_weight"],
+            hype_score_threshold=vals.get("hype_score_threshold", 50.0),
+            total_capital=vals.get("total_capital", 100_000_000.0),
+            risk_free_annual=vals.get("risk_free_annual", 0.045),
         )
 
 def minmax_norm(value: float, values: list[float]) -> float:

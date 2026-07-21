@@ -257,3 +257,223 @@ def test_build_theme_signals_falls_back_to_most_recent_assets():
     # The fallback path should have been hit; build_theme_signals should not
     # crash when assets is empty initially — it just proceeds with the fallback
     # ticker list. price_corr stays 0.0 because price_df is empty, which is fine.
+
+
+# ─── Phase 3: trade ranking, position sizing, daily P&L, risk metrics ─────────
+
+
+def _phase3_cfg(total_capital: float = 100_000_000.0, threshold: float = 50.0):
+    from services.hype_calculator import ScoringConfig
+    return ScoringConfig(
+        hype_volume_weight=0.30,
+        hype_sentiment_weight=0.20,
+        hype_corr_weight=0.30,
+        hype_momentum_weight=0.20,
+        trade_hype_weight=0.55,
+        trade_sentiment_weight=0.45,
+        hype_score_threshold=threshold,
+        total_capital=total_capital,
+        risk_free_annual=0.045,
+    )
+
+
+def test_load_theme_assets_map_picks_most_recent_per_theme():
+    """When a theme has multiple run_dates in theme_assets, the most recent wins."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    from daily_refresh import load_theme_assets_map
+
+    rows = [
+        {"theme_id": "t1", "ticker": "OLD1", "run_date": "2026-07-15"},
+        {"theme_id": "t1", "ticker": "NEW1", "run_date": "2026-07-20"},
+        {"theme_id": "t1", "ticker": "NEW2", "run_date": "2026-07-20"},
+        {"theme_id": "t2", "ticker": "ONLY1", "run_date": "2026-07-18"},
+    ]
+
+    with patch("daily_refresh.supabase") as mock_supabase:
+        mock_supabase.table.return_value.select.return_value.in_.return_value.execute.return_value.data = rows
+        result = load_theme_assets_map(["t1", "t2", "t3"], date(2026, 7, 21))
+
+    # Function returns up to 20 most-recent per theme (newest first), so all 3 t1 entries come back.
+    # The key property is that NEW1/NEW2 (2026-07-20) come before OLD1 (2026-07-15).
+    assert result["t1"][:2] == ["NEW1", "NEW2"]
+    assert "OLD1" in result["t1"]
+    assert result["t2"] == ["ONLY1"]
+    assert result["t3"] == []  # theme with no assets → empty list
+
+
+def test_load_theme_assets_map_empty_input():
+    """No theme ids → empty map, no supabase call."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    from daily_refresh import load_theme_assets_map
+
+    with patch("daily_refresh.supabase") as mock_supabase:
+        result = load_theme_assets_map([], date(2026, 7, 21))
+
+    assert result == {}
+    mock_supabase.table.assert_not_called()
+
+
+def test_rank_and_persist_trade_candidates_writes_to_supabase():
+    """Should call trade_candidates.upsert for each ranked candidate."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    from daily_refresh import rank_and_persist_trade_candidates
+
+    cfg = _phase3_cfg()
+    scored = [
+        {"theme_id": "long1", "hype_score": 75.0, "trade_score": 0.5, "avg_sentiment": 0.3},
+        {"theme_id": "short1", "hype_score": 70.0, "trade_score": -0.4, "avg_sentiment": -0.2},
+    ]
+    asset_rows = [
+        {"theme_id": "long1", "ticker": "TLT", "run_date": "2026-07-21"},
+        {"theme_id": "short1", "ticker": "HYG", "run_date": "2026-07-21"},
+    ]
+
+    with patch("daily_refresh.supabase") as mock_supabase:
+        mock_supabase.table.return_value.select.return_value.in_.return_value.execute.return_value.data = asset_rows
+        longs, shorts = rank_and_persist_trade_candidates(scored, date(2026, 7, 21), cfg)
+
+    assert len(longs) == 1
+    assert longs[0].asset == "TLT"
+    assert longs[0].direction == "long"
+    assert len(shorts) == 1
+    assert shorts[0].asset == "HYG"
+    assert shorts[0].direction == "short"
+
+    # The function should have called trade_candidates.upsert twice (one per candidate).
+    # mock_supabase.table("trade_candidates") was called.
+    table_names = [c.args[0] for c in mock_supabase.table.call_args_list if c.args]
+    assert "trade_candidates" in table_names
+
+
+def test_rank_and_persist_trade_candidates_no_qualifying_themes():
+    """If no theme passes the threshold, the function returns ([], []) and writes nothing."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    from daily_refresh import rank_and_persist_trade_candidates
+
+    cfg = _phase3_cfg(threshold=99.0)  # impossibly high threshold
+    scored = [
+        {"theme_id": "t1", "hype_score": 50.0, "trade_score": 0.5, "avg_sentiment": 0.3},
+    ]
+
+    with patch("daily_refresh.supabase") as mock_supabase:
+        longs, shorts = rank_and_persist_trade_candidates(scored, date(2026, 7, 21), cfg)
+
+    assert longs == []
+    assert shorts == []
+    # No trade_candidates writes should have happened
+    table_names = [c.args[0] for c in mock_supabase.table.call_args_list if c.args]
+    assert "trade_candidates" not in table_names
+
+
+def test_allocate_and_persist_portfolio_writes_positions():
+    """Given candidates, should write one portfolio_positions row per candidate."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    from daily_refresh import allocate_and_persist_portfolio
+    from services.trade_ranker import TradeCandidate
+
+    cfg = _phase3_cfg(total_capital=100_000_000.0)
+    candidates = [
+        TradeCandidate("t1", "TLT", "long", 0.5, 80.0, 0.3),
+        TradeCandidate("t2", "HYG", "short", -0.4, 20.0, -0.2),
+    ]
+
+    with patch("daily_refresh.supabase") as mock_supabase:
+        positioned = allocate_and_persist_portfolio(candidates, date(2026, 7, 21), cfg)
+
+    assert len(positioned) == 2
+    # Hype-weights: 0.8 and 0.2 → notionals 80M and 20M
+    notionals = {c.asset: n for c, n, w in positioned}
+    assert abs(notionals["TLT"] - 80_000_000) < 1e-6
+    assert abs(notionals["HYG"] - 20_000_000) < 1e-6
+
+    table_names = [c.args[0] for c in mock_supabase.table.call_args_list if c.args]
+    assert "portfolio_positions" in table_names
+
+
+def test_compute_and_persist_daily_return_handles_empty_positions():
+    """No positions → return 0.0 and no supabase writes."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    from daily_refresh import compute_and_persist_daily_return
+
+    with patch("daily_refresh.supabase") as mock_supabase:
+        result = compute_and_persist_daily_return([], date(2026, 7, 21), 100_000_000.0)
+
+    assert result == 0.0
+    mock_supabase.table.assert_not_called()
+
+
+def test_compute_and_persist_daily_return_sign_flips_shorts():
+    """Short position P&L is the negative of the asset's return."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    import pandas as pd
+    from daily_refresh import compute_and_persist_daily_return
+    from services.trade_ranker import TradeCandidate
+
+    positioned = [
+        (TradeCandidate("t1", "TLT", "long", 0.5, 80.0, 0.3), 50_000_000.0, 0.5),
+        (TradeCandidate("t2", "HYG", "short", -0.4, 20.0, -0.2), 50_000_000.0, 0.5),
+    ]
+
+    # Build a fake price_df: TLT +1% (100→101), HYG +2% (50→51)
+    price_df = pd.DataFrame([
+        {"date": date(2026, 7, 20), "ticker": "TLT", "close": 100.0, "return": None},
+        {"date": date(2026, 7, 21), "ticker": "TLT", "close": 101.0, "return": 0.01},
+        {"date": date(2026, 7, 20), "ticker": "HYG", "close": 50.0, "return": None},
+        {"date": date(2026, 7, 21), "ticker": "HYG", "close": 51.0, "return": 0.02},
+    ])
+
+    with patch("daily_refresh.supabase") as mock_supabase, \
+         patch("daily_refresh.fetch_price_data", return_value=price_df):
+        result = compute_and_persist_daily_return(positioned, date(2026, 7, 21), 100_000_000.0)
+
+    # TLT +1% long → +0.005; HYG +2% short → -0.01; sum = -0.005
+    assert abs(result - (-0.005)) < 1e-9
+    table_names = [c.args[0] for c in mock_supabase.table.call_args_list if c.args]
+    assert "portfolio_returns" in table_names
+
+
+def test_compute_and_persist_risk_writes_hhi():
+    """Without history, HHI is computed from current weights; other metrics may be null."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    from daily_refresh import compute_and_persist_risk
+    from services.trade_ranker import TradeCandidate
+
+    cfg = _phase3_cfg(total_capital=100_000_000.0)
+    positioned = [
+        (TradeCandidate("t1", "TLT", "long", 0.5, 80.0, 0.3), 50_000_000.0, 0.5),
+        (TradeCandidate("t2", "HYG", "short", -0.4, 20.0, -0.2), 50_000_000.0, 0.5),
+    ]
+
+    with patch("daily_refresh.supabase") as mock_supabase, \
+         patch("daily_refresh._load_historical_portfolio_returns", return_value=__import__("pandas").Series(dtype=float)), \
+         patch("daily_refresh._load_spx_returns", return_value=None):
+        metrics = compute_and_persist_risk(positioned, date(2026, 7, 21), cfg)
+
+    # 50/50 weights → HHI = 0.5^2 + 0.5^2 = 0.5, *10000 = 5000
+    assert abs(metrics["concentration_hhi"] - 5000.0) < 1e-6
+    assert metrics["total_capital"] == 100_000_000.0
+    # No history → VaR/CVaR/Sharpe/Beta are None
+    assert metrics["var_95"] is None
+    assert metrics["cvar_95"] is None
+    assert metrics["sharpe"] is None
+    assert metrics["beta"] is None
+
+    # Should have called delete then insert on portfolio_risk
+    table_names = [c.args[0] for c in mock_supabase.table.call_args_list if c.args]
+    assert "portfolio_risk" in table_names

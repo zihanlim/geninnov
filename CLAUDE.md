@@ -8,7 +8,7 @@ Andromeda ingests news and social media daily, scores themes by "hype" (attentio
 
 ## Architecture
 
-- **Frontend**: Next.js 14 (TypeScript, Tailwind CSS) → Vercel
+- **Frontend**: Next.js 14 (TypeScript, Tailwind CSS) → Vercel (live at https://andromeda-analytics.vercel.app)
 - **Database**: Supabase (PostgreSQL) — frontend reads directly via `@supabase/supabase-js`
 - **Scoring pipeline**: Python `daily_refresh.py` script runs once/day at market close → writes to Supabase
 - **Theme discovery**: `theme_discovery.py` runs at bootstrap and monthly
@@ -18,13 +18,15 @@ Andromeda ingests news and social media daily, scores themes by "hype" (attentio
 
 ## Project docs
 
-All project documentation lives under `docs/superpowers/`:
+All project documentation lives under `docs/`:
 
 | Path | Purpose |
 |------|---------|
 | `docs/superpowers/specs/2026-07-21-andromeda-market-theme-platform-design.md` | Full design spec — architecture, scoring formulas, data model, frontend pages |
 | `docs/superpowers/plans/2026-07-21-andromeda-implementation-plan.md` | Implementation plan — task-by-task build guide |
-| `docs/adrs/2026-07-21-architecture-decisions.md` | Architecture Decision Records — why each major choice was made |
+| `docs/adrs/` | Architecture Decision Records in im-Jarvis format |
+| `docs/captures/` | Playwright screenshots of live frontend deployments |
+| `docs/playwright-mcp/` | Playwright browser snapshots and console logs |
 
 ## Key source files
 

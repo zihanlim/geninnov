@@ -41,6 +41,7 @@ docs/
 | 2026-07-21 | Bug fix pass on Phase B pipeline: replaced `"NOW()"` string with real ISO timestamp, added asset-map fallback for bootstrap timing, rewrote `call_brave_mcp.js` to actually call the Brave News API, added the missing Tier 1 asset seed (`LATERAL VALUES` INSERT for 29 rows). 60 tests passing. |
 | 2026-07-21 | Phase 3 implemented: `backend/services/trade_ranker.py` (rank top 5 longs/shorts + size $100M portfolio) + `backend/services/risk_engine.py` (VaR, CVaR, Sharpe, Beta, HHI, daily P&L). `scripts/daily_refresh.py` now persists to `trade_candidates`, `portfolio_positions`, `portfolio_risk`, `portfolio_returns`. 106 tests passing. |
 | 2026-07-21 | Live bootstrap migration applied to live Supabase (`004_bootstrap_live.sql`): added `hype_score` + `trade_score` columns to `theme_signals_history`, seeded 29 Tier 1 asset mappings. `daily_refresh.py` made robust to the pre-migration state (catches `APIError` on missing column, falls back to sentiment-only `TradeScore`). `.env.example` template committed. First end-to-end live run succeeded: 10 longs persisted, $100M sized into 10 positions, +0.84% daily return, HHI=1000. 107 tests passing. |
+| 2026-07-21 | Phase 5 built: M1 `macro_indicators` + `macro_daily_history` tables (migration 005), M1 FRED+yfinance fetcher (`backend/data/macro_fetcher.py`), M2 `factor_exposures` table (migration 006), M2 Ken French FF5+UMD fetcher + rolling regression (`backend/data/factor_fetcher.py`), M3 rule-based regime classifier (`backend/services/regime_classifier.py`), M5 LangGraph Q1 agent skeleton (`backend/agents/q1_agent.py`) with LLM stub provider (MockLLM), new research page reads from `q1_recommendations` table (`frontend/app/research/page.tsx`), migrations 005+006+007 applied to live DB, regime seed row inserted, `backend/__init__.py` + `backend/services/__init__.py` added to fix package imports, `apply_migration.py` script added. 151 tests passing. |
 
 ## Build tasks
 
@@ -55,3 +56,4 @@ docs/
 | 7 | Theme discovery bootstrap: run LDA + embedding clustering | pending |
 | 8 | Phase 3: trade ranking + position sizing + risk engine + daily P&L | completed (2026-07-21) |
 | 9 | Phase 4: real-time upgrade (FastAPI + Redis) | deferred |
+| 10 | Phase 5: Q1 reasoning pipeline (L0-L6) | completed |

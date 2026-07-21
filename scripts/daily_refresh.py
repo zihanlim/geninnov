@@ -21,6 +21,7 @@ from tools.sentiment import batch_sentiment
 from data.brave_client import fetch_news_for_theme
 from data.reddit_client import fetch_posts_for_theme
 from data.yahoo_client import fetch_price_data, correlation_with_mentions
+from data.macro_fetcher import MacroFetcher
 from services.hype_calculator import hype_score, ScoringConfig, rescale_vader, minmax_norm
 from services.trade_generator import trade_score
 from services.trade_ranker import (
@@ -32,6 +33,7 @@ from services.risk_engine import (
     compute_risk_metrics,
     portfolio_daily_return,
 )
+from services.regime_classifier import RegimeClassifier
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]  # service role key for writes
@@ -424,13 +426,35 @@ def main():
     print(f"[{run_date}] Starting daily refresh...")
 
     cfg = load_config()
+
+    # ── Phase 5: L0 — Macro data ingest ─────────────────────────────────────
+    print(f"[{run_date}] [L0] Fetching macro data from FRED + yfinance...")
+    macro_fetcher = MacroFetcher(SUPABASE_URL, SUPABASE_KEY)
+    try:
+        macro_snapshot = macro_fetcher.fetch_today()
+        print(f"[{run_date}] [L0] Fetched {len(macro_snapshot)} macro series.")
+    except Exception as exc:
+        print(f"[{run_date}] [L0] FRED/yfinance fetch failed ({exc.__class__.__name__}): continuing without macro data.")
+        macro_snapshot = {}
+
+    # ── Phase 5: L3 — Regime classification ─────────────────────────────────
+    print(f"[{run_date}] [L3] Classifying macro regime...")
+    regime_clf = RegimeClassifier(SUPABASE_URL, SUPABASE_KEY)
+    try:
+        regime = regime_clf.classify(run_date)
+        print(f"[{run_date}] [L3] Regime: cycle={regime.cycle}, sentiment={regime.sentiment}")
+    except Exception as exc:
+        print(f"[{run_date}] [L3] Regime classification failed ({exc.__class__.__name__}): continuing without regime.")
+        regime = None
+
+    # ── Phase 1–4: Theme signals → HypeScore → TradeScore ──────────────────
     themes = load_themes()
     raw = build_theme_signals(themes, run_date)
     hyped = compute_hype_scores(raw, cfg)
     scored = compute_trade_scores(hyped)
     persist(run_date, scored)
 
-    # Phase 3: trade ranking + portfolio construction
+    # ── Phase 3: trade ranking + portfolio construction ─────────────────────
     longs, shorts = rank_and_persist_trade_candidates(scored, run_date, cfg)
     candidates = longs + shorts
     if not candidates:
@@ -439,7 +463,31 @@ def main():
 
     positioned = allocate_and_persist_portfolio(candidates, run_date, cfg)
     compute_and_persist_daily_return(positioned, run_date, cfg.total_capital)
-    compute_and_persist_risk(positioned, run_date, cfg)
+    risk_metrics = compute_and_persist_risk(positioned, run_date, cfg)
+
+    # ── Phase 5: L5 — Q1 AI reasoning agent ────────────────────────────────
+    # Lazy import to avoid requiring langchain if not installed in unit-test envs
+    try:
+        from services.q1_agent import run_q1_agent
+        print(f"[{run_date}] [L5] Running Q1 AI reasoning agent...")
+        agent_result = run_q1_agent(
+            run_date=run_date,
+            supabase_url=SUPABASE_URL,
+            supabase_key=SUPABASE_KEY,
+            macro_snapshot=macro_snapshot,
+            regime=regime,
+            candidates=positioned,
+            risk_metrics=risk_metrics,
+            cfg=cfg,
+        )
+        if agent_result:
+            print(f"[{run_date}] [L5] Q1 recommendations persisted.")
+        else:
+            print(f"[{run_date}] [L5] Q1 agent declined to produce output (fallback active).")
+    except ImportError as exc:
+        print(f"[{run_date}] [L5] langchain/langgraph not available ({exc}): skipping Q1 agent.")
+    except Exception as exc:
+        print(f"[{run_date}] [L5] Q1 agent failed ({exc.__class__.__name__}): skipping. Run with langchain installed to enable.")
 
     print(f"[{run_date}] Daily refresh complete.")
 

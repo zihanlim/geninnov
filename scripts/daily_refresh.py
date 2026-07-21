@@ -158,10 +158,25 @@ def compute_hype_scores(raw_signals: list[dict], cfg: ScoringConfig) -> list[dic
 def compute_trade_scores(hyped: list[dict]) -> list[dict]:
     cfg = load_config()
 
-    # Get yesterday's scores for momentum
+    # Get yesterday's scores for momentum. If the theme_signals_history table
+    # doesn't have a hype_score column (migration 003 not yet applied), the
+    # query raises a PostgREST APIError. We catch it and fall back to using
+    # today's score as yesterday's, which collapses HypeMomentum to 0
+    # (TradeScore becomes sentiment-only -- degraded but not broken).
     yesterday = (date.today() - timedelta(days=1)).isoformat()
-    yesterday_rows = supabase.table("theme_signals_history").select("theme_id, hype_score").eq("run_date", yesterday).execute().data
-    hype_yesterday_map = {r["theme_id"]: r["hype_score"] for r in yesterday_rows}
+    try:
+        yesterday_rows = (
+            supabase.table("theme_signals_history")
+            .select("theme_id, hype_score")
+            .eq("run_date", yesterday)
+            .execute()
+            .data
+        )
+        hype_yesterday_map = {r["theme_id"]: r["hype_score"] for r in yesterday_rows}
+    except Exception as exc:
+        print(f"[compute_trade_scores] hype_score column unavailable ({exc.__class__.__name__}); "
+              f"HypeMomentum will be 0. Apply migration 003 to enable.")
+        hype_yesterday_map = {}
 
     scored = []
     for r in hyped:

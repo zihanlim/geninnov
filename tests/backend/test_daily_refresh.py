@@ -209,6 +209,41 @@ def test_compute_trade_scores_returns_list():
         assert isinstance(r["trade_score"], float)
 
 
+def test_compute_trade_scores_handles_missing_hype_score_column():
+    """If theme_signals_history.hype_score column is missing, fall back to today's
+    score (HypeMomentum=0) instead of crashing. Covers the case where migration
+    003 hasn't been applied to the live Supabase yet.
+    """
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    from daily_refresh import compute_trade_scores
+    from services.hype_calculator import ScoringConfig
+
+    cfg = ScoringConfig(
+        hype_volume_weight=0.30,
+        hype_sentiment_weight=0.20,
+        hype_corr_weight=0.30,
+        hype_momentum_weight=0.20,
+        trade_hype_weight=0.55,
+        trade_sentiment_weight=0.45,
+    )
+
+    hyped = [
+        {"theme_id": 1, "hype_score": 70.0, "avg_sentiment": 0.4},
+    ]
+
+    with patch("daily_refresh.load_config", return_value=cfg), \
+         patch("daily_refresh.supabase") as mock_supabase:
+        # Simulate the APIError raised when the column doesn't exist
+        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.side_effect = Exception("column hype_score does not exist")
+        result = compute_trade_scores(hyped)
+
+    # Should not crash; should produce a TradeScore = 0.55 * 0 + 0.45 * sentiment
+    assert len(result) == 1
+    assert result[0]["trade_score"] == 0.45 * 0.4  # 0.18
+
+
 def test_build_theme_signals_falls_back_to_most_recent_assets():
     """
     When theme_assets has no rows for today's run_date, build_theme_signals

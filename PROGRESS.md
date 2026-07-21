@@ -40,6 +40,7 @@ docs/
 | 2026-07-21 | Deployed to Vercel + Supabase: schema applied, RLS configured, seed data loaded. Phase 1 live. |
 | 2026-07-21 | Bug fix pass on Phase B pipeline: replaced `"NOW()"` string with real ISO timestamp, added asset-map fallback for bootstrap timing, rewrote `call_brave_mcp.js` to actually call the Brave News API, added the missing Tier 1 asset seed (`LATERAL VALUES` INSERT for 29 rows). 60 tests passing. |
 | 2026-07-21 | Phase 3 implemented: `backend/services/trade_ranker.py` (rank top 5 longs/shorts + size $100M portfolio) + `backend/services/risk_engine.py` (VaR, CVaR, Sharpe, Beta, HHI, daily P&L). `scripts/daily_refresh.py` now persists to `trade_candidates`, `portfolio_positions`, `portfolio_risk`, `portfolio_returns`. 106 tests passing. |
+| 2026-07-21 | Live bootstrap migration applied to live Supabase (`004_bootstrap_live.sql`): added `hype_score` + `trade_score` columns to `theme_signals_history`, seeded 29 Tier 1 asset mappings. `daily_refresh.py` made robust to the pre-migration state (catches `APIError` on missing column, falls back to sentiment-only `TradeScore`). `.env.example` template committed. First end-to-end live run succeeded: 10 longs persisted, $100M sized into 10 positions, +0.84% daily return, HHI=1000. 107 tests passing. |
 
 ## Build tasks
 
@@ -50,7 +51,7 @@ docs/
 | 3 | Next.js frontend: all 4 pages and components | completed |
 | 4 | Deploy to Vercel + Supabase | completed |
 | 5 | Phase 1 complete: working frontend reading sample data | completed |
-| 6 | Phase 2 complete: daily_refresh.py runs end-to-end via cron | pending (code done; needs cron-job.org trigger + live run) |
+| 6 | Phase 2 complete: daily_refresh.py runs end-to-end via cron | pending (live run succeeded; cron trigger still to be set up) |
 | 7 | Theme discovery bootstrap: run LDA + embedding clustering | pending |
 | 8 | Phase 3: trade ranking + position sizing + risk engine + daily P&L | completed (2026-07-21) |
 | 9 | Phase 4: real-time upgrade (FastAPI + Redis) | deferred |

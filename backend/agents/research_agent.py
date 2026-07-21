@@ -1,18 +1,17 @@
 """
-M5: Q1 AI Reasoning Agent (L5)
-LangGraph state machine that synthesises L0-L4 inputs into Q1-quality writeups.
+M5: Research AI Reasoning Agent (L5)
+LangGraph state machine that synthesises L0-L4 inputs into research-quality writeups.
 
 Architecture:
-  aggregate_context (pure fn) → screen_candidates (pure fn) → classify_news (LLM)
-  → reason_picks (LLM) → verify_citations (pure fn) → size_positions (pure fn)
+  aggregate_context (pure fn) -> screen_candidates (pure fn) -> classify_news (LLM)
+  -> reason_picks (LLM) -> verify_citations (pure fn) -> size_positions (pure fn)
 
 LLM calls are stubbed via a LLMProvider abstraction so tests can use a mock.
 Set ANTHROPIC_API_KEY to use real Claude Sonnet calls.
 
 Usage:
-    from backend.agents.q1_agent import Q1Agent, run_q1_pipeline
-    agent = Q1Agent(supabase_url=..., supabase_key=...)
-    result = await agent.run(run_date=date.today())   # async
+    from backend.agents.research_agent import ResearchState, run_research_pipeline
+    result = run_research_pipeline(supabase_url=..., supabase_key=..., run_date=today)
 """
 
 from __future__ import annotations
@@ -21,13 +20,13 @@ import json
 import os
 import time
 from dataclasses import dataclass, field, asdict
-from datetime import date, timedelta
-from typing import Any, Literal, Optional
+from datetime import date
+from typing import Any
 
 from supabase import Client, create_client
 
 # ---------------------------------------------------------------------------
-# Prompt version — increment to invalidate cached runs
+# Prompt version -- increment to invalidate cached runs
 # ---------------------------------------------------------------------------
 PROMPT_VERSION = "v1.0"
 
@@ -73,11 +72,6 @@ class AnthropicProvider(LLMProvider):
 class MockLLMProvider(LLMProvider):
     """Returns a deterministic stub for tests and offline demos."""
 
-    SYSTEM_PROMPT = (
-        "You are a stub LLM. Return the input context summarised briefly. "
-        "For numeric claims, cite any input field. Output valid JSON matching the expected schema."
-    )
-
     def complete(self, prompt: str, system: str | None = None) -> str:
         return json.dumps({
             "picks": [
@@ -111,7 +105,7 @@ def get_llm_provider() -> LLMProvider:
 # ---------------------------------------------------------------------------
 
 @dataclass
-class Q1State(dict):
+class ResearchState(dict):
     run_date: date = field(default_factory=date.today)
     macro_snapshot: dict[str, Any] = field(default_factory=dict)
     theme_scores: list[dict] = field(default_factory=list)
@@ -135,7 +129,7 @@ class Q1State(dict):
 # Graph nodes (pure functions + LLM calls)
 # ---------------------------------------------------------------------------
 
-def aggregate_context(state: Q1State, supabase: Client) -> Q1State:
+def aggregate_context(state: ResearchState, supabase: Client) -> ResearchState:
     """Pull L0-L4 outputs from Supabase into the state."""
     today = state["run_date"]
 
@@ -177,15 +171,13 @@ def aggregate_context(state: Q1State, supabase: Client) -> Q1State:
     return state
 
 
-def screen_candidates(state: Q1State) -> Q1State:
-    """Hard filter: HypeScore threshold, momentum positive, factor R² check."""
+def screen_candidates(state: ResearchState) -> ResearchState:
+    """Hard filter: HypeScore threshold, momentum positive, factor R2 check."""
     threshold = float(os.getenv("HYPESCORE_THRESHOLD", "60"))
     candidates = []
     for theme in state["theme_scores"]:
         if (theme.get("hype_score") or 0) < threshold:
             continue
-        # Pull assets from theme_assets
-        # (asset list is passed via state; in stub mode use top 10)
         if theme.get("momentum_score", 0) >= 0:
             candidates.append({
                 "asset": theme.get("name", "UNKNOWN"),
@@ -197,7 +189,7 @@ def screen_candidates(state: Q1State) -> Q1State:
     return state
 
 
-def classify_news(state: Q1State, llm: LLMProvider) -> Q1State:
+def classify_news(state: ResearchState, llm: LLMProvider) -> ResearchState:
     """Tag each headline with category + sentiment. Stubbed with mock output."""
     prompt = (
         "Classify these headlines into categories: geopolitical, rate, credit, fx, earnings, macro, idiosyncratic. "
@@ -214,13 +206,13 @@ def classify_news(state: Q1State, llm: LLMProvider) -> Q1State:
     return state
 
 
-def reason_picks(state: Q1State, llm: LLMProvider) -> Q1State:
+def reason_picks(state: ResearchState, llm: LLMProvider) -> ResearchState:
     """
     Core LLM reasoning node. Produces top-5 longs, top-5 shorts, book view, book risks.
     Every numeric claim must include a citation pointing to a key in the L0-L4 inputs.
     """
     system = (
-        "You are a quantitative macro analyst. Produce a Q1 investment recommendation. "
+        "You are a quantitative macro analyst. Produce a research recommendation. "
         "For every numeric claim, cite the source key from the input context (e.g. macro_snapshot.DGS10). "
         "Use the citation format: [source: <key>]. "
         "If a value is unavailable, write N/A. Never fabricate numbers. "
@@ -237,7 +229,7 @@ def reason_picks(state: Q1State, llm: LLMProvider) -> Q1State:
         "classified_news": state["classified_news"][:20],
     }
     prompt = (
-        "Produce Q1 recommendations given this context:\n"
+        "Produce research recommendations given this context:\n"
         f"{json.dumps(context, indent=2)}\n\n"
         "Return JSON: {\"picks\": [{\"direction\": \"long\"|\"short\", \"asset\": \"...\", \"theme_id\": \"...\", "
         "\"thesis\": \"...\", \"catalysts\": [...], \"risk\": \"...\", \"factor_tilts\": {...}}], "
@@ -257,7 +249,7 @@ def reason_picks(state: Q1State, llm: LLMProvider) -> Q1State:
     return state
 
 
-def verify_citations(state: Q1State) -> Q1State:
+def verify_citations(state: ResearchState) -> ResearchState:
     """
     Guardrail: every numeric claim in picks must cite a valid source.
     If any citation is missing or references a non-existent key, reject and retry.
@@ -266,15 +258,11 @@ def verify_citations(state: Q1State) -> Q1State:
         state["verified"] = True
         return state
 
-    # Build flat lookup
-    snapshot = state["macro_snapshot"]
-    themes = {t["id"]: t for t in state["theme_scores"]}
     valid = True
     for pick in state["picks"]:
         thesis = pick.get("thesis", "")
-        # Check for any bare numbers (simplified heuristic)
+        # Check for any bare numbers without citations (simplified heuristic)
         import re
-
         bare_numbers = re.findall(r"(?<![\d.])(\d+(?:\.\d+)?)(?![eE\d]|\s*(?:bps|%|x))", thesis)
         if bare_numbers and not pick.get("_citations_found"):
             valid = False
@@ -283,14 +271,14 @@ def verify_citations(state: Q1State) -> Q1State:
     state["verified"] = valid
     if not valid and state.get("retries", 0) < 2:
         state["retries"] = state.get("retries", 0) + 1
-        state["error"] = "Citation verification failed — retrying"
+        state["error"] = "Citation verification failed -- retrying"
     elif not valid:
-        state["error"] = "Citation verification failed after max retries — using deterministic fallback"
+        state["error"] = "Citation verification failed after max retries -- using deterministic fallback"
 
     return state
 
 
-def size_positions(state: Q1State) -> Q1State:
+def size_positions(state: ResearchState) -> ResearchState:
     """
     Allocate $100M by HypeScore weight, capped at 8% per name, sector cap 25%.
 
@@ -301,7 +289,6 @@ def size_positions(state: Q1State) -> Q1State:
     """
     total_capital = float(os.getenv("TOTAL_CAPITAL", "100_000_000"))
     max_name_pct = float(os.getenv("MAX_NAME_PCT", "8"))
-    sector_cap_pct = float(os.getenv("SECTOR_CAP_PCT", "25"))
     max_name_cap = total_capital * max_name_pct / 100
 
     if not state["picks"]:
@@ -344,22 +331,22 @@ def size_positions(state: Q1State) -> Q1State:
 
 
 # ---------------------------------------------------------------------------
-# Agent runner
+# Pipeline runner
 # ---------------------------------------------------------------------------
 
-async def run_q1_pipeline(
+async def run_research_pipeline(
     supabase_url: str,
     supabase_key: str,
     run_date: date | None = None,
 ) -> dict[str, Any]:
     """
-    Full Q1 pipeline. Returns the q1_recommendations row dict.
+    Full research pipeline. Returns the research_recommendations row dict.
     """
     supabase: Client = create_client(supabase_url, supabase_key)
     llm = get_llm_provider()
     run_date = run_date or date.today()
 
-    state = Q1State(run_date=run_date)
+    state = ResearchState(run_date=run_date)
 
     # Run deterministic nodes
     state = aggregate_context(state, supabase)
@@ -382,7 +369,7 @@ async def run_q1_pipeline(
         "retries": state.get("retries", 0),
         "duration_ms": int(time.time() * 1000) - start_ms,
     }
-    run_resp = supabase.table("q1_agent_runs").insert(agent_run).execute()
+    run_resp = supabase.table("research_agent_runs").insert(agent_run).execute()
     agent_run_id = run_resp.data[0]["id"] if run_resp.data else None
 
     # Persist recommendations
@@ -393,7 +380,7 @@ async def run_q1_pipeline(
         "book_risks": state["book_risks"],
         "agent_run_id": agent_run_id,
     }
-    supabase.table("q1_recommendations").upsert(rec, on_conflict="run_date").execute()
+    supabase.table("research_recommendations").upsert(rec, on_conflict="run_date").execute()
 
     return rec
 
@@ -408,7 +395,7 @@ if __name__ == "__main__":
     url = os.getenv("SUPABASE_URL", "")
     key = os.getenv("SUPABASE_SERVICE_KEY", "")
     if url and key:
-        result = asyncio.run(run_q1_pipeline(url, key))
+        result = asyncio.run(run_research_pipeline(url, key))
         print(json.dumps(result, indent=2))
     else:
         print("Set SUPABASE_URL and SUPABASE_SERVICE_KEY")

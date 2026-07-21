@@ -10,10 +10,21 @@ Spec section 7.1 -- Position sizing:
   - Weight each candidate by HypeScore/100 (higher confidence = more capital).
   - Normalize across the candidate set and scale to total_capital.
   - Each (theme, asset, direction) is one candidate.
+  - Sector cap: no single sector > 30% of book
+  - Geography cap: no single geography > 35% of book
+  - Single-name cap: no single position > 20% of book
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+# Re-exported from book_metrics for use by callers
+from .book_metrics import SECTOR_MAP, GEO_MAP
+from .book_metrics import (
+    MAX_SINGLE_NAME_WEIGHT,
+    MAX_SECTOR_WEIGHT,
+    MAX_GEO_WEIGHT,
+)
 
 
 @dataclass(frozen=True)
@@ -119,11 +130,22 @@ def _expand(
 def allocate_portfolio(
     candidates: list[TradeCandidate],
     total_capital: float,
+    sector_map: dict[str, str] | None = None,
+    geo_map: dict[str, str] | None = None,
+    max_single: float = MAX_SINGLE_NAME_WEIGHT,
+    max_sector: float = MAX_SECTOR_WEIGHT,
+    max_geo: float = MAX_GEO_WEIGHT,
 ) -> list[tuple[TradeCandidate, float, float]]:
-    """Size positions per spec section 7.1.
+    """Size positions per spec section 7.1 with sector/geo/single-name caps.
 
-        weight_i = hype_score_i / 100
-        notional_i = (weight_i / sum(weights)) * total_capital
+    Args:
+        candidates:    list of TradeCandidate with asset attribute
+        total_capital: $100M
+        sector_map:    {ticker -> sector name}, defaults to SECTOR_MAP
+        geo_map:      {ticker -> geography name}, defaults to GEO_MAP
+        max_single:  max weight per single name (default 20%)
+        max_sector:  max weight per sector (default 30%)
+        max_geo:     max weight per geography (default 35%)
 
     Returns:
         List of (candidate, notional, weight) tuples. weight is the notional's
@@ -134,14 +156,74 @@ def allocate_portfolio(
     if total_capital <= 0:
         raise ValueError("total_capital must be > 0")
 
-    raw_weights = [max(c.hype_score, 0.0) / 100.0 for c in candidates]
-    total_w = sum(raw_weights)
+    sector_map = sector_map or SECTOR_MAP
+    geo_map = geo_map or GEO_MAP
 
-    if total_w == 0:
+    raw_weights = [max(c.hype_score, 0.0) / 100.0 for c in candidates]
+    total_raw = sum(raw_weights)
+
+    if total_raw == 0:
         n = len(candidates)
         return [(c, total_capital / n, 1.0 / n) for c in candidates]
 
+    # Normalise to sum to 1.0
+    base_weights = [w / total_raw for w in raw_weights]
+
+    # Iterative cap enforcement
+    weights = list(base_weights)
+    for _ in range(20):   # safety: 20 iterations is enough to converge
+        violations_fixed = True
+
+        # 1. Single-name cap
+        for i, w in enumerate(weights):
+            if w > max_single:
+                weights[i] = max_single
+                violations_fixed = False
+
+        # 2. Sector cap
+        sec_weights: dict[str, float] = {}
+        for i, c in enumerate(candidates):
+            sec = sector_map.get(c.asset, "Other")
+            sec_weights[sec] = sec_weights.get(sec, 0.0) + weights[i]
+
+        for sec, sw in sec_weights.items():
+            if sw > max_sector:
+                excess = sw - max_sector
+                # Proportional reduction across all names in this sector
+                sec_members = [i for i, c in enumerate(candidates)
+                               if sector_map.get(c.asset, "Other") == sec]
+                for i in sec_members:
+                    if weights[i] > 0:
+                        reduction = weights[i] * excess / sw
+                        weights[i] = max(0.0, weights[i] - reduction)
+                violations_fixed = False
+
+        # 3. Geography cap
+        geo_weights: dict[str, float] = {}
+        for i, c in enumerate(candidates):
+            geo = geo_map.get(c.asset, "Other")
+            geo_weights[geo] = geo_weights.get(geo, 0.0) + weights[i]
+
+        for geo, gw in geo_weights.items():
+            if gw > max_geo:
+                excess = gw - max_geo
+                geo_members = [i for i, c in enumerate(candidates)
+                              if geo_map.get(c.asset, "Other") == geo]
+                for i in geo_members:
+                    if weights[i] > 0:
+                        reduction = weights[i] * excess / gw
+                        weights[i] = max(0.0, weights[i] - reduction)
+                violations_fixed = False
+
+        if violations_fixed:
+            break
+
+    # Normalise to sum to 1.0 after cap reductions
+    total_w = sum(weights)
+    if total_w > 0:
+        weights = [w / total_w for w in weights]
+
     return [
-        (c, (w / total_w) * total_capital, w / total_w)
-        for c, w in zip(candidates, raw_weights)
+        (c, w * total_capital, w)
+        for c, w in zip(candidates, weights)
     ]

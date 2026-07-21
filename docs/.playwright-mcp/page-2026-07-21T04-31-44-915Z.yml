@@ -1,0 +1,9 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]:
+        - heading "ANDROMEDA" [level=1] [ref=e5]
+        - paragraph [ref=e6]: Market Theme Identification Platform
+      - paragraph [ref=e8]: ○ No data
+    - generic [ref=e9]: Loading...
+  - alert [ref=e10]

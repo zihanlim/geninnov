@@ -1,8 +1,8 @@
 """
-End-to-end + unit tests for the Q1 AI reasoning agent (L5).
+End-to-end + unit tests for the Research AI reasoning agent (L5).
 Tests pure-function nodes without requiring a live LLM API call.
 
-Run with: pytest tests/backend/test_q1_agent.py -v
+Run with: pytest tests/backend/test_research_agent.py -v
 """
 import sys
 import os
@@ -167,7 +167,7 @@ def test_screen_deduplicates_by_asset_direction():
 # ─── size_positions ──────────────────────────────────────────────────────────
 
 def test_size_sums_to_total_capital():
-    """All notionals must sum to total_capital."""
+    """Two-pass cap-and-redistribute must sum to exactly total_capital."""
     picks = [
         {"asset": "A", "direction": "long", "hype_score": 60.0},
         {"asset": "B", "direction": "long", "hype_score": 30.0},
@@ -179,8 +179,13 @@ def test_size_sums_to_total_capital():
     assert abs(total - 100_000_000.0) < 1e-6
 
 
-def test_size_proportional_to_hype():
-    """Higher HypeScore gets proportionally more capital."""
+def test_size_proportional_to_hype_two_pass():
+    """
+    With two-pass, the ratio holds for uncapped names.
+
+    A=80 hype, B=20 hype, no cap triggers (both well below 8M cap),
+    so ratio is preserved exactly.
+    """
     picks = [
         {"asset": "A", "direction": "long", "hype_score": 80.0},
         {"asset": "B", "direction": "long", "hype_score": 20.0},
@@ -192,22 +197,44 @@ def test_size_proportional_to_hype():
     assert abs(a["notional"] / b["notional"] - 4.0) < 1e-6   # 80:20 = 4:1
 
 
+def test_size_cap_triggers_redistribution():
+    """
+    A=80% hype, B=20% hype. With max_single=0.20 (20% cap),
+    A is capped at 20% and freed weight goes to B → A=$20M, B=$80M.
+    """
+    picks = [
+        {"asset": "A", "direction": "long", "hype_score": 80.0},
+        {"asset": "B", "direction": "long", "hype_score": 20.0},
+    ]
+    state = _make_state(picks=picks)
+    state = size_positions(state)
+    a = next(p for p in state["picks"] if p["asset"] == "A")
+    b = next(p for p in state["picks"] if p["asset"] == "B")
+    total = a["notional"] + b["notional"]
+    assert abs(total - 100_000_000.0) < 1e-6
+    assert abs(a["notional"] - 20_000_000.0) < 1e-6   # capped at 20%
+    assert abs(b["notional"] - 80_000_000.0) < 1e-6   # absorbs freed weight
+
+
 def test_size_enriches_picks_with_notional_and_weight():
-    """Each pick must have notional and weight after sizing."""
-    picks = [{"asset": "X", "direction": "long", "hype_score": 100.0}]
+    """Each pick must have notional and weight after sizing.
+
+    Single pick with hype_score=1.0: share=1.0/1.0=1.0 → 100% of $100M = $100M.
+    """
+    picks = [{"asset": "X", "direction": "long", "hype_score": 1.0}]
     state = _make_state(picks=picks)
     state = size_positions(state)
     assert "notional" in state["picks"][0]
     assert "weight" in state["picks"][0]
+    # Single pick: 1.0/1.0 = 1.0 share → 100% of $100M
     assert state["picks"][0]["notional"] == 100_000_000.0
     assert state["picks"][0]["weight"] == 1.0
 
 
-def test_size_empty_picks_triggers_fallback():
+def test_size_empty_picks_calls_fallback():
     """Empty picks list triggers fallback_picks (never returns a blank output)."""
     state = _make_state(picks=[])
     result = size_positions(state)
-    # size_positions calls fallback_picks when picks is empty, so result has 10 picks
     assert len(result["picks"]) == 10
     longs = [p for p in result["picks"] if p["direction"] == "long"]
     shorts = [p for p in result["picks"] if p["direction"] == "short"]
@@ -369,3 +396,35 @@ def test_pipeline_rejects_negative_candidates():
     state = screen_candidates(state)
     zero_cands = [c for c in state["candidates"] if c["theme_id"] == "tid-zero"]
     assert len(zero_cands) == 0
+
+
+# ─── MockLLMProvider (from backend/agents/research_agent.py) ─────────────────
+
+def test_mock_llm_returns_json_with_required_keys():
+    """MockLLMProvider.complete returns valid JSON with picks, book_view, book_risks."""
+    import json
+    from backend.agents.research_agent import MockLLMProvider
+    llm = MockLLMProvider()
+    result = llm.complete("test prompt")
+    parsed = json.loads(result)
+    assert "picks" in parsed
+    assert "book_view" in parsed
+    assert "book_risks" in parsed
+    assert isinstance(parsed["picks"], list)
+
+
+def test_mock_llm_pick_has_required_fields():
+    """Mock pick has direction, asset, thesis, catalysts, risk, factor_tilts."""
+    import json
+    from backend.agents.research_agent import MockLLMProvider
+    llm = MockLLMProvider()
+    result = llm.complete("test")
+    parsed = json.loads(result)
+    pick = parsed["picks"][0]
+    assert pick["direction"] == "long"
+    assert "asset" in pick
+    assert "thesis" in pick
+    assert "catalysts" in pick
+    assert "risk" in pick
+    assert "factor_tilts" in pick
+

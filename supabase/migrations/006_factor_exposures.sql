@@ -1,5 +1,5 @@
--- Phase 5 M2: Factor exposures, regime classifications, Q1 tables
--- Rolling 252d FF5 + UMD betas per asset; L3 regime; Q1 recommendations
+-- Phase 5 M2: Factor exposures, regime classifications, research tables
+-- Rolling 252d FF5 + UMD betas per asset; L3 regime; research recommendations
 
 CREATE TABLE IF NOT EXISTS factor_exposures (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS regime_classifications (
 ALTER TABLE regime_classifications ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public read" ON regime_classifications FOR SELECT TO anon USING (true);
 
-CREATE TABLE IF NOT EXISTS q1_recommendations (
+CREATE TABLE IF NOT EXISTS research_recommendations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_date DATE NOT NULL UNIQUE,
     picks JSONB,
@@ -48,10 +48,10 @@ CREATE TABLE IF NOT EXISTS q1_recommendations (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE q1_recommendations ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Public read" ON q1_recommendations FOR SELECT TO anon USING (true);
+ALTER TABLE research_recommendations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read" ON research_recommendations FOR SELECT TO anon USING (true);
 
-CREATE TABLE IF NOT EXISTS q1_agent_runs (
+CREATE TABLE IF NOT EXISTS research_agent_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_date DATE NOT NULL,
     prompt_version TEXT NOT NULL,
@@ -65,10 +65,10 @@ CREATE TABLE IF NOT EXISTS q1_agent_runs (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE q1_agent_runs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Public read" ON q1_agent_runs FOR SELECT TO anon USING (true);
+ALTER TABLE research_agent_runs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read" ON research_agent_runs FOR SELECT TO anon USING (true);
 
 COMMENT ON TABLE factor_exposures IS 'Rolling 252d FF5+UMD betas per asset (L2)';
 COMMENT ON TABLE regime_classifications IS 'L3 rule-based regime (cycle x sentiment)';
-COMMENT ON TABLE q1_recommendations IS 'Q1 top-5 L/S picks with thesis (L6 output)';
-COMMENT ON TABLE q1_agent_runs IS 'Q1 agent run audit log (L5)';
+COMMENT ON TABLE research_recommendations IS 'Top-5 L/S picks with thesis and risk (L6 output)';
+COMMENT ON TABLE research_agent_runs IS 'Research agent run audit log (L5)';

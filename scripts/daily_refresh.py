@@ -28,6 +28,8 @@ from services.trade_ranker import (
     rank_trade_candidates,
     allocate_portfolio,
     TradeCandidate,
+    SECTOR_MAP,
+    GEO_MAP,
 )
 from services.risk_engine import (
     compute_risk_metrics,
@@ -279,7 +281,10 @@ def allocate_and_persist_portfolio(
     run_date: date,
     cfg: ScoringConfig,
 ) -> list[tuple[TradeCandidate, float, float]]:
-    positioned = allocate_portfolio(candidates, cfg.total_capital)
+    positioned = allocate_portfolio(
+        candidates, cfg.total_capital,
+        sector_map=SECTOR_MAP, geo_map=GEO_MAP
+    )
 
     today_str = run_date.isoformat()
     for c, notional, weight in positioned:
@@ -465,8 +470,8 @@ def main():
     compute_and_persist_daily_return(positioned, run_date, cfg.total_capital)
     risk_metrics = compute_and_persist_risk(positioned, run_date, cfg)
 
-    # ── Phase 5: L5 — Q1 AI reasoning agent ────────────────────────────────
-    # Lazy import to avoid requiring langchain if not installed in unit-test envs
+    # ── Phase 5: L5 — Q1 AI reasoning agent ──────────────────────────────────────
+    # Lazy import to avoid requiring anthropic if not installed in unit-test envs
     try:
         from services.q1_agent import run_q1_agent
         print(f"[{run_date}] [L5] Running Q1 AI reasoning agent...")
@@ -485,9 +490,9 @@ def main():
         else:
             print(f"[{run_date}] [L5] Q1 agent declined to produce output (fallback active).")
     except ImportError as exc:
-        print(f"[{run_date}] [L5] langchain/langgraph not available ({exc}): skipping Q1 agent.")
+        print(f"[{run_date}] [L5] langchain/langgraph not available ({exc}): skipping research agent.")
     except Exception as exc:
-        print(f"[{run_date}] [L5] Q1 agent failed ({exc.__class__.__name__}): skipping. Run with langchain installed to enable.")
+        print(f"[{run_date}] [L5] Research agent failed ({exc.__class__.__name__}): skipping. Run with langchain installed to enable.")
 
     print(f"[{run_date}] Daily refresh complete.")
 

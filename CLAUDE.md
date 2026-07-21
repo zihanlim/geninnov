@@ -6,6 +6,8 @@ Systematic market theme identification and trade generation platform.
 
 Andromeda ingests news and social media daily, scores themes by "hype" (attention × sentiment × market correlation × momentum), generates ranked long/short trade ideas, and sizes them into a $100M portfolio with risk metrics.
 
+On top of the theme engine, an L5 AI reasoning agent synthesizes the L0–L4 deterministic inputs (macro regime, factor exposures, theme scores, risk) into a **$100M long-short book with a per-trade thesis** — the Q1 deliverable. Every numeric claim in the thesis is citation-verified against the L0–L4 inputs before it reaches the UI. See [§14 of the design spec](docs/superpowers/specs/2026-07-21-andromeda-market-theme-platform-design.md) for the full Q1 reasoning pipeline, and [ADR-0012](docs/adrs/0012-citation-guardrail-llm-defense.md) for the citation guardrail design.
+
 ## Architecture
 
 - **Frontend**: Next.js 14 (TypeScript, Tailwind CSS) → Vercel (live at https://andromeda-analytics.vercel.app)
@@ -32,10 +34,19 @@ All project documentation lives under `docs/`:
 
 | Path | Purpose |
 |------|---------|
-| `scripts/daily_refresh.py` | Daily scoring pipeline |
+| `scripts/daily_refresh.py` | Daily scoring pipeline (L1–L4 + L5 Q1 agent) |
 | `scripts/theme_discovery.py` | Bootstrap + monthly theme discovery |
+| `backend/data/macro_fetcher.py` | L0: FRED + yfinance macro snapshot |
+| `backend/data/factor_fetcher.py` | L2: Ken French FF5 + UMD factor exposures |
+| `backend/services/regime_classifier.py` | L3: Rule-based cycle × sentiment classifier |
+| `backend/services/book_metrics.py` | L5: value-weighted FF5+UMD book tilts, sector/geo caps, correlation matrix |
+| `backend/services/scenario_analysis.py` | L5: 4-scenario stress test (VIX/rates/USD/credit) |
+| `backend/services/q1_agent.py` | L5: 8-node Q1 reasoning agent (`run_q1_agent`) |
+| `frontend/app/research/page.tsx` | L6: Per-trade thesis writeup rendered on `/research` |
 | `frontend/lib/supabase.ts` | Supabase client for frontend reads |
-| `supabase/migrations/001_initial_schema.sql` | Full database schema |
+| `supabase/migrations/001_initial_schema.sql` | Full database schema (L1–L4 tables) |
+| `supabase/migrations/005_macro_indicators.sql` | L0 macro_indicators + macro_daily_history |
+| `supabase/migrations/006_factor_exposures.sql` | L2 factor_exposures table |
 
 ## Running locally
 
@@ -90,3 +101,20 @@ mcp__playwright__browser_console_messages({ level: "error" })
 ## Scoring weights
 
 All weights and lookbacks are stored in the `scoring_config` Supabase table — not hardcoded. To change how themes are scored, update the database, don't edit Python code.
+
+## Q1 thesis pipeline (L0–L6)
+
+The L5 agent (`backend/services/q1_agent.py`) is a deterministic-then-stochastic pipeline. Layers L0–L4 are pure functions — auditable, reproducible. Layer L5 is the only place an LLM (Claude Sonnet) is invoked. Layers L6–L7 render the result with citation provenance.
+
+| Layer | Source | What it does |
+|-------|--------|--------------|
+| L0 | `backend/data/macro_fetcher.py` | FRED + yfinance → `macro_indicators` table |
+| L1 | `scripts/daily_refresh.py` → `build_theme_signals` | Brave News + Reddit → HypeScore per theme |
+| L2 | `backend/data/factor_fetcher.py` | Ken French FF5 + UMD → per-asset betas in `factor_exposures` |
+| L3 | `backend/services/regime_classifier.py` | Yield curve + HY OAS + VIX → cycle × sentiment |
+| L4 | `scripts/daily_refresh.py` → `compute_and_persist_risk` | VaR, CVaR, Sharpe, Beta, HHI → `portfolio_risk` |
+| **L5** | `backend/services/q1_agent.py` | 8-node pipeline: aggregate → screen → compute book metrics → scenario analysis → reason_picks (LLM) → verify_citations → size_positions → persist |
+| L6 | `frontend/app/research/page.tsx` | Per-trade thesis + book view rendered on `/research` |
+| L7 | `frontend/components/{CitationList,ThemeDerivationDrawer,RegimeInputs}.tsx` | Citation footnotes + derivation audit trail |
+
+The citation guardrail (verify_citations → retry → fallback) is the primary defense against LLM hallucination of macro numbers. See [ADR-0012](docs/adrs/0012-citation-guardrail-llm-defense.md) for the design rationale.

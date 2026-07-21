@@ -1,5 +1,6 @@
 import Sparkline from "./Sparkline";
 import SubScoreBars from "./SubScoreBars";
+import ScoreDeltaBadge from "./ScoreDeltaBadge";
 
 export interface ConvictionTheme {
   id: string;
@@ -11,17 +12,26 @@ export interface ConvictionTheme {
   corr_score?: number;
   momentum_score?: number;
   delta_1d?: number;
+  /** Sub-score deltas (when available) for the ScoreDeltaBadge tooltip. */
+  delta_components?: {
+    volume?: number;
+    sentiment?: number;
+    correlation?: number;
+    momentum?: number;
+  };
   history?: number[];
   catalyst?: string;
   crowding?: "healthy" | "low" | "high" | string;
   thesis?: string;
   updated_at?: string;
+  run_date?: string;
 }
 
 interface Props {
   rank: number;
   theme: ConvictionTheme;
   hero?: boolean;
+  onOpenDerivation?: (theme: ConvictionTheme) => void;
 }
 
 const CONVICTION_LABELS: Record<number, string> = {
@@ -43,18 +53,28 @@ function crowdingColor(c?: string) {
   return "text-text-secondary";
 }
 
-export default function ConvictionCard({ rank, theme, hero = false }: Props) {
+export default function ConvictionCard({ rank, theme, hero = false, onOpenDerivation }: Props) {
   const score = Math.round(theme.hype_score ?? 0);
   const delta = theme.delta_1d ?? 0;
   const color = score >= 70 ? "#4d8fff" : score >= 50 ? "#3fb950" : "#f85149";
 
   return (
     <div
-      className={`flex flex-col rounded-[10px] p-[18px] border cursor-pointer transition-all duration-200 relative ${
+      className={`flex flex-col rounded-[10px] p-[18px] border cursor-pointer transition-all duration-200 relative group ${
         hero
           ? "bg-gradient-to-b from-[#1a2230] to-[#131822] border-border-strong"
           : "bg-bg-surface border-border hover:border-border-strong hover:bg-bg-elevated"
       }`}
+      onClick={() => onOpenDerivation?.(theme)}
+      role={onOpenDerivation ? "button" : undefined}
+      tabIndex={onOpenDerivation ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (!onOpenDerivation) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpenDerivation(theme);
+        }
+      }}
     >
       {hero && (
         <div
@@ -70,13 +90,19 @@ export default function ConvictionCard({ rank, theme, hero = false }: Props) {
       </div>
 
       <h3 className="text-[15px] font-semibold m-0 mb-1.5">{theme.name}</h3>
-      <div className="text-[11px] text-text-tertiary mb-2">
-        HypeScore{" "}
-        <span className="num font-semibold text-text-primary">{score}</span> ·{" "}
-        <span className={delta >= 0 ? "text-long" : "text-short"}>
-          {delta >= 0 ? "+" : ""}
-          {delta.toFixed(1)} wow
-        </span>
+      <div className="text-[11px] text-text-tertiary mb-2 flex items-center gap-1.5">
+        <span>HypeScore</span>
+        <span className="num font-semibold text-text-primary">{score}</span>
+        <span>·</span>
+        <ScoreDeltaBadge delta={delta} components={theme.delta_components} variant="1d" />
+        {onOpenDerivation && (
+          <span
+            className="ml-auto text-[10px] text-text-tertiary group-hover:text-accent transition-colors uppercase tracking-[0.08em] hidden md:inline"
+            title="Click to view score derivation"
+          >
+            ⓘ derive
+          </span>
+        )}
       </div>
 
       {theme.thesis && (
@@ -111,9 +137,8 @@ export default function ConvictionCard({ rank, theme, hero = false }: Props) {
         </div>
         <div>
           <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-0.5">Δ1d</div>
-          <div className={`text-[13px] font-semibold num ${delta >= 0 ? "text-long" : "text-short"}`}>
-            {delta >= 0 ? "+" : ""}
-            {delta.toFixed(1)}
+          <div className="text-[13px] font-semibold num">
+            <ScoreDeltaBadge delta={delta} components={theme.delta_components} variant="1d" />
           </div>
         </div>
       </div>

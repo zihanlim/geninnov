@@ -2,17 +2,25 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import TradeDerivationDrawer from "@/components/TradeDerivationDrawer";
+import CitationList, { Citation } from "@/components/CitationList";
 
 interface Pick {
   direction: "long" | "short";
   asset: string;
   theme_id?: string;
+  theme_name?: string;
   thesis: string;
   catalysts?: string[];
   risk?: string;
+  counter_thesis?: string;
+  time_horizon?: string;
   factor_tilts?: Record<string, number>;
   notional?: number;
   hype_score?: number;
+  trade_score?: number;
+  weight?: number;
+  citations?: Citation[];
 }
 
 interface ResearchRecommendation {
@@ -20,23 +28,47 @@ interface ResearchRecommendation {
   picks: Pick[];
   book_view: string;
   book_risks: string[];
+  book_metrics_summary?: string;
+  scenario_table?: string;
 }
 
 interface Regime { cycle: string; sentiment: string; narrative?: string }
 
-function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
+const TOTAL_NOTIONAL = 100_000_000;
+
+function PickCard({ pick, rank, onOpen }: { pick: Pick; rank: number; onOpen: (p: Pick) => void }) {
   const isLong = pick.direction === "long";
   const notional = pick.notional ? `$${(pick.notional / 1_000_000).toFixed(1)}M` : null;
-  const weight = pick.notional ? `${((pick.notional / 100_000_000) * 100).toFixed(1)}%` : null;
+  const weight = pick.weight !== undefined
+    ? `${(pick.weight * 100).toFixed(1)}%`
+    : pick.notional
+    ? `${((pick.notional / 100_000_000) * 100).toFixed(1)}%`
+    : null;
+
+  const hasCitations = (pick.citations?.length ?? 0) > 0;
 
   return (
-    <div className="card p-7 mb-4">
+    <div
+      className="card p-7 mb-4 cursor-pointer hover:border-border-strong transition-colors"
+      onClick={() => onOpen(pick)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen(pick);
+        }
+      }}
+    >
       <div className="flex items-baseline justify-between mb-1 gap-2.5 flex-wrap">
         <h3 className="text-[20px] font-semibold m-0 flex items-baseline gap-2.5">
           <span style={{ color: isLong ? "var(--long)" : "var(--short)" }}>
             {isLong ? "▲" : "▼"} {isLong ? "Long" : "Short"} #{rank}:
           </span>
           <span className="num">{pick.asset}</span>
+          {pick.theme_name && (
+            <span className="text-text-tertiary text-[12px] font-normal">· {pick.theme_name}</span>
+          )}
         </h3>
         {notional && weight && (
           <span className={`badge ${isLong ? "badge-long" : "badge-short"}`} style={{ fontSize: 10 }}>
@@ -47,15 +79,26 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
       <div className="text-text-secondary text-[13px] mb-5">
         HypeScore {pick.hype_score?.toFixed(1) ?? "—"} · TradeScore{" "}
         <span style={{ color: isLong ? "var(--long)" : "var(--short)" }}>
-          {pick.hype_score ? (isLong ? "+" : "-") + (Math.random() * 1.5).toFixed(2) : "—"}
+          {pick.trade_score !== undefined ? `${pick.trade_score >= 0 ? "+" : ""}${pick.trade_score.toFixed(2)}` : "—"}
         </span>{" "}
         · Conviction: <span className="text-long">HIGH</span>
+        {hasCitations && (
+          <span className="text-accent text-[11px] ml-1.5">· {pick.citations!.length} citations</span>
+        )}
+        <span className="text-text-tertiary text-[11px] ml-2">· click for derivation</span>
       </div>
 
       {pick.thesis && (
         <div className="mb-4">
-          <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2">Thesis</div>
-          <p className="m-0 leading-[1.7] text-text-primary text-[14px]">{pick.thesis}</p>
+          <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2 flex items-center gap-2">
+            Thesis
+            {hasCitations && (
+              <span className="text-accent normal-case font-normal text-[10.5px]">
+                ({pick.citations!.length} sources)
+              </span>
+            )}
+          </div>
+          <CitationList text={pick.thesis} citations={pick.citations} />
         </div>
       )}
 
@@ -71,6 +114,22 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
                 {k}: {typeof v === "number" ? (v >= 0 ? "+" : "") + v.toFixed(2) : v}
               </span>
             ))}
+          </div>
+        </div>
+      )}
+
+      {pick.counter_thesis && (
+        <div className="mb-4">
+          <div
+            className="rounded-md px-3 py-2.5 text-[12.5px] leading-[1.6] border"
+            style={{
+              background: "rgba(248, 81, 73, 0.06)",
+              borderColor: "rgba(248, 81, 73, 0.3)",
+              color: "var(--text-primary)",
+            }}
+          >
+            <span className="text-[10px] uppercase tracking-[0.12em] text-short font-semibold mr-2">Counter-thesis</span>
+            {pick.counter_thesis}
           </div>
         </div>
       )}
@@ -117,12 +176,13 @@ export default function ResearchPage() {
   const [rec, setRec] = useState<ResearchRecommendation | null>(null);
   const [loading, setLoading] = useState(true);
   const [regime, setRegime] = useState<Regime | null>(null);
+  const [openPick, setOpenPick] = useState<Pick | null>(null);
 
   useEffect(() => {
     async function load() {
       const [recRes, regimeRes] = await Promise.all([
         supabase
-          .from("research_recommendations")
+          .from("q1_recommendations")
           .select("*")
           .order("run_date", { ascending: false })
           .limit(1)
@@ -150,7 +210,8 @@ export default function ResearchPage() {
         <div>
           <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">Q1 Research · $100M Long-Short Book</h1>
           <p className="m-0 text-text-secondary text-[13px]">
-            Top 5 long + top 5 short with macro view, factor tilts, and book risks.
+            Top 5 long + top 5 short with macro view, factor tilts, and book risks.{" "}
+            <span className="text-text-tertiary text-[12px]">Click any pick for full derivation.</span>
           </p>
         </div>
         <div className="text-right text-text-secondary text-[12px]">
@@ -162,7 +223,7 @@ export default function ResearchPage() {
           )}
           <div className="mt-1">
             <span className="text-text-tertiary mr-1.5">PROMPT v</span>
-            <span className="num">q1-agent-v0.3.1</span>
+            <span className="num">q1-agent-v2.0.0</span>
           </div>
           {regime && (
             <div className="mt-2">
@@ -205,12 +266,36 @@ export default function ResearchPage() {
             </div>
           )}
 
+          {/* Book metrics summary (v2) */}
+          {rec.book_metrics_summary && (
+            <div className="card p-6 mb-4">
+              <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-3">
+                Book factor tilts (value-weighted FF5 + UMD)
+              </div>
+              <pre className="m-0 text-[12px] text-text-secondary leading-[1.6] whitespace-pre-wrap font-mono">
+                {rec.book_metrics_summary}
+              </pre>
+            </div>
+          )}
+
+          {/* Scenario table (v2) */}
+          {rec.scenario_table && (
+            <div className="card p-6 mb-4">
+              <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-3">
+                Scenario stress test (4 scenarios, direction-aware P&L)
+              </div>
+              <pre className="m-0 text-[12px] text-text-secondary leading-[1.6] whitespace-pre-wrap font-mono">
+                {rec.scenario_table}
+              </pre>
+            </div>
+          )}
+
           {longs.length > 0 && (
             <section className="mb-8">
               <h2 className="text-[16px] font-semibold m-0 mb-4 flex items-center gap-2">
                 <span style={{ color: "var(--long)" }}>▲</span> Top {longs.length} Longs
               </h2>
-              {longs.map((p, i) => <PickCard key={`long-${i}`} pick={p} rank={i + 1} />)}
+              {longs.map((p, i) => <PickCard key={`long-${i}`} pick={p} rank={i + 1} onOpen={setOpenPick} />)}
             </section>
           )}
 
@@ -219,7 +304,7 @@ export default function ResearchPage() {
               <h2 className="text-[16px] font-semibold m-0 mb-4 flex items-center gap-2">
                 <span style={{ color: "var(--short)" }}>▼</span> Top {shorts.length} Shorts
               </h2>
-              {shorts.map((p, i) => <PickCard key={`short-${i}`} pick={p} rank={i + 1} />)}
+              {shorts.map((p, i) => <PickCard key={`short-${i}`} pick={p} rank={i + 1} onOpen={setOpenPick} />)}
             </section>
           )}
 
@@ -237,6 +322,13 @@ export default function ResearchPage() {
           )}
         </>
       )}
+
+      <TradeDerivationDrawer
+        pick={openPick}
+        open={openPick !== null}
+        onClose={() => setOpenPick(null)}
+        totalNotional={TOTAL_NOTIONAL}
+      />
     </main>
   );
 }

@@ -1,3 +1,5 @@
+import RegimeInputsPanel from "./RegimeInputsPanel";
+
 interface Factor { name: string; beta: number }
 interface RegimeHeroProps {
   cycle: "early" | "mid" | "late" | "recession" | string;
@@ -9,6 +11,8 @@ interface RegimeHeroProps {
   factors?: Factor[];
   cycleLabel?: string;
   volLabel?: string;
+  /** Optional date to scope the regime inputs panel to a specific run. */
+  runDate?: string;
 }
 
 const CYCLE_BADGE: Record<string, string> = {
@@ -65,6 +69,7 @@ export default function RegimeHero({
   factors = [],
   cycleLabel,
   volLabel,
+  runDate,
 }: RegimeHeroProps) {
   return (
     <div
@@ -83,6 +88,7 @@ export default function RegimeHero({
         </div>
         <div className="text-[20px] font-semibold leading-[1.3] mb-1.5">{headline}</div>
         <div className="text-text-secondary text-[13px] leading-[1.6]">{narrative}</div>
+        <RegimeInputsPanel runDate={runDate} />
       </div>
 
       <div>

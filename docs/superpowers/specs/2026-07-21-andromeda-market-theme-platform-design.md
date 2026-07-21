@@ -7,9 +7,29 @@
 
 ## 1. Concept & Vision
 
-Andromeda is a systematic investment research platform that identifies trending market themes (Q2) and generates quantitatively-ranked trade ideas (Q1) using a layered scoring pipeline. The platform bridges qualitative theme detection with quantitative portfolio construction — themes become signals, signals become ranked long/short candidates, candidates get risk-sized into a $100M portfolio.
+Andromeda is a systematic investment research platform that identifies trending market themes (Q2) and generates quantitatively-ranked trade ideas with per-trade thesis (Q1) using a layered pipeline. The platform bridges qualitative theme detection with quantitative portfolio construction, and bridges quantitative signals with discretionary synthesis — themes become signals, signals become ranked long/short candidates, candidates get risk-sized into a $100M portfolio, and an L5 reasoning agent synthesizes the deterministic L0–L4 outputs into a structured book with thesis, catalysts, and counter-thesis.
 
-**Feel**: A Bloomberg Terminal meets a modern data dashboard — dense with information but visually clear, built for speed during market hours.
+**Two questions, one system:**
+
+- **Q2 (theme detection)** — "What themes are trending, and how much attention is each one attracting?" Answered by L1 (theme detection + HypeScore).
+- **Q1 (book construction)** — "Given $100M, what are your top 5 long and top 5 short, and why?" Answered by the L0–L6 pipeline: L0 macro ingest + L1 theme detection + L2 factor exposures + L3 regime classifier + L4 risk engine feed the L5 reasoning agent, which produces a structured book rendered on `/research` (L6) with citation provenance (L7).
+
+The L5 reasoning agent is the only stochastic layer. Everything from L0 through L4 is a deterministic pure function. The LLM is invoked only at L5 and is bounded by the citation guardrail (ADR-0012), the candidate-set hard filter (ADR-0014), and the deterministic-then-stochastic split (ADR-0013).
+
+**System map (L0–L7):**
+
+| Layer | Question answered | Stochastic? | Source |
+|-------|-------------------|-------------|--------|
+| L0 Macro ingest | What is the current macro state? | No | `backend/data/macro_fetcher.py` |
+| L1 Theme detection | What themes are trending? (Q2) | No | `scripts/daily_refresh.py` → `build_theme_signals` |
+| L2 Factor exposures | What is each candidate's factor tilt? | No | `backend/data/factor_fetcher.py` |
+| L3 Regime classifier | What cycle × sentiment are we in? | No | `backend/services/regime_classifier.py` |
+| L4 Risk engine | What is the portfolio's risk profile? | No | `scripts/daily_refresh.py` → `compute_and_persist_risk` |
+| **L5 Q1 reasoning** | **What 5 long + 5 short, and why? (Q1)** | **Yes (LLM at `reason_picks` only)** | **`backend/services/q1_agent.py`** |
+| L6 Writeup | How is the thesis rendered? | No (templated) | `frontend/app/research/page.tsx` |
+| L7 Provenance UI | How is every claim audited? | No (read-only) | `frontend/components/{CitationList,ThemeDerivationDrawer,RegimeInputs}.tsx` |
+
+**Feel**: A research desk meets a modern data dashboard — dense with information, auditable by default, and built around conviction over density.
 
 ---
 
@@ -569,6 +589,10 @@ architecture.
 
 ## 14. Q1 Reasoning Pipeline (Book Construction Layer)
 
+> **Status: implemented.** This section describes the design; the implementation lives in `backend/services/q1_agent.py` (8-node pipeline), `backend/services/book_metrics.py`, and `backend/services/scenario_analysis.py`. The pipeline runs once per day from `scripts/daily_refresh.py` after the L1–L4 batch completes. Output: `q1_recommendations` + `q1_agent_runs` tables. Frontend render: `frontend/app/research/page.tsx`.
+>
+> **Design rationale:** ADRs [0012](../adrs/0012-citation-guardrail-llm-defense.md), [0013](../adrs/0013-deterministic-stochastic-split.md), and [0014](../adrs/0014-candidate-set-hard-filter.md).
+
 ### 14.1 Motivation
 
 The Q1 deliverable — "given $100M, what are your top 5 long and top 5 short, and why" — is **not** what the current theme-detection system produces. Theme detection (Layer 1) surfaces a ranked list of themes with constituent tickers. Q1 needs a *book*: a $100M long-short portfolio with per-trade thesis, per-trade catalysts, per-trade risks, and a book-level macro view that ties the 10 picks together.
@@ -726,77 +750,123 @@ Existing (L4 in §7) is kept. Two extensions:
 - **Factor crowding risk.** Variance of factor exposure across the book. If the entire book is +0.8 UMD (momentum), the book is crowded in momentum; a momentum reversal hits everything. Surface as `factor_crowding_score` per book.
 - **Regime-conditional max drawdown.** For each historical regime, compute the max drawdown of the current portfolio over the past N years in that regime. Surface as `regime_conditional_mdd` (e.g., "this portfolio would have lost 18% in the 2008-style recession regime, vs 12% for SPX").
 
-### 14.8 L5: AI Reasoning Agent
+### 14.8 L5: AI Reasoning Agent  (v2.0.0 — implemented)
 
-**Architecture:** LangGraph state machine. Chosen because (a) LangGraph's explicit state graph makes the reasoning auditable, (b) deterministic L0–L4 outputs become graph state, and (c) every LLM call is a node with explicit inputs/outputs.
+**Architecture:** Sequential node pipeline (8 pure-function nodes + 1 LLM call). Chosen for simplicity and auditability — the pipeline runs once daily, is purely sequential, and explicit Python functions with typed state are easier to test and reproduce than a state-machine graph. LangGraph would be over-engineered for this use case.
 
-**State shape:**
+**State shape (`Q1State`, a TypedDict subclass persisted as a plain dict):**
 
 ```python
-class Q1Context(TypedDict):
-    run_date: date
-    macro_snapshot: dict[str, float]              # L0 current values
-    theme_scores: list[dict]                      # L1 current HypeScores
-    factor_exposures: dict[str, dict[str, float]] # L2 per-asset betas
-    book_factor_exposures: dict[str, float]       # L2 aggregated
-    regime: dict[str, str]                        # L3 cycle + sentiment
-    risk_metrics: dict[str, float]                # L4
-    classified_news: list[dict]                   # per-headline {text, tag, theme}
-    candidates: list[dict]                        # screened candidate names
-    picks: list[dict]                              # final top 5 L + top 5 S
-    thesis_per_pick: list[dict]                    # per-trade writeup
-    book_risks: list[str]
-    citations: list[dict]                          # every numeric claim with source
+class Q1State(dict):
+    run_date: str
+    supabase_url: str
+    supabase_key: str
+    macro_snapshot: dict[str, dict]   # {series_id: {name, value, unit}} — L0
+    theme_scores: list[dict]          # [{theme_id, name, hype_score, trade_score, avg_sentiment}] — L1
+    factor_exposures: dict[str, dict] # {asset: {beta_mkt, beta_smb, beta_hml, beta_rmw, beta_cma, beta_umd, r_squared}} — L2
+    regime: dict                      # {cycle, sentiment, yield_curve_slope, hy_oas, vix_level, ...} — L3
+    risk_metrics: dict[str, Any]     # {total_capital, var_95, sharpe, beta, cvar_95, concentration_hhi} — L4
+    news_headlines: list[dict]       # raw L1 collected: [{text, date}]
+    cfg: ScoringConfig                # weights + thresholds
+    candidates: list[dict]            # screened candidates (after node 2)
+    picks: list[dict]                 # final 10 picks from reason_picks
+    book_view: str                    # 3-5 sentence macro view
+    book_risks: list[str]             # cross-cutting risks
+    citations: list[dict]              # [{text, source}] — every numeric claim
+    verified: bool                    # passed citation check
+    retries: int                      # re-pick attempts
+    input_snapshot: dict               # frozen L0-L4 at run time (for audit)
+    error: str | None
+    # v2 additions (computed pre-pick, before reason_picks is called):
+    book_metrics_summary: str          # value-weighted FF5+UMD tilts, net/gross exposure
+    scenario_table: str                # formatted 4-scenario stress-test table
+    correlation_warnings: list[str]    # high-corr pair warnings (ρ > 0.70)
+    cap_violations: list[str]          # sector/geo/single-name violations in candidate book
 ```
 
-**Graph nodes:**
+**Graph nodes (9 total — v2 adds nodes 4 and 5):**
 
-1. **`aggregate_context`** — Pure function. Pulls L0–L4 outputs from Supabase (or a JSON snapshot file in tests) into the Q1Context. No LLM.
-2. **`screen_candidates`** — Pure function. Applies hard filters: only include themes with HypeScore ≥ threshold, only include assets with positive momentum AND a sensible factor beta, exclude assets with factor_crowding > some limit. Output: a list of 20-30 candidate (asset, direction) pairs.
-3. **`classify_news`** — LLM call. For each unique headline from L1's collected news in the last 7 days, tag with `{category: geopolitical|rate|credit|fx|earnings|macro|idiosyncratic, sentiment: -1..+1, theme: <theme_id>}`. Batched: one LLM call per 10 headlines, max ~5 calls.
-4. **`reason_picks`** — Main LLM call. Given the full Q1Context (macro snapshot, theme scores, factor exposures, regime, classified news, screened candidates), produce:
-   - top 5 long picks (with thesis)
-   - top 5 short picks (with thesis)
-   - book-level macro view (3-5 sentences)
-   - cross-cutting book risks (3-5 bullets)
-   - For every numeric claim in the output, a citation pointing to the source key in Q1Context (e.g., `{"text": "HY OAS at 380bps", "source": "macro_snapshot.BAMLH0A0HYM2"}`).
-5. **`verify_citations`** — Guardrail. Scans the LLM output; for each citation, looks up the value in Q1Context. If the cited value doesn't match the actual value, or if a number is used without a citation, the output is rejected and `reason_picks` is re-invoked with an explicit "fix the cited numbers" prompt. Max 2 retries.
-6. **`size_positions`** — Pure function. Allocates the $100M by HypeScore weight, capped per name, with sector caps. Returns `portfolio_positions` rows.
+1. **`aggregate_context`** — Pure function. Pulls L0–L4 outputs from Supabase into Q1State. Also builds `input_snapshot` for the audit record. No LLM.
+2. **`screen_candidates`** — Pure function. Applies hard filters to the ranked candidate set:
+   - HypeScore ≥ `hype_score_threshold` (default 50)
+   - `trade_score ≠ 0` (must have a directional signal)
+   - Liquidity filter: equities require R² ≥ 0.10 vs theme's price signal; ETFs always pass
+   - Deduplication: same `(asset, direction)` pair → keep highest HypeScore theme only
+   - Caps at 30 candidates (max)
+   - Output: list of `{asset, direction, theme_id, theme_name, hype_score, trade_score, avg_sentiment}`.
+3. **`classify_news`** — Stub placeholder for future headline-tagging LLM call (not yet wired in the pipeline).
+4. **`compute_book_metrics`** *(v2)* — Pure function. Computed over the candidate set BEFORE the LLM picks, so the agent has pre-computed factor context:
+   - Value-weighted FF5 + UMD tilts per candidate (from `factor_exposures`, excluding assets with R² < 0.30)
+   - Net exposure = Σ(long_weights) − Σ(short_weights), gross = Σ|weights|
+   - Sector and geography aggregation via `SECTOR_MAP` / `GEO_MAP`
+   - Violation detection: single-name > 20%, sector > 30%, geography > 35%
+   - 252-day Pearson correlation matrix from yfinance; flags pairs with ρ > 0.70
+   - Output: `book_metrics_summary`, `correlation_warnings`, `cap_violations` added to state.
+5. **`run_scenario_analysis`** *(v2)* — Pure function. Runs 4 stress scenarios on the candidate book (pre-pick, so the LLM has scenario context when constructing the book):
+   - S1 VIX spike: VIX > 30 → equity shock (β-based), flight-to-safety
+   - S2 Rate shock: +50bps → duration assets hit hard, short-end sheltered
+   - S3 USD surge: DXY +5% → EM/commodity FX hit
+   - S4 Credit widening: HY OAS +150bps → spread products hit
+   - Each pick gets: signed P&L estimate (direction-aware), severity classification (low/moderate/high/severe)
+   - Worst scenario identified and surfaced; results sorted by severity
+   - Output: `scenario_table` added to state for reference in `book_risks`.
+6. **`reason_picks`** — Main LLM call (Anthropic Claude Sonnet). System prompt (`REASON_PICKS_SYSTEM`, version `v2.0.0`) contains:
+   - Full macro snapshot (formatted key:value table)
+   - Regime description (cycle + sentiment + key regime indicators)
+   - Candidate list with hype/trade/sentiment scores
+   - Book metrics summary (value-weighted tilts, sector/geo violations, correlation warnings)
+   - Scenario analysis table (4 scenarios, severity, P&L estimates)
+   - Instruction to avoid high-corr pairs and cap violations
+   - Instruction that every numeric claim requires a citation
+   - `counter_thesis` field per pick: measurable disqualifier (e.g., "FLIP if HY OAS breaks above 500bps")
+   - `time_horizon` field per pick: "1-2 weeks" default
+   - Output JSON schema: `{picks: [{direction, asset, theme_id, thesis, catalysts, risk, counter_thesis, time_horizon, factor_tilts}], book_view, book_risks, citations: [{text, source}]}`.
+7. **`verify_citations`** — Guardrail. For each citation in LLM output, looks up the value in `macro_snapshot`. If cited value doesn't match, or a number lacks a citation → sets `verified=False`, increments `retries`, re-invokes `reason_picks` with explicit error feedback. Max 2 retries; third failure exits to `fallback_picks`.
+8. **`size_positions`** — Pure function. Allocates $100M by HypeScore weight with hard cap enforcement:
+   - Raw weight = `hype_score / Σ(hype_scores)` per candidate
+   - Single-name cap (20%): cap dominated names, redistribute excess to uncapped names proportionally by original weight
+   - Sector cap (30%): applied when sector has ≥ 3 members (avoids oscillation with 2-asset portfolios)
+   - Geography cap (35%): applied when geo group has ≥ 3 members
+   - Final normalization so weights sum exactly to 1.0
+   - Output: each pick enriched with `notional` (dollar amount) and `weight` (fraction of book).
+9. **`fallback_picks`** — Deterministic fallback. Triggered after 2 citation failures or empty picks. Produces 10 picks (5 long + 5 short) without any LLM: top 5 by HypeScore with positive trade score for longs; bottom 5 for shorts. Thesis is templated from regime and factor data. Always produces a valid output — never a blank slate.
 
-**LLM choice:** Claude Sonnet (via Anthropic API). Reasoning capability + long context + tool use. Fallback: any model that supports function calling and 100k+ context.
+**Citation guardrail (the most important guardrail):**
 
-**Reproducibility:** `temperature=0`, `top_p=0.0`, prompt version stored in `q1_agent_runs` table. Same input → same output (modulo non-determinism in some serving environments; we log prompt + model version + seed for full reproducibility).
+Every numeric claim in LLM output must cite a source key. The `verify_citations` node validates this. If a number is used without a citation, or the cited value doesn't match `macro_snapshot`, the output is rejected and `reason_picks` is re-invoked with explicit error feedback. Max 2 retries; then deterministic fallback. This is the primary defense against LLM hallucination of macro data.
 
-**Guardrails (the most important part of the design):**
+**Reproducibility:** `temperature=0`, `max_tokens=4096`, prompt version (`PROMPT_VERSION = "v2.0.0"`) stored in `q1_agent_runs`. `input_snapshot` freezes all L0–L4 inputs at run time for full reproducibility.
 
-- **Citation enforcement.** Every numeric claim in the LLM output must cite a specific key in the L0-L4 inputs. No floating numbers. This is the primary defense against LLM hallucination of macro data.
-- **No-fabrication rule.** If a feature is missing (e.g., NFP print hasn't been released this month), the LLM must declare "N/A — not yet released" rather than making up a number.
-- **Deterministic fallback.** If the LLM call fails (API down, timeout, validation fail after 2 retries), the pipeline still produces a Q1 writeup using only L0–L4: top 5 longs = top 5 HypeScore candidates passing the threshold, top 5 shorts = bottom 5; thesis is templated ("High HypeScore theme X with positive momentum and rate sensitivity"). Worse than the LLM output, but never a blank slate.
+**LLM choice:** Claude Sonnet via Anthropic messages API. `ANTHROPIC_API_KEY` env var. `DEFAULT_MODEL = "claude-sonnet-4-20250514"`. Falls back to `KeyError` if key not set (safe — deterministic fallback kicks in).
 
-**Storage schema (`q1_recommendations` and `q1_agent_runs` tables):**
+**Storage schema (`q1_agent_runs` and `q1_recommendations` tables):**
 
 ```sql
-CREATE TABLE q1_recommendations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    run_date DATE NOT NULL UNIQUE,
-    picks JSONB,                     -- [{direction, asset, theme_id, weight, notional, thesis, catalysts, risk, factor_tilts}]
-    book_view TEXT,                  -- 3-5 sentence macro view
-    book_risks JSONB,                -- list of risk strings
-    agent_run_id UUID REFERENCES q1_agent_runs(id)
-);
-
 CREATE TABLE q1_agent_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_date DATE NOT NULL,
-    prompt_version TEXT NOT NULL,
+    prompt_version TEXT NOT NULL DEFAULT 'v2.0.0',
     model_id TEXT NOT NULL,
-    input_snapshot JSONB,            -- frozen L0-L4 inputs at run time
-    raw_output JSONB,                -- raw LLM response
-    citations JSONB,                 -- [{text, source, value}]
+    input_snapshot JSONB,         -- frozen L0-L4 inputs at run time
+    raw_output JSONB,             -- raw LLM response
+    citations JSONB,             -- [{text, source}]
     verified BOOLEAN,
     retries INT,
     duration_ms INT,
     created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE q1_recommendations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_date DATE NOT NULL UNIQUE,
+    picks JSONB,                  -- [{direction, asset, theme_id, notional, weight,
+                                    --  thesis, catalysts, risk, counter_thesis,
+                                    --  time_horizon, factor_tilts}]
+    book_view TEXT,                -- 3-5 sentence macro view
+    book_risks JSONB,             -- list of risk strings
+    book_metrics_summary TEXT,     -- v2: computed FF5+UMD tilts + violations
+    scenario_table TEXT,           -- v2: 4-scenario stress table
+    agent_run_id UUID REFERENCES q1_agent_runs(id)
 );
 ```
 

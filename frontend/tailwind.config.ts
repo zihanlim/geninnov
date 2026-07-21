@@ -43,11 +43,16 @@ const config: Config = {
         "fade-in": "fadeIn 200ms ease-out",
         "shimmer": "shimmer 1.5s infinite",
         "pulse-soft": "pulseSoft 2s infinite",
+        "slide-in": "slideIn 180ms ease-out",
       },
       keyframes: {
         fadeIn: { "0%": { opacity: "0" }, "100%": { opacity: "1" } },
         shimmer: { "0%": { backgroundPosition: "200% 0" }, "100%": { backgroundPosition: "-200% 0" } },
         pulseSoft: { "0%, 100%": { opacity: "1" }, "50%": { opacity: "0.4" } },
+        slideIn: {
+          "0%": { transform: "translateX(100%)" },
+          "100%": { transform: "translateX(0)" },
+        },
       },
     },
   },

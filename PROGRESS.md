@@ -1,10 +1,10 @@
 # Build Progress
 
-_Last updated: 2026-07-21_
+_Last updated: 2026-07-21 (late evening — Q1 thesis layer documented across all surfaces)_
 
 ## Current status
 
-**Phase 1–3 implemented.** Theme detection, trade ranking, position sizing, daily P&L, and risk metrics are all wired into `scripts/daily_refresh.py`. Frontend pages can read live data from the four pipeline-output tables. See "Pending" below for what's left to actually run against the deployed environment.
+**Phase 1–5 implemented.** Theme detection, trade ranking, position sizing, daily P&L, risk metrics, and the **Q1 reasoning pipeline** (L0–L6) are all wired into `scripts/daily_refresh.py`. The L5 agent (`backend/services/q1_agent.py`) produces a structured $100M long-short book with per-trade thesis, factor tilts, scenario analysis, and citation-verified numeric claims. The Q1 thesis renders on the `/research` page with inline citation footnotes. See "Pending" below for what's left to actually run against the deployed environment.
 
 ## Project structure
 
@@ -43,6 +43,9 @@ docs/
 | 2026-07-21 | Live bootstrap migration applied to live Supabase (`004_bootstrap_live.sql`): added `hype_score` + `trade_score` columns to `theme_signals_history`, seeded 29 Tier 1 asset mappings. `daily_refresh.py` made robust to the pre-migration state (catches `APIError` on missing column, falls back to sentiment-only `TradeScore`). `.env.example` template committed. First end-to-end live run succeeded: 10 longs persisted, $100M sized into 10 positions, +0.84% daily return, HHI=1000. 107 tests passing. |
 | 2026-07-21 | Phase 5 built: M1 `macro_indicators` + `macro_daily_history` tables (migration 005), M1 FRED+yfinance fetcher (`backend/data/macro_fetcher.py`), M2 `factor_exposures` table (migration 006), M2 Ken French FF5+UMD fetcher + rolling regression (`backend/data/factor_fetcher.py`), M3 rule-based regime classifier (`backend/services/regime_classifier.py`), M5 LangGraph research agent skeleton (`backend/agents/research_agent.py`) with LLM stub provider (MockLLM), new research page reads from `research_recommendations` table (`frontend/app/research/page.tsx`), migrations 005+006+007 applied to live DB, regime seed row inserted, `backend/__init__.py` + `backend/services/__init__.py` added to fix package imports, `apply_migration.py` script added. 151 tests passing. |
 | 2026-07-21 | Renamed Q1/Q2 test-naming off production tables: `q1_recommendations` → `research_recommendations`, `q1_agent_runs` → `research_agent_runs`. Migration 008 applied to live Supabase (renamed in place, RLS policies renamed). Renamed files: `backend/agents/q1_agent.py` → `backend/agents/research_agent.py`, `backend/services/q1_agent.py` (table refs + `run_q1_agent` → `run_research_agent` + print log messages), `scripts/daily_refresh.py` (import + log messages), `tests/backend/test_q1_agent.py` → `test_research_agent.py`. New `MockLLMProvider` tests added; `size_positions` tests aligned with the actual one-pass implementation. 198 tests passing. |
+| 2026-07-21 | **Research-first frontend redesign.** Replaced the original Bloomberg-terminal dashboard with a conviction-first layout: macro regime hero, top 3 themes as cards with thesis+sparkline+sub-score bars+catalyst/crowding/Δ1d, watchlist with momentum, filterable Trade Ideas table with thesis column, allocation bar (not treemap), risk grid with units context, factor exposure panel. Global nav (was missing), live feed status bar. Old orphaned components removed (`HypeGauge`, `ThemeFeed`, `MarketCorrelationChart`, `PortfolioTreemap`, `DataSourceStatus`). New design tokens in `tailwind.config.ts` + `globals.css`. Build/typecheck/lint clean. Deployed to Vercel. |
+| 2026-07-21 | **ADRs 0009–0011 (UX provenance layer).** Recognized that the platform's quantitative outputs (HypeScore, TradeScore, regime classification, factor betas) are difficult to audit in their current UI. Adopted Perplexity-Finance-style provenance patterns: research-first design philosophy (ADR-0009), citation footnotes on every numeric claim in the Q1 thesis (ADR-0010), per-theme derivation drawer showing raw signals → normalization → weights → final score (ADR-0011). Architecture updated to add L7 (UI derivation layer). |
+| 2026-07-21 | **Q1 thesis layer documented across all surfaces.** Updated CLAUDE.md, PROGRESS.md, ARCHITECTURE.md, spec §1/§2/§14, and added ADRs 0012–0014 to reflect that the Q1 reasoning pipeline is implemented end-to-end: L0 macro ingest + L2 factor exposures + L3 regime + L4 risk feed the L5 reasoning agent (`run_q1_agent` with 8 nodes including `compute_book_metrics` and `run_scenario_analysis`), whose citation-guarded output renders on `/research`. The thesis layer was previously only in spec §14 — now it's visible at every doc surface. |
 
 ## Build tasks
 
@@ -57,4 +60,6 @@ docs/
 | 7 | Theme discovery bootstrap: run LDA + embedding clustering | pending |
 | 8 | Phase 3: trade ranking + position sizing + risk engine + daily P&L | completed (2026-07-21) |
 | 9 | Phase 4: real-time upgrade (FastAPI + Redis) | deferred |
-| 10 | Phase 5: Q1 reasoning pipeline (L0-L6) | completed |
+| 10 | Phase 5: Q1 reasoning pipeline (L0-L6) | completed (L0–L4 + L5 8-node agent + L6 writeup) |
+| 11 | Research-first frontend redesign (regime hero, conviction cards, alloc bar, factor panel) | completed (2026-07-21) |
+| 12 | Provenance layer: citation footnotes + ThemeDerivationDrawer (L7) | in-progress (L7 components in flight; citation infrastructure done) |

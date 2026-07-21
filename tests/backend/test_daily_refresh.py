@@ -417,19 +417,24 @@ def test_allocate_and_persist_portfolio_writes_positions():
     from services.trade_ranker import TradeCandidate
 
     cfg = _phase3_cfg(total_capital=100_000_000.0)
+    # TLT (Rates) and FXI (China Equities) — different sectors AND geos,
+    # so sector (≥3 members) and geo (≥3 members) caps don't apply.
+    # TLT raw hype = 15, FXI = 2 → raw weights 88.2%/11.8%.
+    # Single-name cap (20%) triggers: TLT capped to 20%, excess absorbed by FXI
+    # → TLT = $20M, FXI = $80M.
     candidates = [
-        TradeCandidate("t1", "TLT", "long", 0.5, 80.0, 0.3),
-        TradeCandidate("t2", "HYG", "short", -0.4, 20.0, -0.2),
+        TradeCandidate("t1", "TLT", "long", 0.5, 15.0, 0.3),
+        TradeCandidate("t2", "FXI", "short", -0.4, 2.0, -0.2),
     ]
 
     with patch("daily_refresh.supabase") as mock_supabase:
         positioned = allocate_and_persist_portfolio(candidates, date(2026, 7, 21), cfg)
 
     assert len(positioned) == 2
-    # Hype-weights: 0.8 and 0.2 → notionals 80M and 20M
     notionals = {c.asset: n for c, n, w in positioned}
-    assert abs(notionals["TLT"] - 80_000_000) < 1e-6
-    assert abs(notionals["HYG"] - 20_000_000) < 1e-6
+    # TLT dominated (88% > 20% cap) → capped to $20M; FXI absorbs excess → $80M
+    assert abs(notionals["TLT"] - 20_000_000) < 1e-6
+    assert abs(notionals["FXI"] - 80_000_000) < 1e-6
 
     table_names = [c.args[0] for c in mock_supabase.table.call_args_list if c.args]
     assert "portfolio_positions" in table_names

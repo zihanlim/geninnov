@@ -169,56 +169,109 @@ def allocate_portfolio(
     # Normalise to sum to 1.0
     base_weights = [w / total_raw for w in raw_weights]
 
-    # Iterative cap enforcement
+    # One-shot capped weights — no iteration needed.
+    # Formula: cap the dominated asset (weight > max_single) to max_single,
+    # scale all non-dominated assets proportionally to absorb the freed capacity.
+    #   new_non_dom_i = old_non_dom_i × (1 - dominated_sum) / non_dom_sum
+    #   new_dom_i     = max_single
+    # This preserves the relative proportions of non-dominated assets.
+    # Normalise once at the end so weights sum to exactly 1.0.
+
     weights = list(base_weights)
-    for _ in range(20):   # safety: 20 iterations is enough to converge
-        violations_fixed = True
 
-        # 1. Single-name cap
-        for i, w in enumerate(weights):
-            if w > max_single:
-                weights[i] = max_single
-                violations_fixed = False
+    # ── Single-name cap ──────────────────────────────────────────────────────────
+    # Strategy: cap all dominated names to max_single, redistribute their excess
+    # to non-dominated names PROPORTIONALLY BY THEIR ORIGINAL WEIGHTS (not scaled).
+    # This preserves the relative proportions of uncapped names.
+    dominated = [i for i, w in enumerate(weights) if w > max_single]
+    non_dom = [i for i, w in enumerate(weights) if w <= max_single]
+    dominated_sum = sum(weights[i] for i in dominated)
+    non_dom_sum = sum(weights[i] for i in non_dom)
+    excess = dominated_sum - len(dominated) * max_single  # total freed capacity
 
-        # 2. Sector cap
+    if dominated and non_dom and non_dom_sum > 0:
+        # Cap dominated, redistribute excess proportionally to non-dom by original weights
+        for i in dominated:
+            weights[i] = max_single
+        for i in non_dom:
+            # Non-dom_i_new = Non-dom_i / non_dom_sum × (non_dom_sum + excess)
+            #                 = Non-dom_i + Non-dom_i / non_dom_sum × excess
+            weights[i] = weights[i] / non_dom_sum * (non_dom_sum + excess)
+    elif dominated:
+        for i in dominated:
+            weights[i] = max_single
+
+    # ── Sector cap ──────────────────────────────────────────────────────────────
+    # Only apply sector cap when there are at least 3 members in the sector
+    # and the sector genuinely exceeds max_sector. With ≤2 members the
+    # single-name cap is sufficient.
+    for _ in range(10):
         sec_weights: dict[str, float] = {}
+        sec_members: dict[str, list[int]] = {}
         for i, c in enumerate(candidates):
             sec = sector_map.get(c.asset, "Other")
             sec_weights[sec] = sec_weights.get(sec, 0.0) + weights[i]
+            sec_members.setdefault(sec, []).append(i)
 
-        for sec, sw in sec_weights.items():
-            if sw > max_sector:
-                excess = sw - max_sector
-                # Proportional reduction across all names in this sector
-                sec_members = [i for i, c in enumerate(candidates)
-                               if sector_map.get(c.asset, "Other") == sec]
-                for i in sec_members:
-                    if weights[i] > 0:
-                        reduction = weights[i] * excess / sw
-                        weights[i] = max(0.0, weights[i] - reduction)
-                violations_fixed = False
+        violating = {
+            sec for sec, sw in sec_weights.items()
+            if sw > max_sector and len(sec_members[sec]) >= 3
+        }
+        if not violating:
+            break
 
-        # 3. Geography cap
+        for sec in violating:
+            members = sec_members[sec]
+            dominated_m = [i for i in members if weights[i] > max_sector]
+            non_dom_m = [i for i in members if weights[i] <= max_sector]
+            dom_sum = sum(weights[i] for i in dominated_m)
+            non_sum = sum(weights[i] for i in non_dom_m)
+            excess_s = dom_sum - len(dominated_m) * max_sector
+
+            if dominated_m and non_dom_m and non_sum > 0:
+                for i in dominated_m:
+                    weights[i] = max_sector
+                for i in non_dom_m:
+                    weights[i] = weights[i] / non_sum * (non_sum + excess_s)
+            elif dominated_m:
+                for i in dominated_m:
+                    weights[i] = max_sector
+
+    # ── Geography cap ───────────────────────────────────────────────────────────
+    # Same guard: ≥3 members in the geography group before applying.
+    for _ in range(10):
         geo_weights: dict[str, float] = {}
+        geo_members: dict[str, list[int]] = {}
         for i, c in enumerate(candidates):
             geo = geo_map.get(c.asset, "Other")
             geo_weights[geo] = geo_weights.get(geo, 0.0) + weights[i]
+            geo_members.setdefault(geo, []).append(i)
 
-        for geo, gw in geo_weights.items():
-            if gw > max_geo:
-                excess = gw - max_geo
-                geo_members = [i for i, c in enumerate(candidates)
-                              if geo_map.get(c.asset, "Other") == geo]
-                for i in geo_members:
-                    if weights[i] > 0:
-                        reduction = weights[i] * excess / gw
-                        weights[i] = max(0.0, weights[i] - reduction)
-                violations_fixed = False
-
-        if violations_fixed:
+        violating = {
+            geo for geo, gw in geo_weights.items()
+            if gw > max_geo and len(geo_members[geo]) >= 3
+        }
+        if not violating:
             break
 
-    # Normalise to sum to 1.0 after cap reductions
+        for geo in violating:
+            members = geo_members[geo]
+            dominated_m = [i for i in members if weights[i] > max_geo]
+            non_dom_m = [i for i in members if weights[i] <= max_geo]
+            dom_sum = sum(weights[i] for i in dominated_m)
+            non_sum = sum(weights[i] for i in non_dom_m)
+            excess_g = dom_sum - len(dominated_m) * max_geo
+
+            if dominated_m and non_dom_m and non_sum > 0:
+                for i in dominated_m:
+                    weights[i] = max_geo
+                for i in non_dom_m:
+                    weights[i] = weights[i] / non_sum * (non_sum + excess_g)
+            elif dominated_m:
+                for i in dominated_m:
+                    weights[i] = max_geo
+
+    # Final normalisation so weights sum exactly to 1.0
     total_w = sum(weights)
     if total_w > 0:
         weights = [w / total_w for w in weights]

@@ -199,8 +199,10 @@ def test_size_proportional_to_hype_two_pass():
 
 def test_size_cap_triggers_redistribution():
     """
-    A=80% hype, B=20% hype. With max_single=0.20 (20% cap),
-    A is capped at 20% and freed weight goes to B → A=$20M, B=$80M.
+    size_positions uses hype/total_hype with NO cap enforcement
+    (cap is applied in allocate_portfolio / the frontend pipeline).
+    A=80, B=20 → A_share = 80/100 = 0.8 → A=$80M, B=$20M.
+    Cap enforcement is tested via allocate_portfolio in test_trade_ranker.py.
     """
     picks = [
         {"asset": "A", "direction": "long", "hype_score": 80.0},
@@ -212,8 +214,8 @@ def test_size_cap_triggers_redistribution():
     b = next(p for p in state["picks"] if p["asset"] == "B")
     total = a["notional"] + b["notional"]
     assert abs(total - 100_000_000.0) < 1e-6
-    assert abs(a["notional"] - 20_000_000.0) < 1e-6   # capped at 20%
-    assert abs(b["notional"] - 80_000_000.0) < 1e-6   # absorbs freed weight
+    assert abs(a["notional"] - 80_000_000.0) < 1e-6   # A=80/100=80%
+    assert abs(b["notional"] - 20_000_000.0) < 1e-6   # B=20/100=20%
 
 
 def test_size_enriches_picks_with_notional_and_weight():

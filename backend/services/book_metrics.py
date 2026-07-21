@@ -113,12 +113,12 @@ MIN_ADV_Millions = 2.0            # exclude names with ADV < $2M/day
 @dataclass
 class BookMetrics:
     """Value-weighted factor tilts of the full book."""
-    book_beta_mkt: float
-    book_beta_smb: float
-    book_beta_hml: float
-    book_beta_rmw: float
-    book_beta_cma: float
-    book_beta_umd: float
+    book_beta_mkt: float          # unsigned — direction applied separately in scenario analysis
+    book_beta_smb: float          # unsigned
+    book_beta_hml: float          # unsigned
+    book_beta_rmw: float          # unsigned
+    book_beta_cma: float          # unsigned
+    book_beta_umd: float          # unsigned
     gross_exposure: float          # sum of abs(weights), 0-200%
     net_exposure: float           # sum of signed weights, -100 to +100%
     long_weight: float            # sum of long notionals / total_capital
@@ -173,13 +173,13 @@ def compute_book_metrics(
             continue
 
         for f in factors:
-            beta = fe.get(f, 0.0) or 0.0
-            # Direction sign: shorts flip the sign of beta exposure
-            sign = 1.0 if p.get("direction") == "long" else -1.0
-            weighted_factors[f] += sign * weight * beta
+            beta = abs(fe.get(f, 0.0) or 0.0)
+            # Unsigned: direction is stored separately as net_exposure
+            # (scenario_analysis applies direction once using net_exposure)
+            weighted_factors[f] += weight * beta
             total_weighted += abs(weight)
 
-    # Normalize by total weight
+    # Normalize by total weight (unsigned — direction applied in scenario analysis)
     book_tilts = {}
     if total_weighted > 0:
         for f in factors:

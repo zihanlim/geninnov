@@ -28,6 +28,45 @@ from typing import Optional
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Default factor betas for common tickers (used when book_metrics has zero
+# factor weights — i.e. factor data was unavailable). These are reasonable
+# real-world approximations that keep scenario analysis meaningful without live
+# FF5 data.
+# ─────────────────────────────────────────────────────────────────────────────
+
+DEFAULT_TICKER_BETAS: dict[str, dict[str, float]] = {
+    # US equity ETFs
+    "SPY":  {"mkt": 1.00, "smb": -0.10, "hml":  0.05, "rmw":  0.10, "cma":  0.05, "umd":  0.20},
+    "QQQ":  {"mkt": 1.20, "smb": -0.20, "hml": -0.10, "rmw":  0.15, "cma": -0.05, "umd":  0.30},
+    "IWM":  {"mkt": 1.25, "smb":  0.60, "hml":  0.05, "rmw":  0.05, "cma":  0.00, "umd":  0.15},
+    # Rates
+    "TLT":  {"mkt": -0.30, "smb":  0.05, "hml":  0.15, "rmw": -0.05, "cma":  0.20, "umd": -0.10},
+    "IEF":  {"mkt": -0.15, "smb":  0.02, "hml":  0.08, "rmw": -0.02, "cma":  0.10, "umd": -0.05},
+    "SHY":  {"mkt": -0.05, "smb":  0.00, "hml":  0.02, "rmw":  0.00, "cma":  0.02, "umd":  0.00},
+    "AGG":  {"mkt": -0.08, "smb":  0.01, "hml":  0.05, "rmw":  0.00, "cma":  0.05, "umd": -0.03},
+    # Credit
+    "LQD":  {"mkt":  0.20, "smb": -0.05, "hml":  0.10, "rmw":  0.05, "cma":  0.08, "umd":  0.05},
+    "HYG":  {"mkt":  0.35, "smb":  0.05, "hml":  0.05, "rmw":  0.10, "cma":  0.05, "umd":  0.05},
+    # Metals / inflation
+    "GLD":  {"mkt":  0.05, "smb":  0.10, "hml":  0.20, "rmw":  0.05, "cma":  0.10, "umd": -0.05},
+    "SLV":  {"mkt":  0.25, "smb":  0.15, "hml":  0.10, "rmw":  0.10, "cma":  0.05, "umd":  0.00},
+    "TIPS": {"mkt": -0.10, "smb":  0.02, "hml":  0.10, "rmw":  0.00, "cma":  0.08, "umd": -0.02},
+    # FX
+    "UUP":  {"mkt": -0.10, "smb":  0.00, "hml":  0.00, "rmw":  0.00, "cma":  0.00, "umd":  0.00},
+    "FXE":  {"mkt":  0.30, "smb": -0.10, "hml":  0.05, "rmw":  0.05, "cma":  0.05, "umd":  0.05},
+    # China equities
+    "FXI":  {"mkt":  0.90, "smb":  0.30, "hml": -0.10, "rmw":  0.15, "cma":  0.05, "umd":  0.10},
+    "BABA": {"mkt":  1.00, "smb":  0.20, "hml": -0.10, "rmw":  0.20, "cma":  0.05, "umd":  0.10},
+    "KWEB": {"mkt":  0.95, "smb":  0.30, "hml": -0.05, "rmw":  0.15, "cma":  0.05, "umd":  0.10},
+    # Energy
+    "XLE":  {"mkt":  0.80, "smb":  0.20, "hml": -0.15, "rmw":  0.40, "cma":  0.10, "umd":  0.15},
+    "OIH":  {"mkt":  0.90, "smb":  0.25, "hml": -0.10, "rmw":  0.35, "cma":  0.08, "umd":  0.15},
+    # Volatility
+    "SVXY": {"mkt": -0.60, "smb": -0.10, "hml":  0.00, "rmw": -0.05, "cma":  0.00, "umd": -0.20},
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Scenario definitions
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -152,22 +191,58 @@ def estimate_scenario_pnl(
     Estimate book P&L under a stress scenario.
 
     Uses two approaches in parallel:
-    1. Factor-based:  Σ weight_i × beta_factor_i × shock_factor  (for assets with factor data)
-    2. Direct shock:  Σ weight_i × direct_asset_shock              (for explicitly mapped assets)
+    1. Factor-based:  Σ signed_weight_i × beta_factor_i × shock_factor
+       (for unmapped assets; signed_weight already encodes direction from book_metrics)
+    2. Direct shock:  Σ weight_i × shock_i × direction_sign  (for explicitly mapped assets)
 
-    Falls back to factor-based for unmapped assets.
+    If picks is empty, returns zero P&L immediately.
     """
-    factor_weights: dict[str, float] = {}  # {factor: signed_book_weight}
+    # Early exit: no positions → zero P&L
+    if not picks:
+        return ScenarioResult(
+            scenario_name=scenario.name,
+            label=scenario.label,
+            estimated_book_return=0.0,
+            estimated_dollar_pnl=0.0,
+            contribution_breakdown=["  Estimated book return: +0.00%  ($+0.0M on $100M book)"],
+            severity="low",
+        )
+
+    # Factor-based PnL: signed sum of each pick's weight × factor beta × shock.
+    # Direction is applied per-pick (short positions flip the P&L sign).
+    # This uses book_metrics' unsigned factor tilts as the per-factor weight proxy,
+    # which is the best available signal from the pre-computed book state.
+    factor_weights: dict[str, float] = {}  # {factor: unsigned_book_weight}
     for attr in ["book_beta_mkt", "book_beta_smb", "book_beta_hml",
                  "book_beta_rmw", "book_beta_cma", "book_beta_umd"]:
         key = attr.replace("book_beta_", "")
-        factor_weights[key] = getattr(book_metrics, attr, 0.0)
+        factor_weights[key] = abs(getattr(book_metrics, attr, 0.0))
 
-    # Factor-based estimate
-    factor_pnl = sum(
-        factor_weights.get(factor, 0.0) * shock
-        for factor, shock in scenario.factor_shocks.items()
-    )
+    # Signed factor PnL: apply per-pick direction
+    factor_pnl = 0.0
+    for p in picks:
+        w = p.get("weight", 0.0)
+        if w <= 0:
+            continue
+        sign = 1.0 if p.get("direction") == "long" else -1.0
+        for factor, shock in scenario.factor_shocks.items():
+            beta = factor_weights.get(factor, 0.0)
+            factor_pnl += sign * w * beta * shock
+
+    # Fallback: if book_metrics has near-zero factor weights (no live FF5 data),
+    # use DEFAULT_TICKER_BETAS for known tickers. Direction applied per-pick.
+    if abs(factor_pnl) < 1e-6:
+        factor_pnl = 0.0
+        for p in picks:
+            asset = p.get("asset", "")
+            w = p.get("weight", 0.0)
+            if w <= 0 or asset not in DEFAULT_TICKER_BETAS:
+                continue
+            defaults = DEFAULT_TICKER_BETAS[asset]
+            sign = 1.0 if p.get("direction") == "long" else -1.0
+            for factor, shock in scenario.factor_shocks.items():
+                beta = defaults.get(factor, 0.0)
+                factor_pnl += sign * w * beta * shock
 
     # Direct asset shock estimate
     direct_pnl = 0.0
@@ -179,31 +254,30 @@ def estimate_scenario_pnl(
         if w <= 0:
             continue
 
+        # Direction sign: short positions flip the P&L direction
+        sign = 1.0 if p.get("direction") == "long" else -1.0
+
         if asset in scenario.base_asset_shocks:
             shock = scenario.base_asset_shocks[asset]
-            pnl = w * shock
+            pnl = sign * w * shock
             direct_pnl += pnl
             contributions.append(
-                f"  {asset}: {w:+.1%} × {shock:+.0%} = {pnl:+.2%}"
+                f"  {asset} ({p.get('direction', '?')}): {w:+.1%} × {shock:+.0%} = {pnl:+.2%}"
             )
-        else:
-            # Fall back to factor-based using factor weights
-            for factor, shock in scenario.factor_shocks.items():
-                factor_w = factor_weights.get(factor, 0.0)
-                # Scale factor weight by this asset's fraction of the book
-                asset_fraction = w / max(book_metrics.gross_exposure, 0.01)
-                pnl = asset_fraction * factor_w * shock
-            # Don't double-count
 
-    # Blend: direct for assets that have explicit shocks, factor-based for the rest
-    # If direct covers most of the book (>60% by weight), prefer that; else use factor
+    # Blend: use direct PnL only when it has actual non-zero contributions;
+    # otherwise fall back to factor-based (which uses signed factor_weights from
+    # book_metrics — already encodes direction so short positions are correct).
+    # covered_weight fraction tells us how much of the book has direct shocks.
     covered_weight = sum(
-        p.get("weight", 0.0)
+        abs(p.get("weight", 0.0))
         for p in picks
-        if p.get("asset") in scenario.base_asset_shocks and p.get("weight", 0) > 0
+        if p.get("asset") in scenario.base_asset_shocks
     )
+    gross = max(book_metrics.gross_exposure, 0.01)
+    covered_frac = covered_weight / gross if gross > 0 else 0.0
 
-    if covered_weight > 0.6 * max(book_metrics.gross_exposure, 0.01):
+    if direct_pnl != 0.0 and covered_frac >= 0.6:
         best_estimate = direct_pnl
     else:
         best_estimate = factor_pnl

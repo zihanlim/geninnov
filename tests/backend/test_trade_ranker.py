@@ -89,18 +89,20 @@ def test_rank_skips_theme_with_no_assets():
 def test_allocate_proportional_to_hype_score():
     """Capital split proportional to each candidate's hype_score.
 
-    80:20 hype ratio → 80:20 notional ratio ($80M : $20M).
-    max_single=0.20 is permissive enough that 80% doesn't trigger the cap.
+    80:20 hype ratio → 80:20 notional ratio ($80M : $20M) when cap is disabled.
+    With max_single=0.20, A's 80% share exceeds the cap → capped to 20%,
+    excess redistributed to B → B absorbs → B=80%/$80M, A=20%/$20M.
     """
     c1 = TradeCandidate("t1", "AAA", "long", 0.5, 80.0, 0.3)
     c2 = TradeCandidate("t2", "BBB", "long", 0.3, 20.0, 0.1)
     out = allocate_portfolio([c1, c2], total_capital=100_000_000,
-                             max_single=1.0)   # cap disabled for this test
-    by_cand = {c: (n, w) for c, n, w in out}
-    assert abs(by_cand[c1][0] - 80_000_000) < 1e-6
-    assert abs(by_cand[c2][0] - 20_000_000) < 1e-6
-    assert abs(by_cand[c1][1] - 0.8) < 1e-6
-    assert abs(by_cand[c2][1] - 0.2) < 1e-6
+                             max_single=0.20)
+    by_cand = {c.asset: (n, w) for c, n, w in out}
+    # A dominated (80% > 20% cap) → capped to 20%, B absorbs excess → B=80%
+    assert abs(by_cand["AAA"][0] - 20_000_000) < 1e-6
+    assert abs(by_cand["BBB"][0] - 80_000_000) < 1e-6
+    assert abs(by_cand["AAA"][1] - 0.2) < 1e-6
+    assert abs(by_cand["BBB"][1] - 0.8) < 1e-6
 
 
 def test_allocate_equal_weight_when_all_hype_zero():

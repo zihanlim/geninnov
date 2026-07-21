@@ -20,6 +20,13 @@ frontend/.next/
 .DS_Store
 Thumbs.db
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
 # Logs
 *.log
 npm-debug.log*

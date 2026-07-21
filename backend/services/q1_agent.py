@@ -75,8 +75,10 @@ VALID_LENSES = {"multi_asset", "credit", "rates", "equity", "fx", "commodity"}
 
 # Asset class → set of tickers that satisfy that lens.
 # Used as a fallback when theme_assets.asset_class isn't populated yet.
+# Note: "credit" lens = credit + rates (a credit book includes duration exposure).
 LENS_TICKER_FALLBACK: dict[str, set[str]] = {
-    "credit":    {"HYG", "LQD", "JNK", "BKLN", "ANGL", "EMB", "CDX", "HY"},
+    "credit":    {"HYG", "LQD", "JNK", "BKLN", "ANGL", "EMB", "CDX", "HY",
+                  "TLT", "IEF", "SHY", "TIPS", "AGG", "BIL", "SVXY"},
     "rates":     {"TLT", "IEF", "SHY", "TIPS", "AGG", "BIL", "SVXY"},
     "equity":    {"QQQ", "SPY", "IWM", "FXI", "MCHI", "BABA", "KWEB", "XLE", "XLF", "XLV", "ARKK", "EWJ", "EWZ"},
     "fx":        {"UUP", "FXE", "DXY"},

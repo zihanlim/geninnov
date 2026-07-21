@@ -8,6 +8,8 @@ Andromeda ingests news and social media daily, scores themes by "hype" (attentio
 
 On top of the theme engine, an L5 AI reasoning agent synthesizes the L0–L4 deterministic inputs (macro regime, factor exposures, theme scores, risk) into a **$100M long-short book with a per-trade thesis** — the Q1 deliverable. Every numeric claim in the thesis is citation-verified against the L0–L4 inputs before it reaches the UI. See [§14 of the design spec](docs/superpowers/specs/2026-07-21-andromeda-market-theme-platform-design.md) for the full Q1 reasoning pipeline, and [ADR-0012](docs/adrs/0012-citation-guardrail-llm-defense.md) for the citation guardrail design.
 
+The L5 agent supports a **`lens` parameter** that filters the candidate pool by asset class (e.g. `multi_asset`, `credit`, `rates`, `equity`, `fx`, `commodity`) and injects a lens-specific framing instruction into the LLM prompt. The frontend `/portfolio` and `/trades` pages expose this as a `<LensSelector>` segmented control. The credit lens is the natural fit for Andromeda Capital's mandate. See [ADR-0015](docs/adrs/0015-lens-mode-asset-class.md) for the design rationale.
+
 ## Architecture
 
 - **Frontend**: Next.js 14 (TypeScript, Tailwind CSS) → Vercel (live at https://andromeda-analytics.vercel.app)
@@ -47,6 +49,8 @@ All project documentation lives under `docs/`:
 | `supabase/migrations/001_initial_schema.sql` | Full database schema (L1–L4 tables) |
 | `supabase/migrations/005_macro_indicators.sql` | L0 macro_indicators + macro_daily_history |
 | `supabase/migrations/006_factor_exposures.sql` | L2 factor_exposures table |
+| `supabase/migrations/009_asset_class_lens.sql` | L5 lens mode — `asset_class` column on `theme_assets` |
+| `frontend/components/LensSelector.tsx` | Lens toggle (multi-asset / credit / rates / equity / fx / commodity) |
 
 ## Running locally
 

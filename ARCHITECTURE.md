@@ -9,9 +9,9 @@
 | L2 | Factor Exposure | `backend/data/factor_fetcher.py` | `factor_exposures` dict (FF5 + UMD betas per ticker) |
 | L3 | Regime Classifier | `backend/services/regime_classifier.py` | `regime` dict (cycle + sentiment) |
 | L4 | Risk Engine | `scripts/daily_refresh.py` → `compute_and_persist_risk` | `portfolio_risk` table (VaR, CVaR, Sharpe, beta, HHI) |
-| L5 | **Q1 Reasoning Agent** | `backend/services/q1_agent.py` → `run_q1_agent` | `q1_recommendations` + `q1_agent_runs` tables; 8 nodes (aggregate → screen → book metrics → scenario analysis → reason_picks LLM → verify_citations → size_positions → persist) |
+| L5 | **Q1 Reasoning Agent** | `backend/services/q1_agent.py` → `run_q1_agent` | `q1_recommendations` + `q1_agent_runs` tables; 8 nodes (aggregate → screen → book metrics → scenario analysis → reason_picks LLM → verify_citations → size_positions → persist). Supports `lens` parameter (multi_asset/credit/rates/equity/fx/commodity) per [ADR-0015](docs/adrs/0015-lens-mode-asset-class.md) |
 | L6 | Writeup | `frontend/app/research/` | Per-trade thesis + book view rendered in `/research` page |
-| L7 | **Provenance UI** | `frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs}.tsx` | Click-through audit trail for every score |
+| L7 | **Provenance UI** | `frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs,LensSelector}.tsx` | Click-through audit trail for every score; asset-class lens toggle on `/portfolio` and `/trades` |
 
 ## Data Flow
 
@@ -87,6 +87,7 @@ L7: frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs}.tsx
 | `portfolio_risk` | Daily risk metrics | run_date, var_95, cvar_95, sharpe, beta, concentration_hhi |
 | `q1_agent_runs` | L5 agent run audit trail (citation guardrail audit log) | run_date, prompt_version, model_id, input_snapshot, citations, verified, retries |
 | `q1_recommendations` | Q1 output (picks + book view + scenario table) | run_date, picks, book_view, book_risks, book_metrics_summary, scenario_table |
+| `theme_assets.asset_class` | L5 lens filter | ticker, asset_class (rates/credit/equity/fx/commodity) — added in migration 009 |
 
 ## Environment Variables
 
@@ -164,11 +165,12 @@ pytest tests/backend/ -v
 - [x] L3: Regime classifier (cycle × sentiment)
 - [x] L4: Historical VaR, CVaR, Sharpe, beta, HHI
 - [x] L5: **Q1 reasoning agent** — 8-node pipeline (aggregate → screen → book metrics → scenario analysis → LLM reason_picks → verify_citations → size_positions → persist). Citation guardrail with 2-retry max + deterministic fallback. Factor-tilt aware, scenario-aware, cap-enforced.
+- [x] L5 lens mode — `lens` parameter on `run_q1_agent` + `<LensSelector>` on `/portfolio` and `/trades` (ADR-0015)
 - [x] L6: Research page rendering per-trade thesis + book view + scenario table from `q1_recommendations`
-- [x] L7: Provenance UI infrastructure — citation footnotes, theme derivation drawer, regime inputs panel
-- [x] Q1 thesis layer: deterministic L0–L4 features + stochastic L5 synthesis + auditable L6/L7 rendering (see ADR-0012, 0013, 0014)
+- [x] L7: Provenance UI infrastructure — citation footnotes, theme derivation drawer, regime inputs panel, lens selector
+- [x] Q1 thesis layer: deterministic L0–L4 features + stochastic L5 synthesis + auditable L6/L7 rendering (see ADR-0012, 0013, 0014, 0015)
 - [x] Q2: Theme feed with HypeScore gauges + trend arrows
 - [x] Research-first redesign: regime hero, conviction cards, alloc bar, factor panel, global nav
-- [x] Supabase migrations (001–008)
-- [x] 198 tests passing
+- [x] Supabase migrations (001–009)
+- [x] 198+ tests passing (lens mode tests added)
 - [ ] L7 component implementation (ThemeDerivationDrawer, CitationList) — in progress

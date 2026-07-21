@@ -4,23 +4,78 @@
 
 @layer base {
   :root {
-    --bg-primary: #0d1117;
-    --bg-surface: #161b22;
-    --edge: #30363d;
-    --accent-long: #3fb950;
-    --accent-short: #f85149;
-    --accent-neutral: #58a6ff;
+    --bg-primary: #0a0e14;
+    --bg-surface: #11151c;
+    --bg-elevated: #161b24;
+    --bg-hover: #1c2230;
+    --border: #1f2733;
+    --border-strong: #2a3344;
     --text-primary: #e6edf3;
-    --text-secondary: #8b949e;
+    --text-secondary: #8b96a8;
+    --text-tertiary: #5a6477;
+    --accent: #4d8fff;
+    --long: #3fb950;
+    --short: #f85149;
+    --warning: #d29922;
   }
+
+  html, body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: "Inter", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  ::selection { background: rgba(77, 143, 255, 0.3); }
 }
 
-body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: "Inter", system-ui, sans-serif;
-}
+@layer components {
+  .num { @apply font-mono tabular-nums; }
 
-.font-mono {
-  font-family: "JetBrains Mono", "Menlo", monospace;
+  .card {
+    @apply bg-bg-surface border border-border rounded-[10px] overflow-hidden;
+  }
+  .card-header {
+    @apply flex items-center justify-between px-[18px] py-[14px] border-b border-border;
+  }
+  .card-title {
+    @apply text-[11px] uppercase tracking-[0.12em] text-text-secondary font-medium;
+  }
+  .card-body { @apply p-[18px]; }
+
+  .badge {
+    @apply inline-flex items-center gap-[6px] px-[10px] py-[3px] rounded text-[11px] font-medium;
+  }
+  .badge-long { @apply bg-long-dim text-long; }
+  .badge-short { @apply bg-short-dim text-short; }
+  .badge-warning { @apply bg-warning-dim text-warning; }
+  .badge-neutral {
+    @apply bg-bg-elevated text-text-secondary border border-border;
+  }
+  .badge-tier-anchor { @apply bg-accent-dim text-accent; }
+  .badge-tier-discovered { @apply bg-long-dim/60 text-long; }
+
+  .dir-pill {
+    @apply inline-flex items-center gap-[4px] px-2 py-[2px] rounded text-[11px] font-semibold;
+  }
+  .dir-pill-long { @apply text-long bg-long-dim; }
+  .dir-pill-short { @apply text-short bg-short-dim; }
+
+  .filter-btn {
+    @apply px-3 py-[5px] rounded-md border border-border bg-bg-elevated text-text-secondary
+           text-[12px] font-medium transition-colors hover:text-text-primary hover:bg-bg-hover;
+  }
+  .filter-btn-active { @apply text-text-primary border-border-strong bg-bg-hover; }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--bg-elevated) 0%, var(--bg-hover) 50%, var(--bg-elevated) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+  }
 }

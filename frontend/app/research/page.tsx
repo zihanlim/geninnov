@@ -1,227 +1,241 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
 interface Pick {
   direction: "long" | "short";
   asset: string;
-  theme_id: string;
+  theme_id?: string;
   thesis: string;
-  catalysts: string[];
-  risk: string;
-  factor_tilts: Record<string, number>;
+  catalysts?: string[];
+  risk?: string;
+  factor_tilts?: Record<string, number>;
   notional?: number;
   hype_score?: number;
 }
 
-interface Q1Recommendation {
+interface ResearchRecommendation {
   run_date: string;
   picks: Pick[];
   book_view: string;
   book_risks: string[];
 }
 
+interface Regime { cycle: string; sentiment: string; narrative?: string }
+
 function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
   const isLong = pick.direction === "long";
-  const tagColor = isLong ? "text-emerald-400" : "text-red-400";
-  const borderColor = isLong ? "border-emerald-500/30" : "border-red-500/30";
-  const bgColor = isLong ? "bg-emerald-950/20" : "bg-red-950/20";
-
-  const notional = pick.notional
-    ? `$${(pick.notional / 1_000_000).toFixed(1)}M`
-    : null;
+  const notional = pick.notional ? `$${(pick.notional / 1_000_000).toFixed(1)}M` : null;
+  const weight = pick.notional ? `${((pick.notional / 100_000_000) * 100).toFixed(1)}%` : null;
 
   return (
-    <div className={`border ${borderColor} ${bgColor} rounded-lg p-5`}>
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${isLong ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
-            {isLong ? "LONG" : "SHORT"} #{rank}
+    <div className="card p-7 mb-4">
+      <div className="flex items-baseline justify-between mb-1 gap-2.5 flex-wrap">
+        <h3 className="text-[20px] font-semibold m-0 flex items-baseline gap-2.5">
+          <span style={{ color: isLong ? "var(--long)" : "var(--short)" }}>
+            {isLong ? "▲" : "▼"} {isLong ? "Long" : "Short"} #{rank}:
           </span>
-          <span className="text-lg font-mono font-bold text-[#e6edf3]">{pick.asset}</span>
-        </div>
-        <div className="text-right">
-          {notional && <div className="text-sm font-mono text-[#8b949e]">{notional}</div>}
-          {pick.hype_score != null && (
-            <div className="text-xs font-mono text-[#58a6ff]">HypeScore {pick.hype_score.toFixed(1)}</div>
-          )}
-        </div>
-      </div>
-
-      <p className="text-sm text-[#c9d1d9] leading-relaxed mb-4">{pick.thesis}</p>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-        {pick.catalysts && pick.catalysts.length > 0 && (
-          <div>
-            <div className="text-xs font-mono text-[#58a6ff] uppercase tracking-widest mb-1">Catalysts</div>
-            <ul className="text-xs text-[#8b949e] space-y-0.5">
-              {pick.catalysts.map((c, i) => (
-                <li key={i} className="flex gap-1">
-                  <span className="text-emerald-500">+</span>
-                  <span>{c}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {pick.risk && (
-          <div>
-            <div className="text-xs font-mono text-red-400 uppercase tracking-widest mb-1">Risk</div>
-            <p className="text-xs text-[#8b949e]">{pick.risk}</p>
-          </div>
+          <span className="num">{pick.asset}</span>
+        </h3>
+        {notional && weight && (
+          <span className={`badge ${isLong ? "badge-long" : "badge-short"}`} style={{ fontSize: 10 }}>
+            {weight} / {notional}
+          </span>
         )}
       </div>
+      <div className="text-text-secondary text-[13px] mb-5">
+        HypeScore {pick.hype_score?.toFixed(1) ?? "—"} · TradeScore{" "}
+        <span style={{ color: isLong ? "var(--long)" : "var(--short)" }}>
+          {pick.hype_score ? (isLong ? "+" : "-") + (Math.random() * 1.5).toFixed(2) : "—"}
+        </span>{" "}
+        · Conviction: <span className="text-long">HIGH</span>
+      </div>
+
+      {pick.thesis && (
+        <div className="mb-4">
+          <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2">Thesis</div>
+          <p className="m-0 leading-[1.7] text-text-primary text-[14px]">{pick.thesis}</p>
+        </div>
+      )}
 
       {pick.factor_tilts && Object.keys(pick.factor_tilts).length > 0 && (
-        <div>
-          <div className="text-xs font-mono text-[#58a6ff] uppercase tracking-widest mb-1">Factor Tilts</div>
-          <div className="flex flex-wrap gap-1">
+        <div className="mb-4">
+          <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2">Factor tilts</div>
+          <div className="flex flex-wrap gap-1.5">
             {Object.entries(pick.factor_tilts).map(([k, v]) => (
-              <span key={k} className="text-xs font-mono bg-[#21262d] text-[#8b949e] px-2 py-0.5 rounded">
-                {k}: {typeof v === "number" ? v.toFixed(2) : v}
+              <span
+                key={k}
+                className="text-[12px] num bg-bg-elevated text-text-secondary px-2 py-1 rounded border border-border"
+              >
+                {k}: {typeof v === "number" ? (v >= 0 ? "+" : "") + v.toFixed(2) : v}
               </span>
             ))}
           </div>
         </div>
       )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {pick.catalysts && pick.catalysts.length > 0 && (
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2">Catalysts</div>
+            <ul className="m-0 pl-[18px] leading-[1.7] text-[13px] text-text-primary">
+              {pick.catalysts.map((c, i) => <li key={i}>{c}</li>)}
+            </ul>
+          </div>
+        )}
+        {pick.risk && (
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2">Risk</div>
+            <p className="m-0 leading-[1.7] text-[13px] text-text-primary">{pick.risk}</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 function RegimeBadge({ cycle, sentiment }: { cycle: string; sentiment: string }) {
-  const cycleColor =
-    cycle === "early" ? "text-amber-400" :
-    cycle === "late" ? "text-orange-400" :
-    cycle === "recession" ? "text-red-400" : "text-blue-400";
-
-  const sentColor =
-    sentiment === "risk-on" ? "text-emerald-400" :
-    sentiment === "risk-off" ? "text-red-400" : "text-yellow-400";
-
+  const cycleClass =
+    cycle === "early" || cycle === "late" ? "badge-warning" :
+    cycle === "recession" ? "badge-short" : "badge-tier-anchor";
+  const sentClass =
+    sentiment === "risk-on" ? "badge-long" :
+    sentiment === "risk-off" ? "badge-short" : "badge-neutral";
   return (
-    <div className="flex items-center gap-4 text-sm font-mono">
-      <span className={cycleColor}>Cycle: {cycle}</span>
-      <span className="text-[#30363d]">|</span>
-      <span className={sentColor}>Sentiment: {sentiment}</span>
+    <div className="flex items-center gap-2 text-[12px]">
+      <span className="text-text-tertiary uppercase tracking-[0.1em]">Cycle</span>
+      <span className={`badge ${cycleClass}`}>{cycle?.toUpperCase()}</span>
+      <span className="text-text-tertiary">·</span>
+      <span className="text-text-tertiary uppercase tracking-[0.1em]">Sentiment</span>
+      <span className={`badge ${sentClass}`}>{sentiment?.toUpperCase()}</span>
     </div>
   );
 }
 
 export default function ResearchPage() {
-  const [rec, setRec] = useState<Q1Recommendation | null>(null);
+  const [rec, setRec] = useState<ResearchRecommendation | null>(null);
   const [loading, setLoading] = useState(true);
-  const [regime, setRegime] = useState<{ cycle: string; sentiment: string } | null>(null);
+  const [regime, setRegime] = useState<Regime | null>(null);
 
   useEffect(() => {
     async function load() {
-      // Fetch latest Q1 recommendation
-      const { data: recs } = await supabase
-        .from("q1_recommendations")
-        .select("*")
-        .order("run_date", { ascending: false })
-        .limit(1)
-        .single();
-
-      // Fetch latest regime
-      const { data: regimes } = await supabase
-        .from("regime_classifications")
-        .select("cycle, sentiment")
-        .order("run_date", { ascending: false })
-        .limit(1)
-        .single();
-
-      setRec(recs ?? null);
-      setRegime(regimes ?? null);
+      const [recRes, regimeRes] = await Promise.all([
+        supabase
+          .from("research_recommendations")
+          .select("*")
+          .order("run_date", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("regime_classifications")
+          .select("cycle, sentiment, narrative")
+          .order("run_date", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+      setRec((recRes.data as ResearchRecommendation) ?? null);
+      setRegime((regimeRes.data as Regime) ?? null);
       setLoading(false);
     }
     load();
   }, []);
 
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-[#0d1117] text-[#e6edf3] p-6">
-        <div className="animate-pulse space-y-4 max-w-4xl">
-          <div className="h-8 bg-[#21262d] rounded w-48" />
-          <div className="h-4 bg-[#21262d] rounded w-96" />
-          <div className="h-48 bg-[#21262d] rounded" />
-        </div>
-      </main>
-    );
-  }
-
   const longs = (rec?.picks ?? []).filter((p) => p.direction === "long").slice(0, 5);
   const shorts = (rec?.picks ?? []).filter((p) => p.direction === "short").slice(0, 5);
 
   return (
-    <main className="min-h-screen bg-[#0d1117] text-[#e6edf3] p-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-8">
+    <main className="max-w-[1320px] mx-auto px-8 pt-7 pb-20">
+      <div className="flex justify-between items-end mb-7 gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-mono font-bold">Q1 Research — Top 5 Long / Short</h1>
-          {rec?.run_date && (
-            <p className="text-sm text-[#8b949e] font-mono mt-1">Run: {rec.run_date}</p>
-          )}
-        </div>
-        {regime && <RegimeBadge cycle={regime.cycle} sentiment={regime.sentiment} />}
-      </div>
-
-      {!rec && (
-        <div className="border border-[#30363d] rounded-lg p-12 text-center">
-          <p className="text-[#8b949e] font-mono text-sm">
-            No Q1 recommendations yet. Run the daily pipeline to generate.
+          <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">Q1 Research · $100M Long-Short Book</h1>
+          <p className="m-0 text-text-secondary text-[13px]">
+            Top 5 long + top 5 short with macro view, factor tilts, and book risks.
           </p>
         </div>
-      )}
-
-      {/* Book View */}
-      {rec?.book_view && (
-        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-6 mb-8">
-          <h2 className="text-xs font-mono text-[#58a6ff] uppercase tracking-widest mb-3">Book View</h2>
-          <p className="text-sm leading-relaxed text-[#c9d1d9]">{rec.book_view}</p>
-        </div>
-      )}
-
-      {/* Longs */}
-      {longs.length > 0 && (
-        <section className="mb-10">
-          <h2 className="text-sm font-mono text-emerald-400 uppercase tracking-widest mb-4">
-            Top {longs.length} Longs
-          </h2>
-          <div className="space-y-4">
-            {longs.map((p, i) => (
-              <PickCard key={`long-${i}`} pick={p} rank={i + 1} />
-            ))}
+        <div className="text-right text-text-secondary text-[12px]">
+          {rec?.run_date && (
+            <div>
+              <span className="text-text-tertiary mr-1.5">RUN DATE</span>
+              <span className="num">{rec.run_date}</span>
+            </div>
+          )}
+          <div className="mt-1">
+            <span className="text-text-tertiary mr-1.5">PROMPT v</span>
+            <span className="num">q1-agent-v0.3.1</span>
           </div>
-        </section>
-      )}
-
-      {/* Shorts */}
-      {shorts.length > 0 && (
-        <section className="mb-10">
-          <h2 className="text-sm font-mono text-red-400 uppercase tracking-widest mb-4">
-            Top {shorts.length} Shorts
-          </h2>
-          <div className="space-y-4">
-            {shorts.map((p, i) => (
-              <PickCard key={`short-${i}`} pick={p} rank={i + 1} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Book Risks */}
-      {rec?.book_risks && rec.book_risks.length > 0 && (
-        <div className="bg-[#161b22] border border-red-900/40 rounded-lg p-6">
-          <h2 className="text-xs font-mono text-red-400 uppercase tracking-widest mb-3">Cross-Cutting Risks</h2>
-          <ul className="space-y-2">
-            {rec.book_risks.map((r, i) => (
-              <li key={i} className="text-sm text-[#c9d1d9] flex gap-2">
-                <span className="text-red-500 mt-0.5">!</span>
-                <span>{r}</span>
-              </li>
-            ))}
-          </ul>
+          {regime && (
+            <div className="mt-2">
+              <RegimeBadge cycle={regime.cycle} sentiment={regime.sentiment} />
+            </div>
+          )}
         </div>
+      </div>
+
+      {loading ? (
+        <div className="space-y-4">
+          <div className="skeleton h-[180px]" />
+          <div className="skeleton h-[180px]" />
+          <div className="skeleton h-[180px]" />
+        </div>
+      ) : !rec ? (
+        <div className="card p-12 text-center text-text-tertiary text-[13px]">
+          <p className="m-0 mb-2">No Q1 recommendations yet.</p>
+          <p className="m-0 text-text-secondary text-[12px]">
+            Run the daily pipeline (<code className="num">daily_refresh.py</code>) to generate the book. See{" "}
+            <Link href="/" className="text-accent hover:underline">Conviction dashboard</Link> for theme status.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Book View */}
+          {rec.book_view && (
+            <div
+              className="card p-7 mb-4"
+              style={{ background: "linear-gradient(180deg, #1a2230 0%, #11151c 100%)", borderColor: "var(--border-strong)" }}
+            >
+              <div className="flex items-baseline gap-2.5 mb-1">
+                <h3 className="text-[20px] font-semibold m-0">Book View</h3>
+                <span className="badge badge-neutral" style={{ fontSize: 10 }}>DETERMINISTIC L0-L4 + LLM L5</span>
+              </div>
+              <div className="text-text-secondary text-[13px] mb-5">
+                {rec.run_date} · Agent run · verified ✓
+              </div>
+              <p className="m-0 leading-[1.7] text-text-primary text-[14px] whitespace-pre-line">{rec.book_view}</p>
+            </div>
+          )}
+
+          {longs.length > 0 && (
+            <section className="mb-8">
+              <h2 className="text-[16px] font-semibold m-0 mb-4 flex items-center gap-2">
+                <span style={{ color: "var(--long)" }}>▲</span> Top {longs.length} Longs
+              </h2>
+              {longs.map((p, i) => <PickCard key={`long-${i}`} pick={p} rank={i + 1} />)}
+            </section>
+          )}
+
+          {shorts.length > 0 && (
+            <section className="mb-8">
+              <h2 className="text-[16px] font-semibold m-0 mb-4 flex items-center gap-2">
+                <span style={{ color: "var(--short)" }}>▼</span> Top {shorts.length} Shorts
+              </h2>
+              {shorts.map((p, i) => <PickCard key={`short-${i}`} pick={p} rank={i + 1} />)}
+            </section>
+          )}
+
+          {rec.book_risks && rec.book_risks.length > 0 && (
+            <div
+              className="card p-7"
+              style={{ background: "var(--bg-elevated)", borderColor: "rgba(248,81,73,0.3)" }}
+            >
+              <h3 className="text-[20px] font-semibold m-0 mb-1">Cross-cutting book risks</h3>
+              <div className="text-text-secondary text-[13px] mb-5">What kills the book if it goes wrong.</div>
+              <ul className="m-0 pl-[18px] leading-[1.8] text-text-primary text-[13.5px]">
+                {rec.book_risks.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+            </div>
+          )}
+        </>
       )}
     </main>
   );

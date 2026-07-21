@@ -9,25 +9,45 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: { primary: "#0d1117", surface: "#161b22" },
-        edge: "#30363d",
-        long: "#3fb950",
-        short: "#f85149",
-        neutral: "#58a6ff",
+        // Surfaces
+        "bg-primary": "#0a0e14",
+        "bg-surface": "#11151c",
+        "bg-elevated": "#161b24",
+        "bg-hover": "#1c2230",
+        // Borders
+        border: "#1f2733",
+        "border-strong": "#2a3344",
+        // Text
         "text-primary": "#e6edf3",
-        "text-secondary": "#8b949e",
+        "text-secondary": "#8b96a8",
+        "text-tertiary": "#5a6477",
+        // Accents
+        accent: "#4d8fff",
+        "accent-dim": "rgba(77,143,255,0.12)",
+        // Direction
+        long: "#3fb950",
+        "long-dim": "#1f3a25",
+        short: "#f85149",
+        "short-dim": "#3a1f1f",
+        warning: "#d29922",
+        "warning-dim": "#3a2f15",
+        // Legacy alias (kept for backward compat)
+        neutral: "#58a6ff",
+        edge: "#30363d",
       },
       fontFamily: {
-        mono: ["JetBrains Mono", "Menlo", "monospace"],
         sans: ["Inter", "system-ui", "sans-serif"],
+        mono: ["JetBrains Mono", "Menlo", "monospace"],
       },
       animation: {
         "fade-in": "fadeIn 200ms ease-out",
-        "bar-grow": "barGrow 300ms ease-out",
+        "shimmer": "shimmer 1.5s infinite",
+        "pulse-soft": "pulseSoft 2s infinite",
       },
       keyframes: {
         fadeIn: { "0%": { opacity: "0" }, "100%": { opacity: "1" } },
-        barGrow: { "0%": { width: "0%" }, "100%": { width: "var(--bar-width)" } },
+        shimmer: { "0%": { backgroundPosition: "200% 0" }, "100%": { backgroundPosition: "-200% 0" } },
+        pulseSoft: { "0%, 100%": { opacity: "1" }, "50%": { opacity: "0.4" } },
       },
     },
   },

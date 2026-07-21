@@ -1,0 +1,122 @@
+import Sparkline from "./Sparkline";
+import SubScoreBars from "./SubScoreBars";
+
+export interface ConvictionTheme {
+  id: string;
+  name: string;
+  tier: "anchor" | "discovered" | "review" | string;
+  hype_score: number;
+  volume_score?: number;
+  sentiment_score?: number;
+  corr_score?: number;
+  momentum_score?: number;
+  delta_1d?: number;
+  history?: number[];
+  catalyst?: string;
+  crowding?: "healthy" | "low" | "high" | string;
+  thesis?: string;
+  updated_at?: string;
+}
+
+interface Props {
+  rank: number;
+  theme: ConvictionTheme;
+  hero?: boolean;
+}
+
+const CONVICTION_LABELS: Record<number, string> = {
+  1: "#1 · High conviction",
+  2: "#2 · High conviction",
+  3: "#3 · Emerging",
+};
+
+function tierBadge(tier: string) {
+  if (tier === "anchor") return <span className="badge badge-tier-anchor">ANCHOR</span>;
+  if (tier === "discovered") return <span className="badge badge-tier-discovered">DISCOVERED</span>;
+  if (tier === "review") return <span className="badge badge-warning">REVIEW</span>;
+  return <span className="badge badge-neutral">{tier.toUpperCase()}</span>;
+}
+
+function crowdingColor(c?: string) {
+  if (c === "low" || c === "healthy") return "text-long";
+  if (c === "high") return "text-warning";
+  return "text-text-secondary";
+}
+
+export default function ConvictionCard({ rank, theme, hero = false }: Props) {
+  const score = Math.round(theme.hype_score ?? 0);
+  const delta = theme.delta_1d ?? 0;
+  const color = score >= 70 ? "#4d8fff" : score >= 50 ? "#3fb950" : "#f85149";
+
+  return (
+    <div
+      className={`flex flex-col rounded-[10px] p-[18px] border cursor-pointer transition-all duration-200 relative ${
+        hero
+          ? "bg-gradient-to-b from-[#1a2230] to-[#131822] border-border-strong"
+          : "bg-bg-surface border-border hover:border-border-strong hover:bg-bg-elevated"
+      }`}
+    >
+      {hero && (
+        <div
+          className="absolute top-0 inset-x-0 h-0.5 rounded-t-[10px]"
+          style={{ background: "linear-gradient(90deg, var(--accent) 0%, var(--long) 100%)" }}
+        />
+      )}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] text-text-tertiary uppercase tracking-[0.15em] font-semibold">
+          {CONVICTION_LABELS[rank] ?? `#${rank}`}
+        </span>
+        {tierBadge(theme.tier)}
+      </div>
+
+      <h3 className="text-[15px] font-semibold m-0 mb-1.5">{theme.name}</h3>
+      <div className="text-[11px] text-text-tertiary mb-2">
+        HypeScore{" "}
+        <span className="num font-semibold text-text-primary">{score}</span> ·{" "}
+        <span className={delta >= 0 ? "text-long" : "text-short"}>
+          {delta >= 0 ? "+" : ""}
+          {delta.toFixed(1)} wow
+        </span>
+      </div>
+
+      {theme.thesis && (
+        <p className="text-[13px] text-text-secondary leading-[1.55] my-2 flex-1">
+          {theme.thesis}
+        </p>
+      )}
+
+      {theme.history && theme.history.length > 0 && (
+        <div className="mt-2">
+          <Sparkline points={theme.history} color={color} height={32} />
+        </div>
+      )}
+
+      <SubScoreBars
+        volume={theme.volume_score}
+        sentiment={theme.sentiment_score}
+        correlation={theme.corr_score}
+        momentum={theme.momentum_score}
+      />
+
+      <div className="grid grid-cols-3 gap-2.5 pt-3 mt-3 border-t border-border">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-0.5">Catalyst</div>
+          <div className="text-[13px] font-semibold">{theme.catalyst ?? "—"}</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-0.5">Crowding</div>
+          <div className={`text-[13px] font-semibold ${crowdingColor(theme.crowding)}`}>
+            {theme.crowding ? theme.crowding[0].toUpperCase() + theme.crowding.slice(1) : "—"}
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-0.5">Δ1d</div>
+          <div className={`text-[13px] font-semibold num ${delta >= 0 ? "text-long" : "text-short"}`}>
+            {delta >= 0 ? "+" : ""}
+            {delta.toFixed(1)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

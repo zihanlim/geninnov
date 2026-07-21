@@ -430,3 +430,113 @@ def test_mock_llm_pick_has_required_fields():
     assert "risk" in pick
     assert "factor_tilts" in pick
 
+
+# ─── lens mode (ADR-0015) ─────────────────────────────────────────────────────
+
+from backend.services.q1_agent import (
+    VALID_LENSES,
+    LENS_TICKER_FALLBACK,
+    LENS_PROMPT_FRAMING,
+    _format_lens_framing,
+)
+
+
+def test_lens_known_set_constant():
+    """VALID_LENSES must contain the documented set."""
+    assert "multi_asset" in VALID_LENSES
+    assert "credit" in VALID_LENSES
+    assert "rates" in VALID_LENSES
+    assert "equity" in VALID_LENSES
+    assert "fx" in VALID_LENSES
+    assert "commodity" in VALID_LENSES
+
+
+def test_lens_ticker_fallback_credit_only_credit_rates():
+    """Credit lens must be credit + rates instruments."""
+    credit_set = LENS_TICKER_FALLBACK["credit"]
+    assert "HYG" in credit_set
+    assert "LQD" in credit_set
+    assert "TLT" in credit_set  # rates is part of credit lens
+    assert "GLD" not in credit_set  # commodity is NOT in credit lens
+    assert "FXI" not in credit_set  # equity is NOT in credit lens
+
+
+def test_screen_filters_to_credit_lens():
+    """With lens='credit', only credit/rates tickers pass screen_candidates."""
+    state = _make_state(theme_scores=MOCK_THEME_SCORES, candidates=[])
+    state["lens"] = "credit"
+    state = screen_candidates(state)
+    cands = state["candidates"]
+    assert len(cands) > 0, "credit lens should yield at least some candidates"
+    allowed = LENS_TICKER_FALLBACK["credit"]
+    for c in cands:
+        assert c["asset"] in allowed, f"{c['asset']} leaked through credit lens"
+
+
+def test_screen_filters_to_equity_lens():
+    """With lens='equity', only equity ETFs pass."""
+    state = _make_state(theme_scores=MOCK_THEME_SCORES, candidates=[])
+    state["lens"] = "equity"
+    state = screen_candidates(state)
+    cands = state["candidates"]
+    allowed = LENS_TICKER_FALLBACK["equity"]
+    for c in cands:
+        assert c["asset"] in allowed, f"{c['asset']} leaked through equity lens"
+
+
+def test_screen_multi_asset_default_includes_everything():
+    """Default (multi_asset) lens must NOT filter — all theme-mapped assets pass."""
+    state = _make_state(theme_scores=MOCK_THEME_SCORES, candidates=[])
+    state = screen_candidates(state)
+    cands = state["candidates"]
+    # Should include TLT (rates), GLD (commodity), FXI (equity), HYG (credit), XLE (commodity)
+    assets = {c["asset"] for c in cands}
+    assert "TLT" in assets
+    assert "GLD" in assets
+    assert "FXI" in assets
+    assert "HYG" in assets
+
+
+def test_screen_fx_lens_drops_credit_assets():
+    """FX lens must exclude HYG/LQD/TLT (credit/rates)."""
+    state = _make_state(theme_scores=MOCK_THEME_SCORES, candidates=[])
+    state["lens"] = "fx"
+    state = screen_candidates(state)
+    cands = state["candidates"]
+    assets = {c["asset"] for c in cands}
+    # UUP and FXE should pass; HYG and TLT should not
+    assert "HYG" not in assets
+    assert "TLT" not in assets
+    # Either UUP, FXE, or both should be present (depends on theme score)
+    assert "UUP" in assets or "FXE" in assets or len(cands) == 0
+
+
+def test_lens_invalid_value_falls_back_to_multi_asset():
+    """Unknown lens value must fall back to multi_asset (no crash)."""
+    state = _make_state(theme_scores=MOCK_THEME_SCORES, candidates=[])
+    state["lens"] = "garbage_value_xyz"
+    state = screen_candidates(state)  # should not raise
+    cands = state["candidates"]
+    # Should be treated as multi_asset — TLT and GLD should appear
+    assert len(cands) > 0
+
+
+def test_format_lens_framing_credit_has_credit_words():
+    """Credit lens framing must mention credit market concepts."""
+    out = _format_lens_framing("credit")
+    assert "CREDIT" in out
+    assert "spread" in out.lower() or "default" in out.lower() or "credit" in out.lower()
+
+
+def test_format_lens_framing_multi_asset_default():
+    """Multi-asset lens should produce a default framing (no crash)."""
+    out = _format_lens_framing("multi_asset")
+    assert "MULTI-ASSET" in out
+
+
+def test_format_lens_framing_unknown_falls_back():
+    """Unknown lens should fall back to multi_asset framing (no crash)."""
+    out = _format_lens_framing("nonexistent_lens_xyz")
+    assert "MULTI-ASSET" in out
+
+

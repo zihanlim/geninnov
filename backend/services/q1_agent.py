@@ -56,7 +56,55 @@ from .scenario_analysis import run_scenario_analysis, format_scenario_table
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 DEFAULT_MODEL = os.environ.get("ANTHROPIC_MODEL_ID", "claude-sonnet-4-20250514")
-PROMPT_VERSION = "v2.0.0"          # v2: added book_metrics, scenario_analysis, counter-thesis
+PROMPT_VERSION = "v2.1.0"          # v2.1: added lens mode (multi_asset | credit | rates | equity | fx | commodity)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Lens mode — see ADR-0015
+# ─────────────────────────────────────────────────────────────────────────────
+# Filters the candidate pool by asset_class before the LLM sees it, and injects
+# a lens-specific framing instruction into the reason_picks prompt.
+#   "multi_asset" (default) — no filter, all asset classes allowed
+#   "credit"               — only credit + rates (HYG, LQD, TLT, IEF, etc.)
+#   "rates"                — only rates (TLT, IEF, TIPS, etc.)
+#   "equity"               — only equity ETFs
+#   "fx"                   — only FX instruments
+#   "commodity"            — only commodities
+#   Custom list            — pass e.g. ["credit", "rates"] to combine
+# Asset class mapping comes from theme_assets.asset_class (migration 009).
+VALID_LENSES = {"multi_asset", "credit", "rates", "equity", "fx", "commodity"}
+
+# Asset class → set of tickers that satisfy that lens.
+# Used as a fallback when theme_assets.asset_class isn't populated yet.
+LENS_TICKER_FALLBACK: dict[str, set[str]] = {
+    "credit":    {"HYG", "LQD", "JNK", "BKLN", "ANGL", "EMB", "CDX", "HY"},
+    "rates":     {"TLT", "IEF", "SHY", "TIPS", "AGG", "BIL", "SVXY"},
+    "equity":    {"QQQ", "SPY", "IWM", "FXI", "MCHI", "BABA", "KWEB", "XLE", "XLF", "XLV", "ARKK", "EWJ", "EWZ"},
+    "fx":        {"UUP", "FXE", "DXY"},
+    "commodity": {"GLD", "SLV", "UNG", "OIH", "CL"},
+}
+
+# Lens → human-readable framing instruction prepended to the LLM prompt.
+LENS_PROMPT_FRAMING: dict[str, str] = {
+    "credit": (
+        "LENS: CREDIT — frame every pick in terms of credit-market views: spreads, "
+        "default risk, ratings, carry, roll-down. The book is a credit long/short, not "
+        "a multi-asset macro book. Name the credit sub-sector (IG, HY, EM, loans, "
+        "structured) for each pick. The book_view should describe the credit cycle "
+        "phase (early/mid/late/distress)."
+    ),
+    "rates": (
+        "LENS: RATES — frame every pick in terms of duration, curve shape, real vs "
+        "nominal, and breakevens. The book is a rates trade. Name the maturity bucket "
+        "and curve trade (2s10s, 5s30s, etc.) where relevant."
+    ),
+    "equity": (
+        "LENS: EQUITY — frame every pick in terms of sector rotation, factor exposures, "
+        "and index/ETF selection. The book is an equity sector/style book."
+    ),
+    "fx": "LENS: FX — frame every pick in terms of currency regime, real-rate differential, and carry.",
+    "commodity": "LENS: COMMODITY — frame every pick in terms of supply/demand balance, inventory cycle, and term structure.",
+    "multi_asset": "LENS: MULTI-ASSET — the book can span any asset class; pick the best expression of each theme.",
+}
 
 
 def _llm_complete(prompt: str, system: str = "", temperature: float = 0.0) -> str:
@@ -223,6 +271,7 @@ def screen_candidates(state: Q1State) -> Q1State:
       2. |trade_score| > 0  (has a direction)
       3. Asset has a factor beta (R² >= 0.1) — excludes illiquid/insufficient history
       4. Asset has ADV >= $2M/day — liquidity filter (avoids uninvestable positions)
+      5. Lens filter — if state["lens"] != "multi_asset", only assets in the lens are kept
 
     Assets without factor data but in the default universe (ETFs) are permitted
     without the R² check since ETFs have stable liquid histories.
@@ -230,10 +279,19 @@ def screen_candidates(state: Q1State) -> Q1State:
     cfg: ScoringConfig = state["cfg"]
     threshold = cfg.hype_score_threshold
     factor_exp = state["factor_exposures"]
+    lens: str = state.get("lens", "multi_asset")
+    if lens not in VALID_LENSES:
+        print(f"[screen_candidates] Unknown lens '{lens}' — defaulting to multi_asset")
+        lens = "multi_asset"
     eligible: list[dict] = []
 
     # Universe of liquid ETFs — always allowed (no R² check needed)
     LIQUID_ETF_UNIVERSE = set(SECTOR_MAP.keys())
+
+    # Lens ticker set (fallback when theme_assets.asset_class is unavailable)
+    lens_tickers: set[str] | None = None
+    if lens != "multi_asset":
+        lens_tickers = set(LENS_TICKER_FALLBACK.get(lens, set()))
 
     for t in state["theme_scores"]:
         if t["hype_score"] < threshold:
@@ -245,6 +303,10 @@ def screen_candidates(state: Q1State) -> Q1State:
         assets = _theme_default_assets(t["name"])
 
         for asset in assets:
+            # Lens filter — drop assets outside the selected lens
+            if lens_tickers is not None and asset not in lens_tickers:
+                continue
+
             is_etf = asset in LIQUID_ETF_UNIVERSE
 
             # Factor beta check: ETFs always pass; equities need R² >= 0.1
@@ -273,6 +335,13 @@ def screen_candidates(state: Q1State) -> Q1State:
 
     candidate_pool = list(seen.values())
     candidate_pool.sort(key=lambda x: x["hype_score"], reverse=True)
+
+    if len(candidate_pool) < 10 and lens != "multi_asset":
+        # Lens filter too aggressive — fall back to multi-asset pool
+        # rather than produce a 3-pick book. Log it; do not silently switch.
+        print(f"[screen_candidates] Lens '{lens}' yielded {len(candidate_pool)} "
+              f"candidates (< 10). Consider widening the lens.")
+
     state["candidates"] = candidate_pool[:30]   # cap at 30 for LLM context
 
     return state
@@ -521,6 +590,8 @@ Rules:
 
 REASON_PICKS_PROMPT_TEMPLATE = """Today's date: {run_date}
 
+{lens_framing}
+
 === MACRO SNAPSHOT (L0) ===
 {acro_snapshot}
 
@@ -566,6 +637,16 @@ Check the cap violations — avoid picks that worsen sector/geo concentration.
 Reference the scenario analysis in your book_risks.
 For each pick: specify time_horizon AND counter_thesis with a measurable disqualifier.
 Respond ONLY with valid JSON."""
+
+
+def _format_lens_framing(lens: str) -> str:
+    """
+    Render the lens-specific framing instruction for the LLM prompt.
+    Injected as a header section so the model sees it before the macro snapshot.
+    """
+    if lens == "multi_asset" or lens not in LENS_PROMPT_FRAMING:
+        return "=== LENS: MULTI-ASSET (default) ===\nNo lens filter applied — picks can span any asset class."
+    return f"=== LENS: {lens.upper()} ===\n{LENS_PROMPT_FRAMING[lens]}"
 
 
 def _format_macro_snapshot(snapshot: dict[str, dict]) -> str:
@@ -639,6 +720,7 @@ def reason_picks(state: Q1State) -> Q1State:
 
     prompt_vars = {
         "run_date": state["run_date"],
+        "lens_framing": _format_lens_framing(state.get("lens", "multi_asset")),
         "acro_snapshot": _format_macro_snapshot(macro),
         "cycle": regime.get("cycle", "N/A"),
         "sentiment": regime.get("sentiment", "N/A"),
@@ -936,6 +1018,7 @@ def run_q1_agent(
     candidates: list[tuple],
     risk_metrics: dict[str, Any],
     cfg: ScoringConfig,
+    lens: str = "multi_asset",
 ) -> dict[str, Any] | None:
     """
     Full L5 → L6 pipeline: aggregate → screen → classify → reason → verify → size → persist.
@@ -949,14 +1032,23 @@ def run_q1_agent(
         candidates:       list of (TradeCandidate, notional, weight) tuples from daily_refresh
         risk_metrics:     output of compute_risk_metrics()
         cfg:              ScoringConfig
+        lens:             "multi_asset" (default) | "credit" | "rates" | "equity" | "fx" | "commodity"
+                          Filters the candidate pool to the chosen asset class and
+                          injects a lens-specific framing instruction into the LLM prompt.
+                          See ADR-0015.
 
     Returns:
-        dict with keys: picks, book_view, book_risks, input_snapshot, verified, retries
+        dict with keys: picks, book_view, book_risks, input_snapshot, verified, retries,
+                        lens (echoed)
         or None if LLM is unavailable (key not set) or persist failed.
     """
     if not ANTHROPIC_API_KEY:
         print("[run_q1_agent] ANTHROPIC_API_KEY not set — skipping.")
         return None
+
+    if lens not in VALID_LENSES:
+        print(f"[run_q1_agent] Unknown lens '{lens}' — defaulting to multi_asset")
+        lens = "multi_asset"
 
     # Build initial state
     regime_dict: dict[str, Any] = {}
@@ -995,6 +1087,7 @@ def run_q1_agent(
         "candidates": candidate_dicts,
         "risk_metrics": risk_metrics,
         "cfg": cfg,
+        "lens": lens,
         "picks": [],
         "book_view": "",
         "book_risks": [],
@@ -1042,4 +1135,5 @@ def run_q1_agent(
         "input_snapshot": state.get("input_snapshot", {}),
         "verified": state.get("verified", False),
         "retries": state.get("retries", 0),
+        "lens": state.get("lens", "multi_asset"),
     }

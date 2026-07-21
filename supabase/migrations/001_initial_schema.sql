@@ -1,3 +1,21 @@
+-- Enable RLS on all tables
+ALTER TABLE themes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE theme_assets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE theme_signals_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trade_candidates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE portfolio_positions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE portfolio_risk ENABLE ROW LEVEL SECURITY;
+ALTER TABLE research_output ENABLE ROW LEVEL SECURITY;
+
+-- Public read policies (frontend anon key reads here)
+CREATE POLICY "Public read" ON themes FOR SELECT TO anon USING (true);
+CREATE POLICY "Public read" ON theme_assets FOR SELECT TO anon USING (true);
+CREATE POLICY "Public read" ON theme_signals_history FOR SELECT TO anon USING (true);
+CREATE POLICY "Public read" ON trade_candidates FOR SELECT TO anon USING (true);
+CREATE POLICY "Public read" ON portfolio_positions FOR SELECT TO anon USING (true);
+CREATE POLICY "Public read" ON portfolio_risk FOR SELECT TO anon USING (true);
+CREATE POLICY "Public read" ON research_output FOR SELECT TO anon USING (true);
+
 -- themes
 CREATE TABLE themes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

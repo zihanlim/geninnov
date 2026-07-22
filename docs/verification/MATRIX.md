@@ -17,8 +17,38 @@ This matrix is the release gate for investor-critical invariants. A row is **PAS
 | Lens selector is consistent across `/`, `/trades`, `/research`, `/portfolio` | [`tests/e2e/lens.spec.ts:4`](../../tests/e2e/lens.spec.ts#L4) | Select `credit` on each route and confirm the URL/state and visible candidate set remain credit-filtered across navigation. | [`tests/e2e/lens.spec.ts:4`](../../tests/e2e/lens.spec.ts#L4) exercises all four routes. | **PASS** — automated coverage linked; re-run at release gate |
 | ThemeDerivationDrawer shows `\|corr\|` and selection method | [`tests/e2e/derivation-drawer.spec.ts:4`](../../tests/e2e/derivation-drawer.spec.ts#L4) | Open a theme drawer and reconcile the displayed absolute correlation and selected asset/method against `theme_signals_history` and `theme_assets`. | [`tests/e2e/derivation-drawer.spec.ts:4`](../../tests/e2e/derivation-drawer.spec.ts#L4) asserts both labels are visible. | **PASS** — automated coverage linked; re-run at release gate |
 | No critical accessibility violations | Planned test: [`tests/e2e/accessibility.spec.ts:1`](../../tests/e2e/accessibility.spec.ts#L1) (file not yet present; Task 23) | Keyboard-only walkthrough of all four routes: landmarks, focus visibility/order, drawer focus handling, labels, captions, and alt text. | Run axe on `/`, `/trades`, `/research`, `/portfolio`; assert `impact === "critical"` violations equal `[]`. | **FAIL** — required test file/evidence is missing |
-| Migrations 010/011 deployed status matches T1 baseline | Baseline evidence: [`docs/baseline/schema.md:30`](../baseline/schema.md#L30) and [`docs/baseline/schema.md:31`](../baseline/schema.md#L31); no automated deployment test. | Use read-only Supabase schema inspection and REST probes for `market_assets` and `prediction_markets`; update baseline only from direct evidence. T1 records both as missing. | [`frontend/tests/e2e/dashboard.spec.ts:3`](../../frontend/tests/e2e/dashboard.spec.ts#L3) covers market-bar rendering when available; prediction-market deployment assertion is absent. | **FAIL** — T1 confirms migrations 010/011 are not deployed |
+| Migrations 010/011 deployed status matches T1 baseline | Baseline evidence: [`docs/baseline/schema.md:30`](../baseline/schema.md#L30) and [`docs/baseline/schema.md:31`](../baseline/schema.md#L31); no automated deployment test. | Use read-only Supabase schema inspection and REST probes for `market_assets` and `prediction_markets`; update baseline only from direct evidence. T1 records both as missing. T29 hand-recon (`docs/baseline/prod-recon-2026-07-21.md`) re-confirms both tables are absent. | [`frontend/tests/e2e/dashboard.spec.ts:3`](../../frontend/tests/e2e/dashboard.spec.ts#L3) covers market-bar rendering when available; prediction-market deployment assertion is absent. | **FAIL** — T1 confirms migrations 010/011 are not deployed; T29 reconfirms |
 
 ## Release rule
 
 Release is blocked while any row is `FAIL` or `PENDING`. Task 26 must execute the full backend, build, type-check, and Playwright suites; successful historical commits or linked tests do not substitute for a fresh release-candidate run.
+
+## T29 lineage reconciliation — run_date 2026-07-21
+
+Hand-recon pass over `docs/lineage/MATRIX.md` for the chosen production anchor.
+Full record: [`docs/baseline/prod-recon-2026-07-21.md`](../baseline/prod-recon-2026-07-21.md).
+Counts below are over the 23 numeric/advisory fields in the matrix.
+
+| result | count | fields |
+|---|---|---|
+| PASS | 11 | `theme.hype_score`, `theme.trade_score`, `regime.classification`, `macro.dgs10`, `macro.hy_oas`, `macro.vix`, `portfolio.daily_return`, `portfolio.gross_exposure`, `portfolio.net_exposure`, `portfolio.leverage`, `theme_signals_history` (raw) |
+| FAIL | 7 | `theme.corr_to_market` (drawer label vs normalized column), `trade.thesis.body` (fallback LLM, verified=false), `trade.evidence` (zero citations), `risk.var_95`, `risk.cvar_95`, `risk.sharpe`, `risk.beta`, `risk.hhi` (raw floats; migration 013 `numeric_derivations` not applied) |
+| CANNOT_RECONCILE | 5 | `prediction.top_outcome_price` (mig 011), `market.index_change_pct` (mig 010), `portfolio.cumulative_return` (mig 014), `portfolio.inception_date` (mig 014), `portfolio.sector_concentration`, `portfolio.geo_concentration` (never persisted) |
+
+### T29 verdict
+
+The release gate cannot move from its current state using this anchor: 12 of 23
+lineage fields either fail the reconciliation or cannot be reconciled because
+migrations 010/011/013/014 are not deployed. Two blocking findings from T29:
+
+1. **L5 fallback thesis on production.** Every recent `research_agent_runs`
+   row carries `verified=false, retries=5` with empty citations and the
+   deterministic fallback prose in `raw_output`. The `/research` page is
+   therefore surfacing fallback content as if it were Q1 output. This is a
+   live failure of the "L5 never marks a heuristic fallback as verified"
+   invariant above.
+2. **Risk fields are raw floats, not derivations.** `portfolio_risk` exists
+   with hardcoded numeric columns; `numeric_derivations` JSONB column from
+   migration 013 is absent. Per-row method/freshness/uncertainty provenance is
+   missing, so the "VaR/CVaR/Sharpe/Beta/HHI are derivations, not raw
+   numbers" invariant is also failing on production today.

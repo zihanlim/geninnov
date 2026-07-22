@@ -98,27 +98,41 @@ Tool: `mcp__plugin_supabase_supabase__list_projects`
 
 The active Andromeda project is `xrvwyubzraxzqiizicsg` (`ACTIVE_HEALTHY`).
 
-Tool: `mcp__plugin_supabase_supabase__list_tables` (with `project_id="xrvwyubzraxzqiizicsg"`, `schemas=["public"]`, `verbose=true`)
+Tool: `mcp__plugin_supabase_supabase__list_tables` (with `project_id="xrvwyubzraxzqiizicsg"`, `schemas=["public"]`, `verbose=false`)
 
-Returned 17 tables in the `public` schema. Verbatim table list (truncated
-column detail; full output was used to populate `schema.md`):
+Returned **16 tables** in the `public` schema. The compact (non-verbose)
+response is reproduced verbatim below; per-column detail was obtained by
+re-running the same tool with `verbose=true` and is referenced from
+`schema.md` rather than re-quoted here in full:
 
-- themes (8 rows)
-- theme_assets (29 rows)
-- theme_signals_history (16 rows)
-- trade_candidates (10 rows)
-- portfolio_positions (10 rows)
-- portfolio_risk (1 row)
-- portfolio_returns (5 rows)
-- scoring_config (13 rows)
-- backtest_results (0 rows)
-- research_output (3 rows)
-- macro_indicators (12 rows)
-- macro_daily_history (2,540 rows)
-- factor_exposures (11 rows)
-- regime_classifications (1 row)
-- research_recommendations (1 row)
-- research_agent_runs (7 rows)
+```json
+{
+  "tables": [
+    {"name": "public.themes", "rls_enabled": true, "rows": 8},
+    {"name": "public.theme_assets", "rls_enabled": true, "rows": 29},
+    {"name": "public.theme_signals_history", "rls_enabled": true, "rows": 16},
+    {"name": "public.trade_candidates", "rls_enabled": true, "rows": 10},
+    {"name": "public.portfolio_positions", "rls_enabled": true, "rows": 10},
+    {"name": "public.portfolio_risk", "rls_enabled": true, "rows": 1},
+    {"name": "public.portfolio_returns", "rls_enabled": true, "rows": 5},
+    {"name": "public.scoring_config", "rls_enabled": true, "rows": 13},
+    {"name": "public.backtest_results", "rls_enabled": true, "rows": 0},
+    {"name": "public.research_output", "rls_enabled": true, "rows": 3},
+    {"name": "public.macro_indicators", "rls_enabled": true, "rows": 12,
+     "comment": "Latest-value snapshot per series (L0 output)"},
+    {"name": "public.macro_daily_history", "rls_enabled": true, "rows": 2540,
+     "comment": "Daily time-series for regime classification and backfill"},
+    {"name": "public.factor_exposures", "rls_enabled": true, "rows": 11,
+     "comment": "Rolling 252d FF5+UMD betas per asset (L2)"},
+    {"name": "public.regime_classifications", "rls_enabled": true, "rows": 1,
+     "comment": "L3 rule-based regime (cycle x sentiment)"},
+    {"name": "public.research_recommendations", "rls_enabled": true, "rows": 1,
+     "comment": "Q1 top-5 L/S picks with thesis (L6 output)"},
+    {"name": "public.research_agent_runs", "rls_enabled": true, "rows": 7,
+     "comment": "Q1 agent run audit log (L5)"}
+  ]
+}
+```
 
 Two migration tables are **absent** from this list:
 

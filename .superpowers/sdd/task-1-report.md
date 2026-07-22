@@ -62,13 +62,17 @@ deployment at index 0 is `dpl_HSTbZAfzEc5tMoM8afRNux2wkWBv`, state READY,
 created `2026-07-22T04:24:11Z`, commit SHA
 `0f4230677d28e3f5651ec2397b56fc0a2836b890`.
 
-### Supabase MCP outputs (verbatim, abridged)
+### Supabase MCP outputs
 
 Tool: `mcp__plugin_supabase_supabase__list_projects`
 
+The `list_projects` response contained the user's full project inventory; the
+following is the **summary** (the unrelated first project is shown abridged;
+the active Andromeda project is shown in full):
+
 ```json
 {"projects":[
-  {"id":"eonesficmbnlcrrbcvrr","name":"ai-phi-x","status":"INACTIVE", ...},
+  {"id":"eonesficmbnlcrrbcvrr","name":"ai-phi-x","status":"INACTIVE", "<other-fields-abridged>"},
   {"id":"xrvwyubzraxzqiizicsg","name":"andromeda","status":"ACTIVE_HEALTHY",
    "region":"ap-northeast-2","created_at":"2026-07-20T17:53:47.292407Z",
    "database":{"host":"db.xrvwyubzraxzqiizicsg.supabase.co","version":"17.6.1.147"}

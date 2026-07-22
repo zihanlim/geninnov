@@ -1,0 +1,2 @@
+# Playwright E2E tests for Andromeda frontend.
+# Tests run against PLAYWRIGHT_BASE_URL (default http://localhost:3000).

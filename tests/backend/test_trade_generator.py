@@ -48,3 +48,16 @@ def test_falling_hype_negative_sentiment():
     )
     score = trade_score(hype_today=50.0, hype_yesterday=100.0, sentiment=-0.5, cfg=cfg)
     assert score < 0.0, f"Expected negative score, got {score}"
+
+
+# Brief test (Task 22): elapsed-days momentum normalization.
+# Same hype diff spread over more days should yield smaller momentum.
+# (Brief test as written had hype_today == hype_yesterday which gives zero
+# momentum; corrected to use a nonzero diff so the normalization is visible.)
+def test_trade_score_normalizes_momentum_by_elapsed_days():
+    from backend.services.trade_generator import trade_score
+    a = trade_score(hype_today=0.6, hype_yesterday=0.5, sentiment=0.0, elapsed_days=1)
+    b = trade_score(hype_today=0.6, hype_yesterday=0.5, sentiment=0.0, elapsed_days=5)
+    # Same hype diff spread over more days should yield smaller momentum.
+    assert abs(a) > abs(b)
+

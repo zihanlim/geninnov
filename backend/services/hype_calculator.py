@@ -38,31 +38,52 @@ def rescale_vader(compound: float) -> float:
     """Rescale VADER compound [-1, +1] to [0, 1]."""
     return (compound + 1) / 2
 
+
 def hype_score(
-    mention_count_1d: int,
-    avg_sentiment: float,
-    price_corr: float,
-    momentum_raw: float,
-    all_mention_counts: list[int],
-    all_sentiments: list[float],
-    all_corrs: list[float],
-    all_momentum: list[float],
+    volume: float,
+    sentiment: float,
+    corr: float,
+    momentum: float,
     cfg: ScoringConfig,
 ) -> float:
     """
     Compute HypeScore for a single theme.
 
-    All 4 sub-scores are independently min-max normalized across all themes,
-    then weighted and summed to produce a score in [0, 100].
+    `volume` and `momentum` are expected to be min-max normalized to [0, 1]
+    across the theme universe (by the caller). `sentiment` is VADER compound
+    in [-1, +1] and is rescaled here. `corr` is the raw price correlation
+    in [-1, +1]; it is folded via abs() so that negative correlations
+    contribute the same magnitude as positive ones.
     """
-    volume = minmax_norm(float(mention_count_1d), all_mention_counts)
-    sent = rescale_vader(avg_sentiment)  # already [-1, +1]
-    corr = minmax_norm(abs(price_corr), [abs(c) for c in all_corrs])
-    momentum = minmax_norm(momentum_raw, all_momentum)
+    sent = rescale_vader(sentiment)  # [-1, +1] -> [0, 1]
+    corr_abs = abs(corr)              # [-1, +1] -> [0, 1]
 
     return 100 * (
         cfg.hype_volume_weight * volume +
         cfg.hype_sentiment_weight * sent +
-        cfg.hype_corr_weight * corr +
+        cfg.hype_corr_weight * corr_abs +
         cfg.hype_momentum_weight * momentum
     )
+
+
+def compute_hype_scores(raw_signals: list[dict], cfg: ScoringConfig) -> list[dict]:
+    """
+    Cross-theme helper: min-max normalize each sub-score across all themes,
+    then call hype_score for each theme. Returns scored rows with 'hype_score'.
+    """
+    all_counts = [r["mention_count_1d"] for r in raw_signals]
+    all_momenta = [r["momentum_raw"] for r in raw_signals]
+
+    scored = []
+    for r in raw_signals:
+        volume = minmax_norm(float(r["mention_count_1d"]), all_counts)
+        momentum = minmax_norm(r["momentum_raw"], all_momenta)
+        score = hype_score(
+            volume=volume,
+            sentiment=r["avg_sentiment"],
+            corr=r["price_corr"],
+            momentum=momentum,
+            cfg=cfg,
+        )
+        scored.append({**r, "hype_score": score})
+    return scored

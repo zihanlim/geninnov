@@ -23,7 +23,13 @@ from data.reddit_client import fetch_posts_for_theme
 from data.yahoo_client import fetch_price_data, correlation_with_mentions
 from data.macro_fetcher import MacroFetcher
 from data.polymarket_fetcher import PolymarketFetcher
-from services.hype_calculator import hype_score, ScoringConfig, rescale_vader, minmax_norm
+from services.hype_calculator import (
+    hype_score,
+    compute_hype_scores as services_hype_compute_hype_scores,
+    ScoringConfig,
+    rescale_vader,
+    minmax_norm,
+)
 from services.trade_generator import trade_score
 from services.trade_ranker import (
     rank_trade_candidates,
@@ -136,27 +142,7 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
 
 # ─── Step 4: Compute HypeScores ───────────────────────────────────────────────
 def compute_hype_scores(raw_signals: list[dict], cfg: ScoringConfig) -> list[dict]:
-    all_counts = [r["mention_count_1d"] for r in raw_signals]
-    all_sents = [r["avg_sentiment"] for r in raw_signals]
-    all_corrs = [r["price_corr"] for r in raw_signals]
-    all_momenta = [r["momentum_raw"] for r in raw_signals]
-
-    scored = []
-    for r in raw_signals:
-        score = hype_score(
-            mention_count_1d=r["mention_count_1d"],
-            avg_sentiment=r["avg_sentiment"],
-            price_corr=r["price_corr"],
-            momentum_raw=r["momentum_raw"],
-            all_mention_counts=all_counts,
-            all_sentiments=all_sents,
-            all_corrs=all_corrs,
-            all_momentum=all_momenta,
-            cfg=cfg,
-        )
-        scored.append({**r, "hype_score": score})
-
-    return scored
+    return services_hype_compute_hype_scores(raw_signals, cfg)
 
 
 # ─── Step 5: Compute TradeScores ──────────────────────────────────────────────

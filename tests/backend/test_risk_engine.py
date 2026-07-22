@@ -14,7 +14,7 @@ from backend.services.risk_engine import (
     beta_to_spx,
     concentration_hhi,
     compute_risk_metrics,
-    portfolio_daily_return,
+    compute_risk,
     annualized_vol,
     _z_score,
     _normal_pdf,
@@ -165,42 +165,7 @@ def test_hhi_scales_with_concentration():
     assert hhi_concentrated > hhi_balanced
 
 
-# ── portfolio_daily_return ───────────────────────────────────────────────────
-
-
-def test_daily_return_long_position():
-    positions = [{"asset": "TLT", "weight": 0.5, "direction": "long"}]
-    r = portfolio_daily_return({"TLT": 0.02}, positions, 100_000_000)
-    assert abs(r - 0.01) < 1e-9  # 0.5 * 0.02
-
-
-def test_daily_return_short_position_sign_flips():
-    positions = [{"asset": "HYG", "weight": 0.5, "direction": "short"}]
-    r = portfolio_daily_return({"HYG": 0.02}, positions, 100_000_000)
-    assert abs(r - (-0.01)) < 1e-9
-
-
-def test_daily_return_mixed_portfolio():
-    positions = [
-        {"asset": "TLT", "weight": 0.5, "direction": "long"},
-        {"asset": "HYG", "weight": 0.5, "direction": "short"},
-    ]
-    # TLT +1%, HYG +2% -> long: +0.005, short: -0.01 -> total: -0.005
-    r = portfolio_daily_return({"TLT": 0.01, "HYG": 0.02}, positions, 100_000_000)
-    assert abs(r - (-0.005)) < 1e-9
-
-
-def test_daily_return_handles_missing_ticker():
-    positions = [{"asset": "TLT", "weight": 0.5, "direction": "long"}]
-    r = portfolio_daily_return({}, positions, 100_000_000)
-    assert r == 0.0
-
-
-def test_daily_return_empty_portfolio():
-    assert portfolio_daily_return({}, [], 100_000_000) == 0.0
-
-
-# ── compute_risk_metrics bundle ─────────────────────────────────────────────
+# ── compute_risk_metrics bundle (legacy) ────────────────────────────────────
 
 
 def test_compute_risk_metrics_returns_all_keys():
@@ -232,6 +197,83 @@ def test_compute_risk_metrics_handles_no_history():
     assert m["sharpe"] is None
     assert m["beta"] is None
     assert m["concentration_hhi"] == 10000.0
+
+
+# ── compute_risk (derivation-aware) ─────────────────────────────────────────
+
+
+def test_risk_engine_returns_derivations(monkeypatch):
+    from backend.services import risk_engine as re
+    book = [
+        {"ticker": "A", "weight": 0.5, "price_today": 101.0, "price_yesterday": 100.0},
+        {"ticker": "B", "weight": -0.5, "price_today": 99.0, "price_yesterday": 100.0},
+    ]
+    history = [0.001, -0.002, 0.0005, 0.003]
+    out = re.compute_risk(book=book, history=history, spx_returns=[0.001, -0.0015, 0.0006, 0.002])
+    assert "var_95" in out and out["var_95"].field_id == "risk.var_95"
+    assert out["var_95"].display_status == "estimated"  # parametric
+    assert out["var_95"].uncertainty is not None
+    assert "hhi" in out
+
+
+def test_compute_risk_returns_all_five_keys():
+    book = [{"weight": 0.5}, {"weight": 0.5}]
+    # 200 obs so VaR/CVaR/Sharpe/Beta are all computable
+    rng = np.random.default_rng(0)
+    history = rng.normal(0.0005, 0.01, 200).tolist()
+    spx = rng.normal(0.0005, 0.01, 200).tolist()
+    out = compute_risk(book=book, history=history, spx_returns=spx)
+    assert set(out.keys()) == {"var_95", "cvar_95", "sharpe", "beta", "hhi"}
+    for key in ("var_95", "cvar_95", "sharpe", "beta"):
+        d = out[key]
+        assert d.display_status == "estimated"
+        assert d.value is not None
+        assert d.uncertainty is not None
+        assert d.uncertainty.method == "analytical"
+        assert d.source_records
+    assert out["hhi"].display_status == "exact"
+    assert out["hhi"].uncertainty is None
+
+
+def test_compute_risk_hhi_exact_with_short_book():
+    """HHI uses |weight| so a 50/50 long/short is HHI=5000 (balanced), exact."""
+    book = [{"weight": 0.5}, {"weight": -0.5}]
+    out = compute_risk(book=book, history=[0.001] * 200, spx_returns=[0.001] * 200)
+    assert out["hhi"].value == 5000.0
+    assert out["hhi"].display_status == "exact"
+
+
+def test_compute_risk_emits_estimated_even_with_short_history():
+    """Parametric formulas emit 'estimated' (not 'unavailable') even with <30 obs,
+    as long as we have at least 2 data points. HHI is exact and doesn't need history."""
+    book = [{"weight": 1.0}]
+    out = compute_risk(book=book, history=[0.001, -0.002], spx_returns=[0.001, -0.002])
+    for key in ("var_95", "cvar_95", "sharpe", "beta"):
+        assert out[key].display_status == "estimated"
+        assert out[key].value is not None
+        assert out[key].uncertainty is not None
+    # HHI doesn't need history
+    assert out["hhi"].display_status == "exact"
+    assert out["hhi"].value == 10000.0
+
+
+def test_compute_risk_unavailable_when_history_too_short():
+    """With <2 obs, we genuinely cannot compute parametric metrics."""
+    book = [{"weight": 1.0}]
+    out = compute_risk(book=book, history=[0.001], spx_returns=[0.001])
+    for key in ("var_95", "cvar_95", "sharpe", "beta"):
+        assert out[key].display_status == "unavailable"
+        assert out[key].value is None
+        assert out[key].unavailable_reason
+    assert out["hhi"].display_status == "exact"
+    assert out["hhi"].value == 10000.0
+
+
+def test_compute_risk_hhi_empty_book_is_zero():
+    """No positions => HHI = 0, exact."""
+    out = compute_risk(book=[], history=[0.001] * 200, spx_returns=[0.001] * 200)
+    assert out["hhi"].value == 0.0
+    assert out["hhi"].display_status == "exact"
 
 
 # ── annualized_vol ──────────────────────────────────────────────────────────

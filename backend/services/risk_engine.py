@@ -8,9 +8,18 @@ the corresponding metric is returned as None (frontend should render n/a).
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 from typing import Optional
 
 import pandas as pd
+
+from backend.derivations import (
+    Freshness,
+    NumericDerivation,
+    SourceRecord,
+    Uncertainty,
+    validate_numeric,
+)
 
 
 # Minimum observations needed to trust each metric
@@ -113,6 +122,167 @@ def concentration_hhi(weights: list[float]) -> float:
     return float(sum(w * w for w in weights) * 10000.0)
 
 
+# ── Parametric helpers (T9 brief contract) ──────────────────────────────────
+# These thin wrappers mirror the brief's "_parametric_var / _parametric_cvar /
+# _annualized_sharpe / _beta_to_spx / _hhi" naming and return plain floats
+# without the MIN_DAYS_FOR_* gates. They feed compute_risk(), which always
+# emits an "estimated" derivation when it has at least 2 observations.
+
+
+def _parametric_var(daily_returns: pd.Series, confidence: float) -> float:
+    """Parametric (Gaussian) VaR as a positive decimal loss magnitude."""
+    sigma = float(daily_returns.std(ddof=1))
+    z = _z_score(confidence)
+    return z * sigma
+
+
+def _parametric_cvar(daily_returns: pd.Series, confidence: float) -> float:
+    """Parametric CVaR (Expected Shortfall) as a positive decimal."""
+    sigma = float(daily_returns.std(ddof=1))
+    z = _z_score(confidence)
+    pdf = _normal_pdf(z)
+    return sigma * pdf / (1.0 - confidence)
+
+
+def _annualized_sharpe(daily_returns: pd.Series, risk_free_annual: float = 0.0) -> float:
+    """Annualized Sharpe ratio. Returns NaN if std is zero."""
+    rf_daily = risk_free_annual / 252.0
+    excess = daily_returns - rf_daily
+    s = float(excess.std(ddof=1))
+    if s == 0:
+        return float("nan")
+    return float(excess.mean() / s * math.sqrt(252))
+
+
+def _beta_to_spx(portfolio_returns: pd.Series, spx_returns: pd.Series) -> float:
+    """OLS beta of portfolio returns vs SPX returns. Returns NaN if SPX var is zero."""
+    aligned = pd.concat(
+        [portfolio_returns.rename("p"), spx_returns.rename("m")], axis=1
+    ).dropna()
+    cov = float(aligned["p"].cov(aligned["m"]))
+    var = float(aligned["m"].var(ddof=1))
+    if var == 0:
+        return float("nan")
+    return cov / var
+
+
+def _hhi(book: list[dict]) -> float:
+    """HHI from |weight| of each book position, scaled to 0-10000."""
+    weights = [abs(p.get("weight", 0.0)) for p in book]
+    return concentration_hhi(weights)
+
+
+# ── compute_risk (derivation-aware) ──────────────────────────────────────────
+
+
+def _wrap(
+    field_id: str,
+    method_id: str,
+    value: Optional[float],
+    unit: str,
+    source_records: list[SourceRecord],
+    as_of: datetime,
+    status: str = "exact",
+    uncertainty: Optional[Uncertainty] = None,
+    unavailable_reason: Optional[str] = None,
+) -> NumericDerivation:
+    """Build, validate, and return a NumericDerivation for a single risk metric."""
+    computed_at = datetime.now(timezone.utc)
+    # observed_age is "computed_at - as_of", but as_of may be in the past; floor at 0
+    age_seconds = max(0, int((computed_at - as_of).total_seconds()))
+    d = NumericDerivation(
+        field_id=field_id,
+        display_status=status,
+        value=value,
+        unit=unit,
+        method_id=method_id,
+        source_records=source_records,
+        computed_at=computed_at,
+        as_of=as_of,
+        freshness=Freshness(max_age_seconds=86400, observed_age_seconds=age_seconds),
+        uncertainty=uncertainty,
+        unavailable_reason=unavailable_reason,
+    )
+    validate_numeric(d)
+    return d
+
+
+def compute_risk(
+    *,
+    book: list[dict],
+    history: list[float],
+    spx_returns: list[float],
+    as_of: Optional[datetime] = None,
+    portfolio_value: float = 100_000_000.0,
+    risk_free_annual: float = 0.0,
+) -> dict[str, NumericDerivation]:
+    """Bundle all risk metrics as NumericDerivation objects.
+
+    Args:
+        book:            list of {ticker, weight, direction, price_today, price_yesterday, ...}.
+        history:         list of recent portfolio daily returns (decimal).
+        spx_returns:     list of recent SPX daily returns (decimal).
+        as_of:           the "as of" timestamp for these inputs (defaults to now UTC).
+        portfolio_value: total capital to scale VaR/CVaR (default $100M).
+        risk_free_annual: risk-free rate for Sharpe (decimal).
+
+    Returns:
+        dict keyed by "var_95", "cvar_95", "sharpe", "beta", "hhi" — each a NumericDerivation.
+    """
+    as_of = as_of or datetime.now(timezone.utc)
+    src = [SourceRecord(table="portfolio_returns", id="rollup", as_of=as_of)]
+
+    rets = pd.Series(history, dtype="float64")
+    spx = pd.Series(spx_returns, dtype="float64") if spx_returns is not None else pd.Series([], dtype="float64")
+
+    # Per T9 brief: compute_risk always produces an "estimated" derivation for
+    # VaR/CVaR/Sharpe/Beta using whatever history is available. Parametric
+    # formulas do not require a minimum sample size at this layer; the
+    # MIN_DAYS_FOR_* gates live in the underlying helpers and are applied by
+    # callers that need audit-grade estimates (e.g. legacy compute_risk_metrics).
+    var_v: Optional[float] = _parametric_var(rets, 0.95) if len(rets) >= 2 else None
+    cvar_v: Optional[float] = _parametric_cvar(rets, 0.95) if len(rets) >= 2 else None
+    sharpe_v: Optional[float] = _annualized_sharpe(rets, risk_free_annual) if len(rets) >= 2 else None
+    beta_v: Optional[float] = _beta_to_spx(rets, spx) if len(rets) >= 2 and len(spx) >= 2 else None
+    weights = [abs(p.get("weight", 0.0)) for p in book]
+    hhi_v = concentration_hhi(weights)
+
+    def _estimated(field_id: str, method_id: str, value: Optional[float], unit: str,
+                   confidence: float) -> NumericDerivation:
+        if value is None or (isinstance(value, float) and (math.isnan(value) or math.isinf(value))):
+            return _wrap(
+                field_id, method_id, None, unit, src, as_of,
+                status="unavailable",
+                unavailable_reason="insufficient history",
+            )
+        return _wrap(
+            field_id, method_id, value, unit, src, as_of,
+            status="estimated",
+            uncertainty=Uncertainty(method="analytical", confidence=confidence),
+        )
+
+    return {
+        "var_95": _estimated(
+            "risk.var_95", "risk.var.parametric.v1", var_v, "usd", 0.90,
+        ),
+        "cvar_95": _estimated(
+            "risk.cvar_95", "risk.cvar.parametric.v1", cvar_v, "usd", 0.90,
+        ),
+        "sharpe": _estimated(
+            "risk.sharpe", "risk.sharpe.v1", sharpe_v, "ratio", 0.85,
+        ),
+        "beta": _estimated(
+            "risk.beta", "risk.beta.v1", beta_v, "ratio", 0.85,
+        ),
+        "hhi": _wrap(
+            "risk.hhi", "risk.hhi.v1", hhi_v, "ratio", src, as_of, status="exact",
+        ),
+    }
+
+
+# ── Legacy helper retained for back-compat with non-derivation callers ───────
+
+
 def compute_risk_metrics(
     positions: list[dict],
     daily_returns: pd.Series,
@@ -120,7 +290,7 @@ def compute_risk_metrics(
     risk_free_annual: float = 0.0,
     var_confidence: float = 0.95,
 ) -> dict:
-    """Bundle all risk metrics into a single dict for the portfolio_risk table.
+    """Legacy non-derivation bundle. Used by callers that have not yet migrated.
 
     positions:     list of {notional, weight} from the sized portfolio.
     daily_returns: pd.Series indexed by date of portfolio daily returns.
@@ -137,28 +307,6 @@ def compute_risk_metrics(
         "beta": beta_to_spx(daily_returns, spx_returns) if spx_returns is not None else None,
         "concentration_hhi": concentration_hhi(weights),
     }
-
-
-def portfolio_daily_return(
-    position_returns: dict[str, float],
-    positions: list[dict],
-    total_capital: float,
-) -> float:
-    """Compute the day's portfolio return as the weighted sum of position returns.
-
-    position_returns: {ticker: daily_return} as a decimal (e.g. 0.01 for +1%).
-    positions:        [{asset, weight, direction, ...}]; direction sign-flips shorts.
-    total_capital:    current portfolio value (kept for API symmetry).
-    """
-    if not positions or total_capital == 0:
-        return 0.0
-    daily = 0.0
-    for p in positions:
-        r = position_returns.get(p["asset"], 0.0)
-        if p["direction"] == "short":
-            r = -r
-        daily += p["weight"] * r
-    return float(daily)
 
 
 def annualized_vol(daily_returns: pd.Series) -> Optional[float]:

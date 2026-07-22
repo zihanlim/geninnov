@@ -6,7 +6,10 @@
 -- structural schema statements (CREATE / ALTER / RENAME / RLS /
 -- POLICY / COMMENT) only. It excludes seed DML (INSERT/UPDATE/
 -- DELETE), transaction control (BEGIN/COMMIT/ROLLBACK), and
--- ad-hoc SELECT/EXPLAIN blocks. Read top-to-bottom for a
+-- ad-hoc SELECT/EXPLAIN blocks. Note: `ALTER POLICY ... RENAME`
+-- is also bucketed as "other" and dropped (it is not a CREATE
+-- or ALTER TABLE statement, and the renames are documented in
+-- migration 008's banner). Read top-to-bottom for a
 -- migration-ordered schema reference. Deployed-state evidence
 -- is recorded in schema.md.
 -- ============================================================

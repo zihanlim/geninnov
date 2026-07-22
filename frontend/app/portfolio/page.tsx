@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import LensSelector, { Lens, lensToAssetClasses } from "@/components/LensSelector";
 import { ExposureSummary } from "@/components/portfolio/ExposureSummary";
@@ -106,11 +107,25 @@ function FactorRow({ name, beta }: Factor) {
 }
 
 export default function PortfolioPage() {
+  return (
+    <Suspense fallback={<main className="max-w-[1320px] mx-auto px-8 pt-7 pb-20"><div className="skeleton h-[180px]" /></main>}>
+      <PortfolioPageInner />
+    </Suspense>
+  );
+}
+
+function PortfolioPageInner() {
+  const searchParams = useSearchParams();
+  const rawLens = searchParams?.get("lens");
+  const validLenses: Lens[] = ["multi_asset", "credit", "rates", "equity", "fx", "commodity"];
+  const initialLens: Lens = (validLenses as string[]).includes(rawLens ?? "")
+    ? (rawLens as Lens)
+    : "multi_asset";
   const [positions, setPositions] = useState<Position[]>([]);
   const [risk, setRisk] = useState<Risk | null>(null);
   const [factors, setFactors] = useState<Factor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [lens, setLens] = useState<Lens>("multi_asset");
+  const [lens, setLens] = useState<Lens>(initialLens);
   // Map of ticker → asset_class (from theme_assets, migration 009)
   const [assetClassMap, setAssetClassMap] = useState<Record<string, string>>({});
 
@@ -407,6 +422,10 @@ export default function PortfolioPage() {
               </div>
             ) : (
               <table className="w-full border-collapse text-[13px]">
+                <caption className="sr-only">
+                  Portfolio positions · {filteredPositions.length} of {positions.length} shown
+                  {lens === "multi_asset" ? " across all asset classes" : ` for the ${lens} lens`}.
+                </caption>
                 <thead>
                   <tr>
                     {["Theme", "Asset", "Direction", "Notional", "Weight", "HypeScore"].map((h, i) => (

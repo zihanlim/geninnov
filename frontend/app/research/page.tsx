@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import TradeDerivationDrawer from "@/components/TradeDerivationDrawer";
 import CitationList, { Citation } from "@/components/CitationList";
@@ -8,6 +9,7 @@ import SentimentBadge from "@/components/SentimentBadge";
 import MarketBar from "@/components/MarketBar";
 import PredictionMarkets from "@/components/PredictionMarkets";
 import ThesisBlock from "@/components/research/ThesisBlock";
+import LensSelector, { Lens } from "@/components/LensSelector";
 import { AdvisoryDerivation } from "@/lib/derivations/advisory";
 
 interface Pick {
@@ -200,6 +202,20 @@ function PickCard({
 }
 
 export default function ResearchPage() {
+  return (
+    <Suspense fallback={<main className="max-w-[1320px] mx-auto px-8 pt-7 pb-20"><div className="skeleton h-[180px]" /></main>}>
+      <ResearchPageInner />
+    </Suspense>
+  );
+}
+
+function ResearchPageInner() {
+  const searchParams = useSearchParams();
+  const rawLens = searchParams?.get("lens");
+  const validLenses: Lens[] = ["multi_asset", "credit", "rates", "equity", "fx", "commodity"];
+  const lens: Lens = (validLenses as string[]).includes(rawLens ?? "")
+    ? (rawLens as Lens)
+    : "multi_asset";
   const [rec, setRec] = useState<ResearchRecommendation | null>(null);
   const [loading, setLoading] = useState(true);
   const [regime, setRegime] = useState<Regime | null>(null);
@@ -276,7 +292,9 @@ export default function ResearchPage() {
             </span>
           </p>
         </div>
-        <div className="text-right text-text-secondary text-[12px]">
+        <div className="flex items-center gap-3">
+          <LensSelector value={lens} onChange={() => undefined} />
+          <div className="text-right text-text-secondary text-[12px]">
           {rec?.run_date && (
             <div>
               <span className="text-text-tertiary mr-1.5">RUN DATE</span>
@@ -292,6 +310,7 @@ export default function ResearchPage() {
               <SentimentBadge sentiment={regime.sentiment} cycle={regime.cycle} size="sm" />
             </div>
           )}
+          </div>
         </div>
       </div>
 

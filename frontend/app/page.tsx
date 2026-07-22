@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import RegimeHero from "@/components/RegimeHero";
 import ConvictionCard, { ConvictionTheme } from "@/components/ConvictionCard";
@@ -8,6 +9,7 @@ import Watchlist from "@/components/Watchlist";
 import ThemeDerivationDrawer from "@/components/ThemeDerivationDrawer";
 import ThemeHeatmap from "@/components/ThemeHeatmap";
 import MarketBar from "@/components/MarketBar";
+import LensSelector, { Lens } from "@/components/LensSelector";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
 import { StatusBadge } from "@/components/status/StatusBadge";
 import type { NumericDerivation, NumericStatus } from "@/lib/derivations/numeric";
@@ -78,6 +80,20 @@ function splitDelta(total: number | undefined): ConvictionTheme["delta_component
 }
 
 export default function ConvictionPage() {
+  return (
+    <Suspense fallback={<main className="max-w-[1320px] mx-auto px-8 pt-7 pb-20"><div className="skeleton h-[180px]" /></main>}>
+      <ConvictionPageInner />
+    </Suspense>
+  );
+}
+
+function ConvictionPageInner() {
+  const searchParams = useSearchParams();
+  const rawLens = searchParams?.get("lens");
+  const validLenses: Lens[] = ["multi_asset", "credit", "rates", "equity", "fx", "commodity"];
+  const lens: Lens = (validLenses as string[]).includes(rawLens ?? "")
+    ? (rawLens as Lens)
+    : "multi_asset";
   const [themes, setThemes] = useState<ConvictionTheme[]>([]);
   const [regime, setRegime] = useState<Regime | null>(null);
   const [factors, setFactors] = useState<Factor[]>([]);
@@ -228,7 +244,8 @@ export default function ConvictionPage() {
           </p>
         </div>
         <div className="text-right text-text-secondary text-[12px]">
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-3 mb-2">
+            <LensSelector value={lens} onChange={() => undefined} />
             <StatusBadge status={dashboardStatus} />
           </div>
           <div className="mt-1">

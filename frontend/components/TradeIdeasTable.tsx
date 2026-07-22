@@ -108,14 +108,14 @@ function fmtUsd(d: NumericDerivation): string {
   return `$${(d.value / 1_000_000).toFixed(1)}M`;
 }
 
-export default function TradeIdeasTable() {
+export default function TradeIdeasTable({ initialLens }: { initialLens?: Lens } = {}) {
   const [rows, setRows] = useState<TradeCandidate[]>([]);
   const [filter, setFilter] = useState<DirectionFilter>("all");
   const [sort, setSort] = useState<SortKey>("trade_score");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [openPick, setOpenPick] = useState<TradeCandidate | null>(null);
-  const [lens, setLens] = useState<Lens>("multi_asset");
+  const [lens, setLens] = useState<Lens>(initialLens ?? "multi_asset");
   // Map of ticker → asset_class (from theme_assets, migration 009)
   const [assetClassMap, setAssetClassMap] = useState<Record<string, string>>({});
 
@@ -188,7 +188,11 @@ export default function TradeIdeasTable() {
           <div className="w-px h-5 bg-border mx-1" />
           <LensSelector value={lens} onChange={setLens} />
           <div className="flex-1" />
+          <label htmlFor="trade-search" className="sr-only">
+            Filter by ticker or theme
+          </label>
           <input
+            id="trade-search"
             className="px-2.5 py-[5px] bg-bg-elevated border border-border rounded-md text-text-primary text-[12px] w-[200px] focus:outline-none focus:border-accent"
             placeholder="Filter by ticker or theme…"
             value={query}
@@ -218,6 +222,10 @@ export default function TradeIdeasTable() {
           </div>
         ) : (
           <table className="w-full border-collapse text-[13px]">
+            <caption className="sr-only">
+              Trade candidates ranked by TradeScore · showing top 5 long and top 5 short
+              {lens !== "multi_asset" ? ` · ${lens} lens` : ""}.
+            </caption>
             <thead>
               <tr>
                 <th className="text-left px-[18px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated" style={{ width: 90 }}>Direction</th>

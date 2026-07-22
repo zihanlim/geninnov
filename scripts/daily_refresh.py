@@ -22,6 +22,7 @@ from data.brave_client import fetch_news_for_theme
 from data.reddit_client import fetch_posts_for_theme
 from data.yahoo_client import fetch_price_data, correlation_with_mentions
 from data.macro_fetcher import MacroFetcher
+from data.polymarket_fetcher import PolymarketFetcher
 from services.hype_calculator import hype_score, ScoringConfig, rescale_vader, minmax_norm
 from services.trade_generator import trade_score
 from services.trade_ranker import (
@@ -447,6 +448,14 @@ def main():
     except Exception as exc:
         print(f"[{run_date}] [L0] FRED/yfinance fetch failed ({exc.__class__.__name__}): continuing without macro data.")
         macro_snapshot = {}
+
+    # Polymarket: prediction market odds for cited macro context
+    try:
+        poly_fetcher = PolymarketFetcher(SUPABASE_URL, SUPABASE_KEY)
+        poly_markets = poly_fetcher.fetch_macro_markets()
+        print(f"[{run_date}] [L0] Fetched {len(poly_markets)} prediction markets.")
+    except Exception as e:
+        print(f"[{run_date}] [L0] Polymarket fetch failed ({e.__class__.__name__}): skipping.")
 
     # ── Phase 5: L3 — Regime classification ─────────────────────────────────
     print(f"[{run_date}] [L3] Classifying macro regime...")

@@ -6,6 +6,7 @@ import TradeDerivationDrawer from "@/components/TradeDerivationDrawer";
 import CitationList, { Citation } from "@/components/CitationList";
 import SentimentBadge from "@/components/SentimentBadge";
 import MarketBar from "@/components/MarketBar";
+import PredictionMarkets from "@/components/PredictionMarkets";
 
 interface Pick {
   direction: "long" | "short";
@@ -306,6 +307,11 @@ export default function ResearchPage() {
               <SentimentBadge sentiment={regime.sentiment} cycle={regime.cycle} />
             </div>
           )}
+
+          {/* Prediction markets — cited macro context for the Q1 thesis */}
+          <div className="mb-6">
+            <PredictionMarkets />
+          </div>
 
           {/* Book View */}
           {rec.book_view && (

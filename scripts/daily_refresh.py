@@ -42,7 +42,11 @@ from services.trade_ranker import (
 from services.risk_engine import (
     compute_risk,
 )
-from services.portfolio import compute_daily_return, MissingReturnError
+from services.portfolio import (
+    compute_daily_return,
+    compute_cumulative_return,
+    MissingReturnError,
+)
 from services.regime_classifier import RegimeClassifier
 from services.pipeline_runs import run_id_for, record_pipeline_run
 
@@ -497,6 +501,65 @@ def compute_and_persist_risk(
     }
 
 
+# ─── Step 12 (Phase 3): Compute + persist cumulative return ─────────────────
+def compute_and_persist_cumulative_return(run_date: date) -> None:
+    """Upsert a single `portfolio_cumulative_return` row for `as_of=run_date`.
+
+    Pulls the full `portfolio_returns.daily_return` history sorted ascending by
+    `run_date`, computes a compounded cumulative return via
+    `backend.services.portfolio.compute_cumulative_return`, and upserts.
+
+    If history is empty (first-ever run), writes a row with `cumulative_value=0`,
+    `daily_returns_count=0`, and `inception_date = run_date` so the L6 frontend
+    has a sentinel row to render "since inception".
+    """
+    today_str = run_date.isoformat()
+
+    rows = (
+        supabase.table("portfolio_returns")
+        .select("run_date, daily_return")
+        .order("run_date")
+        .execute()
+        .data
+    )
+
+    if not rows:
+        # No history yet: write the sentinel row.
+        supabase.table("portfolio_cumulative_return").upsert({
+            "as_of": today_str,
+            "inception_date": today_str,
+            "cumulative_value": 0,
+            "compounded": True,
+            "daily_returns_count": 0,
+            "source_first_run_id": None,
+            "source_last_run_id": None,
+        }, on_conflict="as_of").execute()
+        print(f"[{today_str}] Cumulative return persisted (sentinel: no history yet).")
+        return
+
+    daily_returns = [float(r["daily_return"]) for r in rows]
+    first_run_date = date.fromisoformat(rows[0]["run_date"])
+    last_run_date = date.fromisoformat(rows[-1]["run_date"])
+
+    result = compute_cumulative_return(daily_returns, inception=first_run_date)
+
+    supabase.table("portfolio_cumulative_return").upsert({
+        "as_of": result["as_of"].isoformat(),
+        "inception_date": result["inception"].isoformat(),
+        "cumulative_value": result["value"],
+        "compounded": result["compounded"],
+        "daily_returns_count": len(daily_returns),
+        "source_first_run_id": rows[0].get("run_date"),
+        "source_last_run_id": rows[-1].get("run_date"),
+    }, on_conflict="as_of").execute()
+
+    print(
+        f"[{today_str}] Cumulative return persisted: "
+        f"{result['value']:+.4%} over {len(daily_returns)} days "
+        f"({result['inception']} → {result['as_of']})."
+    )
+
+
 def _load_historical_portfolio_returns(lookback_days: int) -> pd.Series:
     """Pull last N days of portfolio_returns from Supabase. Empty Series if <2 obs."""
     rows = (
@@ -616,6 +679,7 @@ def main():
     positioned = allocate_and_persist_portfolio(candidates, run_date, cfg)
     compute_and_persist_daily_return(positioned, run_date, cfg.total_capital)
     risk_metrics = compute_and_persist_risk(positioned, run_date, cfg)
+    compute_and_persist_cumulative_return(run_date)
 
     # ── Phase 5: L5 — Q1 AI reasoning agent ──────────────────────────────────────
     # Lazy import to avoid requiring anthropic if not installed in unit-test envs

@@ -7,6 +7,8 @@ import CitationList, { Citation } from "@/components/CitationList";
 import SentimentBadge from "@/components/SentimentBadge";
 import MarketBar from "@/components/MarketBar";
 import PredictionMarkets from "@/components/PredictionMarkets";
+import ThesisBlock from "@/components/research/ThesisBlock";
+import { AdvisoryDerivation } from "@/lib/derivations/advisory";
 
 interface Pick {
   direction: "long" | "short";
@@ -33,6 +35,8 @@ interface ResearchRecommendation {
   agent_run_id?: string;
   book_metrics_summary?: string;
   scenario_table?: string;
+  /** T18: persisted AdvisoryDerivation JSONB from q1_agent. */
+  advisory_derivation?: AdvisoryDerivation | null;
 }
 
 interface Regime { cycle: string; sentiment: string; narrative?: string }
@@ -44,11 +48,14 @@ function PickCard({
   rank,
   citations,
   onOpen,
+  thesisAdvisory,
 }: {
   pick: Pick;
   rank: number;
   citations?: Citation[];
   onOpen: (p: Pick) => void;
+  /** Parent AdvisoryDerivation — if unavailable, the thesis body must not render. */
+  thesisAdvisory?: AdvisoryDerivation | null;
 }) {
   const isLong = pick.direction === "long";
   const notional = pick.notional ? `$${(pick.notional / 1_000_000).toFixed(1)}M` : null;
@@ -104,7 +111,7 @@ function PickCard({
         <span className="text-text-tertiary text-[11px] ml-2">· click for derivation</span>
       </div>
 
-      {pick.thesis && (
+      {pick.thesis && thesisAdvisory && (
         <div className="mb-4">
           <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2 flex items-center gap-2">
             Thesis
@@ -115,6 +122,18 @@ function PickCard({
             )}
           </div>
           <CitationList text={pick.thesis} citations={citations} />
+        </div>
+      )}
+      {pick.thesis && !thesisAdvisory && (
+        <div
+          className="mb-4 rounded-md px-3 py-2.5 text-[12px] leading-[1.6] border"
+          style={{
+            background: "var(--bg-elevated)",
+            borderColor: "rgba(248, 81, 73, 0.3)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          Thesis unavailable for this run.
         </div>
       )}
 
@@ -192,7 +211,7 @@ export default function ResearchPage() {
       const [recRes, regimeRes] = await Promise.all([
         supabase
           .from("research_recommendations")
-          .select("run_date, picks, book_view, book_risks, agent_run_id, book_metrics_summary, scenario_table")
+          .select("run_date, picks, book_view, book_risks, agent_run_id, book_metrics_summary, scenario_table, advisory_derivation")
           .order("run_date", { ascending: false })
           .limit(1)
           .maybeSingle(),
@@ -313,30 +332,14 @@ export default function ResearchPage() {
             <PredictionMarkets />
           </div>
 
-          {/* Book View */}
-          {rec.book_view && (
-            <div
-              className="card p-7 mb-4"
-              style={{
-                background: "linear-gradient(180deg, #1a2230 0%, #11151c 100%)",
-                borderColor: "var(--border-strong)",
-              }}
-            >
-              <div className="flex items-baseline gap-2.5 mb-1">
-                <h3 className="text-[20px] font-semibold m-0">Book View</h3>
-                <span
-                  className="badge badge-neutral"
-                  style={{ fontSize: 10 }}
-                >
-                  DETERMINISTIC L0-L4 + LLM L5
-                </span>
-              </div>
-              <div className="text-text-secondary text-[13px] mb-5">
-                {rec.run_date} · Agent run · verified ✓
-              </div>
-              <p className="m-0 leading-[1.7] text-text-primary text-[14px] whitespace-pre-line">
-                {rec.book_view}
-              </p>
+          {/* Book View — ThesisBlock enforces strict unavailable policy (T15) */}
+          {rec.advisory_derivation && (
+            <div className="mb-4">
+              <ThesisBlock
+                advisory={rec.advisory_derivation}
+                citations={citations}
+                className=""
+              />
             </div>
           )}
 
@@ -352,6 +355,7 @@ export default function ResearchPage() {
                   rank={i + 1}
                   citations={citations}
                   onOpen={setOpenPick}
+                  thesisAdvisory={rec.advisory_derivation}
                 />
               ))}
             </section>
@@ -369,6 +373,7 @@ export default function ResearchPage() {
                   rank={i + 1}
                   citations={citations}
                   onOpen={setOpenPick}
+                  thesisAdvisory={rec.advisory_derivation}
                 />
               ))}
             </section>

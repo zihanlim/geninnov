@@ -1,30 +1,48 @@
 -- ============================================================
 -- Andromeda baseline schema capture
 -- ============================================================
--- Migration-derived; not a live schema dump; deployed state
--- verified separately in schema.md.
--- Source files: supabase/migrations/00*.sql (11 files, in order).
+-- Migration-derived DDL only. Statements are extracted from
+-- supabase/migrations/*.sql in order. This file contains the
+-- structural schema statements (CREATE / ALTER / RENAME / RLS /
+-- POLICY / COMMENT) only. It excludes seed DML (INSERT/UPDATE/
+-- DELETE), transaction control (BEGIN/COMMIT/ROLLBACK), and
+-- ad-hoc SELECT/EXPLAIN blocks. Read top-to-bottom for a
+-- migration-ordered schema reference. Deployed-state evidence
+-- is recorded in schema.md.
 -- ============================================================
+
+
 -- ============================================================
 -- Source migration: 001_initial_schema.sql
 -- ============================================================
--- Enable RLS on all tables
 ALTER TABLE themes ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE theme_assets ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE theme_signals_history ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE trade_candidates ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE portfolio_positions ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE portfolio_risk ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE research_output ENABLE ROW LEVEL SECURITY;
--- Public read policies (frontend anon key reads here)
+
 CREATE POLICY "Public read" ON themes FOR SELECT TO anon USING (true);
+
 CREATE POLICY "Public read" ON theme_assets FOR SELECT TO anon USING (true);
+
 CREATE POLICY "Public read" ON theme_signals_history FOR SELECT TO anon USING (true);
+
 CREATE POLICY "Public read" ON trade_candidates FOR SELECT TO anon USING (true);
+
 CREATE POLICY "Public read" ON portfolio_positions FOR SELECT TO anon USING (true);
+
 CREATE POLICY "Public read" ON portfolio_risk FOR SELECT TO anon USING (true);
+
 CREATE POLICY "Public read" ON research_output FOR SELECT TO anon USING (true);
--- themes
+
 CREATE TABLE themes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL UNIQUE,
@@ -38,7 +56,7 @@ CREATE TABLE themes (
     discovered_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
--- theme_assets
+
 CREATE TABLE theme_assets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     theme_id UUID NOT NULL REFERENCES themes(id) ON DELETE CASCADE,
@@ -48,7 +66,7 @@ CREATE TABLE theme_assets (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(theme_id, ticker, run_date)
 );
--- theme_signals_history
+
 CREATE TABLE theme_signals_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     theme_id UUID NOT NULL REFERENCES themes(id) ON DELETE CASCADE,
@@ -62,7 +80,7 @@ CREATE TABLE theme_signals_history (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(theme_id, run_date)
 );
--- trade_candidates
+
 CREATE TABLE trade_candidates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     theme_id UUID NOT NULL REFERENCES themes(id) ON DELETE CASCADE,
@@ -76,7 +94,7 @@ CREATE TABLE trade_candidates (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(theme_id, asset, direction)
 );
--- portfolio_positions
+
 CREATE TABLE portfolio_positions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     theme_id UUID NOT NULL REFERENCES themes(id) ON DELETE CASCADE,
@@ -89,7 +107,7 @@ CREATE TABLE portfolio_positions (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(theme_id, asset, direction)
 );
--- portfolio_risk
+
 CREATE TABLE portfolio_risk (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     total_capital REAL NOT NULL DEFAULT 100000000,
@@ -100,7 +118,7 @@ CREATE TABLE portfolio_risk (
     concentration_hhi REAL,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
--- portfolio_returns
+
 CREATE TABLE portfolio_returns (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_date DATE NOT NULL UNIQUE,
@@ -109,14 +127,14 @@ CREATE TABLE portfolio_returns (
     portfolio_value REAL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
--- scoring_config
+
 CREATE TABLE scoring_config (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     param_name TEXT NOT NULL UNIQUE,
     value TEXT NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
--- backtest_results
+
 CREATE TABLE backtest_results (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     test_name TEXT NOT NULL,
@@ -129,26 +147,63 @@ CREATE TABLE backtest_results (
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
--- research_output
+
 CREATE TABLE research_output (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     section TEXT NOT NULL UNIQUE,
     content TEXT NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
--- Indexes
+
 CREATE INDEX idx_theme_signals_history_theme_date ON theme_signals_history(theme_id, run_date);
+
 CREATE INDEX idx_theme_assets_theme_date ON theme_assets(theme_id, run_date);
+
 CREATE INDEX idx_portfolio_returns_date ON portfolio_returns(run_date);
--- Insert default scoring_config
--- Insert Tier 1 macro anchors
--- Insert Tier 1 asset mappings (practitioner-defined, versioned by run_date).
--- daily_refresh.py falls back to the most recent entry per theme if today's is empty.
+
+-- (kept 27 DDL statement(s); dropped 3 DML, 0 control, 0 select, 0 other from 001_initial_schema.sql)
+
 -- ============================================================
 -- Source migration: 002_seed_sample_data.sql
 -- ============================================================
+-- (kept 0 DDL statement(s); dropped 4 DML, 0 control, 0 select, 0 other from 002_seed_sample_data.sql)
+
+-- ============================================================
+-- Source migration: 003_add_scores_to_signals_history.sql
+-- ============================================================
+ALTER TABLE theme_signals_history
+    ADD COLUMN IF NOT EXISTS hype_score REAL,
+    ADD COLUMN IF NOT EXISTS trade_score REAL;
+
+-- (kept 1 DDL statement(s); dropped 0 DML, 0 control, 0 select, 0 other from 003_add_scores_to_signals_history.sql)
+
+-- ============================================================
+-- Source migration: 004_bootstrap_live.sql
+-- ============================================================
+ALTER TABLE theme_signals_history
+    ADD COLUMN IF NOT EXISTS hype_score REAL,
+    ADD COLUMN IF NOT EXISTS trade_score REAL;
+
+-- (kept 1 DDL statement(s); dropped 1 DML, 0 control, 0 select, 0 other from 004_bootstrap_live.sql)
+
+-- ============================================================
+-- Source migration: 005_macro_indicators.sql
+-- ============================================================
+CREATE TABLE IF NOT EXISTS macro_indicators (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    series_id TEXT NOT NULL,
+    series_name TEXT NOT NULL,
+    value REAL,
+    unit TEXT,
+    fetch_date DATE NOT NULL,
+    fetched_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(series_id, fetch_date)
+);
+
 ALTER TABLE macro_indicators ENABLE ROW LEVEL SECURITY;
+
 CREATE POLICY "Public read" ON macro_indicators FOR SELECT TO anon USING (true);
+
 CREATE TABLE IF NOT EXISTS macro_daily_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     series_id TEXT NOT NULL,
@@ -158,17 +213,23 @@ CREATE TABLE IF NOT EXISTS macro_daily_history (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(series_id, trading_date)
 );
+
 ALTER TABLE macro_daily_history ENABLE ROW LEVEL SECURITY;
+
 CREATE POLICY "Public read" ON macro_daily_history FOR SELECT TO anon USING (true);
+
 CREATE INDEX IF NOT EXISTS idx_macro_daily_series_date
     ON macro_daily_history(series_id, trading_date DESC);
+
 COMMENT ON TABLE macro_indicators IS 'Latest-value snapshot per series (L0 output)';
+
 COMMENT ON TABLE macro_daily_history IS 'Daily time-series for regime classification and backfill';
+
+-- (kept 9 DDL statement(s); dropped 0 DML, 0 control, 0 select, 0 other from 005_macro_indicators.sql)
+
 -- ============================================================
 -- Source migration: 006_factor_exposures.sql
 -- ============================================================
--- Phase 5 M2: Factor exposures, regime classifications, research tables
--- Rolling 252d FF5 + UMD betas per asset; L3 regime; research recommendations
 CREATE TABLE IF NOT EXISTS factor_exposures (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     asset TEXT NOT NULL,
@@ -185,8 +246,11 @@ CREATE TABLE IF NOT EXISTS factor_exposures (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(asset, run_date, lookback_days)
 );
+
 ALTER TABLE factor_exposures ENABLE ROW LEVEL SECURITY;
+
 CREATE POLICY "Public read" ON factor_exposures FOR SELECT TO anon USING (true);
+
 CREATE TABLE IF NOT EXISTS regime_classifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_date DATE NOT NULL UNIQUE,
@@ -200,8 +264,11 @@ CREATE TABLE IF NOT EXISTS regime_classifications (
     spx_breadth REAL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
 ALTER TABLE regime_classifications ENABLE ROW LEVEL SECURITY;
+
 CREATE POLICY "Public read" ON regime_classifications FOR SELECT TO anon USING (true);
+
 CREATE TABLE IF NOT EXISTS research_recommendations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_date DATE NOT NULL UNIQUE,
@@ -211,8 +278,11 @@ CREATE TABLE IF NOT EXISTS research_recommendations (
     agent_run_id UUID,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
 ALTER TABLE research_recommendations ENABLE ROW LEVEL SECURITY;
+
 CREATE POLICY "Public read" ON research_recommendations FOR SELECT TO anon USING (true);
+
 CREATE TABLE IF NOT EXISTS research_agent_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_date DATE NOT NULL,
@@ -226,24 +296,71 @@ CREATE TABLE IF NOT EXISTS research_agent_runs (
     duration_ms INT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
 ALTER TABLE research_agent_runs ENABLE ROW LEVEL SECURITY;
+
 CREATE POLICY "Public read" ON research_agent_runs FOR SELECT TO anon USING (true);
+
 COMMENT ON TABLE factor_exposures IS 'Rolling 252d FF5+UMD betas per asset (L2)';
+
 COMMENT ON TABLE regime_classifications IS 'L3 rule-based regime (cycle x sentiment)';
+
 COMMENT ON TABLE research_recommendations IS 'Top-5 L/S picks with thesis and risk (L6 output)';
+
 COMMENT ON TABLE research_agent_runs IS 'Research agent run audit log (L5)';
+
+-- (kept 16 DDL statement(s); dropped 0 DML, 0 control, 0 select, 0 other from 006_factor_exposures.sql)
+
 -- ============================================================
 -- Source migration: 007_seed_regime.sql
 -- ============================================================
+-- (kept 0 DDL statement(s); dropped 1 DML, 0 control, 0 select, 0 other from 007_seed_regime.sql)
+
+-- ============================================================
+-- Source migration: 008_rename_q1_tables.sql
+-- ============================================================
+ALTER TABLE q1_recommendations RENAME TO research_recommendations;
+
+ALTER TABLE q1_agent_runs RENAME TO research_agent_runs;
+
+-- (kept 2 DDL statement(s); dropped 0 DML, 0 control, 0 select, 2 other from 008_rename_q1_tables.sql)
+
+-- ============================================================
+-- Source migration: 009_asset_class_lens.sql
+-- ============================================================
+ALTER TABLE theme_assets
+    ADD COLUMN IF NOT EXISTS asset_class TEXT
+    CHECK (asset_class IN ('rates', 'credit', 'equity', 'fx', 'commodity', 'crypto', 'other'));
+
+CREATE INDEX IF NOT EXISTS idx_theme_assets_class
+    ON theme_assets(asset_class);
+
+-- (kept 2 DDL statement(s); dropped 6 DML, 2 control, 0 select, 0 other from 009_asset_class_lens.sql)
+
+-- ============================================================
+-- Source migration: 010_market_assets.sql
+-- ============================================================
+CREATE TABLE IF NOT EXISTS market_assets (
+    ticker     TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    current    REAL NOT NULL,
+    prev_close REAL NOT NULL,
+    pct_change REAL NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 ALTER TABLE market_assets ENABLE ROW LEVEL SECURITY;
+
 CREATE POLICY "Public read" ON market_assets FOR SELECT TO anon USING (true);
+
 COMMENT ON TABLE market_assets IS
     'Latest equity index prices + daily % change for the homepage market bar.';
+
+-- (kept 4 DDL statement(s); dropped 0 DML, 0 control, 0 select, 0 other from 010_market_assets.sql)
+
 -- ============================================================
 -- Source migration: 011_prediction_markets.sql
 -- ============================================================
--- prediction_markets: top macro-relevant events from Polymarket
--- Updated daily by backend/data/polymarket_fetcher.py in daily_refresh.py
 CREATE TABLE IF NOT EXISTS prediction_markets (
     slug         TEXT PRIMARY KEY,
     event_title  TEXT NOT NULL,
@@ -257,7 +374,12 @@ CREATE TABLE IF NOT EXISTS prediction_markets (
     url          TEXT,
     fetched_at   TIMESTAMPTZ DEFAULT NOW()
 );
+
 ALTER TABLE prediction_markets ENABLE ROW LEVEL SECURITY;
+
 CREATE POLICY "Public read" ON prediction_markets FOR SELECT TO anon USING (true);
+
 COMMENT ON TABLE prediction_markets IS
     'Macro-relevant Polymarket events: Fed, rates, recession, oil, Bitcoin, geopolitics.';
+
+-- (kept 4 DDL statement(s); dropped 0 DML, 0 control, 0 select, 0 other from 011_prediction_markets.sql)

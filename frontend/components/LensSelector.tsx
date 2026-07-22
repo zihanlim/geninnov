@@ -38,8 +38,12 @@ export default function LensSelector({
   value: Lens;
   onChange: (lens: Lens) => void;
 }) {
+  const activeLabel = LENS_OPTIONS.find((opt) => opt.value === value)?.label ?? value;
   return (
     <div className="inline-flex items-stretch rounded-md border border-border bg-bg-elevated overflow-hidden">
+      <span data-testid="lens-active" className="sr-only">
+        {activeLabel}
+      </span>
       {LENS_OPTIONS.map((opt, idx) => {
         const isActive = opt.value === value;
         return (

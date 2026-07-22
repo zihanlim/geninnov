@@ -2,6 +2,28 @@
 
 Systematic market theme identification and trade generation platform.
 
+## 🚨 Doc Sync Rule — MANDATORY (read first, every session)
+
+This project has **four living documents** that must stay in lockstep with the code. Before you finish any non-trivial change, walk this checklist. Skipping it is a bug.
+
+| When you change... | Also update... |
+|---|---|
+| Any service, API, table, layer, LLM call, cron trigger, edge in the system | **`ARCHITECTURE.md`** — edit the [System Architecture Diagram](./ARCHITECTURE.md#system-architecture-diagram) mermaid block in the same change. Add/remove/move the node, edge, subgraph, or table. The diagram is the canonical wiring view; prose sections in this file or `PROGRESS.md` are not a substitute. |
+| Any layer, scoring formula, data model, or new ADR-worthy decision | **`ARCHITECTURE.md`** — also update the `## Layers` table, `## Supabase Tables` table, and the `## Feature Checklist` at the bottom of that file. |
+| Any non-trivial change worth remembering tomorrow | **`PROGRESS.md`** — append a dated row to the `## Completed` table and, if a build task flips state, the `## Build tasks` table. |
+| Any architecturally significant decision (new service, technology swap, schema change, security/guardrail change, new layer) | **A new ADR** in `docs/adrs/` using the im-Jarvis format (Context / Decision / Consequences), with the next available `NNNN-` prefix, and add it to the index in `docs/adrs/README.md`. |
+| The system architecture itself (you add a layer, rename a service, change the LLM provider, add a new external API) | **A new ADR** is non-negotiable. Architecture shifts without ADRs rot. |
+
+**Quick rule of thumb:** if a future agent reading the repo in 6 months would look at the diagram and learn something wrong, the diagram is wrong. Fix it before you commit.
+
+**The four doc surfaces, in priority order:**
+1. `ARCHITECTURE.md` — system architecture (mermaid diagram + tables + checklist)
+2. `PROGRESS.md` — what got built, when, and what's still pending
+3. `docs/adrs/NNNN-*.md` — *why* a decision was made (immutable once written; new decisions get new ADRs)
+4. `docs/superpowers/specs/2026-07-21-andromeda-market-theme-platform-design.md` — the full design spec; update §s whose content you changed
+
+**When in doubt, update the diagram first.** Everything else can be derived from it; the diagram cannot be derived from anything else.
+
 ## What this is
 
 Andromeda ingests news and social media daily, scores themes by "hype" (attention × sentiment × market correlation × momentum), generates ranked long/short trade ideas, and sizes them into a $100M portfolio with risk metrics.

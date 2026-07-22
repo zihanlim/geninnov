@@ -1,6 +1,6 @@
 # Build Progress
 
-_Last updated: 2026-07-21 (late evening — Q1 thesis layer documented across all surfaces)_
+_Last updated: 2026-07-22 (architecture diagram + doc-sync rule in CLAUDE.md)_
 
 ## Current status
 
@@ -47,6 +47,7 @@ docs/
 | 2026-07-21 | **ADRs 0009–0011 (UX provenance layer).** Recognized that the platform's quantitative outputs (HypeScore, TradeScore, regime classification, factor betas) are difficult to audit in their current UI. Adopted Perplexity-Finance-style provenance patterns: research-first design philosophy (ADR-0009), citation footnotes on every numeric claim in the Q1 thesis (ADR-0010), per-theme derivation drawer showing raw signals → normalization → weights → final score (ADR-0011). Architecture updated to add L7 (UI derivation layer). |
 | 2026-07-21 | **Q1 thesis layer documented across all surfaces.** Updated CLAUDE.md, PROGRESS.md, ARCHITECTURE.md, spec §1/§2/§14, and added ADRs 0012–0014 to reflect that the Q1 reasoning pipeline is implemented end-to-end: L0 macro ingest + L2 factor exposures + L3 regime + L4 risk feed the L5 reasoning agent (`run_q1_agent` with 8 nodes including `compute_book_metrics` and `run_scenario_analysis`), whose citation-guarded output renders on `/research`. The thesis layer was previously only in spec §14 — now it's visible at every doc surface. |
 | 2026-07-21 | **Lens mode shipped (multi-asset / credit / rates / equity / fx / commodity).** Migration 009 adds `theme_assets.asset_class` with backfill for the Tier 1 universe. `run_q1_agent` accepts a `lens` parameter that filters `screen_candidates` and injects a lens-specific framing instruction into the LLM prompt. New `<LensSelector>` segmented control on `/portfolio` and `/trades` lets the user re-filter the book by asset class. Credit lens is the natural fit for Andromeda Capital's mandate. ADR-0015 documents the design. |
+| 2026-07-22 | **System architecture diagram + doc-sync rule.** `ARCHITECTURE.md` now leads with a single `mermaid` flowchart that wires every L0–L7 node, every Supabase table, every external data source, the LLM provider swap (MiniMax → Anthropic), the cron trigger, and the Vercel frontend — color-coded so the two LLM calls (`classify_news` and `reason_picks`) are visually unmistakable. `CLAUDE.md` gains a mandatory "Doc Sync Rule" section that tells every agent to update the mermaid diagram + `ARCHITECTURE.md` + `PROGRESS.md` + an ADR (when warranted) in the same change. Diagrams rot faster than code; this rule is the antidote. |
 
 ## Build tasks
 

@@ -1,5 +1,190 @@
 # Andromeda Architecture
 
+> **This file is the single source of truth for system architecture.** Whenever you add, remove, rename, or rewire a service, API, table, layer, LLM call, or cron trigger, you MUST update the [System Architecture Diagram](#system-architecture-diagram) in this file in the same change. See the **Doc Sync Rule** in `CLAUDE.md`.
+
+## System Architecture Diagram
+
+The full L0–L7 stack, from cron trigger to rendered frontend, in one diagram. Deterministic layers are white, the LLM is highlighted, the database is a cylinder, the frontend subtree is on the right.
+
+```mermaid
+flowchart TB
+    %% ───────── External triggers & data sources ─────────
+    subgraph EXT["External World"]
+        CRON["cron-job.org<br/>(daily, 4:30pm ET)"]
+        FRED["FRED API<br/>(yield curve, HY OAS, CPI, ...)"]
+        YF["yfinance<br/>(prices, returns, vol)"]
+        BRAVE["Brave Search MCP<br/>(news headlines)"]
+        REDDIT["Reddit PRAW<br/>(social posts)"]
+        KEN["Ken French Data Library<br/>(FF5 + UMD monthly)"]
+        POLY["Polymarket<br/>(prediction market odds)"]
+    end
+
+    %% ───────── LLM providers ─────────
+    subgraph LLM["LLM Provider (L5 only)"]
+        MINIMAX["MiniMax API<br/>MINIMAX_API_KEY<br/>MiniMax-M3"]
+        ANTHROPIC["Anthropic<br/>ANTHROPIC_API_KEY<br/>claude-sonnet-4"]
+    end
+
+    %% ───────── Backend Python pipeline ─────────
+    subgraph BE["Backend Python Pipeline (scripts/daily_refresh.py)"]
+        direction TB
+
+        subgraph L0["L0 — Macro Ingestion<br/>backend/data/macro_fetcher.py"]
+            MF["MacroFetcher<br/>fetch_fred() + fetch_yf()"]
+        end
+
+        subgraph L1["L1 — Theme Detection<br/>scripts/build_theme_signals()"]
+            TS["Brave + Reddit → VADER<br/>+ price corr + momentum<br/>→ HypeScore, TradeScore"]
+        end
+
+        subgraph L2["L2 — Factor Exposure<br/>backend/data/factor_fetcher.py"]
+            FF["rolling regression<br/>β_mkt, β_smb, β_hml,<br/>β_rmw, β_cma, β_umd, R²"]
+        end
+
+        subgraph L3["L3 — Regime Classifier<br/>backend/services/regime_classifier.py"]
+            RC["rule-based<br/>cycle × sentiment<br/>(early/mid/late/recession) × (risk-on/off)"]
+        end
+
+        subgraph L4["L4 — Risk Engine<br/>backend/services/risk_engine.py"]
+            RE["VaR, CVaR, Sharpe,<br/>β, HHI, daily P&L"]
+        end
+
+        subgraph L5["L5 — Q1 Reasoning Agent<br/>backend/services/q1_agent.py"]
+            direction TB
+            N1["1. aggregate_context<br/><i>pull L0–L4 from Supabase</i>"]
+            N2["2. screen_candidates<br/><i>hard filter: hype, direction,<br/>R²≥0.10, ADV≥$2M, lens</i>"]
+            N3["3. classify_news<br/>🤖 <b>LLM</b> — tag headlines<br/>{category, sentiment, theme}"]
+            N4["4. compute_book_metrics<br/><i>FF5+UMD tilts, caps,<br/>correlation matrix</i>"]
+            N5["5. run_scenario_analysis<br/><i>4 stress: VIX / rates / USD / credit</i>"]
+            N6["6. reason_picks<br/>🤖 <b>LLM</b> — top-5L + top-5S<br/>+ thesis + counter-thesis"]
+            N7["7. verify_citations<br/><i>pure-fn guardrail,<br/>max 2 retries</i>"]
+            N7F["7b. fallback_picks<br/><i>deterministic if retries exhaust</i>"]
+            N8["8. size_positions<br/><i>HypeScore-weighted $100M,<br/>20% / 30% / 35% caps</i>"]
+
+            N1 --> N2 --> N3 --> N4 --> N5 --> N6 --> N7
+            N7 -- "unverified" --> N6
+            N7 -- "verified ✓" --> N8
+            N7 -. "retries exhausted" .-> N7F --> N8
+        end
+
+        TG["backend/services/trade_ranker.py<br/>rank + size $100M book"]
+        POLYSVC["backend/data/polymarket_fetcher.py<br/>prediction market feed"]
+    end
+
+    %% ───────── Supabase (PostgreSQL) ─────────
+    subgraph DB[("Supabase — PostgreSQL")]
+        direction TB
+        T_THEMES["themes"]
+        T_TA["theme_assets<br/>(+ asset_class)"]
+        T_TS["theme_signals"]
+        T_TSH["theme_signals_history"]
+        T_TC["trade_candidates"]
+        T_PP["portfolio_positions"]
+        T_PR["portfolio_returns"]
+        T_PRISK["portfolio_risk"]
+        T_SC["scoring_config"]
+        T_MACRO["macro_indicators<br/>+ macro_daily_history"]
+        T_FE["factor_exposures"]
+        T_REG["regime_classifications"]
+        T_RUNS["q1_agent_runs<br/>(citations, retries, verified)"]
+        T_RECS["q1_recommendations<br/>(picks, book_view, scenarios)"]
+    end
+
+    %% ───────── Frontend (Next.js 14 → Vercel) ─────────
+    subgraph FE["Frontend — Next.js 14 / Vercel<br/>andromeda-analytics.vercel.app"]
+        direction TB
+
+        subgraph L6["L6 — Writeup (per-page)"]
+            PG_HOME["/ — Dashboard<br/>app/page.tsx"]
+            PG_TR["/trades — Trade Ideas<br/>app/trades/page.tsx"]
+            PG_PF["/portfolio — Portfolio<br/>app/portfolio/page.tsx"]
+            PG_RS["/research — Research Thesis<br/>app/research/page.tsx"]
+        end
+
+        subgraph L7["L7 — Provenance UI (components/)"]
+            REGIME["RegimeHero + RegimeInputsPanel"]
+            CONV["ConvictionCard"]
+            WATCH["Watchlist + Sparkline"]
+            TBL["TradeIdeasTable"]
+            ALLOC["MarketBar (allocation)"]
+            FEAT["SubScoreBars"]
+            DERV["ThemeDerivationDrawer<br/>DerivationDrawer<br/>TradeDerivationDrawer"]
+            CITE["CitationList"]
+            LENS["LensSelector<br/>(multi-asset / credit /<br/>rates / equity / fx / commodity)"]
+            FEED["LiveFeed"]
+        end
+
+        SUPC["frontend/lib/supabase.ts<br/>(anon key, RLS-gated reads)"]
+    end
+
+    %% ───────── Edges: triggers → pipeline ─────────
+    CRON -- "POST daily_refresh.py" --> BE
+
+    FRED --> MF
+    YF --> MF
+    YF --> TS
+    YF --> FF
+    YF --> TG
+    BRAVE --> TS
+    REDDIT --> TS
+    KEN --> FF
+    POLY --> POLYSVC
+
+    %% ───────── Deterministic layer edges ─────────
+    MF -->|macro_indicators| DB
+    TS -->|theme_signals,<br/>theme_signals_history| DB
+    FF -->|factor_exposures| DB
+    RC -->|regime_classifications| DB
+    RE -->|portfolio_risk,<br/>portfolio_returns| DB
+    TG -->|trade_candidates,<br/>portfolio_positions| DB
+    POLYSVC --> DB
+
+    %% ───────── L5 reads from DB ─────────
+    DB -- "L0–L4 snapshot" --> N1
+    DB -- "scoring_config" --> N1
+
+    %% ───────── LLM edges ─────────
+    MINIMAX -. "preferred" .-> N3
+    MINIMAX -. "preferred" .-> N6
+    ANTHROPIC -. "fallback" .-> N3
+    ANTHROPIC -. "fallback" .-> N6
+
+    %% ───────── L5 writes ─────────
+    N8 -->|q1_recommendations| T_RECS
+    N1 -->|input_snapshot +<br/>citations + retries| T_RUNS
+
+    %% ───────── Frontend reads ─────────
+    DB --> SUPC
+    SUPC --> L6
+    L6 --> L7
+
+    %% ───────── Lens filter edges ─────────
+    LENS -- "lens param" --> N2
+    LENS -- "re-queries Supabase" --> SUPC
+
+    %% ───────── Visual styling ─────────
+    classDef llm fill:#fff3b0,stroke:#d97706,stroke-width:2px,color:#000
+    classDef db  fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px,color:#000
+    classDef fe  fill:#dcfce7,stroke:#15803d,stroke-width:2px,color:#000
+    classDef ext fill:#f3f4f6,stroke:#374151,stroke-width:1px,color:#000
+    class N3,N6 llm
+    class DB,T_THEMES,T_TA,T_TS,T_TSH,T_TC,T_PP,T_PR,T_PRISK,T_SC,T_MACRO,T_FE,T_REG,T_RUNS,T_RECS db
+    class CRON,FRED,YF,BRAVE,REDDIT,KEN,POLY ext
+    class L6,L7,PG_HOME,PG_TR,PG_PF,PG_RS,REGIME,CONV,WATCH,TBL,ALLOC,FEAT,DERV,CITE,LENS,FEED,SUPC fe
+```
+
+### How to read the diagram
+
+| Color | Meaning |
+|-------|---------|
+| Grey | External data source or trigger (cron, FRED, yfinance, Brave, Reddit, Ken French, Polymarket) |
+| White | Deterministic Python logic (L0–L4, all of L5 except `classify_news` and `reason_picks`) |
+| **Yellow** | **The only LLM calls in the entire system** — `classify_news` (N3) and `reason_picks` (N6) |
+| Blue | Supabase tables (cylinder) |
+| Green | Frontend (L6 pages + L7 provenance components) |
+
+The diagram is a single source of truth. If you add a node, table, page, component, API, or external source, edit this diagram in the same commit.
+
 ## Layers
 
 | Layer | Name | Source | Output |

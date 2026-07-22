@@ -318,8 +318,11 @@ def rank_and_persist_trade_candidates(
 
     today_str = run_date.isoformat()
     for c in longs + shorts:
+        # Stamp run_date so readers can tell today's candidates from a previous
+        # run's. A run that yields no qualifying candidates writes nothing, and
+        # without this the prior run's rows keep being served as current.
         supabase.table("trade_candidates").upsert(
-            c.to_trade_candidate_row(today_str),
+            {**c.to_trade_candidate_row(today_str), "run_date": today_str},
             on_conflict="theme_id,asset,direction",
         ).execute()
 
@@ -340,8 +343,10 @@ def allocate_and_persist_portfolio(
 
     today_str = run_date.isoformat()
     for c, notional, weight in positioned:
+        # See the note in rank_and_persist_trade_candidates: without run_date a
+        # stale book is indistinguishable from the current one.
         supabase.table("portfolio_positions").upsert(
-            c.to_portfolio_position_row(notional, weight),
+            {**c.to_portfolio_position_row(notional, weight), "run_date": today_str},
             on_conflict="theme_id,asset,direction",
         ).execute()
 
@@ -632,8 +637,11 @@ def main():
     l0_id = run_id_for(run_date, stage="L0")
     try:
         record_pipeline_run(supabase, l0_id, "started", run_date=run_date, stage="L0")
-    except Exception:
-        pass
+    except Exception as exc:
+        # Never abort the pipeline over telemetry, but never hide it
+        # either: a silent swallow here left every stage stuck at
+        # 'partial' in production and nobody noticed.
+        print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
     macro_fetcher = MacroFetcher(SUPABASE_URL, SUPABASE_KEY)
     try:
         macro_snapshot = macro_fetcher.fetch_today()
@@ -657,8 +665,11 @@ def main():
         print(f"[{run_date}] [L0] Polymarket fetch failed ({e.__class__.__name__}): skipping.")
     try:
         record_pipeline_run(supabase, l0_id, "success", run_date=run_date, stage="L0", duration_s=(datetime.now(timezone.utc)-l0_started).total_seconds())
-    except Exception:
-        pass
+    except Exception as exc:
+        # Telemetry must never abort the pipeline, but a silent
+        # swallow here left every stage stuck at 'partial' in
+        # production with nothing to show why.
+        print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
 
     # ── Phase 5: L3 — Regime classification ─────────────────────────────────
     print(f"[{run_date}] [L3] Classifying macro regime...")
@@ -666,23 +677,32 @@ def main():
     l3_id = run_id_for(run_date, stage="L3")
     try:
         record_pipeline_run(supabase, l3_id, "started", run_date=run_date, stage="L3")
-    except Exception:
-        pass
+    except Exception as exc:
+        # Never abort the pipeline over telemetry, but never hide it
+        # either: a silent swallow here left every stage stuck at
+        # 'partial' in production and nobody noticed.
+        print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
     regime_clf = RegimeClassifier(SUPABASE_URL, SUPABASE_KEY)
     try:
         regime = regime_clf.classify(run_date)
         print(f"[{run_date}] [L3] Regime: cycle={regime.cycle}, sentiment={regime.sentiment}")
         try:
             record_pipeline_run(supabase, l3_id, "success", run_date=run_date, stage="L3", duration_s=(datetime.now(timezone.utc)-l3_started).total_seconds())
-        except Exception:
-            pass
+        except Exception as exc:
+            # Telemetry must never abort the pipeline, but a silent
+            # swallow here left every stage stuck at 'partial' in
+            # production with nothing to show why.
+            print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
     except Exception as exc:
         print(f"[{run_date}] [L3] Regime classification failed ({exc.__class__.__name__}): continuing without regime.")
         regime = None
         try:
             record_pipeline_run(supabase, l3_id, "failure", run_date=run_date, stage="L3", duration_s=(datetime.now(timezone.utc)-l3_started).total_seconds(), error=str(exc))
-        except Exception:
-            pass
+        except Exception as exc:
+            # Telemetry must never abort the pipeline, but a silent
+            # swallow here left every stage stuck at 'partial' in
+            # production with nothing to show why.
+            print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
 
     # ── Phase 1–4: Theme signals → HypeScore → TradeScore ──────────────────
     themes = load_themes()
@@ -709,8 +729,11 @@ def main():
     l5_id = run_id_for(run_date, stage="L5")
     try:
         record_pipeline_run(supabase, l5_id, "started", run_date=run_date, stage="L5")
-    except Exception:
-        pass
+    except Exception as exc:
+        # Never abort the pipeline over telemetry, but never hide it
+        # either: a silent swallow here left every stage stuck at
+        # 'partial' in production and nobody noticed.
+        print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
     try:
         from backend.services.q1_agent import run_q1_agent
         print(f"[{run_date}] [L5] Running Q1 AI reasoning agent...")
@@ -730,16 +753,22 @@ def main():
             print(f"[{run_date}] [L5] Q1 agent declined to produce output (fallback active).")
         try:
             record_pipeline_run(supabase, l5_id, "success", run_date=run_date, stage="L5", duration_s=(datetime.now(timezone.utc)-l5_started).total_seconds())
-        except Exception:
-            pass
+        except Exception as exc:
+            # Telemetry must never abort the pipeline, but a silent
+            # swallow here left every stage stuck at 'partial' in
+            # production with nothing to show why.
+            print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
     except ImportError as exc:
         print(f"[{run_date}] [L5] langchain/langgraph not available ({exc}): skipping research agent.")
     except Exception as exc:
         print(f"[{run_date}] [L5] Research agent failed ({exc.__class__.__name__}): skipping. Run with langchain installed to enable.")
         try:
             record_pipeline_run(supabase, l5_id, "failure", run_date=run_date, stage="L5", duration_s=(datetime.now(timezone.utc)-l5_started).total_seconds(), error=str(exc))
-        except Exception:
-            pass
+        except Exception as exc:
+            # Telemetry must never abort the pipeline, but a silent
+            # swallow here left every stage stuck at 'partial' in
+            # production with nothing to show why.
+            print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
 
     print(f"[{run_date}] Daily refresh complete.")
 

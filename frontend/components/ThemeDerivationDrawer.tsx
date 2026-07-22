@@ -25,6 +25,19 @@ interface ThemeSignalRow {
   run_date: string;
 }
 
+interface ThemeAssetRow {
+  ticker: string;
+  weight: number | null;
+  asset_class: string | null;
+}
+
+/**
+ * `method_id` referencing the selection method used for the displayed
+ * correlation. See backend ADR-0016 + `docs/superpowers/specs/...` for the
+ * derivation of "max |corr| across theme_assets".
+ */
+const CORR_SELECTION_METHOD_ID = "theme_assets.max_abs_corr.v1";
+
 interface ScoringConfig {
   hype_volume_weight: number;
   hype_sentiment_weight: number;
@@ -129,13 +142,14 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
   const [signal, setSignal] = useState<ThemeSignalRow | null>(null);
   const [cfg, setCfg] = useState<ScoringConfig | null>(null);
   const [sourceCounts, setSourceCounts] = useState<{ brave: number; reddit: number; yfinance: number } | null>(null);
+  const [themeAssets, setThemeAssets] = useState<ThemeAssetRow[]>([]);
 
   useEffect(() => {
     if (!open || !theme) return;
     let cancelled = false;
     (async () => {
       const runDate = theme.run_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
-      const [sigRes, cfgRes] = await Promise.all([
+      const [sigRes, cfgRes, assetsRes] = await Promise.all([
         supabase
           .from("theme_signals_history")
           .select("mention_count_1d, mention_count_7d_avg, mention_count_7d_std, avg_sentiment, price_corr, momentum_raw, run_date")
@@ -143,10 +157,16 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
           .eq("run_date", runDate)
           .maybeSingle(),
         supabase.from("scoring_config").select("*").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase
+          .from("theme_assets")
+          .select("ticker, weight, asset_class")
+          .eq("theme_id", theme.id)
+          .order("run_date", { ascending: false }),
       ]);
       if (cancelled) return;
       setSignal((sigRes.data as ThemeSignalRow) ?? null);
       setCfg((cfgRes.data as ScoringConfig) ?? null);
+      setThemeAssets((assetsRes.data as ThemeAssetRow[]) ?? []);
       // Source counts are not directly available; estimate from theme_signals mention_count
       if (sigRes.data) {
         const m = (sigRes.data as ThemeSignalRow).mention_count_1d ?? 0;
@@ -239,7 +259,21 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
             contribution: contCorr,
             raw: (
               <>
-                ρ(mentions, asset return 7d): <span className="num">{fmt(signal?.price_corr, 2)}</span>
+                <span data-testid="corr-label">abs(corr)</span> (mentions × asset return, 7d):{" "}
+                <span className="num">{fmt(Math.abs(signal?.price_corr ?? NaN), 2)}</span>
+                <br />
+                {themeAssets.length > 0 ? (
+                  <>
+                    <span data-testid="corr-selection-tickers" className="num">
+                      Theme tickers ({themeAssets.length}): {themeAssets.map((a) => a.ticker).join(", ")}
+                    </span>
+                    <br />
+                  </>
+                ) : null}
+                <span data-testid="corr-selection-method">
+                  Selection method: max |corr| across theme_assets ·{" "}
+                  <code className="num">method_id={CORR_SELECTION_METHOD_ID}</code>
+                </span>
                 <br />
                 Normalized across 12 themes
               </>

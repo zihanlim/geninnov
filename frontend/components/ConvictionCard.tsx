@@ -66,6 +66,7 @@ export default function ConvictionCard({ rank, theme, hero = false, onOpenDeriva
           : "bg-bg-surface border-border hover:border-border-strong hover:bg-bg-elevated"
       }`}
       onClick={() => onOpenDerivation?.(theme)}
+      data-testid={onOpenDerivation ? "theme-derivation-trigger" : undefined}
       role={onOpenDerivation ? "button" : undefined}
       tabIndex={onOpenDerivation ? 0 : undefined}
       onKeyDown={(e) => {

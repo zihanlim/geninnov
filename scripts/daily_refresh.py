@@ -35,11 +35,12 @@ from services.trade_ranker import (
     rank_trade_candidates,
     allocate_portfolio,
     TradeCandidate,
+    classify,
     SECTOR_MAP,
     GEO_MAP,
 )
 from services.risk_engine import (
-    compute_risk_metrics,
+    compute_risk,
 )
 from services.portfolio import compute_daily_return, MissingReturnError
 from services.regime_classifier import RegimeClassifier
@@ -145,8 +146,8 @@ def compute_hype_scores(raw_signals: list[dict], cfg: ScoringConfig) -> list[dic
     return services_hype_compute_hype_scores(raw_signals, cfg)
 
 
-# ─── Step 5: Compute TradeScores ──────────────────────────────────────────────
-def compute_trade_scores(hyped: list[dict]) -> list[dict]:
+# ─── Step 5: Compute TradeScores ──────────────────────────────────────────────────────────────────
+def compute_trade_scores(hyped: list[dict], run_date: date) -> list[dict]:
     cfg = load_config()
 
     # Get yesterday's scores for momentum. If the theme_signals_history table
@@ -154,7 +155,7 @@ def compute_trade_scores(hyped: list[dict]) -> list[dict]:
     # query raises a PostgREST APIError. We catch it and fall back to using
     # today's score as yesterday's, which collapses HypeMomentum to 0
     # (TradeScore becomes sentiment-only -- degraded but not broken).
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    yesterday = (run_date - timedelta(days=1)).isoformat()
     try:
         yesterday_rows = (
             supabase.table("theme_signals_history")
@@ -169,17 +170,54 @@ def compute_trade_scores(hyped: list[dict]) -> list[dict]:
               f"HypeMomentum will be 0. Apply migration 003 to enable.")
         hype_yesterday_map = {}
 
+    # T22: Per-theme prior-run lookup for elapsed_days. Without this the
+    # HypeMomentum normalization always divides by 1 day, even after a
+    # weekend or a missed run. Fetch the most recent prior run_date per
+    # theme in one round-trip; themes with no prior row default to
+    # elapsed_days=1 with a warning.
+    prior_run_dates: dict[str, date] = {}
+    try:
+        prior_rows = (
+            supabase.table("theme_signals_history")
+            .select("theme_id, run_date")
+            .lt("run_date", run_date.isoformat())
+            .order("run_date", desc=True)
+            .execute()
+            .data
+        )
+        for r in prior_rows:
+            tid = r["theme_id"]
+            if tid not in prior_run_dates:
+                prior_run_dates[tid] = date.fromisoformat(r["run_date"])
+    except Exception as exc:
+        print(f"[compute_trade_scores] prior-run lookup failed ({exc.__class__.__name__}); "
+              f"defaulting elapsed_days to 1.")
+
     scored = []
+    missing_prior = 0
     for r in hyped:
-        hype_yest = hype_yesterday_map.get(r["theme_id"], r["hype_score"])
+        theme_id = r["theme_id"]
+        hype_yest = hype_yesterday_map.get(theme_id, r["hype_score"])
+
+        prior_date = prior_run_dates.get(theme_id)
+        if prior_date is None:
+            elapsed_days = 1
+            missing_prior += 1
+        else:
+            elapsed_days = max(1, (run_date - prior_date).days)
+
         ts = trade_score(
             hype_today=r["hype_score"],
             hype_yesterday=hype_yest,
             sentiment=r["avg_sentiment"],
             cfg=cfg,
+            elapsed_days=elapsed_days,
         )
-        scored.append({**r, "trade_score": ts})
+        scored.append({**r, "trade_score": ts, "elapsed_days": elapsed_days})
 
+    if missing_prior:
+        print(f"[compute_trade_scores] WARN: no prior run_date found for "
+              f"{missing_prior}/{len(hyped)} themes; defaulted elapsed_days=1.")
     return scored
 
 
@@ -355,50 +393,107 @@ def compute_and_persist_daily_return(
     return daily
 
 
-# ─── Step 11 (Phase 3): Compute + persist risk metrics ────────────────────────
+# ─── Step 11 (Phase 3): Compute + persist risk derivations ─────────────────────────
+def _derivation_to_dict(d) -> dict:
+    """Serialize a NumericDerivation dataclass to a JSON-safe dict."""
+    from dataclasses import asdict
+    return asdict(d)
+
+
 def compute_and_persist_risk(
     positioned: list[tuple[TradeCandidate, float, float]],
     run_date: date,
     cfg: ScoringConfig,
 ) -> dict:
-    """Compute risk metrics over available history and persist.
+    """Compute risk metrics using the derivation-aware compute_risk API.
 
-    HHI is always computable from current weights. VaR/CVaR/Sharpe/Beta
-    need ~30-60 days of history; we return None until then.
+    Returns {var_95, cvar_95, sharpe, beta, hhi: NumericDerivation}. Each
+    derivation carries provenance (status, method, uncertainty, freshness) so
+    the L6 frontend can render audit-grade provenance on /portfolio.
+
+    For back-compat with downstream callers (q1_agent reads risk_metrics
+    flat scalars) we return a dict with both the scalar values and the full
+    bundle. Both legacy scalar columns and the new numeric_derivations
+    JSONB column (added in migration 015) are written.
     """
     total_capital = cfg.total_capital
-    position_dicts = [
-        {"asset": c.asset, "weight": w, "notional": n, "direction": c.direction}
+
+    # Build the book: signed weight (shorts flip), full taxonomy per asset.
+    book = [
+        {
+            "ticker": c.asset,
+            "weight": (-w if c.direction == "short" else w),
+            "sector": classify(c.asset)["sector"],
+            "geo": classify(c.asset)["geo"],
+            "direction": c.direction,
+            "notional": n,
+        }
         for c, n, w in positioned
     ]
 
-    historical_returns = _load_historical_portfolio_returns(252)
-    spx_returns = _load_spx_returns(252)
+    history_series = _load_historical_portfolio_returns(252)
+    history = [float(x) for x in history_series.tolist()] if len(history_series) else []
 
-    metrics = compute_risk_metrics(
-        position_dicts,
-        historical_returns,
+    spx_series = _load_spx_returns(252)
+    spx_returns = [float(x) for x in spx_series.tolist()] if spx_series is not None else []
+
+    # Run date at UTC midnight - the "as_of" the snapshot was taken.
+    as_of = datetime(run_date.year, run_date.month, run_date.day, tzinfo=timezone.utc)
+
+    derivations = compute_risk(
+        book=book,
+        history=history,
         spx_returns=spx_returns,
+        as_of=as_of,
+        portfolio_value=total_capital,
         risk_free_annual=cfg.risk_free_annual,
     )
 
-    # portfolio_risk has no unique constraint; replace all rows with current state
-    supabase.table("portfolio_risk").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
-    supabase.table("portfolio_risk").insert({
-        "total_capital": metrics["total_capital"],
-        "var_95": metrics["var_95"],
-        "cvar_95": metrics["cvar_95"],
-        "sharpe": metrics["sharpe"],
-        "beta": metrics["beta"],
-        "concentration_hhi": metrics["concentration_hhi"],
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }).execute()
+    # Pull scalar values for legacy columns and build the JSONB bundle.
+    scalar = {key: d.value for key, d in derivations.items()}
+    derivations_payload = {
+        field_id: _derivation_to_dict(d) for field_id, d in derivations.items()
+    }
 
     today_str = run_date.isoformat()
-    hhi = metrics["concentration_hhi"]
-    var_str = f"${metrics['var_95']:,.0f}" if metrics["var_95"] is not None else "n/a"
-    print(f"[{today_str}] Risk metrics persisted. HHI={hhi:.0f}, VaR95={var_str}.")
-    return metrics
+    row = {
+        "run_date": today_str,
+        "total_capital": total_capital,
+        "var_95": scalar["var_95"],
+        "cvar_95": scalar["cvar_95"],
+        "sharpe": scalar["sharpe"],
+        "beta": scalar["beta"],
+        "concentration_hhi": scalar["hhi"],
+        "numeric_derivations": derivations_payload,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Upsert with run_date as the conflict key. Migration 015 will eventually
+    # attach a UNIQUE(run_date) constraint; upsert works regardless.
+    try:
+        supabase.table("portfolio_risk").upsert(row, on_conflict="run_date").execute()
+    except Exception as exc:
+        # Migration 015 not yet applied (column missing) - fall back to
+        # scalar-only so the legacy contract still works.
+        print(
+            f"[{today_str}] WARN: numeric_derivations upsert failed ({exc.__class__.__name__}): "
+            f"falling back to scalar-only insert."
+        )
+        row.pop("numeric_derivations", None)
+        supabase.table("portfolio_risk").insert(row).execute()
+
+    hhi = scalar["hhi"] or 0.0
+    var_str = f"${scalar['var_95']:,.0f}" if scalar["var_95"] is not None else "n/a"
+    print(f"[{today_str}] Risk derivations persisted (NumericDerivation bundle). HHI={hhi:.0f}, VaR95={var_str}.")
+    return {
+        "total_capital": total_capital,
+        "var_95": scalar["var_95"],
+        "cvar_95": scalar["cvar_95"],
+        "sharpe": scalar["sharpe"],
+        "beta": scalar["beta"],
+        "concentration_hhi": scalar["hhi"],
+        "numeric_derivations": derivations_payload,
+    }
 
 
 def _load_historical_portfolio_returns(lookback_days: int) -> pd.Series:
@@ -483,7 +578,7 @@ def main():
     themes = load_themes()
     raw = build_theme_signals(themes, run_date)
     hyped = compute_hype_scores(raw, cfg)
-    scored = compute_trade_scores(hyped)
+    scored = compute_trade_scores(hyped, run_date)
     persist(run_date, scored)
 
     # ── Phase 3: trade ranking + portfolio construction ─────────────────────

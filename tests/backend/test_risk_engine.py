@@ -13,7 +13,6 @@ from backend.services.risk_engine import (
     sharpe_ratio,
     beta_to_spx,
     concentration_hhi,
-    compute_risk_metrics,
     compute_risk,
     annualized_vol,
     _z_score,
@@ -163,40 +162,6 @@ def test_hhi_scales_with_concentration():
     hhi_concentrated = concentration_hhi([1.0, 0.0, 0.0])
     hhi_balanced = concentration_hhi([1 / 3, 1 / 3, 1 / 3])
     assert hhi_concentrated > hhi_balanced
-
-
-# ── compute_risk_metrics bundle (legacy) ────────────────────────────────────
-
-
-def test_compute_risk_metrics_returns_all_keys():
-    positions = [
-        {"notional": 50_000_000, "weight": 0.5},
-        {"notional": 50_000_000, "weight": 0.5},
-    ]
-    rets = _returns(np.random.default_rng(0).normal(0, 0.01, 200))
-    spx = _returns(np.random.default_rng(1).normal(0, 0.01, 200))
-    m = compute_risk_metrics(positions, rets, spx_returns=spx, risk_free_annual=0.045)
-    expected = {"total_capital", "var_95", "cvar_95", "sharpe", "beta", "concentration_hhi"}
-    assert set(m.keys()) == expected
-    assert m["total_capital"] == 100_000_000
-    assert m["var_95"] is not None and m["var_95"] > 0
-    assert m["cvar_95"] is not None and m["cvar_95"] > 0
-    assert m["sharpe"] is not None
-    assert m["beta"] is not None
-    # 50/50 weights -> HHI = 0.5^2 + 0.5^2 = 0.5, *10000 = 5000
-    assert abs(m["concentration_hhi"] - 5000.0) < 1e-6
-
-
-def test_compute_risk_metrics_handles_no_history():
-    """With empty returns, VaR/CVaR/Sharpe are None, HHI still computable."""
-    positions = [{"notional": 100_000_000, "weight": 1.0}]
-    rets = _returns([])
-    m = compute_risk_metrics(positions, rets)
-    assert m["var_95"] is None
-    assert m["cvar_95"] is None
-    assert m["sharpe"] is None
-    assert m["beta"] is None
-    assert m["concentration_hhi"] == 10000.0
 
 
 # ── compute_risk (derivation-aware) ─────────────────────────────────────────

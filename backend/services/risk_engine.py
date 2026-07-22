@@ -239,7 +239,7 @@ def compute_risk(
     # VaR/CVaR/Sharpe/Beta using whatever history is available. Parametric
     # formulas do not require a minimum sample size at this layer; the
     # MIN_DAYS_FOR_* gates live in the underlying helpers and are applied by
-    # callers that need audit-grade estimates (e.g. legacy compute_risk_metrics).
+    # callers that need audit-grade estimates (MIN_DAYS_FOR_* gates elsewhere).
     var_v: Optional[float] = _parametric_var(rets, 0.95) if len(rets) >= 2 else None
     cvar_v: Optional[float] = _parametric_cvar(rets, 0.95) if len(rets) >= 2 else None
     sharpe_v: Optional[float] = _annualized_sharpe(rets, risk_free_annual) if len(rets) >= 2 else None
@@ -277,35 +277,6 @@ def compute_risk(
         "hhi": _wrap(
             "risk.hhi", "risk.hhi.v1", hhi_v, "ratio", src, as_of, status="exact",
         ),
-    }
-
-
-# ── Legacy helper retained for back-compat with non-derivation callers ───────
-
-
-def compute_risk_metrics(
-    positions: list[dict],
-    daily_returns: pd.Series,
-    spx_returns: Optional[pd.Series] = None,
-    risk_free_annual: float = 0.0,
-    var_confidence: float = 0.95,
-) -> dict:
-    """Legacy non-derivation bundle. Used by callers that have not yet migrated.
-
-    positions:     list of {notional, weight} from the sized portfolio.
-    daily_returns: pd.Series indexed by date of portfolio daily returns.
-    spx_returns:   optional pd.Series for beta. If absent, beta is None.
-    """
-    total_capital = sum(p["notional"] for p in positions) if positions else 0.0
-    weights = [p["weight"] for p in positions]
-
-    return {
-        "total_capital": total_capital,
-        "var_95": value_at_risk(daily_returns, total_capital, var_confidence) if total_capital else None,
-        "cvar_95": conditional_value_at_risk(daily_returns, total_capital, var_confidence) if total_capital else None,
-        "sharpe": sharpe_ratio(daily_returns, risk_free_annual),
-        "beta": beta_to_spx(daily_returns, spx_returns) if spx_returns is not None else None,
-        "concentration_hhi": concentration_hhi(weights),
     }
 
 

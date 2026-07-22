@@ -4,6 +4,8 @@ import { supabase } from "@/lib/supabase";
 import TradeDerivationDrawer from "./TradeDerivationDrawer";
 import { Citation } from "./CitationList";
 import LensSelector, { Lens, lensToAssetClasses } from "./LensSelector";
+import { StatusBadge } from "./status/StatusBadge";
+import type { NumericDerivation, NumericUnit, NumericStatus } from "@/lib/derivations/numeric";
 
 interface TradeCandidate {
   id: string;
@@ -14,6 +16,8 @@ interface TradeCandidate {
   hype_score: number;
   entry_thesis?: string;
   notional?: number;
+  run_date?: string;
+  updated_at?: string;
   themes?: { name: string };
   counter_thesis?: string;
   time_horizon?: string;
@@ -38,6 +42,71 @@ const FALLBACK_THESIS: Record<string, string> = {
 };
 
 const TOTAL_NOTIONAL = 100_000_000; // $100M book
+
+// ── Derivation helpers (mirror backend.services.book_metrics / portfolio) ────
+// Each row produces four NumericDerivations so every numeric cell has a status
+// badge (exact / estimated / stale / unavailable). Status reflects whether the
+// underlying column is present in `trade_candidates` — the schema does NOT
+// persist weight or asset_return on trade_candidates, so those are derived
+// client-side and marked `estimated`. Notional is persisted → `exact`.
+
+function nowMinus(runDateIso?: string): number {
+  // Observed age of the pick in seconds. Uses run_date when available, else
+  // updated_at, else assumes "fresh" (just rendered).
+  const ts = runDateIso ? new Date(runDateIso).getTime() : Date.now();
+  if (!Number.isFinite(ts)) return 0;
+  return Math.max(0, Math.floor((Date.now() - ts) / 1000));
+}
+
+function derive(
+  field_id: string,
+  value: number | null,
+  unit: NumericUnit,
+  status: NumericStatus,
+  runDateIso?: string,
+): NumericDerivation {
+  return {
+    field_id,
+    display_status: status,
+    value,
+    unit,
+    method_id:
+      status === "exact"
+        ? "db.trade_candidates.column"
+        : status === "estimated"
+          ? "frontend.derivation"
+          : status === "stale"
+            ? "db.trade_candidates.column.stale"
+            : "db.unavailable",
+    source_records: runDateIso
+      ? [{ table: "trade_candidates", id: field_id, as_of: runDateIso }]
+      : [],
+    computed_at: new Date().toISOString(),
+    as_of: runDateIso ?? new Date().toISOString(),
+    freshness: { max_age_seconds: 86400, observed_age_seconds: nowMinus(runDateIso) },
+    unavailable_reason:
+      status === "unavailable" ? "missing column on trade_candidates" : undefined,
+  };
+}
+
+function fmtSignedWeight(d: NumericDerivation): string {
+  if (d.value === null) return "—";
+  const v = d.value * 100;
+  const sign = v >= 0 ? "+" : "−";
+  return `${sign}${Math.abs(v).toFixed(1)}%`;
+}
+
+function fmtPct(d: NumericDerivation): string {
+  if (d.value === null) return "—";
+  const v = d.value * 100;
+  const sign = v >= 0 ? "+" : "−";
+  return `${sign}${Math.abs(v).toFixed(2)}%`;
+}
+
+function fmtUsd(d: NumericDerivation): string {
+  if (d.value === null) return "—";
+  return `$${(d.value / 1_000_000).toFixed(1)}M`;
+}
 
 export default function TradeIdeasTable() {
   const [rows, setRows] = useState<TradeCandidate[]>([]);
@@ -154,21 +223,93 @@ export default function TradeIdeasTable() {
                 <th className="text-left px-[18px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated" style={{ width: 90 }}>Direction</th>
                 <th className="text-left px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Ticker</th>
                 <th className="text-left px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Theme</th>
-                <th className="text-left px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated" style={{ maxWidth: 420 }}>Thesis</th>
                 <th className="text-right px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">HypeScore</th>
                 <th className="text-right px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">TradeScore</th>
-                <th className="text-right px-[18px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Notional</th>
+                <th className="text-right px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Signed Weight</th>
+                <th className="text-right px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Asset Return</th>
+                <th className="text-right px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Contribution</th>
+                <th className="text-right px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Notional</th>
+                <th className="text-left px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Status</th>
               </tr>
             </thead>
             <tbody>
               {list.map((c) => {
                 const isLong = c.direction === "long";
+                const runDateIso = c.run_date ?? c.updated_at;
+                // ── Per-row derivations ────────────────────────────────────
+                // Signed weight: schema has no `weight` on trade_candidates,
+                // so derive as notional / TOTAL_NOTIONAL, signed by direction.
+                // Marked `estimated` when notional is missing.
+                const weight = c.notional && c.notional > 0 ? c.notional / TOTAL_NOTIONAL : null;
+                const signedWeight =
+                  weight !== null ? (isLong ? weight : -weight) : null;
+                const swStatus: NumericStatus =
+                  signedWeight !== null ? "estimated" : "unavailable";
+
+                // Asset return: not persisted on trade_candidates. Until the
+                // pipeline wires a per-asset daily return column we mark this
+                // as unavailable rather than fabricating a number.
+                const assetReturn: NumericDerivation = derive(
+                  `trade.${c.asset}.asset_return`,
+                  null,
+                  "pct",
+                  "unavailable",
+                  runDateIso
+                );
+
+                // Contribution = signed_weight × asset_return. Stays
+                // unavailable unless we have both numbers.
+                const contribution: number | null =
+                  signedWeight !== null && assetReturn.value !== null
+                    ? signedWeight * assetReturn.value
+                    : null;
+                const contribStatus: NumericStatus =
+                  contribution !== null ? "estimated" : "unavailable";
+
+                // Notional: read straight from the row; the column is
+                // backfilled by daily_refresh via portfolio_positions join.
+                const notionalStatus: NumericStatus =
+                  c.notional && c.notional > 0 ? "exact" : "unavailable";
+
+                const notionalDer = derive(
+                  `trade.${c.asset}.notional`,
+                  c.notional ?? null,
+                  "usd_m",
+                  notionalStatus,
+                  runDateIso
+                );
+                const swDer = derive(
+                  `trade.${c.asset}.signed_weight`,
+                  signedWeight,
+                  "ratio",
+                  swStatus,
+                  runDateIso
+                );
+                const contribDer = derive(
+                  `trade.${c.asset}.contribution`,
+                  contribution,
+                  "pct",
+                  contribStatus,
+                  runDateIso
+                );
+
+                // Worst status drives the row badge.
+                const rowStatus: NumericStatus = [
+                  swStatus,
+                  assetReturn.display_status,
+                  contribStatus,
+                  notionalStatus,
+                ].reduce<NumericStatus>((worst, cur) =>
+                  severity(cur) > severity(worst) ? cur : worst,
+                  "exact"
+                );
                 const thesis = c.entry_thesis || FALLBACK_THESIS[c.asset] || `${c.asset} — ${c.themes?.name ?? "theme"} ${isLong ? "long" : "short"} candidate.`;
                 return (
                   <tr
                     key={c.id}
                     className="hover:bg-bg-elevated cursor-pointer"
                     onClick={() => setOpenPick(c)}
+                    data-testid="trade-row"
                   >
                     <td className="px-[18px] py-3.5 border-b border-border align-middle">
                       <span className={`dir-pill ${isLong ? "dir-pill-long" : "dir-pill-short"}`}>
@@ -178,9 +319,6 @@ export default function TradeIdeasTable() {
                     <td className="px-[14px] py-3.5 border-b border-border num font-semibold">{c.asset}</td>
                     <td className="px-[14px] py-3.5 border-b border-border text-text-secondary text-[12px]">
                       {c.themes?.name ?? "—"}
-                    </td>
-                    <td className="px-[14px] py-3.5 border-b border-border text-text-secondary text-[12.5px] leading-[1.5]" style={{ maxWidth: 420 }}>
-                      {thesis}
                     </td>
                     <td className="px-[14px] py-3.5 border-b border-border text-right num text-text-secondary">
                       {Math.round(c.hype_score ?? 0)}
@@ -192,8 +330,42 @@ export default function TradeIdeasTable() {
                       {c.trade_score >= 0 ? "+" : ""}
                       {c.trade_score?.toFixed(2) ?? "—"}
                     </td>
-                    <td className="px-[18px] py-3.5 border-b border-border text-right num">
-                      {c.notional ? `$${(c.notional / 1_000_000).toFixed(1)}M` : "—"}
+                    <td
+                      className="px-[14px] py-3.5 border-b border-border text-right num"
+                      data-testid="cell-signed-weight"
+                      style={{
+                        color:
+                          signedWeight === null
+                            ? "var(--text-tertiary)"
+                            : isLong
+                              ? "var(--long)"
+                              : "var(--short)",
+                      }}
+                    >
+                      {fmtSignedWeight(swDer)}
+                    </td>
+                    <td
+                      className="px-[14px] py-3.5 border-b border-border text-right num text-text-secondary"
+                      data-testid="cell-asset-return"
+                    >
+                      {fmtPct(assetReturn)}
+                    </td>
+                    <td
+                      className="px-[14px] py-3.5 border-b border-border text-right num text-text-secondary"
+                      data-testid="cell-contribution"
+                    >
+                      {fmtPct(contribDer)}
+                    </td>
+                    <td
+                      className="px-[14px] py-3.5 border-b border-border text-right num"
+                      data-testid="cell-notional"
+                    >
+                      {fmtUsd(notionalDer)}
+                    </td>
+                    <td className="px-[14px] py-3.5 border-b border-border">
+                      <div data-testid="status-badge">
+                        <StatusBadge status={rowStatus} />
+                      </div>
                     </td>
                   </tr>
                 );
@@ -222,4 +394,22 @@ export default function TradeIdeasTable() {
       />
     </>
   );
+}
+
+// Higher number = worse provenance.
+function severity(s: NumericStatus): number {
+  switch (s) {
+    case "exact":
+      return 0;
+    case "estimated":
+      return 1;
+    case "stale":
+      return 2;
+    case "unverified":
+      return 3;
+    case "unavailable":
+      return 4;
+    default:
+      return 5;
+  }
 }

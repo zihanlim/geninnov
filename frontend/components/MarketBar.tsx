@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { FreshnessLabel } from "./status/FreshnessLabel";
+import { StatusBadge } from "./status/StatusBadge";
+import type { NumericDerivation, NumericStatus } from "@/lib/derivations/numeric";
 
 interface MarketAsset {
   ticker: string;
@@ -8,36 +11,82 @@ interface MarketAsset {
   current: number;
   prev_close: number;
   pct_change: number;
+  as_of?: string;
+  updated_at?: string;
 }
 
 // Ordered display: equities first, VIX last
 const DISPLAY_ORDER = ["^SPX", "^NDX", "^DJI", "^RUT", "^VIX"];
+const FRESHNESS_FIELD = "market.index.as_of";
+const MAX_AGE_SECONDS = 86400; // market data should be ≤ 24h old
+
+function derive(
+  field_id: string,
+  value: number | null,
+  status: NumericStatus,
+  observed_age_seconds: number,
+  source_table: string,
+  unavailable_reason?: string,
+): NumericDerivation {
+  return {
+    field_id,
+    display_status: status,
+    value,
+    unit: "pct",
+    method_id: status === "unavailable" ? "db.unavailable" : "db.market_assets.column",
+    source_records: [{ table: source_table, id: field_id, as_of: new Date().toISOString() }],
+    computed_at: new Date().toISOString(),
+    as_of: new Date().toISOString(),
+    freshness: { max_age_seconds: MAX_AGE_SECONDS, observed_age_seconds },
+    unavailable_reason,
+  };
+}
+
+function ageFromDate(d?: string): number {
+  if (!d) return 0;
+  const t = new Date(d).getTime();
+  if (!Number.isFinite(t)) return 0;
+  return Math.max(0, Math.floor((Date.now() - t) / 1000));
+}
 
 export default function MarketBar() {
-  const [assets, setAssets] = useState<MarketAsset[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [assets, setAssets] = useState<MarketAsset[] | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
-    supabase
-      .from("market_assets")
-      .select("*")
-      .order("ticker")
-      .then(({ data, error }) => {
-        if (!error && data) {
-          // Sort by display order
-          const sorted = [...(data as MarketAsset[])].sort(
-            (a, b) =>
-              DISPLAY_ORDER.indexOf(a.ticker) - DISPLAY_ORDER.indexOf(b.ticker)
-          );
-          setAssets(sorted);
-        }
-        setLoading(false);
-      });
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("market_assets")
+        .select("*")
+        .order("ticker");
+      if (cancelled) return;
+      // PGRST…/404-ish errors land in `error`; an empty row set is fine
+      // and renders nothing (existing behavior preserved).
+      if (error) {
+        setUnavailable(true);
+        setAssets([]);
+        return;
+      }
+      const list = (data as MarketAsset[]) ?? [];
+      const sorted = [...list].sort(
+        (a, b) =>
+          DISPLAY_ORDER.indexOf(a.ticker) - DISPLAY_ORDER.indexOf(b.ticker)
+      );
+      setAssets(sorted);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  if (loading) {
+  // ── Loading skeleton ─────────────────────────────────────────────────────
+  if (assets === null) {
     return (
-      <div className="flex gap-3 px-4 py-2.5 bg-bg-surface border border-border rounded-[8px] mb-6">
+      <div
+        className="flex gap-3 px-4 py-2.5 bg-bg-surface border border-border rounded-[8px] mb-6"
+        data-testid="market-bar-skeleton"
+      >
         {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="flex items-center gap-2">
             <div className="skeleton h-3 w-8 rounded" />
@@ -49,12 +98,41 @@ export default function MarketBar() {
     );
   }
 
-  if (assets.length === 0) {
-    return null;
+  // ── Explicit unavailable state (e.g. migration 010 not deployed) ─────────
+  if (unavailable || assets.length === 0) {
+    const d = derive(FRESHNESS_FIELD, null, "unavailable", 0, "market_assets",
+      "market_assets table unavailable — run migration 010");
+    return (
+      <div
+        className="flex items-center justify-between gap-3 px-4 py-2.5 bg-bg-surface border border-border rounded-[8px] mb-6"
+        data-testid="market-bar-unavailable"
+      >
+        <div className="flex items-center gap-2.5">
+          <span className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-semibold">
+            Market indices
+          </span>
+          <StatusBadge status={d.display_status} />
+          <span className="text-text-secondary text-[12px]" data-testid="market-bar-unavailable-text">
+            Major-index tape unavailable · market_assets not deployed
+          </span>
+        </div>
+      </div>
+    );
   }
 
+  // ── Healthy: render tape + freshness for the freshest asset as_of ────────
+  const freshestAge = assets.reduce(
+    (min, a) => Math.min(min, ageFromDate(a.as_of ?? a.updated_at)),
+    Number.POSITIVE_INFINITY
+  );
+  const freshestDisplay =
+    Number.isFinite(freshestAge) ? freshestAge : 0;
+
   return (
-    <div className="flex flex-wrap gap-0 bg-bg-surface border border-border rounded-[8px] mb-6 overflow-hidden">
+    <div
+      className="flex flex-wrap gap-0 bg-bg-surface border border-border rounded-[8px] mb-6 overflow-hidden"
+      data-testid="market-bar"
+    >
       {assets.map((a, i) => {
         const isPos = a.pct_change >= 0;
         const isNeg = a.pct_change < 0;
@@ -93,6 +171,9 @@ export default function MarketBar() {
           </div>
         );
       })}
+      <div className="ml-auto px-4 py-2.5 flex items-center text-text-tertiary text-[11px]">
+        <FreshnessLabel observed_age_seconds={freshestDisplay} />
+      </div>
     </div>
   );
 }

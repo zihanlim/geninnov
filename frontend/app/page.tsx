@@ -8,6 +8,9 @@ import Watchlist from "@/components/Watchlist";
 import ThemeDerivationDrawer from "@/components/ThemeDerivationDrawer";
 import ThemeHeatmap from "@/components/ThemeHeatmap";
 import MarketBar from "@/components/MarketBar";
+import { FreshnessLabel } from "@/components/status/FreshnessLabel";
+import { StatusBadge } from "@/components/status/StatusBadge";
+import type { NumericDerivation, NumericStatus } from "@/lib/derivations/numeric";
 
 interface Regime {
   cycle: string;
@@ -172,6 +175,48 @@ export default function ConvictionPage() {
     : "Macro regime classification pending — pipeline needs one full run.";
   const narrative = regime?.narrative ?? "Run the daily pipeline (cron-job.org → daily_refresh.py) to populate the regime classifier.";
 
+  // ── Dashboard-level derivations (L1 hype / L3 regime / data freshness) ──
+  // Score the status of each layer to drive a global pill and the per-theme
+  // ranking header. Mirrors `backend.derivations.numeric` rules.
+  const observed_age_seconds = runDate
+    ? Math.max(0, Math.floor((Date.now() - new Date(runDate).getTime()) / 1000))
+    : Number.POSITIVE_INFINITY;
+  const runDateStatus: NumericStatus =
+    observed_age_seconds === Number.POSITIVE_INFINITY
+      ? "unavailable"
+      : observed_age_seconds > 86400 * 2
+        ? "stale"
+        : observed_age_seconds > 86400
+          ? "estimated"
+          : "exact";
+  const themesStatus: NumericStatus = themes.length > 0 ? "exact" : "unavailable";
+  const regimeStatus: NumericStatus = regime ? "exact" : "unavailable";
+  const dashboardStatus: NumericStatus = [
+    themesStatus,
+    regimeStatus,
+    runDateStatus,
+  ].reduce<NumericStatus>(
+    (worst, cur) => (severity(cur) > severity(worst) ? cur : worst),
+    "exact"
+  );
+  const top1Score = top3[0]?.hype_score ?? null;
+  const top1Status: NumericStatus = top1Score !== null ? "exact" : "unavailable";
+  const topThemeDerivation: NumericDerivation = {
+    field_id: "theme.top1.hype_score",
+    display_status: top1Status,
+    value: top1Score,
+    unit: "score",
+    method_id: "db.themes.column",
+    source_records: top3[0]?.id
+      ? [{ table: "themes", id: String(top3[0].id), as_of: runDate ?? new Date().toISOString() }]
+      : [],
+    computed_at: new Date().toISOString(),
+    as_of: runDate ?? new Date().toISOString(),
+    freshness: { max_age_seconds: 86400, observed_age_seconds },
+    unavailable_reason:
+      top1Status === "unavailable" ? "no themes persisted yet" : undefined,
+  };
+
   return (
     <main className="max-w-[1320px] mx-auto px-8 pt-7 pb-20">
       <div className="flex justify-between items-end mb-7">
@@ -183,9 +228,17 @@ export default function ConvictionPage() {
           </p>
         </div>
         <div className="text-right text-text-secondary text-[12px]">
-          <div>
+          <div className="flex items-center justify-end gap-2">
+            <StatusBadge status={dashboardStatus} />
+          </div>
+          <div className="mt-1">
             <span className="text-text-tertiary mr-1.5">RUN DATE</span>
             <span className="num">{fmtDate(runDate)}</span>
+            {Number.isFinite(observed_age_seconds) && observed_age_seconds !== Number.POSITIVE_INFINITY && (
+              <span className="ml-2" data-testid="updated-label">
+                <FreshnessLabel observed_age_seconds={observed_age_seconds} />
+              </span>
+            )}
           </div>
           <div className="mt-1">
             <span className="text-text-tertiary mr-1.5">NEXT REFRESH</span>
@@ -223,8 +276,20 @@ export default function ConvictionPage() {
 
           <div className="flex items-baseline justify-between mb-3.5">
             <h2 className="text-[16px] font-semibold m-0">Top 3 themes by conviction</h2>
-            <span className="text-text-secondary text-[12px]">
+            <span className="text-text-secondary text-[12px] flex items-center gap-2">
               Ranked by HypeScore × sentiment-momentum × catalyst proximity
+              {top1Score !== null && (
+                <span
+                  data-testid="top-theme-derivation"
+                  className="inline-flex items-center gap-1.5"
+                >
+                  <span className="text-text-tertiary">· top1</span>
+                  <span className="num text-text-primary font-semibold">
+                    {Math.round(top1Score)}
+                  </span>
+                  <StatusBadge status={topThemeDerivation.display_status} />
+                </span>
+              )}
             </span>
           </div>
           {top3.length === 0 ? (
@@ -304,4 +369,22 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
       {sub && <div className="text-[11px] text-text-secondary mt-0.5">{sub}</div>}
     </div>
   );
+}
+
+// Higher number = worse provenance.
+function severity(s: NumericStatus): number {
+  switch (s) {
+    case "exact":
+      return 0;
+    case "estimated":
+      return 1;
+    case "stale":
+      return 2;
+    case "unverified":
+      return 3;
+    case "unavailable":
+      return 4;
+    default:
+      return 5;
+  }
 }

@@ -2,6 +2,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import LensSelector, { Lens, lensToAssetClasses } from "@/components/LensSelector";
+import { ExposureSummary } from "@/components/portfolio/ExposureSummary";
+import { DailyPLHistory } from "@/components/portfolio/DailyPLHistory";
+import { CumulativeReturn } from "@/components/portfolio/CumulativeReturn";
+import { StatusBadge } from "@/components/status/StatusBadge";
+import { FreshnessLabel } from "@/components/status/FreshnessLabel";
+import { UncertaintyBand } from "@/components/status/UncertaintyBand";
+import type { NumericDerivation } from "@/lib/derivations/numeric";
 
 interface Position {
   id: string;
@@ -23,6 +30,7 @@ interface Risk {
   beta: number;
   concentration_hhi: number;
   run_date?: string;
+  updated_at?: string;
 }
 
 interface Factor { name: string; beta: number }
@@ -44,23 +52,32 @@ const fmtM = (n: number) => `$${(n / 1_000_000).toFixed(1)}M`;
 function RiskCard({
   label,
   value,
-  ctx,
-  context2,
+  derivation,
   color = "text-text-primary",
 }: {
   label: string;
   value: string;
-  ctx: React.ReactNode;
-  context2?: string;
+  derivation: NumericDerivation;
   color?: string;
 }) {
   return (
     <div className="card p-4">
-      <div className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-1.5">{label}</div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary">{label}</span>
+        <StatusBadge status={derivation.display_status} />
+      </div>
       <div className={`num text-[22px] font-semibold leading-[1.1] ${color}`}>{value}</div>
-      <div className="text-[11px] text-text-secondary mt-1.5">
-        {ctx}
-        {context2 && <span className="ml-1.5">{context2}</span>}
+      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+        <FreshnessLabel observed_age_seconds={derivation.freshness.observed_age_seconds} />
+        {derivation.uncertainty?.band_low != null && derivation.uncertainty?.band_high != null && (
+          <UncertaintyBand
+            low={derivation.uncertainty.band_low}
+            high={derivation.uncertainty.band_high}
+          />
+        )}
+        {derivation.unavailable_reason && (
+          <span className="text-[11px] text-text-tertiary">{derivation.unavailable_reason}</span>
+        )}
       </div>
     </div>
   );
@@ -159,6 +176,43 @@ export default function PortfolioPage() {
   const netLs = shortNotional > 0 ? longNotional / shortNotional : 0;
   const grossPct = totalCapital > 0 ? gross / totalCapital : 0;
 
+  // Build fallback derivations for risk metrics if portfolio_risk.numeric_derivations
+  // is not yet populated by the L4 risk_engine migration.
+  const riskNumericDerivation = (risk as unknown as { numeric_derivations?: Record<string, NumericDerivation> } | null)?.numeric_derivations;
+  const buildRiskDerivation = (
+    field_id: string,
+    rawValue: number | undefined | null,
+    unit: NumericDerivation["unit"],
+    method_id: string,
+  ): NumericDerivation => {
+    const persisted = riskNumericDerivation?.[field_id];
+    if (persisted) return persisted;
+    const present = typeof rawValue === "number" && !Number.isNaN(rawValue);
+    const computedAt = (risk?.updated_at as string | undefined) ?? new Date().toISOString();
+    const ageSec = computedAt
+      ? Math.max(0, Math.floor((Date.now() - new Date(computedAt).getTime()) / 1000))
+      : 0;
+    return {
+      field_id,
+      display_status: present ? "estimated" : "unavailable",
+      value: present ? (rawValue as number) : null,
+      unit,
+      method_id,
+      source_records: present ? [{ table: "portfolio_risk", id: "legacy", as_of: (risk?.run_date as string | undefined) ?? computedAt }] : [],
+      computed_at: computedAt,
+      as_of: (risk?.run_date as string | undefined) ?? computedAt.slice(0, 10),
+      freshness: { max_age_seconds: 86400, observed_age_seconds: ageSec },
+      uncertainty: undefined,
+      unavailable_reason: present ? undefined : "metric not yet produced by risk_engine",
+    };
+  };
+
+  const varD = buildRiskDerivation("risk.var_95", risk?.var_95, "usd", "risk_engine.value_at_risk");
+  const cvarD = buildRiskDerivation("risk.cvar_95", risk?.cvar_95, "usd", "risk_engine.conditional_value_at_risk");
+  const sharpeD = buildRiskDerivation("risk.sharpe", risk?.sharpe, "ratio", "risk_engine.sharpe_ratio");
+  const betaD = buildRiskDerivation("risk.beta", risk?.beta, "ratio", "risk_engine.beta_to_spx");
+  const hhiD = buildRiskDerivation("risk.hhi", risk?.concentration_hhi, "score", "risk_engine.concentration_hhi");
+
   return (
     <main className="max-w-[1320px] mx-auto px-8 pt-7 pb-20">
       <div className="flex justify-between items-end mb-7">
@@ -195,49 +249,53 @@ export default function PortfolioPage() {
         </div>
       ) : (
         <>
-          {/* Risk grid */}
+          {/* Exposure summary — bound to NumericDerivation */}
+          <ExposureSummary
+            positions={filteredPositions.map((p) => ({
+              id: p.id,
+              asset: p.asset,
+              direction: p.direction,
+              notional: p.notional ?? 0,
+              weight: p.weight ?? 0,
+            }))}
+            totalCapital={totalCapital}
+          />
+
+          {/* Since-inception cumulative return */}
+          <div className="mb-6">
+            <CumulativeReturn />
+          </div>
+
+          {/* Risk grid — bound to NumericDerivation */}
           {risk && (
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
               <RiskCard
                 label="VaR (95%)"
-                value={fmtUSD(risk.var_95)}
-                ctx={<span className="text-short">{fmtPct(risk.var_95 / risk.total_capital)} of book</span>}
-                context2="· σ_daily 9.8%"
+                value={typeof risk.var_95 === "number" ? fmtUSD(risk.var_95) : "—"}
+                derivation={varD}
                 color="text-short"
               />
               <RiskCard
                 label="CVaR (95%)"
-                value={fmtUSD(risk.cvar_95)}
-                ctx={<span className="text-short">{fmtPct(risk.cvar_95 / risk.total_capital)} of book</span>}
-                context2="· avg loss beyond VaR"
+                value={typeof risk.cvar_95 === "number" ? fmtUSD(risk.cvar_95) : "—"}
+                derivation={cvarD}
                 color="text-short"
               />
               <RiskCard
                 label="Sharpe (252d)"
-                value={risk.sharpe?.toFixed(2) ?? "—"}
-                ctx={<span className="text-long">+0.58 α</span>}
-                context2="vs SPX 0.89"
+                value={typeof risk.sharpe === "number" ? risk.sharpe.toFixed(2) : "—"}
+                derivation={sharpeD}
               />
               <RiskCard
                 label="Beta (vs SPX)"
-                value={risk.beta?.toFixed(2) ?? "—"}
-                ctx={<span className="text-text-secondary">Defensive tilt</span>}
-                context2="· low market correlation"
+                value={typeof risk.beta === "number" ? risk.beta.toFixed(2) : "—"}
+                derivation={betaD}
                 color="text-accent"
               />
               <RiskCard
                 label="HHI Concentration"
-                value={risk.concentration_hhi?.toFixed(0) ?? "—"}
-                ctx={
-                  risk.concentration_hhi < 1500 ? (
-                    <span className="text-long">Well-diversified</span>
-                  ) : risk.concentration_hhi < 2500 ? (
-                    <span className="text-warning">Concentrated</span>
-                  ) : (
-                    <span className="text-short">Highly concentrated</span>
-                  )
-                }
-                context2="· threshold 1500"
+                value={typeof risk.concentration_hhi === "number" ? risk.concentration_hhi.toFixed(0) : "—"}
+                derivation={hhiD}
               />
             </div>
           )}
@@ -293,6 +351,11 @@ export default function PortfolioPage() {
                 </>
               )}
             </div>
+          </div>
+
+          {/* Daily P&L history */}
+          <div className="mb-6">
+            <DailyPLHistory limit={30} />
           </div>
 
           {/* Factor exposure */}

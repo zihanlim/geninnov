@@ -39,6 +39,7 @@ from backend.services.q1_agent import (
     fallback_picks,
     verify_citations,
     reason_picks,
+    size_positions,
 )
 from backend.services.hype_calculator import ScoringConfig
 from backend.derivations.advisory import AdvisoryDerivation, validate_advisory
@@ -448,3 +449,85 @@ def test_fallback_picks_does_not_invent_citations():
     assert state["citations"] == [], \
         "fallback_picks must not synthesize citations; T18 maps empty " \
         "citations + fallback_used=True to display_status='partial'"
+
+
+# ─── Test 4 (T18): stub LLM that returns fallback-shaped body is NOT verified ─
+
+def test_q1_advisory_downgrades_when_llm_returns_fallback_body(monkeypatch):
+    """
+    T18 strict policy: if the LLM endpoint is alive but its response text
+    matches the heuristic fallback (e.g. cached/template regurgitation), the
+    AdvisoryDerivation MUST be downgraded to a non-verified status and the
+    investor-facing body MUST be stripped to None.
+
+    We stub _llm_complete to return a payload whose book_view carries the
+    fallback sentinel phrase. reason_picks "succeeds" (LLM did not raise),
+    verify_citations finds valid citations, and the row would otherwise be
+    display_status='verified'. _build_advisory_derivation must still
+    detect the templated body and force:
+      - display_status != "verified"
+      - body is None in the persisted AdvisoryDerivation
+    """
+    fallback_book_view = (
+        "Regime: mid-cycle / risk-on sentiment. Book constructed from top "
+        "HypeScore themes. This is a deterministic fallback — LLM synthesis "
+        "unavailable."
+    )
+    fallback_payload = json.dumps({
+        "picks": [
+            {
+                "rank": 1, "direction": "long", "asset": "TLT", "theme": "Fed Policy",
+                "hype_score": 78.4, "trade_score": 0.41,
+                "thesis": "long TLT via theme 'Fed Policy' (HypeScore 78.4).",
+                "counter_thesis": "N/A — fallback path.",
+                "time_horizon": "2-4 weeks",
+                "catalysts": [], "risk": "fallback risk",
+                "factor_tilts": {},
+                "citations": [{"text": "HY OAS at 320bps", "source": "BAMLH0A0HYM2", "value": 320.0}],
+            },
+        ],
+        "book_view": fallback_book_view,
+        "book_risks": ["Fallback output — no LLM synthesis available"],
+        "citations": [{"text": "HY OAS at 320bps", "source": "BAMLH0A0HYM2", "value": 320.0}],
+    })
+
+    stub = _StubLLM(fallback_payload)
+    monkeypatch.setattr(q1_agent, "_llm_complete", stub)
+
+    state = _make_state()
+    state = screen_candidates(state)
+    assert len(state["candidates"]) >= 1
+
+    # Drive reason_picks → verify_citations → size_positions
+    state = reason_picks(state)
+    state = verify_citations(state)
+    state = size_positions(state)
+
+    # Sanity: the LLM-stub succeeded, so state carries the fallback-shaped body.
+    assert "fallback" in state["book_view"].lower(), \
+        "stub LLM must inject the fallback sentinel phrase"
+
+    # Build the AdvisoryDerivation the way _persist_to_supabase does.
+    advisory = q1_agent._build_advisory_derivation(state)
+    validate_advisory(advisory)
+
+    # Strict policy assertions (T18 brief):
+    assert advisory.display_status != "verified", \
+        f"fallback-shaped LLM body must NOT be display_status='verified'; " \
+        f"got {advisory.display_status!r}"
+    assert advisory.body is None, \
+        f"fallback-shaped LLM body must be stripped to None in the persisted " \
+        f"AdvisoryDerivation; got {advisory.body!r}"
+    assert advisory.fallback_used is True, \
+        f"fallback-shaped body must be detected and flagged fallback_used=True; " \
+        f"got {advisory.fallback_used!r}"
+    assert advisory.citation_status == "not_attempted", \
+        f"fallback path citation_status must be 'not_attempted'; " \
+        f"got {advisory.citation_status!r}"
+
+    # And the asdict shape that goes into the JSONB column must preserve the contract.
+    from dataclasses import asdict
+    persisted = asdict(advisory)
+    assert persisted["display_status"] != "verified"
+    assert persisted["body"] is None
+    assert persisted["fallback_used"] is True

@@ -34,7 +34,8 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import date
+from dataclasses import asdict
+from datetime import date, datetime, time, timezone
 from typing import Any
 
 from supabase import Client, create_client
@@ -49,6 +50,14 @@ from .book_metrics import (
     SECTOR_MAP,
 )
 from .scenario_analysis import run_scenario_analysis, format_scenario_table
+
+from ..derivations.advisory import (
+    AdvisoryDerivation,
+    AdvisoryStatus,
+    CitationStatus,
+    GeneratedBy,
+    validate_advisory,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LLM client — MiniMax (preferred) → Anthropic Claude (fallback)
@@ -814,6 +823,8 @@ def reason_picks(state: Q1State) -> Q1State:
             state["book_risks"] = parsed.get("book_risks", [])
             state["citations"] = parsed.get("citations", [])
             state["retries"] = retries
+            # T18: LLM succeeded — the body is NOT a fallback synthesis.
+            state["fallback_used"] = False
             return state
 
         except json.JSONDecodeError:
@@ -1017,7 +1028,133 @@ def fallback_picks(state: Q1State) -> Q1State:
     state["citations"] = []
     state["verified"] = True
     state["retries"] = state.get("retries", 0) + 1
+    # T18: mark the body as fallback so AdvisoryDerivation cannot mark it verified.
+    state["fallback_used"] = True
     return state
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AdvisoryDerivation emission (T18 — strict fallback policy)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Citation-status → display-status mapping (per task-18 brief).
+_CITATION_STATUS_TO_DISPLAY: dict[str, AdvisoryStatus] = {
+    "all_verified":         "verified",
+    "some_failed_retry_ok": "partial",
+    "some_failed_no_retry": "unverified",
+    "not_attempted":        "unverified",
+}
+
+
+def _looks_like_fallback_body(state: Q1State) -> bool:
+    """
+    Detect whether the LLM-returned body is just the heuristic fallback text.
+    We sniff on the sentinel phrase fallback_picks always writes. If the LLM
+    "succeeded" but produced templated output, we treat the row as fallback —
+    the body must NOT reach the investor-facing thesis.
+    """
+    book_view = (state.get("book_view") or "").lower()
+    if not book_view:
+        return False
+    sentinel_phrases = (
+        "deterministic fallback",
+        "llm synthesis unavailable",
+    )
+    return any(p in book_view for p in sentinel_phrases)
+
+
+def _build_advisory_derivation(state: Q1State) -> AdvisoryDerivation:
+    """
+    Build the AdvisoryDerivation bundle persisted to research_recommendations.
+
+    Strict policy:
+      - display_status is mapped from citation_status (see _CITATION_STATUS_TO_DISPLAY).
+      - fallback_used is True iff the LLM body came from the heuristic fallback,
+        OR the LLM body matches the templated fallback text.
+      - body is None whenever display_status is "unverified" or "unavailable".
+      - If fallback_used=True, display_status is forced away from "verified".
+    """
+    fallback_used: bool = bool(state.get("fallback_used", False))
+    if not fallback_used and _looks_like_fallback_body(state):
+        fallback_used = True
+        # Persist the detected-flag so downstream readers see the same value.
+        state["fallback_used"] = True
+
+    citation_status: CitationStatus = "not_attempted"   # default — never crash on absent key
+
+    if fallback_used:
+        # Heuristic fallback path — citations were never attempted by an LLM
+        citation_status = "not_attempted"
+    elif state.get("verified"):
+        citation_status = "all_verified"
+    elif state.get("retries", 0) > 0 and state.get("verified"):
+        # Retry-then-succeed path: citations had some failures but eventually passed
+        citation_status = "some_failed_retry_ok"
+    elif state.get("retries", 0) > 0:
+        # Retry-then-still-failed
+        citation_status = "some_failed_no_retry"
+    else:
+        citation_status = "not_attempted"
+
+    display_status: AdvisoryStatus = _CITATION_STATUS_TO_DISPLAY[citation_status]
+
+    # Force fallback_used=True → display_status != "verified"
+    if fallback_used and display_status == "verified":
+        display_status = "partial"
+        if citation_status == "all_verified":
+            citation_status = "some_failed_retry_ok"
+
+    # The LLM-generated text is the body only when it's safe to show
+    body: str | None = state.get("book_view") or ""
+    unavailable_reason: str | None = None
+
+    if display_status in ("unverified", "unavailable"):
+        # Per T18 contract: strip the LLM body from the investor-facing row
+        body = None
+        if display_status == "unavailable":
+            unavailable_reason = state.get("error") or "advisory unavailable"
+        elif display_status == "unverified":
+            unavailable_reason = state.get("error") or "citation verification failed"
+
+    method_id = "q1_agent.fallback_picks" if fallback_used else "q1_agent.reason_picks"
+
+    # Evidence IDs: the source keys of citations the verifier accepted
+    if citation_status == "all_verified" and not fallback_used:
+        evidence_ids = [c.get("source", "") for c in state.get("citations", []) if c.get("source")]
+    elif citation_status == "some_failed_retry_ok" and not fallback_used:
+        # Only the verified citations count as evidence; drop unknowns
+        evidence_ids = [
+            c.get("source", "") for c in state.get("citations", [])
+            if c.get("source")
+        ]
+    else:
+        evidence_ids = []
+
+    # Parse run_date (ISO string) → date for the bundle
+    try:
+        as_of_date = date.fromisoformat(state["run_date"])
+    except (TypeError, ValueError):
+        as_of_date = date.today()
+
+    # computed_at == as_of (snapshot built synchronously with the agent run)
+    computed_at_dt = datetime.combine(as_of_date, time(), tzinfo=timezone.utc)
+    as_of_dt = computed_at_dt
+
+    advisory = AdvisoryDerivation(
+        field_id="q1.thesis",
+        generated_by="l5_q1_agent",
+        display_status=display_status,
+        body=body,
+        method_id=method_id,
+        evidence_ids=evidence_ids,
+        citation_status=citation_status,
+        fallback_used=fallback_used,
+        computed_at=computed_at_dt,
+        as_of=as_of_dt,
+        unavailable_reason=unavailable_reason,
+    )
+    validate_advisory(advisory)
+    return advisory
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1029,6 +1166,16 @@ def _persist_to_supabase(state: Q1State) -> bool:
     sb: Client = create_client(state["supabase_url"], state["supabase_key"])
     run_date = state["run_date"]
     agent_run_id = str(uuid.uuid4())
+
+    # Build the AdvisoryDerivation bundle (T18) and stash in state for callers.
+    try:
+        advisory = _build_advisory_derivation(state)
+        # Frozen dataclass → dict via asdict for JSONB persistence.
+        state["advisory_derivation"] = asdict(advisory)
+    except ValueError as exc:
+        # Validator rejected — refuse to persist an unverified row claiming verified.
+        print(f"[_persist_to_supabase] AdvisoryDerivation validation failed: {exc}")
+        return False
 
     try:
         sb.table("research_agent_runs").insert({
@@ -1042,6 +1189,7 @@ def _persist_to_supabase(state: Q1State) -> bool:
                 "book_view": state.get("book_view", ""),
                 "book_risks": state.get("book_risks", []),
                 "citations": state.get("citations", []),
+                "advisory_derivation": state.get("advisory_derivation"),
             },
             "citations": state.get("citations", []),
             "verified": state.get("verified", False),
@@ -1051,9 +1199,10 @@ def _persist_to_supabase(state: Q1State) -> bool:
         sb.table("research_recommendations").upsert({
             "run_date": run_date,
             "picks": state.get("picks", []),
-            "book_view": state.get("book_view", ""),
+            "book_view": state.get("book_view", "") if state["advisory_derivation"].get("body") is not None else "",
             "book_risks": state.get("book_risks", []),
             "agent_run_id": agent_run_id,
+            "advisory_derivation": state["advisory_derivation"],
         }, on_conflict="run_date").execute()
 
         return True
@@ -1157,6 +1306,7 @@ def run_q1_agent(
         "factor_exposures": {},
         "news_headlines": [],
         "classified_news": [],
+        "fallback_used": False,
     })
 
     # Run graph nodes in sequence

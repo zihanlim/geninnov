@@ -89,6 +89,10 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({ themes, onSelect 
       </div>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[12px]">
+          <caption className="sr-only">
+            Theme sub-score heatmap · 12 themes × 4 sub-scores (Volume, Sentiment,
+            Correlation, Momentum) plus HypeScore and 1-day delta.
+          </caption>
           <thead>
             <tr className="border-b border-border">
               <th className="text-left text-[10.5px] uppercase tracking-[0.1em] text-text-tertiary font-semibold px-3 py-2 w-[180px]">

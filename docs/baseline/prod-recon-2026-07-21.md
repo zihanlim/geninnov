@@ -5,6 +5,24 @@ for `project_id=xrvwyubzraxzqiizicsg`. Captured 2026-07-22 via read-only
 `mcp__plugin_supabase_supabase__execute_sql` SELECTs only. No mutating tools
 were invoked.
 
+## Verdict summary
+
+**9 PASS · 9 FAIL · 6 CANNOT_RECONCILE**
+
+> **Revised 2026-07-23.** The first pass recorded 11 PASS / 7 FAIL / 5
+> CANNOT_RECONCILE and attributed the HHI mismatch to "book_metrics vs
+> risk_engine value drift." That was wrong. The actual cause is that
+> production's `portfolio_risk` and `portfolio_returns` rows were written by
+> the local operator script `tests/backend/seed_realistic_data.py`, which
+> hardcodes risk metrics and a synthetic return series and deletes real rows
+> before inserting. Two verdicts that depended on those values were false
+> passes and are now FAIL. See corrected cross-cutting finding 5.
+>
+> **Consequence:** every investor-facing number on `/portfolio` in production
+> is currently fabricated rather than computed. This is the exact failure mode
+> the review was chartered to eliminate, so it is recorded here as the
+> headline finding rather than a footnote.
+
 ## Run_date selection
 
 `portfolio_returns` has 5 rows, the most recent being `2026-07-21` with a
@@ -22,9 +40,9 @@ chosen anchor.
 |---|---|
 | `themes` | 8 rows; HypeScore 46.37..52.72 (all 8 themes populated) |
 | `regime_classifications` | run_date=2026-07-21: cycle=mid, sentiment=neutral, yield_curve_slope=20, hy_oas=320, vix_level=18.5 |
-| `portfolio_returns` | run_date=2026-07-21: daily_return=0.0015, cumulative_return=0.005, portfolio_value=100500000 |
+| `portfolio_returns` | run_date=2026-07-21: daily_return=0.0015, cumulative_return=0.005, portfolio_value=100500000 — **all three fabricated by `seed_realistic_data.py:55-62`, not pipeline output** |
 | `portfolio_positions` | 10 rows; sum(weights)=1.009 (gross >100% from leverage), all long, assets FXI/MCHI/BABA/KWEB/HYG/LQD/XLE/OIH/CL/UNG |
-| `portfolio_risk` | 1 row: total_capital=100000000, var_95=2.5M, cvar_95=4.0M, sharpe=1.15, beta=0.65, concentration_hhi=1850 |
+| `portfolio_risk` | 1 row: total_capital=100000000, var_95=2.5M, cvar_95=4.0M, sharpe=1.15, beta=0.65, concentration_hhi=1850 — **entire row fabricated by `seed_realistic_data.py:42-50`, which deletes real rows first** |
 | `research_recommendations` | run_date=2026-07-22 (note: mismatches the chosen anchor — see below): 2 picks, fallback LLM, verified=false, agent_run_id present |
 | `research_agent_runs` | 7 rows; latest `af903b69` for run_date=2026-07-22 with `verified=false, retries=5` |
 | `trade_candidates` | 10 rows; identical assets to portfolio_positions; trade_score 0.07..0.122 |
@@ -61,7 +79,7 @@ deployed.
 | `macro.vix` | `regime_classifications.vix_level` | 18.5 | PASS | value present; `macro_indicators.value for ^VIX=17.05` (small drift between L0 snapshot and L3 regime row) |
 | `prediction.top_outcome_price` (`/research`) | `prediction_markets.top_price` | table absent (migration 011 not deployed) | CANNOT_RECONCILE | migration 011 not yet applied to production |
 | `market.index_change_pct` (`/`, MarketBar) | `market_assets.pct_change` | table absent (migration 010 not deployed) | CANNOT_RECONCILE | migration 010 not yet applied to production |
-| `portfolio.daily_return` (`/portfolio`) | `portfolio_returns.daily_return` | 0.0015 (15 bps) | PASS | row present; UI card not currently rendered per matrix (TODO: derivation) |
+| `portfolio.daily_return` (`/portfolio`) | `portfolio_returns.daily_return` | 0.0015 (15 bps) | FAIL | **Corrected from PASS.** The row is present but the value is fabricated: `seed_realistic_data.py:57` hardcodes `daily_ret = 0.0015 if i % 2 == 0 else -0.0008`. Not pipeline output — see cross-cutting finding 5 |
 | `portfolio.cumulative_return` (`/portfolio`) | `portfolio_cumulative_return.cumulative_value` | table absent | CANNOT_RECONCILE | migration 014 not yet applied to production |
 | `portfolio.inception_date` (`/portfolio`) | `portfolio_cumulative_return.inception_date` | table absent | CANNOT_RECONCILE | migration 014 not yet applied to production |
 | `portfolio.gross_exposure` (`/portfolio`) | aggregated from `portfolio_positions` | sum(abs(weight)) over 10 rows = 1.009 (6 long at 0.100883 + 4 at 0.098676) | PASS | reconstructable client-side; no persisted column |
@@ -73,7 +91,7 @@ deployed.
 | `risk.cvar_95` (`/portfolio`) | `portfolio_risk.cvar_95` | 4000000 | FAIL | same as var_95 |
 | `risk.sharpe` (`/portfolio`) | `portfolio_risk.sharpe` | 1.15 | FAIL | same as var_95 |
 | `risk.beta` (`/portfolio`) | `portfolio_risk.beta` | 0.65 | FAIL | same as var_95 |
-| `risk.hhi` (`/portfolio`) | `portfolio_risk.concentration_hhi` | 1850 | FAIL | same as var_95; also note HHI=1850 disagrees with the 1000.12 value reported in the L5 agent `input_snapshot.risk_metrics.concentration_hhi` (book_metrics vs risk_engine value drift) |
+| `risk.hhi` (`/portfolio`) | `portfolio_risk.concentration_hhi` | 1850 | FAIL | same as var_95; additionally the value itself is fabricated — `seed_realistic_data.py:48` hardcodes `1850`, while the genuine computed figure is `1000.12` (`concentration_hhi()` = `sum(w²)×10000` over the real weights). See corrected cross-cutting finding 5 |
 
 ## Cross-cutting findings
 
@@ -85,7 +103,13 @@ deployed.
 
 4. **portfolio_risk REST 400 in production is reproducible here too.** Direct `execute_sql` returned the row, but per `docs/baseline/frontend-routes.md` the anon REST call returns 400; the deployed frontend uses anon key + RLS, so the deployed UI cannot read this row at all. The risk.* fields are effectively unreconcilable from the deployed frontend until the RLS/ordering issue is fixed.
 
-5. **HHI disagreement between two layers.** `portfolio_risk.concentration_hhi = 1850` (legacy column) vs the L5 agent's `input_snapshot.risk_metrics.concentration_hhi = 1000.12` (book_metrics output). Two different values stored under the same name across two layers; no automated reconciliation.
+5. **~~HHI disagreement between two layers.~~ CORRECTED — production `portfolio_risk` is fabricated seed data.** This was originally recorded as "book_metrics vs risk_engine value drift." That diagnosis was wrong. The real cause: the entire `portfolio_risk` row was written by the operator script `tests/backend/seed_realistic_data.py`, which hardcodes `var_95=2_500_000, cvar_95=4_000_000, sharpe=1.15, beta=0.65, concentration_hhi=1850` (lines 42–50) after **deleting every existing row** (line 41). None of these are computed values.
+
+   `concentration_hhi()` in `backend/services/risk_engine.py:118` returns `sum(w²)×10000`; for the 10 near-equal production weights that is ≈1000, which is exactly the L5 agent's `1000.12`. So `1000.12` is the genuine computed figure and `1850` is invented. There is no disagreement between two code paths — there is one real value and one fabricated one.
+
+   The same script also fabricates the `portfolio_returns` series (lines 55–62): `daily_return` alternates a hardcoded `0.0015 / -0.0008`, `cumulative_return = 0.0050 - (i × 0.001)`, and `portfolio_value = 100_000_000 × (1 + cum_ret)`. Those are precisely the values this reconciliation anchored on, which means several PASS verdicts below are **false passes** — the value is present and internally consistent, but it is not pipeline output. Corrected inline in the table.
+
+   The script is gitignored (`.gitignore:45`, `tests/backend/seed_*.py`), so it is local-only and cannot be guarded in-repo. It authenticates with `SUPABASE_SERVICE_KEY`, bypassing RLS. Treat every `/portfolio` number in production as unverified until a real pipeline run overwrites it.
 
 6. **All positions are long.** 10/10 positions are `direction=long`; there are no shorts in production. The "Signed long/short return attribution" invariant cannot be exercised against this anchor — there is no short leg to reconcile.
 

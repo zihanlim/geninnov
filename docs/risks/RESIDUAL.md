@@ -5,12 +5,13 @@
 > this file: future operators. Source of truth: T1 baseline capture
 > (`docs/baseline/`), T28 review of pending tasks, and recent `main` history.
 
-Last reviewed: 2026-07-22.
+Last reviewed: 2026-07-23.
 
 ## Known residual risks
 
 | # | Risk | Impact | Where | Status | Mitigation / next step |
 |---|---|---|---|---|---|
+| **R0** | **Production `portfolio_risk` and `portfolio_returns` contain fabricated seed data, not pipeline output** | **Every investor-facing number on `/portfolio` — VaR, CVaR, Sharpe, beta, HHI, daily return, cumulative return, portfolio value — is invented. `concentration_hhi=1850` is hardcoded where the genuine computed value is `1000.12`. The L5 agent consumed these as `input_snapshot.risk_metrics`, so the Q1 thesis reasoned over fabricated risk inputs.** | Written by `tests/backend/seed_realistic_data.py` (gitignored, local-only) using `SUPABASE_SERVICE_KEY`; it deletes all real `portfolio_risk` rows (line 41) before inserting hardcoded ones (lines 42–50) and fabricates a 5-day return series (lines 55–62) | **Open — highest severity** | Requires user authorization to fix: (1) run a real `daily_refresh.py` to overwrite the seeded rows, (2) confirm no operator re-runs the seed script against production. Cannot be guarded in-repo because the script is gitignored. Until then, treat `/portfolio` as unverified. See `docs/baseline/prod-recon-2026-07-21.md` finding 5 |
 | R1 | SPY 65/35 used as a proxy for SPX constituent breadth | Breadth signal under-represents sector dispersion; downstream risk + factor tilts inherit the proxy | `backend/data/macro_fetcher.py` (breadth derivation) | Accepted | Replace with true SPX constituent breadth once `market_assets` table (migration 010) is deployed |
 | R2 | yfinance availability for missing tickers | Pipeline raises on missing price (T8); no graceful degradation | `scripts/daily_refresh.py` + `backend/data/*_client.py` | Accepted | Document in runbook; consider per-ticker skip-list with explicit warning |
 | R3 | Heuristic fallbacks retained internally but not rendered to UI | `numeric_derivations` may carry `status="heuristic_fallback"` rows that the strict-unavailable policy hides from investors | `backend/derivations/numeric.py`, `frontend/components/status/*` | Accepted | Surface in an internal-only diagnostics page; not part of investor-facing contract |

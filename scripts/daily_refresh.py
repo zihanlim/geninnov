@@ -44,6 +44,7 @@ from services.risk_engine import (
 )
 from services.portfolio import compute_daily_return, MissingReturnError
 from services.regime_classifier import RegimeClassifier
+from services.pipeline_runs import run_id_for, record_pipeline_run
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]  # service role key for writes
@@ -542,6 +543,12 @@ def main():
 
     # ── Phase 5: L0 — Macro data ingest ─────────────────────────────────────
     print(f"[{run_date}] [L0] Fetching macro data from FRED + yfinance...")
+    l0_started = datetime.now(timezone.utc)
+    l0_id = run_id_for(run_date, stage="L0")
+    try:
+        record_pipeline_run(supabase, l0_id, "started", run_date=run_date, stage="L0")
+    except Exception:
+        pass
     macro_fetcher = MacroFetcher(SUPABASE_URL, SUPABASE_KEY)
     try:
         macro_snapshot = macro_fetcher.fetch_today()
@@ -563,16 +570,34 @@ def main():
         print(f"[{run_date}] [L0] Fetched {len(poly_markets)} prediction markets.")
     except Exception as e:
         print(f"[{run_date}] [L0] Polymarket fetch failed ({e.__class__.__name__}): skipping.")
+    try:
+        record_pipeline_run(supabase, l0_id, "success", run_date=run_date, stage="L0", duration_s=(datetime.now(timezone.utc)-l0_started).total_seconds())
+    except Exception:
+        pass
 
     # ── Phase 5: L3 — Regime classification ─────────────────────────────────
     print(f"[{run_date}] [L3] Classifying macro regime...")
+    l3_started = datetime.now(timezone.utc)
+    l3_id = run_id_for(run_date, stage="L3")
+    try:
+        record_pipeline_run(supabase, l3_id, "started", run_date=run_date, stage="L3")
+    except Exception:
+        pass
     regime_clf = RegimeClassifier(SUPABASE_URL, SUPABASE_KEY)
     try:
         regime = regime_clf.classify(run_date)
         print(f"[{run_date}] [L3] Regime: cycle={regime.cycle}, sentiment={regime.sentiment}")
+        try:
+            record_pipeline_run(supabase, l3_id, "success", run_date=run_date, stage="L3", duration_s=(datetime.now(timezone.utc)-l3_started).total_seconds())
+        except Exception:
+            pass
     except Exception as exc:
         print(f"[{run_date}] [L3] Regime classification failed ({exc.__class__.__name__}): continuing without regime.")
         regime = None
+        try:
+            record_pipeline_run(supabase, l3_id, "failure", run_date=run_date, stage="L3", duration_s=(datetime.now(timezone.utc)-l3_started).total_seconds(), error=str(exc))
+        except Exception:
+            pass
 
     # ── Phase 1–4: Theme signals → HypeScore → TradeScore ──────────────────
     themes = load_themes()
@@ -594,6 +619,12 @@ def main():
 
     # ── Phase 5: L5 — Q1 AI reasoning agent ──────────────────────────────────────
     # Lazy import to avoid requiring anthropic if not installed in unit-test envs
+    l5_started = datetime.now(timezone.utc)
+    l5_id = run_id_for(run_date, stage="L5")
+    try:
+        record_pipeline_run(supabase, l5_id, "started", run_date=run_date, stage="L5")
+    except Exception:
+        pass
     try:
         from services.q1_agent import run_q1_agent
         print(f"[{run_date}] [L5] Running Q1 AI reasoning agent...")
@@ -611,10 +642,18 @@ def main():
             print(f"[{run_date}] [L5] Q1 recommendations persisted.")
         else:
             print(f"[{run_date}] [L5] Q1 agent declined to produce output (fallback active).")
+        try:
+            record_pipeline_run(supabase, l5_id, "success", run_date=run_date, stage="L5", duration_s=(datetime.now(timezone.utc)-l5_started).total_seconds())
+        except Exception:
+            pass
     except ImportError as exc:
         print(f"[{run_date}] [L5] langchain/langgraph not available ({exc}): skipping research agent.")
     except Exception as exc:
         print(f"[{run_date}] [L5] Research agent failed ({exc.__class__.__name__}): skipping. Run with langchain installed to enable.")
+        try:
+            record_pipeline_run(supabase, l5_id, "failure", run_date=run_date, stage="L5", duration_s=(datetime.now(timezone.utc)-l5_started).total_seconds(), error=str(exc))
+        except Exception:
+            pass
 
     print(f"[{run_date}] Daily refresh complete.")
 

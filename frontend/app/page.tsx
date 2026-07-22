@@ -7,6 +7,7 @@ import ConvictionCard, { ConvictionTheme } from "@/components/ConvictionCard";
 import Watchlist from "@/components/Watchlist";
 import ThemeDerivationDrawer from "@/components/ThemeDerivationDrawer";
 import ThemeHeatmap from "@/components/ThemeHeatmap";
+import MarketBar from "@/components/MarketBar";
 
 interface Regime {
   cycle: string;
@@ -204,6 +205,7 @@ export default function ConvictionPage() {
         </div>
       ) : (
         <>
+          <MarketBar />
           <RegimeHero
             cycle={cycle}
             sentiment={sentiment}

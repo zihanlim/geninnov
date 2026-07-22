@@ -58,11 +58,18 @@ FRED_SERIES = {
 YFINANCE_TICKERS = {
     "^VIX": {"name": "VIX Spot", "unit": "index"},
     "^VIX3M": {"name": "VIX 3M", "unit": "index"},
+    "^SPX": {"name": "S&P 500", "unit": "pts"},
+    "^NDX": {"name": "NASDAQ 100", "unit": "pts"},
+    "^DJI": {"name": "Dow Jones", "unit": "pts"},
+    "^RUT": {"name": "Russell 2000", "unit": "pts"},
     "DX-Y.NYB": {"name": "DXY Dollar Index", "unit": "index"},
     "GC=F": {"name": "Gold", "unit": "USD"},
     "CL=F": {"name": "WTI Crude Oil", "unit": "USD"},
     "HG=F": {"name": "Copper", "unit": "USD"},
 }
+
+# Equity index tickers (subset of YFINANCE_TICKERS for the market bar display)
+EQUITY_INDICES = ["^SPX", "^NDX", "^DJI", "^RUT"]
 
 FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
 FRED_API_KEY = os.getenv("FRED_API_KEY", "")
@@ -166,6 +173,8 @@ class MacroFetcher:
         # FRED rows
         for _, row in fred_df.iterrows():
             td = row["trading_date"]
+            if hasattr(td, "isoformat"):
+                td = td.isoformat()
             for series_id in FRED_SERIES:
                 val = row.get(series_id)
                 if pd.isna(val):
@@ -180,6 +189,8 @@ class MacroFetcher:
         # yfinance rows
         for _, row in yf_df.iterrows():
             td = row["trading_date"]
+            if hasattr(td, "isoformat"):
+                td = td.isoformat()
             for ticker in YFINANCE_TICKERS:
                 if ticker not in row or pd.isna(row.get(ticker)):
                     continue
@@ -201,7 +212,7 @@ class MacroFetcher:
         Compute latest non-null value per series and upsert macro_indicators.
         Returns number of series inserted.
         """
-        today = date.today()
+        today = date.today().isoformat()
         rows = []
 
         for series_id, meta in FRED_SERIES.items():
@@ -258,6 +269,64 @@ class MacroFetcher:
                 "fetch_date": row["fetch_date"],
             }
         return snapshot
+
+    def fetch_market_assets(self, tickers: list[str] | None = None) -> list[dict]:
+        """
+        Returns latest two closes for equity indices from macro_daily_history,
+        with pct_change computed. Stores result in market_assets table.
+        Returns [{ticker, name, current, prev_close, pct_change}].
+        """
+        tickers = tickers or EQUITY_INDICES
+        today = date.today()
+        # Last 5 trading days should cover any weekend gap
+        start = (today - timedelta(days=7)).isoformat()
+        end = today.isoformat()
+
+        resp = (
+            self.supabase.table("macro_daily_history")
+            .select("series_id, trading_date, value")
+            .in_("series_id", tickers)
+            .gte("trading_date", start)
+            .lte("trading_date", end)
+            .order("trading_date", desc=True)
+            .execute()
+        )
+
+        # Group by ticker → keep last 2 values
+        by_ticker: dict[str, list] = {}
+        for row in resp.data:
+            sid = row["series_id"]
+            if sid not in by_ticker:
+                by_ticker[sid] = []
+            if len(by_ticker[sid]) < 2:
+                by_ticker[sid].append({"date": row["trading_date"], "value": row["value"]})
+
+        results = []
+        for ticker in tickers:
+            meta = YFINANCE_TICKERS.get(ticker, {"name": ticker})
+            vals = by_ticker.get(ticker, [])
+            if len(vals) < 2:
+                continue
+            curr = vals[0]["value"]
+            prev = vals[1]["value"]
+            if curr is None or prev is None or prev == 0:
+                continue
+            pct = (curr - prev) / prev * 100
+            results.append({
+                "ticker": ticker,
+                "name": meta["name"],
+                "current": round(curr, 2),
+                "prev_close": round(prev, 2),
+                "pct_change": round(pct, 2),
+            })
+
+        # Persist to market_assets table
+        if results:
+            rows = [{"ticker": r["ticker"], "current": r["current"],
+                     "prev_close": r["prev_close"], "pct_change": r["pct_change"]}
+                    for r in results]
+            self.supabase.table("market_assets").upsert(rows, on_conflict="ticker").execute()
+        return results
 
 
 if __name__ == "__main__":

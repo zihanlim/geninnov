@@ -438,6 +438,12 @@ def main():
     try:
         macro_snapshot = macro_fetcher.fetch_today()
         print(f"[{run_date}] [L0] Fetched {len(macro_snapshot)} macro series.")
+        # Also compute equity index % changes for the market bar
+        try:
+            assets = macro_fetcher.fetch_market_assets()
+            print(f"[{run_date}] [L0] Fetched {len(assets)} market assets with pct_change.")
+        except Exception as e:
+            print(f"[{run_date}] [L0] Market assets fetch failed ({e.__class__.__name__}): skipping.")
     except Exception as exc:
         print(f"[{run_date}] [L0] FRED/yfinance fetch failed ({exc.__class__.__name__}): continuing without macro data.")
         macro_snapshot = {}

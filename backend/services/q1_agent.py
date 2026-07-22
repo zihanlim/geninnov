@@ -51,11 +51,16 @@ from .book_metrics import (
 from .scenario_analysis import run_scenario_analysis, format_scenario_table
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LLM client (Anthropic Claude via messages API)
+# LLM client — MiniMax (preferred) → Anthropic Claude (fallback)
+# Priority: MINIMAX_API_KEY > ANTHROPIC_API_KEY
 # ─────────────────────────────────────────────────────────────────────────────
 
+MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "")
+MINIMAX_MODEL   = os.environ.get("MINIMAX_MODEL_ID", "MiniMax-M3")
+MINIMAX_ENDPOINT = "https://api.minimax.io/v1/chat/completions"
+
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-DEFAULT_MODEL = os.environ.get("ANTHROPIC_MODEL_ID", "claude-sonnet-4-20250514")
+DEFAULT_MODEL     = os.environ.get("ANTHROPIC_MODEL_ID", "claude-sonnet-4-20250514")
 PROMPT_VERSION = "v2.1.0"          # v2.1: added lens mode (multi_asset | credit | rates | equity | fx | commodity)
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -111,22 +116,72 @@ LENS_PROMPT_FRAMING: dict[str, str] = {
 
 def _llm_complete(prompt: str, system: str = "", temperature: float = 0.0) -> str:
     """
-    Call Anthropic Claude messages API. Falls back to KeyError if key not set.
+    Route LLM call: MiniMax (preferred) → Anthropic Claude (fallback).
+    Raises ValueError if neither provider is configured.
     Returns raw text response.
     """
-    import anthropic
+    # ── MiniMax (OpenAI-compatible) ──────────────────────────────────────────
+    if MINIMAX_API_KEY:
+        import requests as _rq
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    kwargs: dict[str, Any] = {
-        "model": DEFAULT_MODEL,
-        "max_tokens": 4096,
-        "temperature": temperature,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    if system:
-        kwargs["system"] = system
-    resp = client.messages.create(**kwargs)
-    return resp.content[0].text
+        messages: list[dict[str, str]] = []
+        if system:
+            # MiniMax doesn't have a top-level system param — fold into first user msg
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        resp = _rq.post(
+            MINIMAX_ENDPOINT,
+            headers={
+                "Authorization": f"Bearer {MINIMAX_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": MINIMAX_MODEL,
+                "messages": messages,
+                "max_tokens": 4096,
+                "temperature": temperature,
+            },
+            timeout=120,
+        )
+        if resp.status_code != 200:
+            err = resp.json()
+            raise ValueError(
+                f"MiniMax API error {resp.status_code}: "
+                f"{err.get('error', {}).get('message', resp.text[:200])}"
+            )
+        text = resp.json()["choices"][0]["message"]["content"]
+        # MiniMax M-series prepends <think>...</think> reasoning blocks
+        # and often wraps the JSON in ```json ... ``` markdown fences.
+        # Strip both so JSON parsing in reason_picks / classify_news works cleanly.
+        import re
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+        # Strip markdown code fences (```json ... ``` or ``` ... ```)
+        md_match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
+        if md_match:
+            text = md_match.group(1)
+        return text.strip()
+
+    # ── Anthropic Claude (fallback) ─────────────────────────────────────────
+    if ANTHROPIC_API_KEY:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        kwargs: dict[str, Any] = {
+            "model": DEFAULT_MODEL,
+            "max_tokens": 4096,
+            "temperature": temperature,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system:
+            kwargs["system"] = system
+        resp = client.messages.create(**kwargs)
+        return resp.content[0].text
+
+    # ── Neither configured ───────────────────────────────────────────────────
+    raise ValueError(
+        "No LLM provider configured. Set MINIMAX_API_KEY or ANTHROPIC_API_KEY."
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -976,7 +1031,7 @@ def _persist_to_supabase(state: Q1State) -> bool:
     agent_run_id = str(uuid.uuid4())
 
     try:
-        sb.table("q1_agent_runs").insert({
+        sb.table("research_agent_runs").insert({
             "id": agent_run_id,
             "run_date": run_date,
             "prompt_version": PROMPT_VERSION,
@@ -993,7 +1048,7 @@ def _persist_to_supabase(state: Q1State) -> bool:
             "retries": state.get("retries", 0),
         }).execute()
 
-        sb.table("q1_recommendations").upsert({
+        sb.table("research_recommendations").upsert({
             "run_date": run_date,
             "picks": state.get("picks", []),
             "book_view": state.get("book_view", ""),
@@ -1044,8 +1099,8 @@ def run_q1_agent(
                         lens (echoed)
         or None if LLM is unavailable (key not set) or persist failed.
     """
-    if not ANTHROPIC_API_KEY:
-        print("[run_q1_agent] ANTHROPIC_API_KEY not set — skipping.")
+    if not (MINIMAX_API_KEY or ANTHROPIC_API_KEY):
+        print("[run_q1_agent] No LLM provider configured (set MINIMAX_API_KEY or ANTHROPIC_API_KEY) — skipping.")
         return None
 
     if lens not in VALID_LENSES:

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import TradeDerivationDrawer from "@/components/TradeDerivationDrawer";
 import CitationList, { Citation } from "@/components/CitationList";
+import SentimentBadge from "@/components/SentimentBadge";
+import MarketBar from "@/components/MarketBar";
 
 interface Pick {
   direction: "long" | "short";
@@ -28,6 +30,8 @@ interface ResearchRecommendation {
   book_view: string;
   book_risks: string[];
   agent_run_id?: string;
+  book_metrics_summary?: string;
+  scenario_table?: string;
 }
 
 interface Regime { cycle: string; sentiment: string; narrative?: string }
@@ -175,30 +179,6 @@ function PickCard({
   );
 }
 
-function RegimeBadge({ cycle, sentiment }: { cycle: string; sentiment: string }) {
-  const cycleClass =
-    cycle === "early" || cycle === "late"
-      ? "badge-warning"
-      : cycle === "recession"
-        ? "badge-short"
-        : "badge-tier-anchor";
-  const sentClass =
-    sentiment === "risk-on"
-      ? "badge-long"
-      : sentiment === "risk-off"
-        ? "badge-short"
-        : "badge-neutral";
-  return (
-    <div className="flex items-center gap-2 text-[12px]">
-      <span className="text-text-tertiary uppercase tracking-[0.1em]">Cycle</span>
-      <span className={`badge ${cycleClass}`}>{cycle?.toUpperCase()}</span>
-      <span className="text-text-tertiary">·</span>
-      <span className="text-text-tertiary uppercase tracking-[0.1em]">Sentiment</span>
-      <span className={`badge ${sentClass}`}>{sentiment?.toUpperCase()}</span>
-    </div>
-  );
-}
-
 export default function ResearchPage() {
   const [rec, setRec] = useState<ResearchRecommendation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -211,7 +191,7 @@ export default function ResearchPage() {
       const [recRes, regimeRes] = await Promise.all([
         supabase
           .from("research_recommendations")
-          .select("run_date, picks, book_view, book_risks, agent_run_id")
+          .select("run_date, picks, book_view, book_risks, agent_run_id, book_metrics_summary, scenario_table")
           .order("run_date", { ascending: false })
           .limit(1)
           .maybeSingle(),
@@ -289,7 +269,7 @@ export default function ResearchPage() {
           </div>
           {regime && (
             <div className="mt-2">
-              <RegimeBadge cycle={regime.cycle} sentiment={regime.sentiment} />
+              <SentimentBadge sentiment={regime.sentiment} cycle={regime.cycle} size="sm" />
             </div>
           )}
         </div>
@@ -315,6 +295,18 @@ export default function ResearchPage() {
         </div>
       ) : (
         <>
+          {/* Market bar */}
+          <div className="mb-6">
+            <MarketBar />
+          </div>
+
+          {/* Sentiment */}
+          {regime && (
+            <div className="mb-4">
+              <SentimentBadge sentiment={regime.sentiment} cycle={regime.cycle} />
+            </div>
+          )}
+
           {/* Book View */}
           {rec.book_view && (
             <div

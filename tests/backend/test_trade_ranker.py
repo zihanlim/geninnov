@@ -96,22 +96,22 @@ def test_allocate_proportional_to_hype_score():
     With max_single=0.20, A's 80% share exceeds the cap → capped to 20%,
     excess redistributed to B → B absorbs → B=80%/$80M, A=20%/$20M.
     """
-    c1 = TradeCandidate("t1", "AAA", "long", 0.5, 80.0, 0.3)
-    c2 = TradeCandidate("t2", "BBB", "long", 0.3, 20.0, 0.1)
+    c1 = TradeCandidate("t1", "TLT", "long", 0.5, 80.0, 0.3)
+    c2 = TradeCandidate("t2", "HYG", "long", 0.3, 20.0, 0.1)
     out = allocate_portfolio([c1, c2], total_capital=100_000_000,
                              max_single=0.20)
     by_cand = {c.asset: (n, w) for c, n, w in out}
     # A dominated (80% > 20% cap) → capped to 20%, B absorbs excess → B=80%
-    assert abs(by_cand["AAA"][0] - 20_000_000) < 1e-6
-    assert abs(by_cand["BBB"][0] - 80_000_000) < 1e-6
-    assert abs(by_cand["AAA"][1] - 0.2) < 1e-6
-    assert abs(by_cand["BBB"][1] - 0.8) < 1e-6
+    assert abs(by_cand["TLT"][0] - 20_000_000) < 1e-6
+    assert abs(by_cand["HYG"][0] - 80_000_000) < 1e-6
+    assert abs(by_cand["TLT"][1] - 0.2) < 1e-6
+    assert abs(by_cand["HYG"][1] - 0.8) < 1e-6
 
 
 def test_allocate_equal_weight_when_all_hype_zero():
     """All hype_scores zero -> fall back to equal weight."""
-    c1 = TradeCandidate("t1", "AAA", "long", 0.5, 0.0, 0.0)
-    c2 = TradeCandidate("t2", "BBB", "long", 0.3, 0.0, 0.0)
+    c1 = TradeCandidate("t1", "TLT", "long", 0.5, 0.0, 0.0)
+    c2 = TradeCandidate("t2", "HYG", "long", 0.3, 0.0, 0.0)
     out = allocate_portfolio([c1, c2], total_capital=100_000_000)
     for _, notional, weight in out:
         assert abs(notional - 50_000_000) < 1e-6
@@ -123,7 +123,7 @@ def test_allocate_empty_candidates_returns_empty():
 
 
 def test_allocate_rejects_zero_capital():
-    c1 = TradeCandidate("t1", "AAA", "long", 0.5, 80.0, 0.3)
+    c1 = TradeCandidate("t1", "TLT", "long", 0.5, 80.0, 0.3)
     try:
         allocate_portfolio([c1], total_capital=0)
     except ValueError:

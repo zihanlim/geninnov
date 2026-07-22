@@ -40,7 +40,7 @@ _ASSET_CLASS_MAP: dict[str, str] = {
     "QQQ": "equity", "SPY": "equity", "IWM": "equity",
     "FXI": "equity", "MCHI": "equity", "BABA": "equity", "KWEB": "equity",
     "XLE": "equity", "XLF": "equity", "XLV": "equity", "ARKK": "equity",
-    "EWJ": "equity",
+    "EWJ": "equity", "EFA": "equity", "EEM": "equity", "BULL": "equity",
     # fx
     "UUP": "fx", "FXE": "fx", "EWZ": "fx", "DXY": "fx",
     # commodity
@@ -251,7 +251,8 @@ def allocate_portfolio(
         sec_weights: dict[str, float] = {}
         sec_members: dict[str, list[int]] = {}
         for i, c in enumerate(candidates):
-            sec = sector_map.get(c.asset, "Other")
+            # Unmapped tickers must raise — no silent fallback.
+            sec = sector_map[c.asset]
             sec_weights[sec] = sec_weights.get(sec, 0.0) + weights[i]
             sec_members.setdefault(sec, []).append(i)
 
@@ -285,7 +286,8 @@ def allocate_portfolio(
         geo_weights: dict[str, float] = {}
         geo_members: dict[str, list[int]] = {}
         for i, c in enumerate(candidates):
-            geo = geo_map.get(c.asset, "Other")
+            # Unmapped tickers must raise — no silent fallback.
+            geo = geo_map[c.asset]
             geo_weights[geo] = geo_weights.get(geo, 0.0) + weights[i]
             geo_members.setdefault(geo, []).append(i)
 

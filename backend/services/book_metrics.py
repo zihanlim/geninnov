@@ -63,6 +63,10 @@ SECTOR_MAP: dict[str, str] = {
     "XLV":   "Healthcare",
     "XLF":   "Financials",
     "ARKK":  "Disruptive Innovation",
+    # US equities (broad market ETFs)
+    "SPY":   "US Equities",
+    "IWM":   "US Equities",
+    "BULL":  "US Equities",
     # Metals / inflation
     "GDX":   "Gold Miners",
     "IAU":   "Gold",
@@ -98,6 +102,9 @@ GEO_MAP: dict[str, str] = {
     "XLV":   "US",
     "XLF":   "US",
     "ARKK":  "US",
+    "SPY":   "US",
+    "IWM":   "US",
+    "BULL":  "US",
     "GDX":   "Global",
     "IAU":   "Global",
 }
@@ -201,8 +208,8 @@ def compute_book_metrics(
         if w <= 0:
             continue
 
-        sec = SECTOR_MAP.get(asset, "Other")
-        geo = GEO_MAP.get(asset, "Other")
+        sec = SECTOR_MAP[asset]
+        geo = GEO_MAP[asset]
         sector_weights[sec] = sector_weights.get(sec, 0.0) + w
         geo_weights[geo] = geo_weights.get(geo, 0.0) + w
 

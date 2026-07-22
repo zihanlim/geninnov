@@ -6,6 +6,7 @@ import RegimeHero from "@/components/RegimeHero";
 import ConvictionCard, { ConvictionTheme } from "@/components/ConvictionCard";
 import Watchlist from "@/components/Watchlist";
 import ThemeDerivationDrawer from "@/components/ThemeDerivationDrawer";
+import ThemeHeatmap from "@/components/ThemeHeatmap";
 
 interface Regime {
   cycle: string;
@@ -213,6 +214,10 @@ export default function ConvictionPage() {
             factors={factors}
             runDate={regime?.run_date}
           />
+
+          <div className="mb-6">
+            <ThemeHeatmap themes={themes} onSelect={setDrawerTheme} />
+          </div>
 
           <div className="flex items-baseline justify-between mb-3.5">
             <h2 className="text-[16px] font-semibold m-0">Top 3 themes by conviction</h2>

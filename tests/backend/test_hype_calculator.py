@@ -132,3 +132,22 @@ def test_hype_uses_unsigned_correlation_strength():
     # negative correlation with positive returns should score the same magnitude (abs)
     neg = hype_score(volume=1.0, sentiment=0.5, corr=-0.9, momentum=0.1, cfg=cfg)
     assert pos == pytest.approx(neg)
+
+
+# T22 Minor: compute_hype_scores([]) must short-circuit instead of raising
+# ValueError on min()/max() of empty sequences during bootstrap.
+def test_compute_hype_scores_empty_input_returns_empty():
+    cfg = ScoringConfig(0.25, 0.25, 0.25, 0.25, 0.0, 0.0)
+    assert compute_hype_scores([], cfg) == []
+
+
+# T22: trade_score() should normalize momentum by elapsed_days so a 50-point
+# drift over 5 days contributes less than a 50-point drift over 1 day.
+def test_trade_score_normalizes_momentum_by_elapsed_days():
+    from backend.services.trade_generator import trade_score
+    same_diff_one_day = trade_score(hype_today=60.0, hype_yesterday=50.0, sentiment=0.0, elapsed_days=1)
+    same_diff_five_days = trade_score(hype_today=60.0, hype_yesterday=50.0, sentiment=0.0, elapsed_days=5)
+    # Same hype diff spread over more days yields a smaller absolute momentum.
+    assert abs(same_diff_one_day) > abs(same_diff_five_days)
+    # And specifically the 5-day one should be a 5th of the 1-day one (all else equal).
+    assert pytest.approx(abs(same_diff_one_day) / abs(same_diff_five_days), rel=0.01) == 5.0

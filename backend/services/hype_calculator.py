@@ -70,7 +70,12 @@ def compute_hype_scores(raw_signals: list[dict], cfg: ScoringConfig) -> list[dic
     """
     Cross-theme helper: min-max normalize each sub-score across all themes,
     then call hype_score for each theme. Returns scored rows with 'hype_score'.
+
+    Empty input returns an empty list — min()/max() on empty sequences raises
+    ValueError, which would otherwise crash daily_refresh on bootstrap.
     """
+    if not raw_signals:
+        return []
     all_counts = [r["mention_count_1d"] for r in raw_signals]
     all_momenta = [r["momentum_raw"] for r in raw_signals]
 

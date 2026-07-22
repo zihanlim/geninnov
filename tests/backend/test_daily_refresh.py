@@ -199,10 +199,13 @@ def test_compute_trade_scores_returns_list():
         },
     ]
 
+    run_date = date.today()
     with patch("daily_refresh.load_config", return_value=cfg), \
          patch("daily_refresh.supabase") as mock_supabase:
         mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
-        result = compute_trade_scores(hyped)
+        # T22: prior-run lookup also goes through supabase; same mock returns []
+        # so elapsed_days defaults to 1 (with a warning).
+        result = compute_trade_scores(hyped, run_date)
 
     assert isinstance(result, list)
     assert len(result) == 2
@@ -239,11 +242,98 @@ def test_compute_trade_scores_handles_missing_hype_score_column():
          patch("daily_refresh.supabase") as mock_supabase:
         # Simulate the APIError raised when the column doesn't exist
         mock_supabase.table.return_value.select.return_value.eq.return_value.execute.side_effect = Exception("column hype_score does not exist")
-        result = compute_trade_scores(hyped)
+        result = compute_trade_scores(hyped, date.today())
 
     # Should not crash; should produce a TradeScore = 0.55 * 0 + 0.45 * sentiment
     assert len(result) == 1
     assert result[0]["trade_score"] == 0.45 * 0.4  # 0.18
+
+
+def test_compute_trade_scores_passes_real_elapsed_days(capsys):
+    """T22: compute_trade_scores reads prior run_date from theme_signals_history
+    and computes elapsed_days = (run_date - prior.run_date).days. Without this
+    the HypeMomentum normalization always divides by 1 day even after a weekend
+    or missed run.
+    """
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    from daily_refresh import compute_trade_scores
+    from services.hype_calculator import ScoringConfig
+
+    cfg = ScoringConfig(
+        hype_volume_weight=0.30,
+        hype_sentiment_weight=0.20,
+        hype_corr_weight=0.30,
+        hype_momentum_weight=0.20,
+        trade_hype_weight=0.55,
+        trade_sentiment_weight=0.45,
+    )
+
+    run_date = date.today()
+    # Prior run was 5 days ago (e.g. Friday → Wednesday gap).
+    prior = (run_date - timedelta(days=5)).isoformat()
+    hyped = [{"theme_id": 42, "hype_score": 80.0, "avg_sentiment": 0.0}]
+
+    # Build a chainable mock that returns the right value depending on the
+    # filter that was applied. ``select(...).eq("run_date", yesterday)``
+    # returns no rows (no yesterday row); the second query for prior rows
+    # returns the 5-days-ago row.
+    table = MagicMock()
+    supabase = MagicMock()
+    supabase.table.return_value = table
+
+    def make_chain(*, raise_exc=None, data=None):
+        chain = MagicMock()
+        if raise_exc is not None:
+            chain.execute.side_effect = raise_exc
+        else:
+            chain.execute.return_value = MagicMock(data=data or [])
+        return chain
+
+    # eq("run_date", yesterday) — yesterday lookup returns []
+    # lt("run_date", run_date) — prior lookup returns the 5-days-ago row
+    # Each .select() starts a new chain. We use side_effect on table() to be
+    # order-independent by inspecting call args.
+    chained_selects = []
+
+    def select_then_chain(*args, **kwargs):
+        # Default to {}.
+        return _build_select_chain()
+
+    # Simpler: every select returns a chain where .eq/.lt/.order all return
+    # chainable, and .execute() returns what's been staged.
+    queue = [
+        # First query: yesterday lookup
+        MagicMock(data=[]),
+        # Second query: prior lookup (5 days ago)
+        MagicMock(data=[{"theme_id": 42, "run_date": prior}]),
+    ]
+    queue_iter = iter(queue)
+
+    def next_execute(*a, **kw):
+        return next(queue_iter)
+
+    chain = MagicMock()
+    chain.select.return_value = chain
+    chain.eq.return_value = chain
+    chain.lt.return_value = chain
+    chain.order.return_value = chain
+    chain.execute.side_effect = next_execute
+    supabase.table.return_value = chain
+
+    with patch("daily_refresh.load_config", return_value=cfg), \
+         patch("daily_refresh.supabase", supabase):
+        result = compute_trade_scores(hyped, run_date)
+
+    assert result[0]["elapsed_days"] == 5
+    # With elapsed_days=5 the momentum contribution is shrunk by 1/5 vs the
+    # elapsed_days=1 path. We just verify the row exists and elapsed_days is
+    # persisted on the dict for downstream traceability.
+    assert "trade_score" in result[0]
+    # No missing-prior warning expected
+    captured = capsys.readouterr()
+    assert "no prior run_date found" not in captured.out
 
 
 def test_build_theme_signals_falls_back_to_most_recent_assets():

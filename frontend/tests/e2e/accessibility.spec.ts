@@ -15,8 +15,6 @@ import * as path from "node:path";
 // Resolve axe-core relative to the frontend directory (where devDeps live).
 function loadAxeSource(): string {
   const candidates = [
-    path.resolve(__dirname, "../../frontend/node_modules/axe-core/axe.min.js"),
-    path.resolve(__dirname, "../frontend/node_modules/axe-core/axe.min.js"),
     path.resolve(__dirname, "../../node_modules/axe-core/axe.min.js"),
   ];
   for (const p of candidates) {

@@ -1,5 +1,6 @@
 import pytest
-from backend.services.portfolio import compute_daily_return, compute_daily_contributions, MissingReturnError
+from datetime import date
+from backend.services.portfolio import compute_daily_return, compute_daily_contributions, MissingReturnError, compute_cumulative_return
 
 def test_long_only_positive():
     p = [
@@ -32,3 +33,19 @@ def test_contributions_preserve_signs():
     contrib = compute_daily_contributions(p)
     assert contrib["A"] == pytest.approx(0.005)
     assert contrib["B"] == pytest.approx(0.05)  # -0.5 * -0.10
+
+def test_cumulative_compounds_sequentially():
+    r = compute_cumulative_return([0.01, 0.02, -0.005], inception=date(2026, 1, 14))
+    # 1.01 * 1.02 * 0.995 - 1
+    assert r["value"] == pytest.approx(1.01 * 1.02 * 0.995 - 1)
+    assert r["compounded"] is True
+    assert r["inception"] == date(2026, 1, 14)
+    assert r["as_of"] == date(2026, 1, 16)
+
+def test_cumulative_empty_returns_zero():
+    r = compute_cumulative_return([], inception=date(2026, 1, 14))
+    assert r["value"] == 0.0
+
+def test_cumulative_rejects_suspicious_magnitude():
+    with pytest.raises(ValueError):
+        compute_cumulative_return([5.0], inception=date(2026, 1, 14))

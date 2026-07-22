@@ -255,7 +255,15 @@ def persist(run_date: date, scored: list[dict]):
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", theme_id).execute()
 
-        # Insert signals history
+        # Insert signals history.
+        #
+        # hype_score and trade_score MUST be written here. Migration 003 added
+        # them so tomorrow's run can read today's HypeScore and compute
+        # HypeMomentum, but nothing ever populated them: every historical row
+        # had a NULL hype_score, so hype_yesterday was always missing and the
+        # 0.55-weighted momentum term of TradeScore was permanently zero.
+        # TradeScore had silently collapsed to `trade_sentiment_weight *
+        # sentiment` in production.
         supabase.table("theme_signals_history").upsert({
             "theme_id": theme_id,
             "run_date": today_str,
@@ -265,6 +273,8 @@ def persist(run_date: date, scored: list[dict]):
             "avg_sentiment": r["avg_sentiment"],
             "price_corr": r["price_corr"],
             "momentum_raw": r["momentum_raw"],
+            "hype_score": r["hype_score"],
+            "trade_score": r.get("trade_score"),
         }, on_conflict="theme_id,run_date").execute()
 
     print(f"[{today_str}] Refresh complete. {len(scored)} themes updated.")

@@ -669,3 +669,67 @@ def test_compute_and_persist_daily_return_aborts_on_missing_price():
     # No portfolio_returns row should be written when the run aborts.
     table_names = [c.args[0] for c in mock_supabase.table.call_args_list if c.args]
     assert "portfolio_returns" not in table_names
+
+
+class TestSignalsHistoryPersistsScores:
+    """theme_signals_history must carry hype_score and trade_score.
+
+    Migration 003 added both columns so the next day's run can read today's
+    HypeScore and compute HypeMomentum. persist() never wrote them, so every
+    historical row had a NULL hype_score, hype_yesterday was always missing,
+    and the 0.55-weighted momentum term of TradeScore was permanently zero --
+    TradeScore silently collapsed to trade_sentiment_weight * sentiment.
+    """
+
+    REQUIRED = {"theme_id", "run_date", "hype_score", "trade_score"}
+
+    def test_upsert_payload_includes_scores(self, monkeypatch):
+        import scripts.daily_refresh as dr
+
+        captured = []
+
+        class _Tbl:
+            def __init__(self, name):
+                self._name = name
+
+            def update(self, *_a, **_k):
+                return self
+
+            def eq(self, *_a, **_k):
+                return self
+
+            def upsert(self, payload, **_k):
+                if self._name == "theme_signals_history":
+                    captured.append(payload)
+                return self
+
+            def execute(self):
+                return type("R", (), {"data": []})()
+
+        class _SB:
+            def table(self, name):
+                return _Tbl(name)
+
+        monkeypatch.setattr(dr, "supabase", _SB())
+
+        scored = [
+            {
+                "theme_id": "t1",
+                "hype_score": 52.5,
+                "trade_score": 0.11,
+                "mention_count_1d": 10,
+                "mention_count_7d_avg": 8.0,
+                "mention_count_7d_std": 1.0,
+                "avg_sentiment": 0.25,
+                "price_corr": 0.4,
+                "momentum_raw": 1.2,
+            }
+        ]
+        dr.persist(date(2026, 7, 23), scored)
+
+        assert captured, "expected a theme_signals_history upsert"
+        row = captured[0]
+        missing = self.REQUIRED - set(row)
+        assert not missing, f"signals history payload missing {missing}"
+        assert row["hype_score"] == 52.5
+        assert row["trade_score"] == 0.11

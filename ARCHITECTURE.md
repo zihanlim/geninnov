@@ -60,15 +60,28 @@ flowchart TB
             N7["7. verify_citations<br/><i>pure-fn guardrail,<br/>max 2 retries</i>"]
             N7F["7b. fallback_picks<br/><i>deterministic if retries exhaust</i>"]
             N8["8. size_positions<br/><i>HypeScore-weighted $100M,<br/>20% / 30% / 35% caps</i>"]
+            N8A["emit <b>AdvisoryDerivation</b><br/><i>T18 strict: fallback cannot be verified</i>"]
 
             N1 --> N2 --> N3 --> N4 --> N5 --> N6 --> N7
             N7 -- "unverified" --> N6
             N7 -- "verified ✓" --> N8
             N7 -. "retries exhausted" .-> N7F --> N8
+            N8 --> N8A
+        end
+
+        subgraph DRV["Derivations Module — backend/derivations/"]
+            direction TB
+            DNV["numeric.py<br/>NumericDerivation,<br/>SourceRecord, Freshness,<br/>Uncertainty, validate_numeric"]
+            DAV["advisory.py<br/>AdvisoryDerivation,<br/>validate_advisory,<br/>fallback_used strictness (T18)"]
         end
 
         TG["backend/services/trade_ranker.py<br/>rank + size $100M book"]
         POLYSVC["backend/data/polymarket_fetcher.py<br/>prediction market feed"]
+        PIPE["backend/services/pipeline_runs.py<br/>record_pipeline_run,<br/>run_id_for(stage)"]
+        PF["backend/services/portfolio.py<br/>compute_daily_return,<br/>compute_cumulative_return"]
+        EX["backend/services/exposure.py<br/>net / gross / sector / geo<br/>exposure aggregation"]
+        RR["backend/services/risk_engine.py<br/>returns NumericDerivation<br/>(T9 derive-aware compute_risk)"]
+        HC["backend/services/hype_calculator.py<br/>abs(corr) (T22)"]
     end
 
     %% ───────── Supabase (PostgreSQL) ─────────
@@ -88,6 +101,8 @@ flowchart TB
         T_REG["regime_classifications"]
         T_RUNS["q1_agent_runs<br/>(citations, retries, verified)"]
         T_RECS["q1_recommendations<br/>(picks, book_view, scenarios)"]
+        T_PIPE["pipeline_runs<br/>(run_id, stage, status,<br/>duration_s, source_freshness)"]
+        T_CUM["portfolio_cumulative_return<br/>(as_of, inception_date,<br/>compounded value)"]
     end
 
     %% ───────── Frontend (Next.js 14 → Vercel) ─────────
@@ -114,6 +129,24 @@ flowchart TB
             FEED["LiveFeed"]
         end
 
+        subgraph STATUS["L7 — Status & Portfolio read-models (components/)"]
+            STATBAD["status/StatusBadge"]
+            FRESH["status/FreshnessLabel"]
+            UNC["status/UncertaintyBand"]
+            CUM["portfolio/CumulativeReturn<br/>(since-inception, compounded)"]
+            DPL["portfolio/DailyPLHistory"]
+            EXS["portfolio/ExposureSummary"]
+            THB["research/ThesisBlock"]
+        end
+
+        subgraph FELIB["Frontend read-model — frontend/lib/derivations/"]
+            FENUM["numeric.ts<br/>(TS mirror of NumericDerivation)"]
+            FEADV["advisory.ts<br/>(TS mirror of AdvisoryDerivation)"]
+            FEFMT["format.ts<br/>(status / unit rendering)"]
+        end
+
+        FASSETMETA["frontend/lib/assetMetadata.ts<br/>(taxonomy seam: classify(ticker))"]
+
         SUPC["frontend/lib/supabase.ts<br/>(anon key, RLS-gated reads)"]
     end
 
@@ -135,9 +168,18 @@ flowchart TB
     TS -->|theme_signals,<br/>theme_signals_history| DB
     FF -->|factor_exposures| DB
     RC -->|regime_classifications| DB
-    RE -->|portfolio_risk,<br/>portfolio_returns| DB
-    TG -->|trade_candidates,<br/>portfolio_positions| DB
+    RE -->|portfolio_risk<br/>+ numeric_derivations| DB
+    TG -->|trade_candidates,<br/>portfolio_positions<br/>+ numeric_derivations| DB
     POLYSVC --> DB
+    PIPE -. "record_pipeline_run" .-> T_PIPE
+    PF -->|portfolio_cumulative_return<br/>(since inception, compounded)| T_CUM
+    EX -. "exposure aggregation" .-> TG
+
+    %% ───────── Derivations module edges ─────────
+    DNV --> RR
+    DAV --> N8A
+    FASSETMETA -. "classify(ticker) seam (T20)" .-> TG
+    HC -. "abs(corr) normalization (T22)" .-> TS
 
     %% ───────── L5 reads from DB ─────────
     DB -- "L0–L4 snapshot" --> N1
@@ -150,13 +192,18 @@ flowchart TB
     ANTHROPIC -. "fallback" .-> N6
 
     %% ───────── L5 writes ─────────
+    N8A -->|advisory_derivation| T_RECS
     N8 -->|q1_recommendations| T_RECS
     N1 -->|input_snapshot +<br/>citations + retries| T_RUNS
 
     %% ───────── Frontend reads ─────────
     DB --> SUPC
     SUPC --> L6
+    SUPC --> FELIB
     L6 --> L7
+    L6 --> STATUS
+    FELIB --> STATUS
+    FELIB --> DERV
 
     %% ───────── Lens filter edges ─────────
     LENS -- "lens param" --> N2
@@ -167,10 +214,12 @@ flowchart TB
     classDef db  fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px,color:#000
     classDef fe  fill:#dcfce7,stroke:#15803d,stroke-width:2px,color:#000
     classDef ext fill:#f3f4f6,stroke:#374151,stroke-width:1px,color:#000
+    classDef drv fill:#ede9fe,stroke:#6d28d9,stroke-width:2px,color:#000
     class N3,N6 llm
-    class DB,T_THEMES,T_TA,T_TS,T_TSH,T_TC,T_PP,T_PR,T_PRISK,T_SC,T_MACRO,T_FE,T_REG,T_RUNS,T_RECS db
+    class DB,T_THEMES,T_TA,T_TS,T_TSH,T_TC,T_PP,T_PR,T_PRISK,T_SC,T_MACRO,T_FE,T_REG,T_RUNS,T_RECS,T_PIPE,T_CUM db
     class CRON,FRED,YF,BRAVE,REDDIT,KEN,POLY ext
-    class L6,L7,PG_HOME,PG_TR,PG_PF,PG_RS,REGIME,CONV,WATCH,TBL,ALLOC,FEAT,DERV,CITE,LENS,FEED,SUPC fe
+    class L6,L7,PG_HOME,PG_TR,PG_PF,PG_RS,REGIME,CONV,WATCH,TBL,ALLOC,FEAT,DERV,CITE,LENS,FEED,SUPC,STATUS,STATBAD,FRESH,UNC,CUM,DPL,EXS,THB,FELIB,FENUM,FEADV,FEFMT,FASSETMETA fe
+    class DRV,DNV,DAV,RR,PF,EX,PIPE,HC,TG,POLYSVC drv
 ```
 
 ### How to read the diagram
@@ -190,13 +239,15 @@ The diagram is a single source of truth. If you add a node, table, page, compone
 | Layer | Name | Source | Output |
 |-------|------|--------|--------|
 | L0 | Macro Ingestion | `backend/data/macro_fetcher.py` | `macro_snapshot` dict (FRED series + yfinance) |
-| L1 | Theme Detection | `scripts/daily_refresh.py` → `build_theme_signals` | `theme_signals` table (mention count, sentiment, price corr, momentum) |
-| L2 | Factor Exposure | `backend/data/factor_fetcher.py` | `factor_exposures` dict (FF5 + UMD betas per ticker) |
+| L1 | Theme Detection | `scripts/daily_refresh.py` → `build_theme_signals` | `theme_signals` table (mention count, sentiment, price corr, momentum). Uses `abs(price_corr)` normalization (T22) |
+| L2 | Factor Exposure | `backend/data/factor_exposures` table | `factor_exposures` dict (FF5 + UMD betas per ticker) |
 | L3 | Regime Classifier | `backend/services/regime_classifier.py` | `regime` dict (cycle + sentiment) |
-| L4 | Risk Engine | `scripts/daily_refresh.py` → `compute_and_persist_risk` | `portfolio_risk` table (VaR, CVaR, Sharpe, beta, HHI) |
-| L5 | **Q1 Reasoning Agent** | `backend/services/q1_agent.py` → `run_q1_agent` | `q1_recommendations` + `q1_agent_runs` tables; 8 nodes (aggregate → screen → book metrics → scenario analysis → reason_picks LLM → verify_citations → size_positions → persist). Supports `lens` parameter (multi_asset/credit/rates/equity/fx/commodity) per [ADR-0015](docs/adrs/0015-lens-mode-asset-class.md) |
+| L4 | Risk Engine | `scripts/daily_refresh.py` → `compute_and_persist_risk` (derive-aware `compute_risk` returns `NumericDerivation`, T9) | `portfolio_risk` table + `numeric_derivations` JSONB column (T15) |
+| L5 | **Q1 Reasoning Agent** | `backend/services/q1_agent.py` → `run_q1_agent` | `q1_recommendations` + `q1_agent_runs` tables; 8 nodes (aggregate → screen → book metrics → scenario analysis → reason_picks LLM → verify_citations → size_positions → persist). Emits `AdvisoryDerivation` with T18 strict fallback policy. Supports `lens` parameter (multi_asset/credit/rates/equity/fx/commodity) per [ADR-0015](docs/adrs/0015-lens-mode-asset-class.md) |
 | L6 | Writeup | `frontend/app/research/` | Per-trade thesis + book view rendered in `/research` page |
-| L7 | **Provenance UI** | `frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs,LensSelector}.tsx` | Click-through audit trail for every score; asset-class lens toggle on `/portfolio` and `/trades` |
+| L7 | **Provenance UI** | `frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs,LensSelector}.tsx` + `frontend/components/status/{StatusBadge,FreshnessLabel,UncertaintyBand}.tsx` + `frontend/components/portfolio/{CumulativeReturn,DailyPLHistory,ExposureSummary}.tsx` | Click-through audit trail for every score; asset-class lens toggle on `/portfolio` and `/trades`; status/freshness/uncertainty read-models render derivations |
+| — | **Derivations** | `backend/derivations/{numeric.py,advisory.py}` (mirrored in `frontend/lib/derivations/{numeric,advisory,format}.ts`) | Frozen dataclasses + validators (`NumericDerivation`, `AdvisoryDerivation`) consumed by L4, L5 and the L7 read-models |
+| — | **Pipeline Runs** | `backend/services/pipeline_runs.py` | `pipeline_runs` table — per-stage execution audit (run_id, stage, status, duration_s, source_freshness) |
 
 ## Data Flow
 
@@ -267,11 +318,13 @@ L7: frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs}.tsx
 | `factor_exposures` | FF5 + UMD betas per ticker | ticker, beta_mkt, beta_smb, beta_hml, beta_rmw, beta_cma, beta_umd, r_squared, updated_at |
 | `scoring_config` | Weighted config (drives hype + trade scores) | hype_volume_weight, hype_sentiment_weight, ... |
 | `trade_candidates` | Ranked long/short candidates per run | theme_id, asset, direction, hype_score, trade_score, run_date |
-| `portfolio_positions` | Sized positions per run | theme_id, asset, direction, notional, weight, run_date |
+| `portfolio_positions` | Sized positions per run; per-position provenance (T13) | theme_id, asset, direction, notional, weight, run_date, **`numeric_derivations` JSONB** (per-position NumericDerivation bundle: weight, notional, beta, sector, geo) |
 | `portfolio_returns` | Daily portfolio P&L | run_date, daily_return |
-| `portfolio_risk` | Daily risk metrics | run_date, var_95, cvar_95, sharpe, beta, concentration_hhi |
+| `portfolio_risk` | Daily risk metrics; L4 provenance (T15) | run_date, var_95, cvar_95, sharpe, beta, concentration_hhi, **`numeric_derivations` JSONB** (full L4 NumericDerivation bundle — T9 derive-aware) |
 | `q1_agent_runs` | L5 agent run audit trail (citation guardrail audit log) | run_date, prompt_version, model_id, input_snapshot, citations, verified, retries |
-| `q1_recommendations` | Q1 output (picks + book view + scenario table) | run_date, picks, book_view, book_risks, book_metrics_summary, scenario_table |
+| `q1_recommendations` | Q1 output (picks + book view + scenario table) | run_date, picks, book_view, book_risks, book_metrics_summary, scenario_table, **`advisory_derivation` JSONB** (T18 strict AdvisoryDerivation from L5; fallback cannot be `verified`) |
+| `pipeline_runs` | Per-stage pipeline execution audit (T10, migration 012) | run_id, run_date, stage, status (`success`/`failure`/`partial`), duration_s, source_freshness JSONB, started_at, finished_at, error |
+| `portfolio_cumulative_return` | Since-inception compounded cumulative return, one row per as_of date (T14, migration 014) | as_of (PK), inception_date, cumulative_value, compounded (always TRUE), daily_returns_count, source_first_run_id, source_last_run_id, computed_at |
 | `theme_assets.asset_class` | L5 lens filter | ticker, asset_class (rates/credit/equity/fx/commodity) — added in migration 009 |
 
 ## Environment Variables
@@ -345,17 +398,37 @@ pytest tests/backend/ -v
 ## Feature Checklist
 
 - [x] L0: FRED + yfinance macro snapshot
-- [x] L1: Brave Search news + Reddit social + VADER sentiment + price corr + momentum
+- [x] L1: Brave Search news + Reddit social + VADER sentiment + price corr + momentum (T22: `abs(price_corr)` for theme strength)
 - [x] L2: Ken French FF5 + UMD factor betas
 - [x] L3: Regime classifier (cycle × sentiment)
-- [x] L4: Historical VaR, CVaR, Sharpe, beta, HHI
+- [x] L4: Historical VaR, CVaR, Sharpe, beta, HHI (T9: derive-aware `compute_risk` returns `NumericDerivation`)
 - [x] L5: **Q1 reasoning agent** — 8-node pipeline (aggregate → screen → book metrics → scenario analysis → LLM reason_picks → verify_citations → size_positions → persist). Citation guardrail with 2-retry max + deterministic fallback. Factor-tilt aware, scenario-aware, cap-enforced.
 - [x] L5 lens mode — `lens` parameter on `run_q1_agent` + `<LensSelector>` on `/portfolio` and `/trades` (ADR-0015)
+- [x] L5 emits `AdvisoryDerivation` with T18 strict policy — deterministic fallback cannot be marked `verified`
+- [x] L5 candidate taxonomy seam — `classify(ticker)` from `frontend/lib/assetMetadata.ts` (T20)
+- [x] L5 TradeScore plumbing of per-theme `elapsed_days` (T22)
 - [x] L6: Research page rendering per-trade thesis + book view + scenario table from `q1_recommendations`
 - [x] L7: Provenance UI infrastructure — citation footnotes, theme derivation drawer, regime inputs panel, lens selector
-- [x] Q1 thesis layer: deterministic L0–L4 features + stochastic L5 synthesis + auditable L6/L7 rendering (see ADR-0012, 0013, 0014, 0015)
+- [x] L7 status read-models — `StatusBadge`, `FreshnessLabel`, `UncertaintyBand` rendering derivations
+- [x] L7 portfolio read-models — `CumulativeReturn` (since-inception compounded), `DailyPLHistory`, `ExposureSummary`
+- [x] L7 research read-model — `ThesisBlock`
+- [x] Provenance columns on existing tables — `portfolio_risk.numeric_derivations` (T15), `portfolio_positions.numeric_derivations`, `q1_recommendations.advisory_derivation` (T13)
+- [x] Derivations module — `backend/derivations/{numeric.py,advisory.py}` + TS mirrors in `frontend/lib/derivations/`
+- [x] Pipeline runs audit — `backend/services/pipeline_runs.py` populates `pipeline_runs` table per stage (T10, migration 012)
+- [x] Since-inception cumulative return — `portfolio_cumulative_return` table, compounded product of `daily_return` rows (ADR-0020)
+- [x] Signed-weights portfolio accounting — convention formalized at backend/frontend seam (ADR-0019)
+- [x] Provenance read-model seam — frozen dataclasses + TS mirrors drive every L7 derivation render (ADR-0021)
+- [x] Q1 thesis layer: deterministic L0–L4 features + stochastic L5 synthesis + auditable L6/L7 rendering (see ADR-0012, 0013, 0014, 0015, 0018, 0019, 0020, 0021)
 - [x] Q2: Theme feed with HypeScore gauges + trend arrows
 - [x] Research-first redesign: regime hero, conviction cards, alloc bar, factor panel, global nav
-- [x] Supabase migrations (001–009)
-- [x] 198+ tests passing (lens mode tests added)
-- [ ] L7 component implementation (ThemeDerivationDrawer, CitationList) — in progress
+- [x] End-to-end Playwright e2e tests — `frontend/tests/e2e/{dashboard,portfolio,trades}.spec.ts` (T25)
+- [x] Verification matrix — `docs/verification/MATRIX.md` (T25)
+- [x] Residual risk register — `docs/risks/RESIDUAL.md` (T28)
+- [x] Lineage matrix — `docs/lineage/MATRIX.md` (T12)
+- [x] Runtime execution graph — `docs/runtime/EXECUTION_GRAPH.md` (T16)
+- [x] Baseline docs — `docs/baseline/{access,frontend-routes,pipeline-graph,schema}.md` + `STATUS.md` (T1)
+- [x] Supabase migrations applied locally (001–009, 012–015)
+- [x] 198+ tests passing (lens mode tests added); 227+ backend tests passing post-T9/T20/T22
+- [ ] Migrations 010/011 (`market_assets`, `prediction_markets`) deployed to live Supabase — pending (Polymarket feed on local only)
+- [ ] Cron (`cron-job.org`) owned externally and triggered daily against the live Vercel deployment — pending (scripts run on-demand locally)
+- [ ] Theme discovery shadow mode (`theme_discovery.py` running against live DB and diffed against the curated theme registry) — pending

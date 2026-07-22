@@ -21,6 +21,9 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0013](0013-deterministic-stochastic-split.md) | Deterministic L0–L4 / stochastic L5 only (constrained-reasoning pattern) | accepted | 2026-07-21 |
 | [0014](0014-candidate-set-hard-filter.md) | Q1 picks hard-filtered to the L5 candidate set (LLM cannot pick outside data) | accepted | 2026-07-21 |
 | [0015](0015-lens-mode-asset-class.md) | Lens mode: triggerable asset-class filter on the L5 reasoning agent | accepted | 2026-07-21 |
+| [0016](0016-signed-weights-portfolio-accounting.md) | Signed-weights portfolio accounting convention (`direction` derived from sign) | accepted | 2026-07-22 |
+| [0017](0017-since-inception-cumulative-performance.md) | Since-inception cumulative performance is compounded daily (`portfolio_cumulative_return`) | accepted | 2026-07-22 |
+| [0018](0018-provenance-read-model-seam.md) | Provenance read-model seam between Python derivations and TypeScript status components | accepted | 2026-07-22 |
 
 ## When to write an ADR
 

@@ -32,7 +32,14 @@ def compute_cumulative_return(daily_returns: list[float], inception: date) -> di
     for r in daily_returns:
         product *= 1.0 + r
     return {
+        # `value` is a RETURN (+0.05 == +5%). `growth_factor` is the compounded
+        # wealth multiple (1.05). They differ by exactly 1.0 and are trivial to
+        # confuse: the persisted column `portfolio_cumulative_return.cumulative_value`
+        # is the growth factor per ADR-0017, and a reader that subtracted 1 from a
+        # stored *return* rendered +5% as -95%. Both are returned explicitly so
+        # every caller has to say which one it means.
         "value": product - 1.0,
+        "growth_factor": product,
         "inception": inception,
         "as_of": inception + timedelta(days=len(daily_returns) - 1),
         "compounded": True,

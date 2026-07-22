@@ -240,8 +240,17 @@ def compute_risk(
     # formulas do not require a minimum sample size at this layer; the
     # MIN_DAYS_FOR_* gates live in the underlying helpers and are applied by
     # callers that need audit-grade estimates (MIN_DAYS_FOR_* gates elsewhere).
-    var_v: Optional[float] = _parametric_var(rets, 0.95) if len(rets) >= 2 else None
-    cvar_v: Optional[float] = _parametric_cvar(rets, 0.95) if len(rets) >= 2 else None
+    # _parametric_var/_parametric_cvar return a decimal loss fraction (z * sigma).
+    # These derivations are labelled unit="usd", are persisted to
+    # portfolio_risk.var_95/cvar_95, and are rendered with a currency formatter,
+    # so they must be scaled to dollars here. Omitting the scale wrote ~0.03
+    # into a USD field and the UI rendered "$0" for a multi-million-dollar risk.
+    var_v: Optional[float] = (
+        _parametric_var(rets, 0.95) * portfolio_value if len(rets) >= 2 else None
+    )
+    cvar_v: Optional[float] = (
+        _parametric_cvar(rets, 0.95) * portfolio_value if len(rets) >= 2 else None
+    )
     sharpe_v: Optional[float] = _annualized_sharpe(rets, risk_free_annual) if len(rets) >= 2 else None
     beta_v: Optional[float] = _beta_to_spx(rets, spx) if len(rets) >= 2 and len(spx) >= 2 else None
     weights = [abs(p.get("weight", 0.0)) for p in book]

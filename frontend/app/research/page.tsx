@@ -160,7 +160,12 @@ function PickCard({
         </div>
       )}
 
-      {pick.counter_thesis && (
+      {/* Everything below is LLM-authored advisory prose and must clear the
+          same provenance gate as the thesis body. The fallback path populates
+          counter_thesis, catalysts and risk too, so gating only `thesis` meant
+          a fallback run rendered "Thesis unavailable" with heuristic prose
+          immediately beneath it. */}
+      {canRenderAdvisoryBody(thesisAdvisory) && pick.counter_thesis && (
         <div className="mb-4">
           <div
             className="rounded-md px-3 py-2.5 text-[12.5px] leading-[1.6] border"
@@ -179,7 +184,7 @@ function PickCard({
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {pick.catalysts && pick.catalysts.length > 0 && (
+        {canRenderAdvisoryBody(thesisAdvisory) && pick.catalysts && pick.catalysts.length > 0 && (
           <div>
             <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2">
               Catalysts
@@ -191,7 +196,7 @@ function PickCard({
             </ul>
           </div>
         )}
-        {pick.risk && (
+        {canRenderAdvisoryBody(thesisAdvisory) && pick.risk && (
           <div>
             <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2">
               Risk
@@ -354,16 +359,36 @@ function ResearchPageInner() {
             <PredictionMarkets />
           </div>
 
-          {/* Book View — ThesisBlock enforces strict unavailable policy (T15) */}
-          {rec.advisory_derivation && (
-            <div className="mb-4">
-              <ThesisBlock
-                advisory={rec.advisory_derivation}
-                citations={citations}
-                className=""
-              />
-            </div>
-          )}
+          {/* Book View — ThesisBlock enforces the strict unavailable policy.
+              Rendered unconditionally: a row written before the
+              advisory_derivation column existed carries no provenance, and
+              short-circuiting on its absence hid the section entirely instead
+              of stating that the thesis is unavailable. Incomplete items stay
+              visible; canRenderAdvisoryBody already treats a null advisory as
+              untrusted, so the synthesized value below only supplies the
+              reason text. */}
+          <div className="mb-4">
+            <ThesisBlock
+              advisory={
+                rec.advisory_derivation ?? {
+                  field_id: "book.view",
+                  generated_by: "none",
+                  display_status: "unavailable",
+                  body: null,
+                  method_id: "none",
+                  evidence_ids: [],
+                  citation_status: "not_attempted",
+                  fallback_used: false,
+                  computed_at: rec.run_date,
+                  as_of: rec.run_date,
+                  unavailable_reason:
+                    "This run predates provenance tracking, so its thesis cannot be verified.",
+                }
+              }
+              citations={citations}
+              className=""
+            />
+          </div>
 
           {longs.length > 0 && (
             <section className="mb-8">
@@ -401,7 +426,10 @@ function ResearchPageInner() {
             </section>
           )}
 
-          {rec.book_risks && rec.book_risks.length > 0 && (
+          {/* book_risks is LLM-authored and is populated by the fallback path
+              too, so it clears the same gate as the thesis body. */}
+          {canRenderAdvisoryBody(rec.advisory_derivation) &&
+            rec.book_risks && rec.book_risks.length > 0 && (
             <div
               className="card p-7"
               style={{ background: "var(--bg-elevated)", borderColor: "rgba(248,81,73,0.3)" }}

@@ -4,6 +4,7 @@ import os
 
 import numpy as np
 import pandas as pd
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 
@@ -258,3 +259,61 @@ def test_annualized_vol_known_value():
     assert vol is not None
     expected = 0.01 * math.sqrt(252)
     assert abs(vol - expected) / expected < 0.01
+
+class TestVaRIsScaledToDollars:
+    """VaR/CVaR are persisted to portfolio_risk.var_95 and rendered with a
+    currency formatter, so compute_risk must emit dollars, not decimals.
+
+    compute_risk accepted portfolio_value and never used it: the parametric
+    helpers return `z * sigma` (a decimal ~0.03) and the result was wrapped
+    unit="usd". A $100M book with ~2% daily vol persisted var_95 = 0.033 and
+    the UI rendered "$0" where the real figure is ~$3.3M.
+
+    These assertions are on magnitude and unit deliberately. The original
+    tests only checked that a value was present with the right status, which
+    is exactly why the defect shipped.
+    """
+
+    BOOK = [
+        {"ticker": "AAA", "weight": 0.5, "sector": "tech", "geo": "us"},
+        {"ticker": "BBB", "weight": -0.5, "sector": "energy", "geo": "eu"},
+    ]
+    HISTORY = [0.01, -0.02, 0.015, -0.005, 0.02, -0.01, 0.005, -0.015]
+    SPX = [0.008, -0.018, 0.012, -0.004, 0.017, -0.009, 0.004, -0.012]
+    CAPITAL = 100_000_000.0
+
+    def _risk(self, **kw):
+        from backend.services.risk_engine import compute_risk
+
+        params = dict(
+            book=self.BOOK, history=self.HISTORY, spx_returns=self.SPX,
+            portfolio_value=self.CAPITAL,
+        )
+        params.update(kw)
+        return compute_risk(**params)
+
+    def test_var_is_a_dollar_amount_not_a_decimal(self):
+        var = self._risk()["var_95"]
+        assert var.unit == "usd"
+        # A ~1.4% daily sigma on $100M is millions, never cents.
+        assert var.value > 1_000_000, (
+            f"var_95={var.value} looks like a decimal fraction, not dollars"
+        )
+
+    def test_var_scales_linearly_with_portfolio_value(self):
+        small = self._risk(portfolio_value=1_000_000.0)["var_95"].value
+        large = self._risk(portfolio_value=100_000_000.0)["var_95"].value
+        assert large == pytest.approx(small * 100.0, rel=1e-6)
+
+    def test_cvar_exceeds_var_and_is_in_dollars(self):
+        r = self._risk()
+        assert r["cvar_95"].unit == "usd"
+        assert r["cvar_95"].value > r["var_95"].value
+
+    def test_ratio_metrics_are_not_scaled_by_capital(self):
+        """Sharpe/beta/hhi are unitless; capital must not touch them."""
+        small = self._risk(portfolio_value=1_000_000.0)
+        large = self._risk(portfolio_value=100_000_000.0)
+        for key in ("sharpe", "beta", "hhi"):
+            assert small[key].value == pytest.approx(large[key].value)
+            assert small[key].unit == "ratio"

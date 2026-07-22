@@ -3,10 +3,13 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 
+import pytest
+
 from backend.services.trade_ranker import (
     rank_trade_candidates,
     allocate_portfolio,
     TradeCandidate,
+    classify,
 )
 from backend.services.hype_calculator import ScoringConfig
 
@@ -152,3 +155,9 @@ def test_to_portfolio_position_row_has_required_keys():
     assert row["weight"] == 0.125
     assert row["hype_score"] == 75.0
     assert row["trade_score"] == 0.42
+
+
+def test_unmapped_ticker_raises():
+    """Unmapped tickers must raise — no silent fallback."""
+    with pytest.raises(KeyError):
+        classify("ZZZZ")

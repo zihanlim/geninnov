@@ -26,6 +26,48 @@ from .book_metrics import (
     MAX_GEO_WEIGHT,
 )
 
+# Asset-class mirror of the DB taxonomy (supabase/migrations/009_asset_class_lens.sql).
+# Kept in sync with theme_assets.asset_class so the L5 seam can classify without
+# a DB round-trip. Frontend mirror lives in frontend/lib/assetMetadata.ts.
+_ASSET_CLASS_MAP: dict[str, str] = {
+    # credit
+    "HYG": "credit", "LQD": "credit", "JNK": "credit",
+    "BKLN": "credit", "ANGL": "credit", "EMB": "credit",
+    # rates
+    "TLT": "rates", "IEF": "rates", "SHY": "rates",
+    "TIPS": "rates", "AGG": "rates", "BIL": "rates", "SVXY": "rates",
+    # equity
+    "QQQ": "equity", "SPY": "equity", "IWM": "equity",
+    "FXI": "equity", "MCHI": "equity", "BABA": "equity", "KWEB": "equity",
+    "XLE": "equity", "XLF": "equity", "XLV": "equity", "ARKK": "equity",
+    "EWJ": "equity",
+    # fx
+    "UUP": "fx", "FXE": "fx", "EWZ": "fx", "DXY": "fx",
+    # commodity
+    "GLD": "commodity", "SLV": "commodity", "UNG": "commodity",
+    "OIH": "commodity", "CL": "commodity",
+}
+
+
+def classify(ticker: str) -> dict:
+    """Single seam for asset taxonomy. Unmapped tickers raise — no silent fallback.
+
+    Returns ``{"ticker", "sector", "geo", "asset_class"}``. If any of the three
+    underlying maps is missing the ticker, raises ``KeyError``.
+    """
+    if (
+        ticker not in SECTOR_MAP
+        or ticker not in GEO_MAP
+        or ticker not in _ASSET_CLASS_MAP
+    ):
+        raise KeyError(f"unclassified ticker: {ticker}")
+    return {
+        "ticker": ticker,
+        "sector": SECTOR_MAP[ticker],
+        "geo": GEO_MAP[ticker],
+        "asset_class": _ASSET_CLASS_MAP[ticker],
+    }
+
 
 @dataclass(frozen=True)
 class TradeCandidate:

@@ -21,9 +21,11 @@ Usage:
 from __future__ import annotations
 
 import os
+import re
 import urllib.request
+import zipfile
 from datetime import date, timedelta
-from io import StringIO
+from io import BytesIO, StringIO
 from typing import Optional
 
 import numpy as np
@@ -33,8 +35,24 @@ from supabase import Client, create_client
 # ---------------------------------------------------------------------------
 # Ken French data library URLs
 # ---------------------------------------------------------------------------
-FF5_MONTHLY_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_CSV"
-UMD_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Momentum_12_9_CSV"
+_KF_BASE = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
+
+# Ken French serves these as .zip. The bare-CSV URLs below 404, which is why
+# the whole L2 factor layer silently produced nothing: the download failed, the
+# parser returned an empty frame, compute_exposures returned {}, and the only
+# rows that ever reached factor_exposures came from a seeding script.
+FF5_MONTHLY_URL = _KF_BASE + "F-F_Research_Data_5_Factors_2x3_CSV.zip"
+UMD_URL = _KF_BASE + "F-F_Momentum_Factor_CSV.zip"
+
+# Daily files. Betas here are regressed from daily asset returns, so the
+# factors must be daily too. Forward-filling a monthly factor across a month
+# holds it constant while the asset moves, which biases the regression.
+FF5_DAILY_URL = _KF_BASE + "F-F_Research_Data_5_Factors_2x3_daily_CSV.zip"
+UMD_DAILY_URL = _KF_BASE + "F-F_Momentum_Factor_daily_CSV.zip"
+
+
+_YYYYMMDD_RE = re.compile(r"\d{8}")
+_DAILY_HEADER_RE = re.compile(r"^\s*,")  # daily files open with an unnamed date column
 
 
 def _parse_ken_french_monthly(url: str, value_cols: list[str]) -> pd.DataFrame:
@@ -77,14 +95,91 @@ def _parse_ken_french_monthly(url: str, value_cols: list[str]) -> pd.DataFrame:
     return df
 
 
+def _download_ken_french_csv(url: str) -> str:
+    """Fetch a Ken French archive and return the CSV text inside it.
+
+    The library serves .zip; a plain CSV body is accepted too so the helper
+    keeps working if that ever changes. A default urllib User-Agent is
+    rejected by the host, hence the explicit header.
+    """
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        payload = resp.read()
+
+    if payload[:2] == b"PK":
+        with zipfile.ZipFile(BytesIO(payload)) as zf:
+            names = [n for n in zf.namelist() if n.lower().endswith(".csv")] or zf.namelist()
+            payload = zf.read(names[0])
+    return payload.decode("latin-1")
+
+
+def _parse_ken_french_daily(url: str, value_cols: list[str]) -> pd.DataFrame:
+    """Parse a Ken French *daily* file into a DataFrame indexed by date.
+
+    Daily files use YYYYMMDD keys and append an annual-returns block after the
+    daily block, so parsing stops at the first row whose index is not an
+    8-digit date. Values are percent and are converted to decimals.
+    """
+    try:
+        raw = _download_ken_french_csv(url)
+    except Exception:
+        return pd.DataFrame()
+
+    lines = raw.splitlines()
+
+    # Locate the first YYYYMMDD row, then walk back to its header. Searching
+    # forward for "a line starting with a comma" is not enough: the preamble
+    # contains filler rows like ",," that match but carry no column names.
+    first_data = next(
+        (i for i, ln in enumerate(lines)
+         if _YYYYMMDD_RE.fullmatch(ln.split(",", 1)[0].strip())),
+        None,
+    )
+    if first_data is None:
+        return pd.DataFrame()
+
+    header_idx = next(
+        (i for i in range(first_data - 1, -1, -1) if _DAILY_HEADER_RE.match(lines[i])),
+        None,
+    )
+    if header_idx is None:
+        return pd.DataFrame()
+
+    rows = []
+    for ln in lines[first_data:]:
+        key = ln.split(",", 1)[0].strip()
+        if not _YYYYMMDD_RE.fullmatch(key):
+            break  # reached the annual block or trailing notes
+        rows.append(ln)
+    if not rows:
+        return pd.DataFrame()
+
+    header = lines[header_idx]
+    df = pd.read_csv(StringIO("\n".join([header] + rows)), index_col=0)
+    df.index = pd.to_datetime(df.index.astype(str), format="%Y%m%d")
+    df.index.name = "date"
+    df.columns = [c.strip() for c in df.columns]
+
+    keep = [c for c in value_cols if c in df.columns]
+    if not keep:
+        return pd.DataFrame()
+    out = df[keep].apply(pd.to_numeric, errors="coerce").dropna()
+    return out / 100.0  # Ken French publishes percent
+
+
 def fetch_ff5_factors() -> pd.DataFrame:
-    """Download and return monthly FF5 factor DataFrame."""
-    return _parse_ken_french_monthly(FF5_MONTHLY_URL, ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"])
+    """Daily FF5 factors (Mkt-RF, SMB, HML, RMW, CMA, RF) as decimals."""
+    return _parse_ken_french_daily(
+        FF5_DAILY_URL, ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"]
+    )
 
 
 def fetch_umd_factors() -> pd.DataFrame:
-    """Download and return monthly UMD (momentum) factor DataFrame."""
-    return _parse_ken_french_monthly(UMD_URL, ["Mom   "]) if False else pd.DataFrame()
+    """Daily momentum factor, returned as a single UMD column of decimals."""
+    df = _parse_ken_french_daily(UMD_DAILY_URL, ["Mom", "Mom   ", "UMD"])
+    if df.empty:
+        return df
+    return df.rename(columns={df.columns[0]: "UMD"})
 
 
 def _get_umd() -> pd.DataFrame:

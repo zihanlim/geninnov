@@ -35,3 +35,15 @@ npm-debug.log*
 frontend/tsconfig.tsbuildinfo
 
 .vercel
+
+# One-off debug/verification scripts (not part of test suite)
+tests/backend/check_*.py
+tests/backend/debug_*.py
+tests/backend/fix_*.py
+tests/backend/populate_*.py
+tests/backend/run_q1_*.py
+tests/backend/seed_*.py
+tests/backend/show_*.py
+tests/backend/smoke_*.py
+tests/backend/verify_*.py
+tests/backend/*.json

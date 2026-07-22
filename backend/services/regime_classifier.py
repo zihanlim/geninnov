@@ -42,16 +42,28 @@ class RegimeOutput:
     spx_breadth: float | None
 
 
-def _fetch_latest_series(supabase: Client, series_id: str, lookback: int = 30) -> Optional[float]:
-    """Get most recent non-null value for a series."""
-    resp = (
+def _fetch_latest_series(
+    supabase: Client,
+    series_id: str,
+    lookback: int = 30,
+    as_of: Optional[date] = None,
+) -> Optional[float]:
+    """Most recent non-null value for a series, as known on `as_of`.
+
+    `as_of` bounds the lookup to observations dated on or before that day. It
+    is required for correctness whenever the caller stamps its output with a
+    run_date: without the bound, classifying (or backfilling) a past date would
+    read observations that did not exist yet, which is look-ahead bias. Omit it
+    only for genuine "what is true right now" reads.
+    """
+    query = (
         supabase.table("macro_daily_history")
         .select("value, trading_date")
         .eq("series_id", series_id)
-        .order("trading_date", desc=True)
-        .limit(lookback)
-        .execute()
     )
+    if as_of is not None:
+        query = query.lte("trading_date", as_of.isoformat())
+    resp = query.order("trading_date", desc=True).limit(lookback).execute()
     for row in resp.data:
         if row["value"] is not None:
             return float(row["value"])
@@ -168,19 +180,21 @@ class RegimeClassifier:
         """
         run_date = run_date or date.today()
 
-        # Pull raw inputs
-        yield_curve = _fetch_latest_series(self.supabase, "DGS10")
-        y2 = _fetch_latest_series(self.supabase, "DGS2")
+        # Pull raw inputs. Every read is bounded by run_date: this row is
+        # persisted under run_date, so reading anything newer would attribute
+        # future information to a past classification.
+        yield_curve = _fetch_latest_series(self.supabase, "DGS10", as_of=run_date)
+        y2 = _fetch_latest_series(self.supabase, "DGS2", as_of=run_date)
         yield_curve_slope = (yield_curve - y2) if (yield_curve and y2) else None
 
-        hy_oas = _fetch_latest_series(self.supabase, "BAMLH0A0HYM2")
-        vix_spot = _fetch_latest_series(self.supabase, "^VIX")
-        vix3m = _fetch_latest_series(self.supabase, "^VIX3M")
+        hy_oas = _fetch_latest_series(self.supabase, "BAMLH0A0HYM2", as_of=run_date)
+        vix_spot = _fetch_latest_series(self.supabase, "^VIX", as_of=run_date)
+        vix3m = _fetch_latest_series(self.supabase, "^VIX3M", as_of=run_date)
         vix_term_diff = (vix_spot - vix3m) if (vix_spot and vix3m) else None
 
         real_rate = None
-        dgs10 = _fetch_latest_series(self.supabase, "DGS10")
-        breakeven = _fetch_latest_series(self.supabase, "T10YIE")
+        dgs10 = yield_curve
+        breakeven = _fetch_latest_series(self.supabase, "T10YIE", as_of=run_date)
         if dgs10 is not None and breakeven is not None:
             real_rate = dgs10 - breakeven
 

@@ -1,7 +1,92 @@
 import pytest
 import sys
+from datetime import date
 sys.path.insert(0, "backend/services")
-from regime_classifier import _classify_cycle, _classify_sentiment, RegimeOutput
+from regime_classifier import (
+    _classify_cycle,
+    _classify_sentiment,
+    _fetch_latest_series,
+    RegimeOutput,
+)
+
+
+class _FakeQuery:
+    """Records the filters applied so a test can assert on the as-of bound."""
+
+    def __init__(self, rows, recorder):
+        self._rows = rows
+        self._recorder = recorder
+
+    def select(self, *_a, **_k):
+        return self
+
+    def eq(self, col, val):
+        self._recorder.setdefault("eq", []).append((col, val))
+        return self
+
+    def lte(self, col, val):
+        self._recorder.setdefault("lte", []).append((col, val))
+        return self
+
+    def order(self, col, desc=False):
+        self._recorder["order"] = (col, desc)
+        return self
+
+    def limit(self, n):
+        self._recorder["limit"] = n
+        return self
+
+    def execute(self):
+        rows = self._rows
+        # Honour the as-of bound the way PostgREST would.
+        for col, val in self._recorder.get("lte", []):
+            rows = [r for r in rows if r[col] <= val]
+        return type("Resp", (), {"data": rows})()
+
+
+class _FakeSupabase:
+    def __init__(self, rows):
+        self._rows = rows
+        self.recorder: dict = {}
+
+    def table(self, name):
+        self.recorder["table"] = name
+        return _FakeQuery(self._rows, self.recorder)
+
+
+class TestFetchLatestSeriesAsOf:
+    """`classify(run_date)` stamps its output with run_date, so its inputs must
+    be bounded by that date. Reading the newest available row regardless of
+    run_date is look-ahead bias: backfilling a past date would classify it
+    using data that did not exist yet."""
+
+    ROWS = [
+        {"value": 17.05, "trading_date": "2026-07-22"},
+        {"value": 18.50, "trading_date": "2026-07-21"},
+        {"value": 19.10, "trading_date": "2026-07-20"},
+    ]
+
+    def test_bounds_series_by_as_of_date(self):
+        sb = _FakeSupabase(self.ROWS)
+        got = _fetch_latest_series(sb, "^VIX", as_of=date(2026, 7, 21))
+        assert got == 18.50, "must not see the 2026-07-22 observation"
+
+    def test_applies_lte_filter_on_trading_date(self):
+        sb = _FakeSupabase(self.ROWS)
+        _fetch_latest_series(sb, "^VIX", as_of=date(2026, 7, 21))
+        assert ("trading_date", "2026-07-21") in sb.recorder.get("lte", [])
+
+    def test_without_as_of_returns_newest(self):
+        sb = _FakeSupabase(self.ROWS)
+        assert _fetch_latest_series(sb, "^VIX") == 17.05
+
+    def test_skips_null_values_within_bound(self):
+        rows = [
+            {"value": None, "trading_date": "2026-07-21"},
+            {"value": 19.10, "trading_date": "2026-07-20"},
+        ]
+        sb = _FakeSupabase(rows)
+        assert _fetch_latest_series(sb, "^VIX", as_of=date(2026, 7, 21)) == 19.10
 
 
 class TestClassifyCycle:

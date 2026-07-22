@@ -14,24 +14,31 @@ import pandas as pd
 import yfinance as yf
 from supabase import create_client
 
-# Add backend to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+# Add the repo root to the path so `backend.*` resolves.
+#
+# This must be the repo root, NOT backend/. Modules inside backend/ import each
+# other absolutely (`from backend.services...`), so putting backend/ on the path
+# leaves `backend` itself unimportable and the pipeline dies on first import.
+# Rooting here also avoids loading the same module under two names
+# (`services.hype_calculator` and `backend.services.hype_calculator`), which
+# would create two distinct ScoringConfig classes.
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tools.sentiment import batch_sentiment
-from data.brave_client import fetch_news_for_theme
-from data.reddit_client import fetch_posts_for_theme
-from data.yahoo_client import fetch_price_data, correlation_with_mentions
-from data.macro_fetcher import MacroFetcher
-from data.polymarket_fetcher import PolymarketFetcher
-from services.hype_calculator import (
+from backend.tools.sentiment import batch_sentiment
+from backend.data.brave_client import fetch_news_for_theme
+from backend.data.reddit_client import fetch_posts_for_theme
+from backend.data.yahoo_client import fetch_price_data, correlation_with_mentions
+from backend.data.macro_fetcher import MacroFetcher
+from backend.data.polymarket_fetcher import PolymarketFetcher
+from backend.services.hype_calculator import (
     hype_score,
     compute_hype_scores as services_hype_compute_hype_scores,
     ScoringConfig,
     rescale_vader,
     minmax_norm,
 )
-from services.trade_generator import trade_score
-from services.trade_ranker import (
+from backend.services.trade_generator import trade_score
+from backend.services.trade_ranker import (
     rank_trade_candidates,
     allocate_portfolio,
     TradeCandidate,
@@ -39,16 +46,16 @@ from services.trade_ranker import (
     SECTOR_MAP,
     GEO_MAP,
 )
-from services.risk_engine import (
+from backend.services.risk_engine import (
     compute_risk,
 )
-from services.portfolio import (
+from backend.services.portfolio import (
     compute_daily_return,
     compute_cumulative_return,
     MissingReturnError,
 )
-from services.regime_classifier import RegimeClassifier
-from services.pipeline_runs import run_id_for, record_pipeline_run
+from backend.services.regime_classifier import RegimeClassifier
+from backend.services.pipeline_runs import run_id_for, record_pipeline_run
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]  # service role key for writes
@@ -690,7 +697,7 @@ def main():
     except Exception:
         pass
     try:
-        from services.q1_agent import run_q1_agent
+        from backend.services.q1_agent import run_q1_agent
         print(f"[{run_date}] [L5] Running Q1 AI reasoning agent...")
         agent_result = run_q1_agent(
             run_date=run_date,

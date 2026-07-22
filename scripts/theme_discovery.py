@@ -10,9 +10,11 @@ import hdbscan
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
-from data.brave_client import fetch_news_for_theme
-from data.reddit_client import fetch_posts_for_theme
+# Root at the repo, not backend/, so `backend.*` resolves the same way it does
+# everywhere else in the codebase. See the note in scripts/daily_refresh.py.
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from backend.data.brave_client import fetch_news_for_theme
+from backend.data.reddit_client import fetch_posts_for_theme
 
 THEME_SUBREDDITS = ["wallstreetbets", "investing", "stocks", "economy", "finance"]
 LOOKBACK_MONTHS = 6

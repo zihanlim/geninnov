@@ -320,12 +320,15 @@ class MacroFetcher:
                 "pct_change": round(pct, 2),
             })
 
-        # Persist to market_assets table
+        # Persist to market_assets table.
+        # `results` already carries exactly the five columns the table declares.
+        # Do not hand-pick a subset here: market_assets.name is NOT NULL
+        # (migration 010), so dropping it made every upsert fail with an
+        # APIError and the homepage market bar stayed empty.
         if results:
-            rows = [{"ticker": r["ticker"], "current": r["current"],
-                     "prev_close": r["prev_close"], "pct_change": r["pct_change"]}
-                    for r in results]
-            self.supabase.table("market_assets").upsert(rows, on_conflict="ticker").execute()
+            self.supabase.table("market_assets").upsert(
+                results, on_conflict="ticker"
+            ).execute()
         return results
 
 

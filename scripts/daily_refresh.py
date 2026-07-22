@@ -209,7 +209,12 @@ def compute_trade_scores(hyped: list[dict], run_date: date) -> list[dict]:
     missing_prior = 0
     for r in hyped:
         theme_id = r["theme_id"]
-        hype_yest = hype_yesterday_map.get(theme_id, r["hype_score"])
+        # .get(key, default) returns the stored value when the key exists, so a
+        # row whose hype_score column is NULL yields None rather than the
+        # default. Treat a missing value the same as a missing row.
+        hype_yest = hype_yesterday_map.get(theme_id)
+        if hype_yest is None:
+            hype_yest = r["hype_score"]
 
         prior_date = prior_run_dates.get(theme_id)
         if prior_date is None:

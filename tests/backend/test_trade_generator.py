@@ -2,6 +2,8 @@
 import sys
 import os
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 
 from backend.services.trade_generator import trade_score
@@ -54,6 +56,27 @@ def test_falling_hype_negative_sentiment():
 # Same hype diff spread over more days should yield smaller momentum.
 # (Brief test as written had hype_today == hype_yesterday which gives zero
 # momentum; corrected to use a nonzero diff so the normalization is visible.)
+def test_trade_score_treats_missing_yesterday_as_no_momentum():
+    """A theme with no usable prior HypeScore has no measurable momentum.
+
+    theme_signals_history rows predating migration 003 carry a NULL hype_score,
+    which reaches this function as None. Subtracting from None crashed the L4
+    stage of the live pipeline, so None must degrade to zero momentum and let
+    the sentiment term stand alone.
+    """
+    from backend.services.trade_generator import trade_score, _DEFAULT_TRADE_CFG
+
+    got = trade_score(hype_today=50.0, hype_yesterday=None, sentiment=0.4)
+    assert got == pytest.approx(_DEFAULT_TRADE_CFG.trade_sentiment_weight * 0.4)
+
+
+def test_trade_score_missing_sentiment_is_treated_as_neutral():
+    from backend.services.trade_generator import trade_score
+
+    got = trade_score(hype_today=50.0, hype_yesterday=None, sentiment=None)
+    assert got == pytest.approx(0.0)
+
+
 def test_trade_score_normalizes_momentum_by_elapsed_days():
     from backend.services.trade_generator import trade_score
     a = trade_score(hype_today=0.6, hype_yesterday=0.5, sentiment=0.0, elapsed_days=1)

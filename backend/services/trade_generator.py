@@ -15,8 +15,8 @@ _DEFAULT_TRADE_CFG = ScoringConfig(
 
 def trade_score(
     hype_today: float,
-    hype_yesterday: float,
-    sentiment: float,  # VADER compound [-1, +1]
+    hype_yesterday: Optional[float],
+    sentiment: Optional[float],  # VADER compound [-1, +1]
     cfg: Optional[ScoringConfig] = None,
     elapsed_days: int = 1,
 ) -> float:
@@ -29,11 +29,20 @@ def trade_score(
     `elapsed_days` normalizes the raw hype diff by the number of days that
     passed between the two snapshots, so a 50-point drift over 5 days
     contributes less momentum than a 50-point drift over 1 day.
+
+    `hype_yesterday` may be None: theme_signals_history rows written before
+    migration 003 have a NULL hype_score. There is no measurable momentum in
+    that case, so it contributes zero and the sentiment term stands alone —
+    rather than crashing the L4 stage, which is what happened in production.
+    `sentiment` may likewise be None for a theme with no scoreable text.
     """
     if cfg is None:
         cfg = _DEFAULT_TRADE_CFG
 
-    if hype_yesterday == 0:
+    if sentiment is None:
+        sentiment = 0.0
+
+    if hype_yesterday is None or hype_yesterday == 0:
         hype_momentum = 0.0
     else:
         hype_momentum = (hype_today - hype_yesterday) / hype_yesterday

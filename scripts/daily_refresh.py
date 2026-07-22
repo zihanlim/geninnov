@@ -34,8 +34,8 @@ from services.trade_ranker import (
 )
 from services.risk_engine import (
     compute_risk_metrics,
-    portfolio_daily_return,
 )
+from services.portfolio import compute_daily_return, MissingReturnError
 from services.regime_classifier import RegimeClassifier
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
@@ -315,21 +315,47 @@ def compute_and_persist_daily_return(
     if price_df.empty:
         return 0.0
 
-    position_returns: dict[str, float] = {}
+    # Expose the latest/prev close per ticker directly (not just the derived
+    # return) so the signed-weights math in portfolio.compute_daily_return can
+    # enforce the "no silent zeros" contract on missing prices.
+    price_lookup: dict[str, tuple[float | None, float | None]] = {}
     for ticker in tickers:
         sub = price_df[price_df["ticker"] == ticker].sort_values("date")
         if len(sub) < 2:
-            position_returns[ticker] = 0.0
+            price_lookup[ticker] = (None, None)
         else:
-            latest = sub.iloc[-1]["close"]
-            prev = sub.iloc[-2]["close"]
-            position_returns[ticker] = float(latest / prev - 1) if prev else 0.0
+            price_lookup[ticker] = (
+                float(sub.iloc[-1]["close"]),
+                float(sub.iloc[-2]["close"]),
+            )
 
-    position_dicts = [
-        {"asset": c.asset, "weight": w, "direction": c.direction}
+    # Signed weight: shorts flip sign so short P&L is the negative of the
+    # asset's return. `weight` (3rd tuple element) is always a positive fraction
+    # of capital.
+    positions = [
+        {
+            "ticker": c.asset,
+            "weight": (-w if c.direction == "short" else w),
+            "price_today": price_lookup[c.asset][0],
+            "price_yesterday": price_lookup[c.asset][1],
+        }
         for c, _, w in positioned
     ]
-    daily = portfolio_daily_return(position_returns, position_dicts, total_capital)
+
+    try:
+        daily = compute_daily_return(positions)
+    except MissingReturnError:
+        missing = sorted(
+            {c.asset for c, _, _ in positioned if price_lookup[c.asset][0] is None}
+        )
+        print(
+            f"[{today_str}] ABORT: missing price data for {missing}; "
+            f"cannot compute daily return (no silent zeros)."
+        )
+        raise RuntimeError(
+            f"daily return aborted for {today_str}: missing prices for {missing}"
+        ) from None
+
     portfolio_value = total_capital * (1 + daily)
 
     supabase.table("portfolio_returns").upsert({

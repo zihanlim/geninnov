@@ -8,6 +8,8 @@ import os
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # Ensure backend modules are on path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
@@ -517,3 +519,63 @@ def test_compute_and_persist_risk_writes_hhi():
     # Should have called delete then insert on portfolio_risk
     table_names = [c.args[0] for c in mock_supabase.table.call_args_list if c.args]
     assert "portfolio_risk" in table_names
+
+
+# ─── Task 8: signed-weights daily return wiring ───────────────────────────────
+
+
+def test_daily_return_uses_signed_math():
+    """The book return is the signed-weight-dotted sum of per-position returns."""
+    from services import portfolio as pf
+
+    # Synthetic book: long +10% on weight 0.5, short -10% on weight -0.3
+    positions = [
+        {"ticker": "A", "weight": 0.5, "price_today": 110.0, "price_yesterday": 100.0},
+        {"ticker": "B", "weight": -0.3, "price_today": 90.0, "price_yesterday": 100.0},
+    ]
+    expected = 0.5 * 0.10 + (-0.3) * (-0.10)
+    assert pf.compute_daily_return(positions) == pytest.approx(expected)
+
+
+def test_daily_return_raises_on_missing_price():
+    """A position lacking a usable price must raise, not silently zero."""
+    from services import portfolio as pf
+
+    positions = [
+        {"ticker": "A", "weight": 0.5, "price_today": 110.0, "price_yesterday": 100.0},
+        {"ticker": "B", "weight": -0.3, "price_today": None, "price_yesterday": 100.0},
+    ]
+    with pytest.raises(pf.MissingReturnError):
+        pf.compute_daily_return(positions)
+
+
+def test_compute_and_persist_daily_return_aborts_on_missing_price():
+    """compute_and_persist_daily_return aborts (raises) when a held asset has
+    no price data, rather than silently treating it as a 0% return."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    import pandas as pd
+    from daily_refresh import compute_and_persist_daily_return
+    from services.trade_ranker import TradeCandidate
+
+    positioned = [
+        (TradeCandidate("t1", "TLT", "long", 0.5, 80.0, 0.3), 50_000_000.0, 0.5),
+        (TradeCandidate("t2", "HYG", "short", -0.4, 20.0, -0.2), 50_000_000.0, 0.5),
+    ]
+
+    # HYG has only one row → no prev close → MissingReturnError → abort.
+    price_df = pd.DataFrame([
+        {"date": date(2026, 7, 20), "ticker": "TLT", "close": 100.0, "return": None},
+        {"date": date(2026, 7, 21), "ticker": "TLT", "close": 101.0, "return": 0.01},
+        {"date": date(2026, 7, 21), "ticker": "HYG", "close": 51.0, "return": None},
+    ])
+
+    with patch("daily_refresh.supabase") as mock_supabase, \
+         patch("daily_refresh.fetch_price_data", return_value=price_df):
+        with pytest.raises(RuntimeError):
+            compute_and_persist_daily_return(positioned, date(2026, 7, 21), 100_000_000.0)
+
+    # No portfolio_returns row should be written when the run aborts.
+    table_names = [c.args[0] for c in mock_supabase.table.call_args_list if c.args]
+    assert "portfolio_returns" not in table_names

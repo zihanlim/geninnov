@@ -1,0 +1,316 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - link "A ANDROMEDA" [ref=e4] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e5]: A
+        - generic [ref=e6]: ANDROMEDA
+      - navigation [ref=e7]:
+        - link "Conviction" [ref=e8] [cursor=pointer]:
+          - /url: /
+        - link "Trade Ideas" [ref=e9] [cursor=pointer]:
+          - /url: /trades
+        - link "Portfolio" [ref=e10] [cursor=pointer]:
+          - /url: /portfolio
+        - link "Research" [ref=e11] [cursor=pointer]:
+          - /url: /research
+      - generic [ref=e12]:
+        - generic [ref=e13]: Data live · 02:54 AM ET
+        - generic [ref=e15]: 2026-07-22
+    - main [ref=e16]:
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - heading "What we're watching this week" [level=1] [ref=e19]
+          - paragraph [ref=e20]: Top 3 themes by conviction · macro regime · book tilt. Click any theme card to see its score derivation.
+        - generic [ref=e21]:
+          - generic [ref=e22]: RUN DATE2026-07-21
+          - generic [ref=e23]: NEXT REFRESH2026-07-23 16:30 ET
+      - generic [ref=e43]:
+        - generic [ref=e44]:
+          - generic [ref=e45]:
+            - generic [ref=e46]: Macro Regime
+            - generic [ref=e47]: MID
+            - generic [ref=e48]: NEUTRAL
+          - generic [ref=e49]: Macro regime classification pending — pipeline needs one full run.
+          - generic [ref=e50]: Run the daily pipeline (cron-job.org → daily_refresh.py) to populate the regime classifier.
+          - button "▸ Show 6 inputs that drove this classification" [ref=e52] [cursor=pointer]
+        - generic [ref=e53]:
+          - generic [ref=e54]: Cycle indicator
+          - generic [ref=e55]: MID
+          - generic [ref=e56]: —
+          - generic [ref=e57]:
+            - generic [ref=e58]: Vol regime
+            - generic [ref=e59]: —
+            - generic [ref=e60]: —
+        - generic [ref=e61]:
+          - generic [ref=e62]: Factor tilt of book
+          - generic [ref=e63]: Awaiting factor run…
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - generic [ref=e67]: Theme × Sub-score heatmap12 themes · 4 dimensions · red=low / green=high (0-100)
+          - generic [ref=e68]:
+            - generic [ref=e69]: < 35
+            - generic [ref=e72]: 35-65
+            - generic [ref=e75]: "> 65"
+        - table [ref=e79]:
+          - rowgroup [ref=e80]:
+            - row [ref=e81]:
+              - columnheader "Theme" [ref=e82]
+              - columnheader "Tier" [ref=e83]
+              - columnheader "VOL" [ref=e84]
+              - columnheader "SENT" [ref=e85]
+              - columnheader "CORR" [ref=e86]
+              - columnheader "MOM" [ref=e87]
+              - columnheader "Hype" [ref=e88]
+              - columnheader "Δ1d" [ref=e89]
+          - rowgroup [ref=e90]:
+            - row [ref=e91] [cursor=pointer]:
+              - cell "China Growth" [ref=e92]
+              - cell "A" [ref=e93]
+              - cell "1" [ref=e94]
+              - cell "1" [ref=e95]
+              - cell "1" [ref=e96]
+              - cell "1" [ref=e97]
+              - cell "53" [ref=e98]
+              - cell "—" [ref=e99]
+            - row [ref=e100] [cursor=pointer]:
+              - cell "Corporate Credit" [ref=e101]
+              - cell "A" [ref=e102]
+              - cell "1" [ref=e103]
+              - cell "1" [ref=e104]
+              - cell "1" [ref=e105]
+              - cell "1" [ref=e106]
+              - cell "53" [ref=e107]
+              - cell "—" [ref=e108]
+            - row [ref=e109] [cursor=pointer]:
+              - cell "Energy Prices" [ref=e110]
+              - cell "A" [ref=e111]
+              - cell "1" [ref=e112]
+              - cell "1" [ref=e113]
+              - cell "1" [ref=e114]
+              - cell "1" [ref=e115]
+              - cell "52" [ref=e116]
+              - cell "—" [ref=e117]
+            - row [ref=e118] [cursor=pointer]:
+              - cell "Fed Policy" [ref=e119]
+              - cell "A" [ref=e120]
+              - cell "1" [ref=e121]
+              - cell "0" [ref=e122]
+              - cell "1" [ref=e123]
+              - cell "1" [ref=e124]
+              - cell "49" [ref=e125]
+              - cell "—" [ref=e126]
+            - row [ref=e127] [cursor=pointer]:
+              - cell "Inflation" [ref=e128]
+              - cell "A" [ref=e129]
+              - cell "1" [ref=e130]
+              - cell "0" [ref=e131]
+              - cell "1" [ref=e132]
+              - cell "1" [ref=e133]
+              - cell "49" [ref=e134]
+              - cell "—" [ref=e135]
+            - row [ref=e136] [cursor=pointer]:
+              - cell "US Dollar" [ref=e137]
+              - cell "A" [ref=e138]
+              - cell "1" [ref=e139]
+              - cell "0" [ref=e140]
+              - cell "1" [ref=e141]
+              - cell "1" [ref=e142]
+              - cell "49" [ref=e143]
+              - cell "—" [ref=e144]
+            - row [ref=e145] [cursor=pointer]:
+              - cell "US Election" [ref=e146]
+              - cell "A" [ref=e147]
+              - cell "1" [ref=e148]
+              - cell "0" [ref=e149]
+              - cell "1" [ref=e150]
+              - cell "1" [ref=e151]
+              - cell "49" [ref=e152]
+              - cell "—" [ref=e153]
+            - row [ref=e154] [cursor=pointer]:
+              - cell "Geopolitical Risk" [ref=e155]
+              - cell "A" [ref=e156]
+              - cell "1" [ref=e157]
+              - cell "0" [ref=e158]
+              - cell "1" [ref=e159]
+              - cell "1" [ref=e160]
+              - cell "46" [ref=e161]
+              - cell "—" [ref=e162]
+        - generic [ref=e163]:
+          - text: Click any row to see the full score derivation. Sub-scores from
+          - code [ref=e164]: scoring_config
+          - text: (Volume 0.30, Sentiment 0.20, Correlation 0.30, Momentum 0.20).
+      - generic [ref=e165]:
+        - heading "Top 3 themes by conviction" [level=2] [ref=e166]
+        - generic [ref=e167]: Ranked by HypeScore × sentiment-momentum × catalyst proximity
+      - generic [ref=e168]:
+        - button "#1 · High conviction ANCHOR China Growth HypeScore 53 · ▲ +0.0 1d ⓘ derive Property drag persistent; deflation mindset entrenched. Volume 1 Sent. 1 Corr 1 Mom. 1 Catalyst — Crowding — Δ1d ▲ +0.0 1d" [ref=e169] [cursor=pointer]:
+          - generic [ref=e171]:
+            - generic [ref=e172]: "#1 · High conviction"
+            - generic [ref=e173]: ANCHOR
+          - heading "China Growth" [level=3] [ref=e174]
+          - generic [ref=e175]:
+            - generic [ref=e176]: HypeScore
+            - generic [ref=e177]: "53"
+            - generic [ref=e178]: ·
+            - generic [ref=e179]: ▲ +0.0 1d
+            - generic "Click to view score derivation" [ref=e181]: ⓘ derive
+          - paragraph [ref=e182]: Property drag persistent; deflation mindset entrenched.
+          - generic [ref=e183]:
+            - generic [ref=e184]:
+              - generic [ref=e185]: Volume
+              - generic [ref=e188]: "1"
+            - generic [ref=e189]:
+              - generic [ref=e190]: Sent.
+              - generic [ref=e193]: "1"
+            - generic [ref=e194]:
+              - generic [ref=e195]: Corr
+              - generic [ref=e198]: "1"
+            - generic [ref=e199]:
+              - generic [ref=e200]: Mom.
+              - generic [ref=e203]: "1"
+          - generic [ref=e204]:
+            - generic [ref=e205]:
+              - generic [ref=e206]: Catalyst
+              - generic [ref=e207]: —
+            - generic [ref=e208]:
+              - generic [ref=e209]: Crowding
+              - generic [ref=e210]: —
+            - generic [ref=e211]:
+              - generic [ref=e212]: Δ1d
+              - generic [ref=e213]: ▲ +0.0 1d
+        - button "#2 · High conviction ANCHOR Corporate Credit HypeScore 53 · ▲ +0.0 1d ⓘ derive HY OAS compresses; spreads vulnerable to growth disappointment. Volume 1 Sent. 1 Corr 1 Mom. 1 Catalyst — Crowding — Δ1d ▲ +0.0 1d" [ref=e216] [cursor=pointer]:
+          - generic [ref=e217]:
+            - generic [ref=e218]: "#2 · High conviction"
+            - generic [ref=e219]: ANCHOR
+          - heading "Corporate Credit" [level=3] [ref=e220]
+          - generic [ref=e221]:
+            - generic [ref=e222]: HypeScore
+            - generic [ref=e223]: "53"
+            - generic [ref=e224]: ·
+            - generic [ref=e225]: ▲ +0.0 1d
+            - generic "Click to view score derivation" [ref=e227]: ⓘ derive
+          - paragraph [ref=e228]: HY OAS compresses; spreads vulnerable to growth disappointment.
+          - generic [ref=e229]:
+            - generic [ref=e230]:
+              - generic [ref=e231]: Volume
+              - generic [ref=e234]: "1"
+            - generic [ref=e235]:
+              - generic [ref=e236]: Sent.
+              - generic [ref=e239]: "1"
+            - generic [ref=e240]:
+              - generic [ref=e241]: Corr
+              - generic [ref=e244]: "1"
+            - generic [ref=e245]:
+              - generic [ref=e246]: Mom.
+              - generic [ref=e249]: "1"
+          - generic [ref=e250]:
+            - generic [ref=e251]:
+              - generic [ref=e252]: Catalyst
+              - generic [ref=e253]: —
+            - generic [ref=e254]:
+              - generic [ref=e255]: Crowding
+              - generic [ref=e256]: —
+            - generic [ref=e257]:
+              - generic [ref=e258]: Δ1d
+              - generic [ref=e259]: ▲ +0.0 1d
+        - button "#3 · Emerging ANCHOR Energy Prices HypeScore 52 · ▲ +0.0 1d ⓘ derive Refining margins normalize; nat gas storage builds. Volume 1 Sent. 1 Corr 1 Mom. 1 Catalyst — Crowding — Δ1d ▲ +0.0 1d" [ref=e262] [cursor=pointer]:
+          - generic [ref=e263]:
+            - generic [ref=e264]: "#3 · Emerging"
+            - generic [ref=e265]: ANCHOR
+          - heading "Energy Prices" [level=3] [ref=e266]
+          - generic [ref=e267]:
+            - generic [ref=e268]: HypeScore
+            - generic [ref=e269]: "52"
+            - generic [ref=e270]: ·
+            - generic [ref=e271]: ▲ +0.0 1d
+            - generic "Click to view score derivation" [ref=e273]: ⓘ derive
+          - paragraph [ref=e274]: Refining margins normalize; nat gas storage builds.
+          - generic [ref=e275]:
+            - generic [ref=e276]:
+              - generic [ref=e277]: Volume
+              - generic [ref=e280]: "1"
+            - generic [ref=e281]:
+              - generic [ref=e282]: Sent.
+              - generic [ref=e285]: "1"
+            - generic [ref=e286]:
+              - generic [ref=e287]: Corr
+              - generic [ref=e290]: "1"
+            - generic [ref=e291]:
+              - generic [ref=e292]: Mom.
+              - generic [ref=e295]: "1"
+          - generic [ref=e296]:
+            - generic [ref=e297]:
+              - generic [ref=e298]: Catalyst
+              - generic [ref=e299]: —
+            - generic [ref=e300]:
+              - generic [ref=e301]: Crowding
+              - generic [ref=e302]: —
+            - generic [ref=e303]:
+              - generic [ref=e304]: Δ1d
+              - generic [ref=e305]: ▲ +0.0 1d
+      - generic [ref=e308]:
+        - heading "Watchlist · emerging or fading" [level=2] [ref=e309]
+        - link "View full ranking →" [ref=e310] [cursor=pointer]:
+          - /url: /research
+      - generic [ref=e311]:
+        - generic [ref=e312]:
+          - generic [ref=e313]:
+            - generic [ref=e314]: Theme momentum
+            - generic [ref=e315]: mentions × sentiment
+          - generic [ref=e317]:
+            - generic [ref=e318]:
+              - generic [ref=e319]: China Growth
+              - generic [ref=e322]: "52.7"
+              - generic [ref=e323]: ↑ 52.7
+            - generic [ref=e324]:
+              - generic [ref=e325]: Corporate Credit
+              - generic [ref=e328]: "52.7"
+              - generic [ref=e329]: ↑ 52.7
+            - generic [ref=e330]:
+              - generic [ref=e331]: Energy Prices
+              - generic [ref=e334]: "51.6"
+              - generic [ref=e335]: ↑ 51.5
+            - generic [ref=e336]:
+              - generic [ref=e337]: Fed Policy
+              - generic [ref=e340]: "48.9"
+              - generic [ref=e341]: ↑ 48.8
+            - generic [ref=e342]:
+              - generic [ref=e343]: Inflation
+              - generic [ref=e346]: "48.9"
+              - generic [ref=e347]: ↑ 48.8
+            - generic [ref=e348]:
+              - generic [ref=e349]: US Dollar
+              - generic [ref=e352]: "48.9"
+              - generic [ref=e353]: ↑ 48.8
+            - generic [ref=e354]:
+              - generic [ref=e355]: US Election
+              - generic [ref=e358]: "48.9"
+              - generic [ref=e359]: ↑ 48.8
+        - generic [ref=e360]:
+          - generic [ref=e361]: Quick stats
+          - generic [ref=e363]:
+            - generic [ref=e364]:
+              - generic [ref=e365]: Total themes tracked
+              - generic [ref=e366]: "8"
+              - generic [ref=e367]: Active in pipeline
+            - generic [ref=e368]:
+              - generic [ref=e369]: Longs / Shorts candidates
+              - generic [ref=e370]: 10 / 0
+              - generic [ref=e371]: Above HypeScore 50 threshold
+            - generic [ref=e372]:
+              - generic [ref=e373]: Avg HypeScore
+              - generic [ref=e374]: "49.9"
+              - generic [ref=e375]: Across all active themes
+  - generic [ref=e30]:
+    - generic [ref=e31]: Pipeline healthy
+    - generic [ref=e33]: "|"
+    - generic [ref=e34]: "Last refresh: 21h ago"
+    - generic [ref=e35]: "|"
+    - generic [ref=e36]: "Next refresh: 2026-07-22 16:30 ET"
+    - generic [ref=e37]: "|"
+    - generic [ref=e38]: "Themes: 8 active"
+    - generic [ref=e39]: "|"
+    - generic [ref=e40]: "Tracked tickers: 10"
+    - generic [ref=e41]: Andromeda v0.4.1
+  - alert [ref=e42]

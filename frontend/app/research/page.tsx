@@ -10,7 +10,10 @@ import MarketBar from "@/components/MarketBar";
 import PredictionMarkets from "@/components/PredictionMarkets";
 import ThesisBlock from "@/components/research/ThesisBlock";
 import LensSelector, { Lens } from "@/components/LensSelector";
-import { AdvisoryDerivation } from "@/lib/derivations/advisory";
+import {
+  AdvisoryDerivation,
+  canRenderAdvisoryBody,
+} from "@/lib/derivations/advisory";
 
 interface Pick {
   direction: "long" | "short";
@@ -113,7 +116,7 @@ function PickCard({
         <span className="text-text-tertiary text-[11px] ml-2">· click for derivation</span>
       </div>
 
-      {pick.thesis && thesisAdvisory && (
+      {pick.thesis && canRenderAdvisoryBody(thesisAdvisory) && (
         <div className="mb-4">
           <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2 flex items-center gap-2">
             Thesis
@@ -126,7 +129,7 @@ function PickCard({
           <CitationList text={pick.thesis} citations={citations} />
         </div>
       )}
-      {pick.thesis && !thesisAdvisory && (
+      {pick.thesis && !canRenderAdvisoryBody(thesisAdvisory) && (
         <div
           className="mb-4 rounded-md px-3 py-2.5 text-[12px] leading-[1.6] border"
           style={{

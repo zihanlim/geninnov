@@ -18,7 +18,10 @@
  * shows a clear "Thesis unavailable" panel instead. This is intentional —
  * investors must never see the heuristic fallback dressed up as model output.
  */
-import { AdvisoryDerivation } from "@/lib/derivations/advisory";
+import {
+  AdvisoryDerivation,
+  canRenderAdvisoryBody,
+} from "@/lib/derivations/advisory";
 import CitationList, { Citation } from "@/components/CitationList";
 
 interface Props {
@@ -65,20 +68,13 @@ function StatusBadge({
 }
 
 export default function ThesisBlock({ advisory, citations, className }: Props) {
-  const { display_status, body, fallback_used, unavailable_reason } = advisory;
+  const { display_status, unavailable_reason } = advisory;
 
   // ---- Strict gate ----------------------------------------------------------
-  // The body may ONLY be rendered when the advisory path is verified or
-  // partial AND the heuristic fallback was not used. Any other combination
-  // (unavailable, unverified, or fallback_used=true) renders the unavailable
-  // panel — never the LLM/heuristic body.
-  const canRenderBody =
-    (display_status === "verified" || display_status === "partial") &&
-    !fallback_used &&
-    typeof body === "string" &&
-    body.length > 0;
-
-  if (!canRenderBody) {
+  // Delegated to `canRenderAdvisoryBody` so this policy lives in exactly one
+  // place. Do not re-implement it here: the per-pick cards on /research gate on
+  // the same function, and the two must never diverge.
+  if (!canRenderAdvisoryBody(advisory)) {
     return (
       <div
         className={`card p-7 ${className ?? ""}`}
@@ -133,7 +129,7 @@ export default function ThesisBlock({ advisory, citations, className }: Props) {
           </span>
         )}
       </div>
-      <CitationList text={body} citations={citations} />
+      <CitationList text={advisory.body} citations={citations} />
     </div>
   );
 }

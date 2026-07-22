@@ -28,3 +28,28 @@ export interface AdvisoryDerivation {
 export function isAdvisoryPresent(a: AdvisoryDerivation): boolean {
   return a.body !== null;
 }
+
+/**
+ * The single authority on whether advisory prose may be shown to an investor.
+ *
+ * Advisory text is strict-provenance: it renders ONLY when the evidence-backed
+ * L5 path produced it and its citations survived verification. Every other
+ * combination — a missing advisory, an unverified/unavailable status, or a run
+ * that fell back to the deterministic heuristic — must render an explicit
+ * "unavailable" state instead of the prose.
+ *
+ * Note the `null`/`undefined` case is deliberately part of this predicate: a
+ * row persisted before the advisory column existed carries no provenance at
+ * all, so its legacy body is exactly as untrustworthy as an unverified one.
+ *
+ * Every consumer must gate on this function rather than re-deriving the rule,
+ * so the policy cannot drift between the book view and the per-pick cards.
+ */
+export function canRenderAdvisoryBody(
+  a: AdvisoryDerivation | null | undefined,
+): a is AdvisoryDerivation & { body: string } {
+  if (!a) return false;
+  if (a.display_status !== "verified" && a.display_status !== "partial") return false;
+  if (a.fallback_used) return false;
+  return typeof a.body === "string" && a.body.length > 0;
+}

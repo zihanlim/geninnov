@@ -327,6 +327,31 @@ function BookPageInner() {
   const correlationPairs = rec?.correlation_pairs ?? null;
 
   const bm = rec?.book_metrics ?? null;
+
+  // Plain-English lead. A reader should learn what this book SAYS before meeting
+  // any notation — the formula is method, not the headline.
+  const plainSummary = useMemo(() => {
+    if (!rec) return "No book has been generated yet.";
+    const n = longs.length + shorts.length;
+    if (n === 0)
+      return "No positions cleared the screen today — every theme was scored but held out for weak or conflicting signal.";
+    const sides =
+      shorts.length === 0
+        ? `${longs.length} long position${longs.length === 1 ? "" : "s"} and no shorts`
+        : longs.length === 0
+          ? `${shorts.length} short position${shorts.length === 1 ? "" : "s"} and no longs`
+          : `${longs.length} long and ${shorts.length} short position${
+              longs.length + shorts.length === 1 ? "" : "s"
+            }`;
+    const net = bm?.net_exposure;
+    const tilt =
+      net === null || net === undefined
+        ? ""
+        : Math.abs(net) < 0.05
+          ? " It is close to market-neutral."
+          : ` It leans net ${net > 0 ? "long" : "short"} at ${fmtPct(Math.abs(net), 0)} of capital.`;
+    return `Today's book holds ${sides}, sized by conviction across $100M.${tilt}`;
+  }, [rec, longs, shorts, bm]);
   const advisory = rec?.advisory_derivation ?? null;
   const isFallback = advisory?.fallback_used === true;
   const worstScenario = useMemo(() => {
@@ -351,11 +376,14 @@ function BookPageInner() {
           <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
             The $100M Book
           </h1>
-          <p className="m-0 text-text-secondary text-[13px]">
-            Every side is <span className="num">sign(EdgeScore)</span> —
-            0.35·Trend + 0.25·Regime + 0.20·Carry + 0.20·Value — and every size is
-            conviction (<span className="num">|Edge|/vol</span>) × inverse-vol,
-            capped. Expand any position for the full chain.
+          <p className="m-0 text-text-primary text-[14.5px] leading-[1.55] max-w-[62ch]">
+            {plainSummary}
+          </p>
+          <p className="m-0 mt-2 text-text-tertiary text-[12px] leading-[1.5] max-w-[62ch]">
+            Each side is the sign of its <span className="num">EdgeScore</span>; each
+            size is conviction (<span className="num">|Edge| / vol</span>) capped by
+            position, sector and geography limits. Expand any position for the full
+            derivation.
           </p>
         </div>
         <div className="text-right text-text-secondary text-[12px] shrink-0">
@@ -422,14 +450,23 @@ function BookPageInner() {
 
           {/* ── Book header stats ───────────────────────────────────────── */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
-            <Stat label="Positions" value={String(rec.picks.length)} />
+            <Stat
+              label="Positions"
+              value={String(rec.picks.length)}
+              hint="Names held after screening"
+            />
             <Stat
               label="Longs / Shorts"
               value={`${longs.length} / ${shorts.length}`}
+              hint="Split of the two sides"
               warn={shorts.length === 0 && longs.length > 0}
               warnHint="A long-only book is not a long-short book"
             />
-            <Stat label="Gross" value={fmtPct(bm?.gross_exposure)} />
+            <Stat
+              label="Gross"
+              value={fmtPct(bm?.gross_exposure)}
+              hint="Long + short — total capital at risk"
+            />
             <Stat
               label="Net"
               value={
@@ -437,12 +474,14 @@ function BookPageInner() {
                   ? "—"
                   : `${bm.net_exposure >= 0 ? "+" : ""}${fmtPct(bm.net_exposure)}`
               }
+              hint="Long − short — directional tilt"
             />
             <Stat
               label="Deployed"
               value={fmtUSD(
                 rec.picks.reduce((s, p) => s + (p.notional ?? 0), 0)
               )}
+              hint="Capital allocated of $100M"
             />
             <Stat
               label="Worst scenario"

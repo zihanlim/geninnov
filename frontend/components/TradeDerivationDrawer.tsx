@@ -135,7 +135,7 @@ export default function TradeDerivationDrawer({
           ? supabase
               .from("theme_signals_history")
               .select(
-                "run_date, hype_score, avg_sentiment, edge_score, trend_signal, regime_bias, carry_signal, value_signal, conviction, vol"
+                "run_date, hype_score, avg_sentiment, edge_score, trend_signal, regime_bias, carry_signal, value_signal, sentiment_signal, conviction, vol"
               )
               .eq("theme_id", pick.theme_id)
               .order("run_date", { ascending: false })

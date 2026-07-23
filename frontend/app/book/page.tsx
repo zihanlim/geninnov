@@ -168,7 +168,7 @@ function BookPageInner() {
   const [edgeWeights, setEdgeWeights] = useState<EdgeWeights>(DEFAULT_EDGE_WEIGHTS);
   const [weightsResolved, setWeightsResolved] = useState<
     Record<keyof EdgeWeights, boolean>
-  >({ trend: false, regime: false, carry: false, value: false, abstainThreshold: false });
+  >({ trend: false, regime: false, carry: false, value: false, sentiment: false, abstainThreshold: false });
   const [loading, setLoading] = useState(true);
   const [openAsset, setOpenAsset] = useState<string | null>(null);
 
@@ -189,7 +189,7 @@ function BookPageInner() {
         supabase
           .from("portfolio_positions")
           .select(
-            "asset, theme_id, edge_score, trend_signal, regime_bias, carry_signal, value_signal, conviction, vol"
+            "asset, theme_id, edge_score, trend_signal, regime_bias, carry_signal, value_signal, sentiment_signal, conviction, vol"
           ),
         supabase.from("themes").select("id, name"),
       ]);
@@ -835,6 +835,7 @@ function PositionRow({
         regime_bias: null,
         carry_signal: null,
         value_signal: null,
+        sentiment_signal: null,
         conviction: null,
         vol: null,
         direction: null,

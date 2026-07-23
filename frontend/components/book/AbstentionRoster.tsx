@@ -29,6 +29,7 @@ function abstainReason(e: ThemeEdge): string {
     ["regime", e.regime_bias],
     ["carry", e.carry_signal],
     ["value", e.value_signal],
+    ["sentiment", e.sentiment_signal],
   ];
   const present = comps.filter(([, v]) => v !== null && Math.abs(v) > 0.05) as Array<
     [string, number]

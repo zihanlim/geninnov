@@ -167,6 +167,8 @@ export interface ThemeEdge {
   regime_bias: number | null;
   carry_signal: number | null;
   value_signal: number | null;
+  /** Contrarian sentiment tilt (Stage 5), in [-1, 1]. */
+  sentiment_signal: number | null;
   /** conviction = |edge_score| / vol — the Stage-4 sizing weight. */
   conviction: number | null;
   vol: number | null;
@@ -182,18 +184,21 @@ export interface EdgeWeights {
   regime: number;
   carry: number;
   value: number;
+  sentiment: number;
   abstainThreshold: number;
 }
 
+/** IC-informed defaults (ADR-0033); the live values come from scoring_config. */
 export const DEFAULT_EDGE_WEIGHTS: EdgeWeights = {
-  trend: 0.35,
-  regime: 0.25,
-  carry: 0.2,
-  value: 0.2,
+  trend: 0.2,
+  regime: 0.23,
+  carry: 0.34,
+  value: 0.18,
+  sentiment: 0.05,
   abstainThreshold: 0.15,
 };
 
-/** Weighted contribution of each component to the EdgeScore, for the 4-bar
+/** Weighted contribution of each component to the EdgeScore, for the bar
  * decomposition. Components absent (null) contribute 0 and are flagged. */
 export function edgeContributions(edge: ThemeEdge, w: EdgeWeights) {
   return [
@@ -201,17 +206,18 @@ export function edgeContributions(edge: ThemeEdge, w: EdgeWeights) {
     { key: "Regime", raw: edge.regime_bias, weight: w.regime, contribution: (edge.regime_bias ?? 0) * w.regime },
     { key: "Carry", raw: edge.carry_signal, weight: w.carry, contribution: (edge.carry_signal ?? 0) * w.carry },
     { key: "Value", raw: edge.value_signal, weight: w.value, contribution: (edge.value_signal ?? 0) * w.value },
+    { key: "Sentiment", raw: edge.sentiment_signal, weight: w.sentiment, contribution: (edge.sentiment_signal ?? 0) * w.sentiment },
   ];
 }
 
 /** One-line, IC-defensible rationale, e.g.
- * "Short — 6m trend -0.90, regime +0.50, carry 0.00, value 0.00 · conviction 9.5x". */
+ * "Short — trend -0.90, regime +0.50, carry 0.00, value 0.00, sent +0.01 · conviction 9.5x". */
 export function edgeRationale(edge: ThemeEdge): string {
   if (edge.edge_score === null) return "EdgeScore not yet computed";
   const side = edge.direction ? edge.direction[0].toUpperCase() + edge.direction.slice(1) : "Abstain";
   const f = (v: number | null) => (v === null ? "n/a" : v.toFixed(2));
   const conv = edge.conviction === null ? "" : ` · conviction ${edge.conviction.toFixed(1)}×`;
-  return `${side} — trend ${f(edge.trend_signal)}, regime ${f(edge.regime_bias)}, carry ${f(edge.carry_signal)}, value ${f(edge.value_signal)}${conv}`;
+  return `${side} — trend ${f(edge.trend_signal)}, regime ${f(edge.regime_bias)}, carry ${f(edge.carry_signal)}, value ${f(edge.value_signal)}, sent ${f(edge.sentiment_signal)}${conv}`;
 }
 
 function edgeDirection(edge: number | null, abstainThreshold = 0): "long" | "short" | null {
@@ -237,7 +243,7 @@ export async function fetchThemeEdge(
   const { data, error } = await supabase
     .from("theme_signals_history")
     .select(
-      "theme_id, run_date, edge_score, trend_signal, regime_bias, carry_signal, value_signal, conviction, vol"
+      "theme_id, run_date, edge_score, trend_signal, regime_bias, carry_signal, value_signal, sentiment_signal, conviction, vol"
     )
     .in("theme_id", themeIds)
     .order("run_date", { ascending: false })
@@ -256,6 +262,7 @@ export async function fetchThemeEdge(
       regime_bias: number | null;
       carry_signal: number | null;
       value_signal: number | null;
+      sentiment_signal: number | null;
       conviction: number | null;
       vol: number | null;
     };
@@ -266,6 +273,7 @@ export async function fetchThemeEdge(
       regime_bias: r.regime_bias,
       carry_signal: r.carry_signal,
       value_signal: r.value_signal,
+      sentiment_signal: r.sentiment_signal,
       conviction: r.conviction,
       vol: r.vol,
       direction: edgeDirection(r.edge_score),

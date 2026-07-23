@@ -65,18 +65,20 @@ export function edgeWeightsFromConfig(
   const [regime, rOk] = pick("edge_regime_weight", defaults.regime);
   const [carry, cOk] = pick("edge_carry_weight", defaults.carry);
   const [value, vOk] = pick("edge_value_weight", defaults.value);
+  const [sentiment, sOk] = pick("edge_sentiment_weight", defaults.sentiment);
   const [abstainThreshold, aOk] = pick(
     "edge_abstain_threshold",
     defaults.abstainThreshold,
   );
 
   return {
-    weights: { trend, regime, carry, value, abstainThreshold },
+    weights: { trend, regime, carry, value, sentiment, abstainThreshold },
     resolved: {
       trend: tOk,
       regime: rOk,
       carry: cOk,
       value: vOk,
+      sentiment: sOk,
       abstainThreshold: aOk,
     },
   };
@@ -95,6 +97,7 @@ export interface PositionEdgeRow {
   regime_bias: number | null;
   carry_signal: number | null;
   value_signal: number | null;
+  sentiment_signal: number | null;
   conviction: number | null;
   vol: number | null;
 }
@@ -118,11 +121,13 @@ const hasAnyComponent = (e: {
   regime_bias: number | null;
   carry_signal: number | null;
   value_signal: number | null;
+  sentiment_signal: number | null;
 }): boolean =>
   e.trend_signal !== null ||
   e.regime_bias !== null ||
   e.carry_signal !== null ||
-  e.value_signal !== null;
+  e.value_signal !== null ||
+  e.sentiment_signal !== null;
 
 /**
  * Resolve the EdgeScore breakdown for a single position.
@@ -143,6 +148,7 @@ export function resolvePositionEdge(
       regime_bias: positionRow.regime_bias,
       carry_signal: positionRow.carry_signal,
       value_signal: positionRow.value_signal,
+      sentiment_signal: positionRow.sentiment_signal,
       conviction: positionRow.conviction,
       vol: positionRow.vol,
       direction: dirOf(positionRow.edge_score),
@@ -159,6 +165,7 @@ export function resolvePositionEdge(
     regime_bias: null,
     carry_signal: null,
     value_signal: null,
+    sentiment_signal: null,
     conviction: null,
     vol: null,
     direction: null,

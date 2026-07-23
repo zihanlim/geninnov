@@ -38,6 +38,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0030](0030-unify-l5-candidate-pool-with-l1.md) | Unify the L5 candidate pool with L1 (screen_candidates consumes rank_trade_candidates) | accepted | 2026-07-23 |
 | [0031](0031-edge-score-direction-signal.md) | EdgeScore: anchor long/short direction to trend + regime, not sentiment | accepted | 2026-07-23 |
 | [0032](0032-edge-carry-value-abstention-sizing.md) | EdgeScore Stages 3–4: Carry, Value, abstention, conviction sizing | accepted | 2026-07-23 |
+| [0033](0033-edge-stage5-sentiment-ic-weights.md) | EdgeScore Stage 5: sentiment demotion + IC-fit weights | accepted | 2026-07-24 |
 
 ## When to write an ADR
 

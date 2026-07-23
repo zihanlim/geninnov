@@ -77,7 +77,7 @@ flowchart TB
             DAV["advisory.py<br/>AdvisoryDerivation,<br/>validate_advisory,<br/>fallback_used strictness (T18)"]
         end
 
-        TG["backend/services/trade_ranker.py<br/>direction = sign(EdgeScore)<br/>(trend+regime+carry+value, abstain)<br/>size ∝ conviction — ADR-0031/0032"]
+        TG["backend/services/trade_ranker.py<br/>direction = sign(EdgeScore)<br/>(trend+regime+carry+value+sentiment,<br/>IC-weighted, abstain) size ∝ conviction<br/>ADR-0031/0032/0033"]
         POLYSVC["backend/data/polymarket_fetcher.py<br/>prediction market feed"]
         PIPE["backend/services/pipeline_runs.py<br/>record_pipeline_run,<br/>run_id_for(stage)"]
         PF["backend/services/portfolio.py<br/>compute_daily_return,<br/>compute_cumulative_return"]

@@ -109,6 +109,7 @@ class TradeCandidate:
     regime_bias: float = 0.0    # EdgeScore component: regime fit
     carry_signal: float = 0.0   # EdgeScore component: yield/spread carry
     value_signal: float = 0.0   # EdgeScore component: value (z-score vs history)
+    sentiment_signal: float = 0.0  # EdgeScore component: contrarian sentiment tilt (Stage 5)
     vol: float = 0.0          # daily-return vol of the theme basket (ADR-0032 sizing)
     conviction: float = 0.0   # |edge_score| / vol — Stage-4 conviction × inverse-vol weight
 
@@ -122,6 +123,7 @@ class TradeCandidate:
             "regime_bias": self.regime_bias,
             "carry_signal": self.carry_signal,
             "value_signal": self.value_signal,
+            "sentiment_signal": self.sentiment_signal,
             "conviction": self.conviction,
             "vol": self.vol,
         }
@@ -246,6 +248,7 @@ def _expand(
                     regime_bias=r.get("regime_bias", 0.0),
                     carry_signal=r.get("carry_signal", 0.0),
                     value_signal=r.get("value_signal", 0.0),
+                    sentiment_signal=r.get("sentiment_signal", 0.0),
                     vol=r.get("vol", 0.0),
                     conviction=r.get("conviction", 0.0),
                 )

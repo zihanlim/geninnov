@@ -5,10 +5,11 @@ Design spec: docs/superpowers/specs/2026-07-23-edge-score-direction-redesign.md
 
 Direction used to be sign(TradeScore), which — with HypeMomentum ~ 0 — collapsed
 to the sign of near-zero VADER news sentiment. EdgeScore anchors direction to
-measurable expected-return proxies instead. Stages 1 (Trend), 2 (RegimeFit),
-3 (Carry) and 4 (Value) are implemented here; Sentiment-demotion (Stage 5) is
-planned. Stage 4 also adds abstention (in rank_trade_candidates) and conviction ×
-inverse-vol sizing (in allocate_portfolio).
+measurable expected-return proxies instead. All five components are implemented
+here: 1 Trend, 2 RegimeFit, 3 Carry, 4 Value, 5 Sentiment (a minor CONTRARIAN
+tilt — the demotion). Stage 4 also adds abstention (in rank_trade_candidates) and
+conviction × inverse-vol sizing (in allocate_portfolio); the component weights are
+IC-informed (scripts/backtest_edge.py, ADR-0033).
 
 Every component returns a value in [-1, +1] so the scoring_config weights are
 directly comparable.
@@ -137,22 +138,39 @@ def value_signal(asset_class: str, macro_z: dict | None) -> float:
     return 0.0
 
 
+def sentiment_signal(avg_sentiment: float | None, scale: float = 0.4) -> float:
+    """Stage 5 — news sentiment as a MINOR CONTRARIAN tilt, in [-1, 1].
+
+    Sentiment was once THE direction signal (wrongly — a near-zero VADER score
+    decided a $100M side). Here it is demoted to one small tilt among five, and
+    made CONTRARIAN: extreme optimism is crowding to fade (short bias), not a buy.
+    Near-zero sentiment contributes ~0. Carries a small weight (edge_sentiment_weight).
+    """
+    if avg_sentiment is None:
+        return 0.0
+    return -math.tanh(avg_sentiment / scale)
+
+
 def compute_edge_score(
     trend: float,
     regime_bias: float,
     carry: float = 0.0,
     value: float = 0.0,
+    sentiment_tilt: float = 0.0,
     w_trend: float = 0.35,
     w_regime: float = 0.25,
     w_carry: float = 0.20,
     w_value: float = 0.20,
+    w_sentiment: float = 0.0,
 ) -> float:
-    """Composite EdgeScore (Stages 1–4). Every component is already in [-1, 1]."""
+    """Composite EdgeScore (Stages 1–5). Every component is already in [-1, 1].
+    ``sentiment_tilt`` is the CONTRARIAN sentiment component (from sentiment_signal)."""
     return (
         w_trend * trend
         + w_regime * regime_bias
         + w_carry * carry
         + w_value * value
+        + w_sentiment * sentiment_tilt
     )
 
 

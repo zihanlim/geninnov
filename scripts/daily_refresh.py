@@ -72,6 +72,7 @@ from backend.services.edge_signals import (
     theme_regime_bias,
     carry_signal,
     value_signal,
+    sentiment_signal,
     compute_edge_score,
 )
 from statistics import fmean, pstdev
@@ -399,10 +400,12 @@ def compute_edge_scores(
         rbias = theme_regime_bias(acs, cycle, sentiment)
         carry = fmean([carry_signal(ac, macro_snapshot) for ac in acs]) if acs else 0.0
         value = fmean([value_signal(ac, macro_z) for ac in acs]) if acs else 0.0
+        sentiment_tilt = sentiment_signal(r.get("avg_sentiment"))
         edge = compute_edge_score(
-            trend, rbias, carry, value,
+            trend, rbias, carry, value, sentiment_tilt,
             w_trend=cfg.edge_trend_weight, w_regime=cfg.edge_regime_weight,
             w_carry=cfg.edge_carry_weight, w_value=cfg.edge_value_weight,
+            w_sentiment=cfg.edge_sentiment_weight,
         )
         vols = [vol_by_asset[a] for a in assets if a in vol_by_asset]
         theme_vol = fmean(vols) if vols else 0.0
@@ -411,6 +414,7 @@ def compute_edge_scores(
         r["regime_bias"] = rbias
         r["carry_signal"] = carry
         r["value_signal"] = value
+        r["sentiment_signal"] = sentiment_tilt
         r["edge_score"] = edge
         r["vol"] = theme_vol
         # Conviction for Stage-4 sizing: signal strength scaled by inverse vol.
@@ -486,6 +490,7 @@ def persist(run_date: date, scored: list[dict]):
             "regime_bias": r.get("regime_bias"),
             "carry_signal": r.get("carry_signal"),
             "value_signal": r.get("value_signal"),
+            "sentiment_signal": r.get("sentiment_signal"),
             "conviction": r.get("conviction"),
             "vol": r.get("vol"),
         }

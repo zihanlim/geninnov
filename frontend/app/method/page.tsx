@@ -67,9 +67,10 @@ interface SignalRow {
   edge_score: number | null;
   trend_signal: number | null;
   regime_bias: number | null;
-  // EdgeScore components 3–4 + sizing inputs (migration 025).
+  // EdgeScore components 3–5 + sizing inputs (migrations 025–026).
   carry_signal: number | null;
   value_signal: number | null;
+  sentiment_signal: number | null;
   conviction: number | null;
   vol: number | null;
 }
@@ -291,7 +292,7 @@ export default function MethodPage() {
           supabase
             .from("theme_signals_history")
             .select(
-              "theme_id,run_date,mention_count_1d,mention_count_7d_avg,mention_count_7d_std,avg_sentiment,price_corr,momentum_raw,hype_score,trade_score,edge_score,trend_signal,regime_bias,carry_signal,value_signal,conviction,vol",
+              "theme_id,run_date,mention_count_1d,mention_count_7d_avg,mention_count_7d_std,avg_sentiment,price_corr,momentum_raw,hype_score,trade_score,edge_score,trend_signal,regime_bias,carry_signal,value_signal,sentiment_signal,conviction,vol",
             )
             .order("run_date", { ascending: false })
             .limit(1000),
@@ -401,6 +402,7 @@ export default function MethodPage() {
   const wEdgeRegime = cfgNum("edge_regime_weight");
   const wEdgeCarry = cfgNum("edge_carry_weight");
   const wEdgeValue = cfgNum("edge_value_weight");
+  const wEdgeSentiment = cfgNum("edge_sentiment_weight");
   const edgeAbstain = cfgNum("edge_abstain_threshold");
   const lookback7 = cfgNum("lookback_momentum_7d");
   const hypeWeightsOk =
@@ -517,17 +519,19 @@ export default function MethodPage() {
     wEdgeTrend !== null &&
     wEdgeRegime !== null &&
     wEdgeCarry !== null &&
-    wEdgeValue !== null;
+    wEdgeValue !== null &&
+    wEdgeSentiment !== null;
   const missingEdgeWeights = [
     ["edge_trend_weight", wEdgeTrend],
     ["edge_regime_weight", wEdgeRegime],
     ["edge_carry_weight", wEdgeCarry],
     ["edge_value_weight", wEdgeValue],
+    ["edge_sentiment_weight", wEdgeSentiment],
   ]
     .filter(([, v]) => v === null)
     .map(([k]) => k as string);
   const edgeWeightSum = edgeWeightsOk
-    ? (wEdgeTrend ?? 0) + (wEdgeRegime ?? 0) + (wEdgeCarry ?? 0) + (wEdgeValue ?? 0)
+    ? (wEdgeTrend ?? 0) + (wEdgeRegime ?? 0) + (wEdgeCarry ?? 0) + (wEdgeValue ?? 0) + (wEdgeSentiment ?? 0)
     : null;
 
   // The four weighted contributions for the worked example, each read from the
@@ -540,6 +544,7 @@ export default function MethodPage() {
           { sym: "w_regime × Regime", w: wEdgeRegime!, x: edgeExample.regime_bias },
           { sym: "w_carry  × Carry", w: wEdgeCarry!, x: edgeExample.carry_signal },
           { sym: "w_value  × Value", w: wEdgeValue!, x: edgeExample.value_signal },
+          { sym: "w_sent   × Sentiment", w: wEdgeSentiment!, x: edgeExample.sentiment_signal },
         ] as const)
       : null;
   const edgeRecomputed = edgeTerms
@@ -1532,7 +1537,7 @@ export default function MethodPage() {
           <EmptyState
             table="scoring_config"
             cause={`Missing or non-numeric weight rows: ${missingEdgeWeights.join(", ") || "none parsed"}.`}
-            remedy="Seed edge_trend_weight, edge_regime_weight, edge_carry_weight and edge_value_weight into scoring_config. The 4-component formula cannot be rendered without all four."
+            remedy="Seed edge_trend_weight, edge_regime_weight, edge_carry_weight, edge_value_weight and edge_sentiment_weight into scoring_config. The 5-component formula cannot be rendered without all five."
           />
         ) : (
           <div className="grid gap-4">

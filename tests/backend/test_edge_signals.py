@@ -11,6 +11,7 @@ from backend.services.edge_signals import (
     theme_regime_bias,
     carry_signal,
     value_signal,
+    sentiment_signal,
     compute_edge_score,
     edge_direction,
     ASSET_CLASS_RISK_BETA,
@@ -135,6 +136,31 @@ def test_compute_edge_score_backcompat_two_component():
     assert compute_edge_score(1.0, 0.0, w_trend=0.6, w_regime=0.4) == pytest.approx(0.6)
     assert compute_edge_score(0.0, 1.0, w_trend=0.6, w_regime=0.4) == pytest.approx(0.4)
     assert compute_edge_score(0.5, -0.5, w_trend=0.6, w_regime=0.4) == pytest.approx(0.1)
+
+
+def test_sentiment_is_contrarian_and_minor():
+    """Stage 5: sentiment is a CONTRARIAN tilt — positive tone (crowded) -> short
+    bias, negative tone -> long bias — bounded, and ~0 near neutral."""
+    assert sentiment_signal(0.5) < 0      # optimism -> fade (short)
+    assert sentiment_signal(-0.5) > 0     # pessimism -> long
+    assert sentiment_signal(0.0) == 0.0
+    assert sentiment_signal(None) == 0.0
+    assert -1.0 <= sentiment_signal(5.0) <= 0.0    # bounded, saturates
+    assert abs(sentiment_signal(0.02)) < 0.1       # near-neutral contributes little
+
+
+def test_compute_edge_score_five_component():
+    assert compute_edge_score(0.0, 0.0, 0.0, 0.0, 1.0,
+                              w_trend=0.20, w_regime=0.23, w_carry=0.34,
+                              w_value=0.18, w_sentiment=0.05) == pytest.approx(0.05)
+    # all five present, weights sum to 1 -> EdgeScore = weighted mean
+    assert compute_edge_score(1.0, 1.0, 1.0, 1.0, 1.0,
+                              w_trend=0.20, w_regime=0.23, w_carry=0.34,
+                              w_value=0.18, w_sentiment=0.05) == pytest.approx(1.0)
+    # sentiment defaults to 0 contribution -> back-compat with 4-component callers
+    assert compute_edge_score(1.0, 0.0, 0.0, 0.0,
+                              w_trend=0.20, w_regime=0.23, w_carry=0.34,
+                              w_value=0.18) == pytest.approx(0.20)
 
 
 def test_compute_edge_score_four_component():

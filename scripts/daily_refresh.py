@@ -523,13 +523,22 @@ def persist_theme_news(run_date: date, scored: list[dict]) -> int:
     are unaffected. Returns the number of rows written.
     """
     today_str = run_date.isoformat()
+    # ANDROMEDA_ALLOW_MOCK gates whether mock is GENERATED; this also gates
+    # whether any mock_* headline is PERSISTED, so a synthetic row can never
+    # reach the frontend when mock is disabled — even if some path produced one.
+    allow_mock = os.environ.get("ANDROMEDA_ALLOW_MOCK", "0") not in ("0", "false", "False", "")
     rows: list[dict] = []
     seen: set[tuple[str, str]] = set()
+    dropped_mock = 0
     for r in scored:
         theme_id = r["theme_id"]
         for h in r.get("headlines", []) or []:
             text = (h.get("text") or "").strip()
             if not text:
+                continue
+            source = h.get("source", "unknown")
+            if not allow_mock and str(source).startswith("mock_"):
+                dropped_mock += 1
                 continue
             key = (str(theme_id), text[:1000])
             if key in seen:
@@ -538,13 +547,27 @@ def persist_theme_news(run_date: date, scored: list[dict]) -> int:
             rows.append({
                 "theme_id": theme_id,
                 "run_date": today_str,
-                "source": h.get("source", "unknown"),
+                "source": source,
                 "headline": text[:1000],
                 "published_date": _safe_iso_date(h.get("date")),
             })
+    if dropped_mock:
+        print(f"[{today_str}] persist_theme_news: dropped {dropped_mock} mock headline(s) "
+              f"(ANDROMEDA_ALLOW_MOCK=0).")
 
     if not rows:
         return 0
+
+    # Idempotent re-run: REPLACE this run's news rather than accumulate. Without
+    # the prune, mock rows from an earlier mock-allowed run of the SAME day linger
+    # (they don't collide on (theme_id,run_date,headline) with today's real
+    # headlines) and surface as synthetic data on the frontend. Best-effort: a
+    # prune failure must not skip the write.
+    try:
+        supabase.table("theme_news").delete().eq("run_date", today_str).execute()
+    except Exception as exc:
+        print(f"[{today_str}] persist_theme_news: prune of prior rows failed "
+              f"({exc.__class__.__name__}); continuing to write.")
 
     try:
         supabase.table("theme_news").upsert(

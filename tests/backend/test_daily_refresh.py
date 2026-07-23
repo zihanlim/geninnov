@@ -838,6 +838,13 @@ def _capture_upserts(monkeypatch):
             captured["on_conflict"].append(kw.get("on_conflict"))
             return self
 
+        def delete(self):
+            captured.setdefault("deleted", []).append(self._name)
+            return self
+
+        def eq(self, *a, **kw):
+            return self
+
         def execute(self):
             return type("R", (), {"data": []})()
 
@@ -852,25 +859,32 @@ def _capture_upserts(monkeypatch):
 def test_persist_theme_news_writes_dedupes_and_guards_bad_dates(monkeypatch):
     dr, captured = _capture_upserts(monkeypatch)
 
+    monkeypatch.setenv("ANDROMEDA_ALLOW_MOCK", "0")
     scored = [{
         "theme_id": "t1",
         "headlines": [
             {"source": "brave", "text": "Fed holds rates", "date": "2026-07-23T10:00:00"},
-            {"source": "mock_reddit", "text": "Discussion: Fed", "date": "2 days ago"},  # bad date → None
+            {"source": "reddit", "text": "Discussion: Fed", "date": "2 days ago"},      # bad date → None
             {"source": "brave", "text": "Fed holds rates", "date": "2026-07-23"},          # duplicate → skipped
             {"source": "brave", "text": "   ", "date": ""},                                # blank → skipped
+            {"source": "mock_brave", "text": "Synthetic Fed headline", "date": "2026-07-23"},  # mock → dropped
         ],
     }]
 
     n = dr.persist_theme_news(date(2026, 7, 23), scored)
 
-    assert n == 2, "duplicate and blank headlines must be dropped"
+    assert n == 2, "duplicate, blank, and mock headlines must be dropped"
     rows = captured["payloads"][0]
     assert captured["on_conflict"][0] == "theme_id,run_date,headline"
     by_text = {r["headline"]: r for r in rows}
     assert by_text["Fed holds rates"]["published_date"] == "2026-07-23"
     # Non-ISO "2 days ago" must not poison the batch — it lands as NULL.
     assert by_text["Discussion: Fed"]["published_date"] is None
+    # ANDROMEDA_ALLOW_MOCK=0 → no mock_* source is ever persisted (data integrity).
+    assert "Synthetic Fed headline" not in by_text
+    assert all(not r["source"].startswith("mock_") for r in rows)
+    # Idempotent re-run pruned this run_date's prior rows before writing.
+    assert "theme_news" in captured.get("deleted", [])
 
 
 def test_persist_theme_news_returns_zero_when_table_missing(monkeypatch):

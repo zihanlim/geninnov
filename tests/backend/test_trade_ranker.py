@@ -165,6 +165,50 @@ def test_rank_uses_edge_score_when_score_key_given():
     assert longs[0].edge_score == 0.5               # carried onto the candidate
 
 
+def test_rank_abstains_on_weak_edge():
+    """ADR-0032: |EdgeScore| below abstain_threshold yields NO position, not a
+    forced one. A strong-edge theme survives; a flat one is abstained."""
+    scored = [
+        {"theme_id": "strong", "hype_score": 80.0, "trade_score": 0.0, "edge_score": 0.30, "avg_sentiment": 0.0},
+        {"theme_id": "weak", "hype_score": 75.0, "trade_score": 0.0, "edge_score": 0.05, "avg_sentiment": 0.0},
+    ]
+    assets = {"strong": ["AAA"], "weak": ["BBB"]}
+    longs, shorts = rank_trade_candidates(
+        scored, assets, hype_threshold=50.0, score_key="edge_score", abstain_threshold=0.15,
+    )
+    assert [c.theme_id for c in longs] == ["strong"]
+    assert all(c.theme_id != "weak" for c in longs + shorts)   # abstained on weak edge
+
+
+def test_allocate_size_by_conviction_orders_by_conviction():
+    """ADR-0032: with caps relaxed, size_by='conviction' weights strictly by
+    conviction (|EdgeScore|/vol), not HypeScore."""
+    cands = [
+        TradeCandidate(theme_id="a", asset="SPY", direction="long", trade_score=0.0,
+                       hype_score=90.0, avg_sentiment=0.0, edge_score=0.1, vol=0.02, conviction=1.0),
+        TradeCandidate(theme_id="b", asset="TLT", direction="long", trade_score=0.0,
+                       hype_score=30.0, avg_sentiment=0.0, edge_score=0.8, vol=0.01, conviction=4.0),
+    ]
+    sized = allocate_portfolio(cands, 100_000_000.0, size_by="conviction",
+                               max_single=1.0, max_sector=1.0, max_geo=1.0)
+    w = {c.asset: weight for c, _, weight in sized}
+    assert w["TLT"] == pytest.approx(0.8)   # conviction 4 vs 1 despite far lower hype
+    assert w["SPY"] == pytest.approx(0.2)
+
+
+def test_allocate_conviction_falls_back_to_hype_when_no_conviction():
+    """No conviction anywhere → conviction sizing reduces to hype weighting."""
+    cands = [
+        TradeCandidate(theme_id="a", asset="SPY", direction="long", trade_score=0.0,
+                       hype_score=80.0, avg_sentiment=0.0, edge_score=0.2, vol=0.0, conviction=0.0),
+        TradeCandidate(theme_id="b", asset="TLT", direction="long", trade_score=0.0,
+                       hype_score=40.0, avg_sentiment=0.0, edge_score=0.2, vol=0.0, conviction=0.0),
+    ]
+    by_conv = {c.asset: w for c, _, w in allocate_portfolio(cands, 100_000_000.0, size_by="conviction")}
+    by_hype = {c.asset: w for c, _, w in allocate_portfolio(cands, 100_000_000.0, size_by="hype")}
+    assert by_conv == by_hype
+
+
 def test_allocate_proportional_to_hype_score():
     """Capital split proportional to each candidate's hype_score.
 

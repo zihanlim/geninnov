@@ -1,6 +1,6 @@
 # EdgeScore — a rigorous long/short direction signal (5-stage design)
 
-- Status: draft (Stages 1–2 implemented; 3–5 planned)
+- Status: draft (Stages 1–4 implemented — ADR-0031/0032; Stage 5 planned)
 - Date: 2026-07-23
 - Related: ADR-0028 (min-max corr), ADR-0029 (two-sided book), ADR-0030 (L5 uses L1 pool),
   ADR-0022 (HypeScore IC backtest)

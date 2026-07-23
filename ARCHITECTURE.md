@@ -77,7 +77,7 @@ flowchart TB
             DAV["advisory.py<br/>AdvisoryDerivation,<br/>validate_advisory,<br/>fallback_used strictness (T18)"]
         end
 
-        TG["backend/services/trade_ranker.py<br/>direction = sign(EdgeScore)<br/>(trend + regime, ADR-0031)<br/>rank + size $100M book"]
+        TG["backend/services/trade_ranker.py<br/>direction = sign(EdgeScore)<br/>(trend+regime+carry+value, abstain)<br/>size ∝ conviction — ADR-0031/0032"]
         POLYSVC["backend/data/polymarket_fetcher.py<br/>prediction market feed"]
         PIPE["backend/services/pipeline_runs.py<br/>record_pipeline_run,<br/>run_id_for(stage)"]
         PF["backend/services/portfolio.py<br/>compute_daily_return,<br/>compute_cumulative_return"]
@@ -446,6 +446,7 @@ pytest tests/backend/ -v
 - [x] Schema/query mismatches closed — `research_recommendations.book_metrics_summary`, `.scenario_table` and `regime_classifications.narrative` were selected but never existed (400/42703); `portfolio_factor_exposure` was queried but never existed (404/PGRST205)
 - [x] Sub-score unit mismatch fixed — `themes.*_score` persist as [0,1] while `hype_score` is 0–100; `toDisplayScore` in `frontend/lib/themeSignals.ts` is the single conversion point
 - [x] `themes.corr_score` now persists `abs(price_corr)` — the value `hype_score()` actually consumes — so the four sub-scores reproduce the score they claim to derive
+- [x] **EdgeScore direction surfaced** — `edge_score`/`trend_signal`/`regime_bias` (migration 023) rendered on `/method` §4 (live weights + worked example), `/book` per-position "why this side", and `TradeDerivationDrawer`. The stale "direction = sign(TradeScore)" explanations on `/method` §3 and the drawer were corrected: TradeScore is reframed as intra-side ranking; direction is `sign(EdgeScore)` per [ADR-0031](docs/adrs/0031-edge-score-direction-signal.md). Read via `fetchThemeEdge` in `frontend/lib/themeSignals.ts`
 - [x] L7: Provenance UI infrastructure — citation footnotes, theme derivation drawer, regime inputs panel, lens selector
 - [x] L7 status read-models — `StatusBadge`, `FreshnessLabel`, `UncertaintyBand` rendering derivations
 - [x] L7 portfolio read-models — `CumulativeReturn` (since-inception compounded), `DailyPLHistory`, `ExposureSummary`

@@ -9,6 +9,8 @@ from backend.services.edge_signals import (
     theme_trend,
     regime_direction_bias,
     theme_regime_bias,
+    carry_signal,
+    value_signal,
     compute_edge_score,
     edge_direction,
     ASSET_CLASS_RISK_BETA,
@@ -86,12 +88,64 @@ def test_regime_missing_inputs_neutral():
     assert regime_direction_bias("equity", None, None) == 0.0
 
 
+# ─── Stage 3: Carry ───────────────────────────────────────────────────────────
+
+def test_carry_credit_rates_fx_positive_on_high_levels():
+    macro = {"BAMLH0A0HYM2": {"value": 2.69}, "DFII10": {"value": 2.37}, "DFF": {"value": 4.3}}
+    assert carry_signal("credit", macro) > 0     # spread income
+    assert carry_signal("rates", macro) > 0       # positive real yield
+    assert carry_signal("fx", macro) > 0          # positive USD carry vs neutral
+
+
+def test_carry_equity_commodity_and_missing_are_zero():
+    macro = {"BAMLH0A0HYM2": {"value": 2.69}}
+    assert carry_signal("equity", macro) == 0.0
+    assert carry_signal("commodity", macro) == 0.0
+    assert carry_signal("credit", {}) == 0.0          # series missing -> 0
+    assert carry_signal("rates", None) == 0.0
+
+
+def test_carry_accepts_flat_macro_values():
+    # tolerate {series: value} as well as {series: {value: ...}}
+    assert carry_signal("rates", {"DFII10": 2.0}) > 0
+
+
+# ─── Stage 4: Value ───────────────────────────────────────────────────────────
+
+def test_value_credit_wide_is_long_tight_is_short():
+    assert value_signal("credit", {"BAMLH0A0HYM2": 1.5}) > 0    # wide vs history = cheap = long
+    assert value_signal("credit", {"BAMLH0A0HYM2": -1.5}) < 0   # tight = rich = short
+
+
+def test_value_rates_high_real_yield_is_long():
+    assert value_signal("rates", {"DFII10": 1.2}) > 0
+
+
+def test_value_equity_fx_commodity_and_empty_are_zero():
+    assert value_signal("equity", {"BAMLH0A0HYM2": 2.0}) == 0.0
+    assert value_signal("fx", {"DFF": 2.0}) == 0.0
+    assert value_signal("credit", {}) == 0.0
+    assert value_signal("rates", None) == 0.0
+
+
 # ─── Composite + direction ────────────────────────────────────────────────────
 
-def test_compute_edge_score_weighted_sum():
+def test_compute_edge_score_backcompat_two_component():
+    # carry/value default to 0, so the old 2-arg call still works.
     assert compute_edge_score(1.0, 0.0, w_trend=0.6, w_regime=0.4) == pytest.approx(0.6)
     assert compute_edge_score(0.0, 1.0, w_trend=0.6, w_regime=0.4) == pytest.approx(0.4)
     assert compute_edge_score(0.5, -0.5, w_trend=0.6, w_regime=0.4) == pytest.approx(0.1)
+
+
+def test_compute_edge_score_four_component():
+    assert compute_edge_score(1.0, 0.0, 0.0, 0.0,
+                              w_trend=0.35, w_regime=0.25, w_carry=0.20, w_value=0.20) == pytest.approx(0.35)
+    assert compute_edge_score(0.0, 0.0, 1.0, 0.0,
+                              w_trend=0.35, w_regime=0.25, w_carry=0.20, w_value=0.20) == pytest.approx(0.20)
+    assert compute_edge_score(0.0, 0.0, 0.0, 1.0,
+                              w_trend=0.35, w_regime=0.25, w_carry=0.20, w_value=0.20) == pytest.approx(0.20)
+    assert compute_edge_score(1.0, 1.0, 1.0, 1.0,
+                              w_trend=0.35, w_regime=0.25, w_carry=0.20, w_value=0.20) == pytest.approx(1.0)
 
 
 def test_edge_direction_sign_and_abstain():

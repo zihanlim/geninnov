@@ -5,8 +5,10 @@ Design spec: docs/superpowers/specs/2026-07-23-edge-score-direction-redesign.md
 
 Direction used to be sign(TradeScore), which — with HypeMomentum ~ 0 — collapsed
 to the sign of near-zero VADER news sentiment. EdgeScore anchors direction to
-measurable expected-return proxies instead. Stages 1 (Trend) and 2 (RegimeFit)
-are implemented here; Carry / Value / Sentiment-demotion (Stages 3–5) are planned.
+measurable expected-return proxies instead. Stages 1 (Trend), 2 (RegimeFit),
+3 (Carry) and 4 (Value) are implemented here; Sentiment-demotion (Stage 5) is
+planned. Stage 4 also adds abstention (in rank_trade_candidates) and conviction ×
+inverse-vol sizing (in allocate_portfolio).
 
 Every component returns a value in [-1, +1] so the scoring_config weights are
 directly comparable.
@@ -82,11 +84,76 @@ def theme_regime_bias(
     return fmean(regime_direction_bias(ac, cycle, sentiment) for ac in asset_classes)
 
 
+# Reference levels for the Stage-3 carry mapping (percent). Documented magic
+# numbers — Stage 5 replaces them with historical / cross-sectional normalization.
+_CARRY_CREDIT_REF = 4.0   # HY OAS scale (~4% "normal" spread)
+_CARRY_RATES_REF = 2.0    # 10y real-yield scale
+_CARRY_FX_NEUTRAL = 1.0   # neutral USD funding rate
+
+
+def _macro_value(macro: dict | None, series_id: str) -> float | None:
+    """Pull a level out of the L0 macro snapshot ({series: {value, ...}} or {series: value})."""
+    d = (macro or {}).get(series_id)
+    if isinstance(d, dict):
+        return d.get("value")
+    return d
+
+
+def carry_signal(asset_class: str, macro: dict | None) -> float:
+    """Stage 3 — 'am I paid to hold this?' from L0 macro LEVELS, in [-1, 1].
+
+    High yield / spread → positive carry → long bias.
+      credit: HY OAS (spread income);  rates: 10y real yield;  fx: USD short rate.
+      equity / commodity: 0 (no clean carry in the L0 snapshot).
+    """
+    if asset_class == "credit":
+        oas = _macro_value(macro, "BAMLH0A0HYM2")
+        return math.tanh(oas / _CARRY_CREDIT_REF) if oas is not None else 0.0
+    if asset_class == "rates":
+        rr = _macro_value(macro, "DFII10")
+        return math.tanh(rr / _CARRY_RATES_REF) if rr is not None else 0.0
+    if asset_class == "fx":
+        dff = _macro_value(macro, "DFF")
+        return math.tanh((dff - _CARRY_FX_NEUTRAL) / 3.0) if dff is not None else 0.0
+    return 0.0
+
+
+def value_signal(asset_class: str, macro_z: dict | None) -> float:
+    """Stage 4 — cheap vs its OWN history = long, via z-scores of L0 levels, [-1, 1].
+
+    ``macro_z`` maps series_id → z-score of the current level vs trailing history.
+      credit: +z(HY OAS)   — wide vs history = cheap = long (mean-reversion)
+      rates:  +z(real yield) — high real yield = bonds cheap = long
+      equity / fx / commodity: 0 (valuation not in the L0 snapshot).
+
+    Value can disagree with Trend (a cheap asset still falling) — that tension is
+    intentional; Stage-4 abstention drops the position when signals conflict.
+    """
+    z = macro_z or {}
+    if asset_class == "credit":
+        return math.tanh(z.get("BAMLH0A0HYM2", 0.0))
+    if asset_class == "rates":
+        return math.tanh(z.get("DFII10", 0.0))
+    return 0.0
+
+
 def compute_edge_score(
-    trend: float, regime_bias: float, w_trend: float = 0.6, w_regime: float = 0.4
+    trend: float,
+    regime_bias: float,
+    carry: float = 0.0,
+    value: float = 0.0,
+    w_trend: float = 0.35,
+    w_regime: float = 0.25,
+    w_carry: float = 0.20,
+    w_value: float = 0.20,
 ) -> float:
-    """Composite EdgeScore for Stages 1+2. Both inputs are already in [-1, 1]."""
-    return w_trend * trend + w_regime * regime_bias
+    """Composite EdgeScore (Stages 1–4). Every component is already in [-1, 1]."""
+    return (
+        w_trend * trend
+        + w_regime * regime_bias
+        + w_carry * carry
+        + w_value * value
+    )
 
 
 def edge_direction(edge_score: float, threshold: float = 0.0) -> str | None:

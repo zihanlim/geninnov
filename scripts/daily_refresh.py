@@ -70,8 +70,11 @@ from backend.services.regime_classifier import RegimeClassifier
 from backend.services.edge_signals import (
     theme_trend,
     theme_regime_bias,
+    carry_signal,
+    value_signal,
     compute_edge_score,
 )
+from statistics import fmean, pstdev
 from backend.services.pipeline_runs import run_id_for, record_pipeline_run
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
@@ -308,41 +311,82 @@ def compute_trade_scores(hyped: list[dict], run_date: date) -> list[dict]:
     return scored
 
 
+def _macro_zscores() -> dict[str, float]:
+    """z-score of each FRED series' latest level vs its trailing history
+    (macro_daily_history, migration 005). Feeds the EdgeScore Value component.
+    Series with < 20 observations are skipped (z stays absent → Value 0)."""
+    z: dict[str, float] = {}
+    try:
+        rows = (
+            supabase.table("macro_daily_history")
+            .select("series_id, value, trading_date")
+            .order("trading_date", desc=True)
+            .limit(5000)
+            .execute()
+            .data
+        )
+    except Exception as exc:
+        print(f"[_macro_zscores] macro_daily_history unavailable "
+              f"({exc.__class__.__name__}): {exc}. EdgeScore Value component = 0.")
+        return z
+    series: dict[str, list[float]] = {}
+    for r in rows:                      # rows are newest-first
+        v = r.get("value")
+        if v is not None:
+            series.setdefault(r["series_id"], []).append(float(v))
+    for sid, vals in series.items():
+        if len(vals) >= 20:
+            latest = vals[0]            # newest-first, so [0] is today's level
+            sd = pstdev(vals)
+            if sd > 0:
+                z[sid] = (latest - fmean(vals)) / sd
+    return z
+
+
 # ─── Step 6: Persist themes + signals history ─────────────────────────────────
 def compute_edge_scores(
     scored: list[dict],
     theme_assets_map: dict[str, list[str]],
     regime,
     cfg: ScoringConfig,
+    macro_snapshot: dict | None = None,
 ) -> list[dict]:
-    """Attach EdgeScore (the direction signal) to each scored theme (ADR-0031).
+    """Attach EdgeScore (direction signal) + conviction to each theme (ADR-0031/0032).
 
-    EdgeScore = edge_trend_weight·Trend + edge_regime_weight·RegimeFit, both in
-    [-1, 1]. Trend is the theme basket's ~6-month price momentum; RegimeFit is how
-    the current cycle×sentiment regime leans the theme's asset classes. Direction
-    then comes from sign(EdgeScore) in rank_trade_candidates — replacing the old
-    sign(near-zero sentiment). Prices unavailable → Trend 0; regime None →
-    RegimeFit 0, so EdgeScore degrades to whichever component is measurable.
+    EdgeScore = w_trend·Trend + w_regime·RegimeFit + w_carry·Carry + w_value·Value,
+    every component in [-1, 1]:
+      Trend    — theme basket ~6-month price momentum      (Stage 1)
+      RegimeFit— cycle×sentiment lean of the asset classes (Stage 2)
+      Carry    — L0 yield/spread income (credit/rates/fx)  (Stage 3)
+      Value    — z-score of L0 levels vs history, cheap=long (Stage 4)
+    Direction = sign(EdgeScore), with abstention (|EdgeScore| < threshold) applied
+    in rank_trade_candidates. `conviction` = |EdgeScore| / vol drives Stage-4
+    sizing. Any unavailable component degrades to 0 (honest), never fabricated.
     """
     cycle = getattr(regime, "cycle", None)
     sentiment = getattr(regime, "sentiment", None)
+    macro_z = _macro_zscores()
 
-    # One price pull for every asset across all themes (6-month window), then a
-    # trailing basket return per theme.
+    # One price pull for every asset (6-month window) → trailing basket return
+    # (Trend) and daily-return vol (inverse-vol sizing).
     all_assets = sorted({a for assets in theme_assets_map.values() for a in assets})
     ret_by_asset: dict[str, float] = {}
+    vol_by_asset: dict[str, float] = {}
     if all_assets:
         try:
             price_df = fetch_price_data(all_assets, lookback_days=EDGE_TREND_WINDOW_DAYS)
             for a in all_assets:
-                sub = price_df[price_df["ticker"] == a].sort_values("date")
-                if len(sub) >= 2:
-                    first, last = float(sub.iloc[0]["close"]), float(sub.iloc[-1]["close"])
+                closes = price_df[price_df["ticker"] == a].sort_values("date")["close"].astype(float)
+                if len(closes) >= 2:
+                    first, last = float(closes.iloc[0]), float(closes.iloc[-1])
                     if first > 0:
                         ret_by_asset[a] = last / first - 1.0
+                    daily = closes.pct_change().dropna()
+                    if len(daily) >= 2 and float(daily.std()) > 0:
+                        vol_by_asset[a] = float(daily.std())
         except Exception as exc:
             print(f"[compute_edge_scores] price fetch failed ({exc.__class__.__name__}): "
-                  f"{exc}. Trend defaults to 0; EdgeScore = regime only.")
+                  f"{exc}. Trend/vol default to 0.")
 
     missing_trend = 0
     for r in scored:
@@ -351,18 +395,30 @@ def compute_edge_scores(
         if not any(v is not None for v in returns.values()):
             missing_trend += 1
         trend = theme_trend(returns)
-        asset_classes = [classify(a)["asset_class"] for a in assets if is_classified(a)]
-        rbias = theme_regime_bias(asset_classes, cycle, sentiment)
+        acs = [classify(a)["asset_class"] for a in assets if is_classified(a)]
+        rbias = theme_regime_bias(acs, cycle, sentiment)
+        carry = fmean([carry_signal(ac, macro_snapshot) for ac in acs]) if acs else 0.0
+        value = fmean([value_signal(ac, macro_z) for ac in acs]) if acs else 0.0
+        edge = compute_edge_score(
+            trend, rbias, carry, value,
+            w_trend=cfg.edge_trend_weight, w_regime=cfg.edge_regime_weight,
+            w_carry=cfg.edge_carry_weight, w_value=cfg.edge_value_weight,
+        )
+        vols = [vol_by_asset[a] for a in assets if a in vol_by_asset]
+        theme_vol = fmean(vols) if vols else 0.0
+
         r["trend_signal"] = trend
         r["regime_bias"] = rbias
-        r["edge_score"] = compute_edge_score(
-            trend, rbias, cfg.edge_trend_weight, cfg.edge_regime_weight
-        )
+        r["carry_signal"] = carry
+        r["value_signal"] = value
+        r["edge_score"] = edge
+        r["vol"] = theme_vol
+        # Conviction for Stage-4 sizing: signal strength scaled by inverse vol.
+        r["conviction"] = (abs(edge) / theme_vol) if theme_vol > 0 else abs(edge)
 
     if missing_trend:
         print(f"[compute_edge_scores] NOTE: no price data for "
-              f"{missing_trend}/{len(scored)} themes; their Trend component is 0 "
-              f"(EdgeScore = regime only).")
+              f"{missing_trend}/{len(scored)} themes; their Trend/vol are 0.")
     return scored
 
 
@@ -424,10 +480,13 @@ def persist(run_date: date, scored: list[dict]):
             "signed_corr": r["price_corr"],
             "crowding": crowding_label(r["price_corr"], volume_norm=vol_norm),
             "data_source": r.get("data_source"),
-            # EdgeScore direction signal + components (migration 023).
+            # EdgeScore direction signal + components (migrations 023–024).
             "edge_score": r.get("edge_score"),
             "trend_signal": r.get("trend_signal"),
             "regime_bias": r.get("regime_bias"),
+            "carry_signal": r.get("carry_signal"),
+            "value_signal": r.get("value_signal"),
+            "conviction": r.get("conviction"),
         }
         try:
             supabase.table("theme_signals_history").upsert(
@@ -599,10 +658,13 @@ def rank_and_persist_trade_candidates(
     # signal exists: if every hype-eligible theme shares one direction, the thin
     # side is backfilled from the strongest sub-threshold theme (ADR-0029).
     # score_key="edge_score": direction + intra-side ranking use the EdgeScore
-    # (price trend + regime fit), not sign(near-zero sentiment) (ADR-0031).
+    # (trend + regime + carry + value), not sign(near-zero sentiment) (ADR-0031).
+    # abstain_threshold: a theme with |EdgeScore| below it is dropped rather than
+    # forced into a low-conviction position (Stage-4 abstention, ADR-0032).
     longs, shorts = rank_trade_candidates(
         scored, theme_assets_map, cfg.hype_score_threshold,
         top_n=5, min_side=1, score_key="edge_score",
+        abstain_threshold=cfg.edge_abstain_threshold,
     )
 
     # Drop any candidate whose ticker isn't in all three taxonomy maps before it
@@ -654,9 +716,13 @@ def allocate_and_persist_portfolio(
     run_date: date,
     cfg: ScoringConfig,
 ) -> list[tuple[TradeCandidate, float, float]]:
+    # size_by="conviction": weight ∝ |EdgeScore| / vol (conviction × inverse-vol),
+    # not ∝ HypeScore — sizing follows edge strength and risk, not popularity
+    # (Stage-4, ADR-0032). Falls back to hype weighting if no conviction is present.
     positioned = allocate_portfolio(
         candidates, cfg.total_capital,
-        sector_map=SECTOR_MAP, geo_map=GEO_MAP
+        sector_map=SECTOR_MAP, geo_map=GEO_MAP,
+        size_by="conviction",
     )
 
     today_str = run_date.isoformat()
@@ -1097,7 +1163,8 @@ def main():
     # before persist/rank so the persisted signals AND the long/short direction
     # both use it, replacing sign(near-zero sentiment).
     theme_assets_map = load_theme_assets_map([s["theme_id"] for s in scored], run_date)
-    scored = compute_edge_scores(scored, theme_assets_map, regime, cfg)
+    scored = compute_edge_scores(scored, theme_assets_map, regime, cfg,
+                                 macro_snapshot=macro_snapshot)
     persist(run_date, scored)
     persist_theme_news(run_date, scored)
 

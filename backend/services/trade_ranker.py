@@ -105,6 +105,8 @@ class TradeCandidate:
     hype_score: float
     avg_sentiment: float
     edge_score: float = 0.0   # direction basis (ADR-0031); sign(edge_score) == direction
+    vol: float = 0.0          # daily-return vol of the theme basket (ADR-0032 sizing)
+    conviction: float = 0.0   # |edge_score| / vol — Stage-4 conviction × inverse-vol weight
 
     def to_trade_candidate_row(self, run_date: str, timeframe: str = "1-2 weeks") -> dict:
         side = "Long" if self.direction == "long" else "Short"
@@ -147,6 +149,7 @@ def rank_trade_candidates(
     top_n: int = 5,
     min_side: int = 1,
     score_key: str = "trade_score",
+    abstain_threshold: float = 0.0,
 ) -> tuple[list[TradeCandidate], list[TradeCandidate]]:
     """Select up to N longs and N shorts from scored themes (ADR-0029).
 
@@ -165,16 +168,20 @@ def rank_trade_candidates(
                            ranks within a side. Defaults to "trade_score"; daily_refresh
                            passes "edge_score" so direction is anchored to the EdgeScore
                            (price trend + regime fit), not near-zero news sentiment (ADR-0031).
+        abstain_threshold: Stage-4 abstention band (ADR-0032). A theme enters a side
+                           only if |score_key| >= this. A weak/flat signal produces NO
+                           position rather than a forced one; a side (or the whole book)
+                           can legitimately be empty when conviction is absent.
 
     Returns:
         (longs, shorts) as lists of TradeCandidate.
     """
     def _pool(rows: list[dict], positive: bool) -> list[dict]:
-        # Themes of the requested direction, strongest-signal-first. Excludes an
-        # exactly-zero score (no directional signal either way).
+        # Themes of the requested direction, strongest-signal-first. Abstains on a
+        # signal weaker than abstain_threshold (0.0 => only exclude exactly-zero).
         side = [
             r for r in rows
-            if (r.get(score_key) or 0) != 0
+            if abs(r.get(score_key) or 0) >= max(abstain_threshold, 1e-12)
             and ((r.get(score_key) or 0) > 0) == positive
         ]
         side.sort(key=lambda r: (r.get(score_key) or 0), reverse=positive)
@@ -215,6 +222,8 @@ def _expand(
                     hype_score=r["hype_score"],
                     avg_sentiment=r.get("avg_sentiment", 0.0),
                     edge_score=r.get("edge_score", 0.0),
+                    vol=r.get("vol", 0.0),
+                    conviction=r.get("conviction", 0.0),
                 )
             )
     return out
@@ -228,6 +237,7 @@ def allocate_portfolio(
     max_single: float = MAX_SINGLE_NAME_WEIGHT,
     max_sector: float = MAX_SECTOR_WEIGHT,
     max_geo: float = MAX_GEO_WEIGHT,
+    size_by: str = "hype",
 ) -> list[tuple[TradeCandidate, float, float]]:
     """Size positions per spec section 7.1 with sector/geo/single-name caps.
 
@@ -239,6 +249,9 @@ def allocate_portfolio(
         max_single:  max weight per single name (default 20%)
         max_sector:  max weight per sector (default 30%)
         max_geo:     max weight per geography (default 35%)
+        size_by:     "hype" (default, ∝ HypeScore) or "conviction" (Stage-4:
+                     ∝ conviction = |EdgeScore| / vol, i.e. conviction × inverse-vol).
+                     "conviction" falls back to hype if no candidate carries any.
 
     Returns:
         List of (candidate, notional, weight) tuples. weight is the notional's
@@ -252,7 +265,12 @@ def allocate_portfolio(
     sector_map = sector_map or SECTOR_MAP
     geo_map = geo_map or GEO_MAP
 
-    raw_weights = [max(c.hype_score, 0.0) / 100.0 for c in candidates]
+    if size_by == "conviction":
+        raw_weights = [max(c.conviction, 0.0) for c in candidates]
+        if sum(raw_weights) == 0:   # no conviction anywhere → fall back to hype
+            raw_weights = [max(c.hype_score, 0.0) / 100.0 for c in candidates]
+    else:
+        raw_weights = [max(c.hype_score, 0.0) / 100.0 for c in candidates]
     total_raw = sum(raw_weights)
 
     if total_raw == 0:

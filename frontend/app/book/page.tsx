@@ -451,7 +451,7 @@ function BookPageInner() {
           )}
 
           {/* ── Book header stats ───────────────────────────────────────── */}
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
             <Stat
               label="Positions"
               value={String(rec.picks.length)}
@@ -771,10 +771,10 @@ function PositionSection({
           />
         </div>
       ) : (
-        <div className="card overflow-hidden">
+        <div className="card overflow-x-auto">
           {/* Column legend for the dense row grid below. */}
           <div
-            className="px-[18px] py-2 grid items-center gap-3 border-b border-border bg-bg-elevated text-[10px] uppercase tracking-[0.08em] text-text-tertiary"
+            className="min-w-[640px] px-[18px] py-2 grid items-center gap-3 border-b border-border bg-bg-elevated text-[10px] uppercase tracking-[0.08em] text-text-tertiary"
             style={{ gridTemplateColumns: "28px 1fr 132px 78px 78px 78px 24px" }}
           >
             <span>#</span>
@@ -929,7 +929,7 @@ function PositionRow({
           }
         }}
         aria-expanded={open}
-        className="w-full text-left px-[18px] py-3.5 hover:bg-bg-elevated transition-colors grid items-center gap-3 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        className="w-full min-w-[640px] text-left px-[18px] py-3.5 hover:bg-bg-elevated transition-colors grid items-center gap-3 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
         style={{ gridTemplateColumns: "28px 1fr 132px 78px 78px 78px 24px" }}
       >
         <span className="num text-text-tertiary text-[12px]">#{rank}</span>

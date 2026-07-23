@@ -102,7 +102,8 @@ export default function TopBar() {
             </Link>
           );
         })}
-        <span className="w-px h-4 bg-border mx-1.5" />
+        {/* Legacy links (redirects) — hidden below xl so the header never crowds. */}
+        <span className="hidden xl:block w-px h-4 bg-border mx-1.5" />
         {SECONDARY_NAV.map((item) => {
           const isActive = pathname?.startsWith(item.href);
           return (
@@ -110,7 +111,7 @@ export default function TopBar() {
               key={item.href}
               href={item.href}
               aria-current={isActive ? "page" : undefined}
-              className={`px-2.5 py-1.5 rounded-md text-[12px] transition-colors ${
+              className={`hidden xl:inline-flex px-2.5 py-1.5 rounded-md text-[12px] transition-colors ${
                 isActive
                   ? "text-text-primary bg-bg-elevated"
                   : "text-text-tertiary hover:text-text-secondary hover:bg-bg-hover"
@@ -122,21 +123,24 @@ export default function TopBar() {
         })}
       </nav>
 
-      <div className="flex items-center gap-4 text-text-secondary text-[12px]">
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-bg-elevated border border-border rounded-full text-[11px]">
+      <div className="flex items-center gap-3 text-text-secondary text-[12px] justify-self-end">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-bg-elevated border border-border rounded-full text-[11px] whitespace-nowrap">
           <span
-            className={`w-1.5 h-1.5 rounded-full ${
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
               live === null
                 ? "bg-text-tertiary"
                 : live
-                  ? "bg-long shadow-[0_0_8px_var(--long)]"
-                  : "bg-warning shadow-[0_0_8px_var(--warning)]"
+                  ? "bg-long"
+                  : "bg-warning"
             }`}
           />
-          Data {live === null ? "—" : live ? "live" : "stale"} ·{" "}
-          {formatTime(lastUpdated)} ET
+          Data {live === null ? "—" : live ? "live" : "stale"}
+          <span className="hidden sm:inline">
+            {" · "}
+            {formatTime(lastUpdated)} ET
+          </span>
         </span>
-        <span className="text-text-tertiary num">{etNow ?? "—"}</span>
+        <span className="hidden md:inline text-text-tertiary num">{etNow ?? "—"}</span>
       </div>
     </header>
   );

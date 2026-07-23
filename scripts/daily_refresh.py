@@ -487,6 +487,7 @@ def persist(run_date: date, scored: list[dict]):
             "carry_signal": r.get("carry_signal"),
             "value_signal": r.get("value_signal"),
             "conviction": r.get("conviction"),
+            "vol": r.get("vol"),
         }
         try:
             supabase.table("theme_signals_history").upsert(

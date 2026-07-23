@@ -105,8 +105,26 @@ class TradeCandidate:
     hype_score: float
     avg_sentiment: float
     edge_score: float = 0.0   # direction basis (ADR-0031); sign(edge_score) == direction
+    trend_signal: float = 0.0   # EdgeScore component: 6m price trend
+    regime_bias: float = 0.0    # EdgeScore component: regime fit
+    carry_signal: float = 0.0   # EdgeScore component: yield/spread carry
+    value_signal: float = 0.0   # EdgeScore component: value (z-score vs history)
     vol: float = 0.0          # daily-return vol of the theme basket (ADR-0032 sizing)
     conviction: float = 0.0   # |edge_score| / vol — Stage-4 conviction × inverse-vol weight
+
+    def _edge_row(self) -> dict:
+        """The EdgeScore decision block persisted on both candidate + position rows,
+        so the frontend can show the real 4-component direction + conviction sizing
+        (ADR-0031/0032) instead of the superseded 2-component / HypeScore view."""
+        return {
+            "edge_score": self.edge_score,
+            "trend_signal": self.trend_signal,
+            "regime_bias": self.regime_bias,
+            "carry_signal": self.carry_signal,
+            "value_signal": self.value_signal,
+            "conviction": self.conviction,
+            "vol": self.vol,
+        }
 
     def to_trade_candidate_row(self, run_date: str, timeframe: str = "1-2 weeks") -> dict:
         side = "Long" if self.direction == "long" else "Short"
@@ -128,6 +146,7 @@ class TradeCandidate:
             "entry_thesis": thesis,
             "risk_factors": risk,
             "timeframe": timeframe,
+            **self._edge_row(),
         }
 
     def to_portfolio_position_row(self, notional: float, weight: float) -> dict:
@@ -139,6 +158,7 @@ class TradeCandidate:
             "weight": weight,
             "hype_score": self.hype_score,
             "trade_score": self.trade_score,
+            **self._edge_row(),
         }
 
 
@@ -222,6 +242,10 @@ def _expand(
                     hype_score=r["hype_score"],
                     avg_sentiment=r.get("avg_sentiment", 0.0),
                     edge_score=r.get("edge_score", 0.0),
+                    trend_signal=r.get("trend_signal", 0.0),
+                    regime_bias=r.get("regime_bias", 0.0),
+                    carry_signal=r.get("carry_signal", 0.0),
+                    value_signal=r.get("value_signal", 0.0),
                     vol=r.get("vol", 0.0),
                     conviction=r.get("conviction", 0.0),
                 )

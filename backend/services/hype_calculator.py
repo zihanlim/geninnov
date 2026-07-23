@@ -11,6 +11,11 @@ class ScoringConfig:
     hype_score_threshold: float = 50.0
     total_capital: float = 100_000_000.0
     risk_free_annual: float = 0.045
+    # EdgeScore direction weights (migration 023). Direction = sign(EdgeScore),
+    # EdgeScore = edge_trend_weight·Trend + edge_regime_weight·RegimeFit.
+    edge_trend_weight: float = 0.6
+    edge_regime_weight: float = 0.4
+    edge_abstain_threshold: float = 0.0
 
     @classmethod
     def from_db_rows(cls, rows: list[dict]) -> "ScoringConfig":
@@ -25,6 +30,9 @@ class ScoringConfig:
             hype_score_threshold=vals.get("hype_score_threshold", 50.0),
             total_capital=vals.get("total_capital", 100_000_000.0),
             risk_free_annual=vals.get("risk_free_annual", 0.045),
+            edge_trend_weight=vals.get("edge_trend_weight", 0.6),
+            edge_regime_weight=vals.get("edge_regime_weight", 0.4),
+            edge_abstain_threshold=vals.get("edge_abstain_threshold", 0.0),
         )
 
 def minmax_norm(value: float, values: list[float]) -> float:

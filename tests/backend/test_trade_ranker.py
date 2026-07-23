@@ -149,6 +149,22 @@ def test_rank_backfill_respects_min_side():
     assert [c.theme_id for c in longs] == ["l1", "l2"]       # top-2 sub-threshold longs
 
 
+def test_rank_uses_edge_score_when_score_key_given():
+    """ADR-0031: direction + intra-side ranking follow score_key. A theme whose
+    news sentiment (trade_score) is negative but whose EdgeScore (trend + regime)
+    is positive becomes a LONG under score_key='edge_score' — the whole point of
+    moving direction off near-zero sentiment."""
+    scored = [
+        {"theme_id": "t1", "hype_score": 80.0, "trade_score": -0.3, "edge_score": 0.5, "avg_sentiment": -0.2},
+        {"theme_id": "t2", "hype_score": 70.0, "trade_score": 0.4, "edge_score": -0.6, "avg_sentiment": 0.3},
+    ]
+    assets = {"t1": ["AAA"], "t2": ["BBB"]}
+    longs, shorts = rank_trade_candidates(scored, assets, hype_threshold=50.0, score_key="edge_score")
+    assert [c.theme_id for c in longs] == ["t1"]    # +edge -> long despite -trade_score
+    assert [c.theme_id for c in shorts] == ["t2"]   # -edge -> short despite +trade_score
+    assert longs[0].edge_score == 0.5               # carried onto the candidate
+
+
 def test_allocate_proportional_to_hype_score():
     """Capital split proportional to each candidate's hype_score.
 

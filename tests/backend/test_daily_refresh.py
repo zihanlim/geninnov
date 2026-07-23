@@ -495,9 +495,10 @@ def test_rank_and_persist_trade_candidates_writes_to_supabase():
     from daily_refresh import rank_and_persist_trade_candidates
 
     cfg = _phase3_cfg()
+    # rank_and_persist now ranks on edge_score (ADR-0031), so seed it.
     scored = [
-        {"theme_id": "long1", "hype_score": 75.0, "trade_score": 0.5, "avg_sentiment": 0.3},
-        {"theme_id": "short1", "hype_score": 70.0, "trade_score": -0.4, "avg_sentiment": -0.2},
+        {"theme_id": "long1", "hype_score": 75.0, "trade_score": 0.5, "edge_score": 0.5, "avg_sentiment": 0.3},
+        {"theme_id": "short1", "hype_score": 70.0, "trade_score": -0.4, "edge_score": -0.4, "avg_sentiment": -0.2},
     ]
     asset_rows = [
         {"theme_id": "long1", "ticker": "TLT", "run_date": "2026-07-21"},

@@ -67,12 +67,20 @@ from backend.services.portfolio import (
     MissingReturnError,
 )
 from backend.services.regime_classifier import RegimeClassifier
+from backend.services.edge_signals import (
+    theme_trend,
+    theme_regime_bias,
+    compute_edge_score,
+)
 from backend.services.pipeline_runs import run_id_for, record_pipeline_run
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]  # service role key for writes
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# EdgeScore Stage-1 trend window (calendar days ≈ 6 months / ~126 trading days).
+EDGE_TREND_WINDOW_DAYS = 180
 
 
 # ─── Step 1: Load config from Supabase ───────────────────────────────────────
@@ -301,6 +309,63 @@ def compute_trade_scores(hyped: list[dict], run_date: date) -> list[dict]:
 
 
 # ─── Step 6: Persist themes + signals history ─────────────────────────────────
+def compute_edge_scores(
+    scored: list[dict],
+    theme_assets_map: dict[str, list[str]],
+    regime,
+    cfg: ScoringConfig,
+) -> list[dict]:
+    """Attach EdgeScore (the direction signal) to each scored theme (ADR-0031).
+
+    EdgeScore = edge_trend_weight·Trend + edge_regime_weight·RegimeFit, both in
+    [-1, 1]. Trend is the theme basket's ~6-month price momentum; RegimeFit is how
+    the current cycle×sentiment regime leans the theme's asset classes. Direction
+    then comes from sign(EdgeScore) in rank_trade_candidates — replacing the old
+    sign(near-zero sentiment). Prices unavailable → Trend 0; regime None →
+    RegimeFit 0, so EdgeScore degrades to whichever component is measurable.
+    """
+    cycle = getattr(regime, "cycle", None)
+    sentiment = getattr(regime, "sentiment", None)
+
+    # One price pull for every asset across all themes (6-month window), then a
+    # trailing basket return per theme.
+    all_assets = sorted({a for assets in theme_assets_map.values() for a in assets})
+    ret_by_asset: dict[str, float] = {}
+    if all_assets:
+        try:
+            price_df = fetch_price_data(all_assets, lookback_days=EDGE_TREND_WINDOW_DAYS)
+            for a in all_assets:
+                sub = price_df[price_df["ticker"] == a].sort_values("date")
+                if len(sub) >= 2:
+                    first, last = float(sub.iloc[0]["close"]), float(sub.iloc[-1]["close"])
+                    if first > 0:
+                        ret_by_asset[a] = last / first - 1.0
+        except Exception as exc:
+            print(f"[compute_edge_scores] price fetch failed ({exc.__class__.__name__}): "
+                  f"{exc}. Trend defaults to 0; EdgeScore = regime only.")
+
+    missing_trend = 0
+    for r in scored:
+        assets = theme_assets_map.get(r["theme_id"], [])
+        returns = {a: ret_by_asset.get(a) for a in assets}
+        if not any(v is not None for v in returns.values()):
+            missing_trend += 1
+        trend = theme_trend(returns)
+        asset_classes = [classify(a)["asset_class"] for a in assets if is_classified(a)]
+        rbias = theme_regime_bias(asset_classes, cycle, sentiment)
+        r["trend_signal"] = trend
+        r["regime_bias"] = rbias
+        r["edge_score"] = compute_edge_score(
+            trend, rbias, cfg.edge_trend_weight, cfg.edge_regime_weight
+        )
+
+    if missing_trend:
+        print(f"[compute_edge_scores] NOTE: no price data for "
+              f"{missing_trend}/{len(scored)} themes; their Trend component is 0 "
+              f"(EdgeScore = regime only).")
+    return scored
+
+
 def persist(run_date: date, scored: list[dict]):
     today_str = run_date.isoformat()
 
@@ -359,6 +424,10 @@ def persist(run_date: date, scored: list[dict]):
             "signed_corr": r["price_corr"],
             "crowding": crowding_label(r["price_corr"], volume_norm=vol_norm),
             "data_source": r.get("data_source"),
+            # EdgeScore direction signal + components (migration 023).
+            "edge_score": r.get("edge_score"),
+            "trend_signal": r.get("trend_signal"),
+            "regime_bias": r.get("regime_bias"),
         }
         try:
             supabase.table("theme_signals_history").upsert(
@@ -529,8 +598,11 @@ def rank_and_persist_trade_candidates(
     # min_side=1 guarantees the book is never one-sided while opposite-sign
     # signal exists: if every hype-eligible theme shares one direction, the thin
     # side is backfilled from the strongest sub-threshold theme (ADR-0029).
+    # score_key="edge_score": direction + intra-side ranking use the EdgeScore
+    # (price trend + regime fit), not sign(near-zero sentiment) (ADR-0031).
     longs, shorts = rank_trade_candidates(
-        scored, theme_assets_map, cfg.hype_score_threshold, top_n=5, min_side=1
+        scored, theme_assets_map, cfg.hype_score_threshold,
+        top_n=5, min_side=1, score_key="edge_score",
     )
 
     # Drop any candidate whose ticker isn't in all three taxonomy maps before it
@@ -1021,6 +1093,11 @@ def main():
     raw = build_theme_signals(themes, run_date)
     hyped = compute_hype_scores(raw, cfg)
     scored = compute_trade_scores(hyped, run_date)
+    # EdgeScore direction signal (ADR-0031): price trend + regime fit. Computed
+    # before persist/rank so the persisted signals AND the long/short direction
+    # both use it, replacing sign(near-zero sentiment).
+    theme_assets_map = load_theme_assets_map([s["theme_id"] for s in scored], run_date)
+    scored = compute_edge_scores(scored, theme_assets_map, regime, cfg)
     persist(run_date, scored)
     persist_theme_news(run_date, scored)
 

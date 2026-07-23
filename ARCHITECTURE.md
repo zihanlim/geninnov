@@ -77,7 +77,7 @@ flowchart TB
             DAV["advisory.py<br/>AdvisoryDerivation,<br/>validate_advisory,<br/>fallback_used strictness (T18)"]
         end
 
-        TG["backend/services/trade_ranker.py<br/>rank + size $100M book"]
+        TG["backend/services/trade_ranker.py<br/>direction = sign(EdgeScore)<br/>(trend + regime, ADR-0031)<br/>rank + size $100M book"]
         POLYSVC["backend/data/polymarket_fetcher.py<br/>prediction market feed"]
         PIPE["backend/services/pipeline_runs.py<br/>record_pipeline_run,<br/>run_id_for(stage)"]
         PF["backend/services/portfolio.py<br/>compute_daily_return,<br/>compute_cumulative_return"]
@@ -193,7 +193,7 @@ flowchart TB
     DB -- "L0–L4 snapshot" --> N1
     DB -- "scoring_config" --> N1
     T_NEWS -. "recent headlines" .-> N1
-    TG -- "L1 candidate pool<br/>(hype-gated, directioned,<br/>two-sided) — ADR-0030" --> N2
+    TG -- "L1 candidate pool<br/>(hype-gated, EdgeScore-directioned,<br/>two-sided) — ADR-0030/0031" --> N2
 
     %% ───────── LLM edges ─────────
     MINIMAX -. "preferred" .-> N3

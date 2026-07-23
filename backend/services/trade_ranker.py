@@ -104,12 +104,13 @@ class TradeCandidate:
     trade_score: float
     hype_score: float
     avg_sentiment: float
+    edge_score: float = 0.0   # direction basis (ADR-0031); sign(edge_score) == direction
 
     def to_trade_candidate_row(self, run_date: str, timeframe: str = "1-2 weeks") -> dict:
         side = "Long" if self.direction == "long" else "Short"
         thesis = (
-            f"{side} {self.asset} on theme momentum "
-            f"(HypeScore {self.hype_score:.1f}, TradeScore {self.trade_score:+.2f}, "
+            f"{side} {self.asset} — direction from EdgeScore {self.edge_score:+.2f} "
+            f"(price trend + regime fit; HypeScore {self.hype_score:.1f} attention, "
             f"sentiment {self.avg_sentiment:+.2f})."
         )
         risk = (
@@ -145,11 +146,13 @@ def rank_trade_candidates(
     hype_threshold: float,
     top_n: int = 5,
     min_side: int = 1,
+    score_key: str = "trade_score",
 ) -> tuple[list[TradeCandidate], list[TradeCandidate]]:
     """Select up to N longs and N shorts from scored themes (ADR-0029).
 
     Args:
-        scored:            list of dicts with keys theme_id, trade_score, hype_score, avg_sentiment.
+        scored:            list of dicts with keys theme_id, hype_score, avg_sentiment,
+                           and the direction basis named by ``score_key``.
         theme_assets_map:  {theme_id: [ticker, ...]} - how to expand each theme into candidates.
                            Use empty list to skip a theme.
         hype_threshold:    themes with hype_score >= this value fill each side first.
@@ -158,19 +161,23 @@ def rank_trade_candidates(
                            pass yields fewer than this on a side, backfill from the
                            strongest sub-threshold themes of that direction so the
                            book is never one-sided while opposite-sign signal exists.
+        score_key:         the field whose SIGN sets direction and whose MAGNITUDE
+                           ranks within a side. Defaults to "trade_score"; daily_refresh
+                           passes "edge_score" so direction is anchored to the EdgeScore
+                           (price trend + regime fit), not near-zero news sentiment (ADR-0031).
 
     Returns:
         (longs, shorts) as lists of TradeCandidate.
     """
     def _pool(rows: list[dict], positive: bool) -> list[dict]:
-        # Themes of the requested direction, strongest-signal-first. Excludes
-        # exactly-zero trade_score (no directional signal either way).
+        # Themes of the requested direction, strongest-signal-first. Excludes an
+        # exactly-zero score (no directional signal either way).
         side = [
             r for r in rows
-            if (r.get("trade_score") or 0) != 0
-            and ((r.get("trade_score") or 0) > 0) == positive
+            if (r.get(score_key) or 0) != 0
+            and ((r.get(score_key) or 0) > 0) == positive
         ]
-        side.sort(key=lambda r: r["trade_score"], reverse=positive)
+        side.sort(key=lambda r: (r.get(score_key) or 0), reverse=positive)
         return side
 
     eligible = [r for r in scored if (r.get("hype_score") or 0) >= hype_threshold]
@@ -207,6 +214,7 @@ def _expand(
                     trade_score=r["trade_score"],
                     hype_score=r["hype_score"],
                     avg_sentiment=r.get("avg_sentiment", 0.0),
+                    edge_score=r.get("edge_score", 0.0),
                 )
             )
     return out

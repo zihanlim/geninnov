@@ -79,7 +79,7 @@ export default function TopBar() {
       </Link>
 
       <nav
-        className="flex gap-1 justify-self-center items-center"
+        className="flex gap-0.5 sm:gap-1 justify-self-center items-center min-w-0"
         aria-label="Primary"
       >
         {NAV_ITEMS.map((item) => {
@@ -92,7 +92,7 @@ export default function TopBar() {
               key={item.href}
               href={item.href}
               aria-current={isActive ? "page" : undefined}
-              className={`px-3 py-1.5 rounded-md font-medium text-[13px] transition-colors ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-md font-medium text-[13px] transition-colors ${
                 isActive
                   ? "text-text-primary bg-bg-elevated"
                   : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"

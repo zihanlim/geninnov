@@ -50,7 +50,7 @@ export function SubHead({ children, note }: { children: ReactNode; note?: ReactN
 
 export function Formula({ children, label }: { children: ReactNode; label?: string }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-border-strong bg-bg-primary">
+    <div className="overflow-x-auto min-w-0 rounded-lg border border-border-strong bg-bg-primary">
       {label ? (
         <div className="px-4 pt-3 text-[10px] uppercase tracking-[0.14em] text-text-tertiary">
           {label}
@@ -175,7 +175,11 @@ export function Stat({
 /* ── Table shell — always horizontally scrollable in its own container ────── */
 
 export function TableWrap({ children }: { children: ReactNode }) {
-  return <div className="overflow-x-auto">{children}</div>;
+  // min-w-0: an overflow-x-auto div that is a flex/grid item still gets
+  // min-width:auto, which resolves to the table's min-content and makes the
+  // wrapper grow instead of clip — leaking horizontal scroll to the body on
+  // phones. min-w-0 lets it shrink to its container so the table scrolls locally.
+  return <div className="overflow-x-auto min-w-0">{children}</div>;
 }
 
 export function Th({

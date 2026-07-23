@@ -25,16 +25,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={`${sans.variable} ${mono.variable} font-sans antialiased`}>
-        {/* grid-cols-[minmax(0,1fr)]: the single column must be allowed to
-            shrink below its min-content, otherwise a wide child (e.g. the
-            640px min-width position table) sets a min-content floor that
-            forces the whole page wider than a phone viewport — the column
-            defaults to `auto`, which does exactly that. minmax(0,…) caps
-            every page's <main> at the viewport so wide tables scroll locally
-            in their own overflow-x-auto wrapper instead of scrolling the body. */}
+        {/* grid-cols-[minmax(0,1fr)] pins the single column to the viewport
+            (its default `auto` would size to min-content and blow past a phone).
+            The min-w-0 wrapper is the other half: a grid *item* still has
+            min-width:auto and would overflow its own cell to its min-content
+            (the 640px position table). min-w-0 lets it shrink to the cell so
+            wide tables scroll locally in their overflow-x-auto wrapper instead
+            of scrolling the body. Both are needed — track AND item. */}
         <div className="min-h-screen grid grid-cols-[minmax(0,1fr)] grid-rows-[56px_1fr]">
           <TopBar />
-          {children}
+          <div className="min-w-0">{children}</div>
         </div>
         <LiveFeed />
       </body>

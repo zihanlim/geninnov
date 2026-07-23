@@ -18,6 +18,8 @@ export interface ConvictionTheme {
   history?: number[];
   /** Latest 1-day mention count from theme_signals_history. */
   mention_count_1d?: number | null;
+  /** Trailing 7-day average daily mentions — the headline attention volume. */
+  mention_count_7d_avg?: number | null;
   /**
    * Percentile band of the current HypeScore within this theme's own history.
    * "high" = crowded consensus, "low" = fading attention. Undefined when there
@@ -180,11 +182,22 @@ export default function ConvictionCard({
 
       <div className="grid grid-cols-3 gap-2.5 pt-3 mt-3 border-t border-border">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-0.5">
-            Mentions
+          <div
+            className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-0.5"
+            title={
+              theme.mention_count_7d_avg == null
+                ? "Trailing 7-day average daily mentions across news + social"
+                : `Trailing 7-day average daily mentions across news + social · ${theme.mention_count_1d ?? 0} today`
+            }
+          >
+            Mentions/day
           </div>
           <div className="text-[13px] font-semibold num">
-            {theme.mention_count_1d ?? "—"}
+            {theme.mention_count_7d_avg == null
+              ? "—"
+              : theme.mention_count_7d_avg < 10
+                ? theme.mention_count_7d_avg.toFixed(1)
+                : Math.round(theme.mention_count_7d_avg)}
           </div>
         </div>
         <div>

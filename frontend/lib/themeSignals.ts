@@ -37,6 +37,12 @@ export interface ThemeSignalPoint {
   hype_score: number | null;
   trade_score: number | null;
   mention_count_1d: number | null;
+  /**
+   * Trailing 7-day average of daily mention counts. The 1-day count is often 0
+   * (a run frequently collects no article dated that exact day), so the windowed
+   * average is the stable "attention volume" figure a card should headline.
+   */
+  mention_count_7d_avg: number | null;
   avg_sentiment: number | null;
   price_corr: number | null;
 }
@@ -64,6 +70,12 @@ export interface ThemeHistory {
    * Null only when no row carries a count.
    */
   latestMentionCount: number | null;
+  /**
+   * Trailing 7-day average daily mentions on the most recent run. This is the
+   * headline "attention volume" a card shows, because the 1-day count is often
+   * zero even for a theme with real weekly attention. Null when unavailable.
+   */
+  latestMention7dAvg: number | null;
 }
 
 const EMPTY_HISTORY: ThemeHistory = {
@@ -73,18 +85,24 @@ const EMPTY_HISTORY: ThemeHistory = {
   delta5d: null,
   percentile: null,
   latestMentionCount: null,
+  latestMention7dAvg: null,
 };
 
 function summarise(points: ThemeSignalPoint[]): ThemeHistory {
-  // Latest mention count is independent of the hype series: `points` is ascending
-  // by run_date, so the last row with a numeric count is today's attention volume.
+  // Latest mention figures are independent of the hype series: `points` is
+  // ascending by run_date, so the last row carries today's attention volume.
   let latestMentionCount: number | null = null;
+  let latestMention7dAvg: number | null = null;
   for (let i = points.length - 1; i >= 0; i--) {
     const m = points[i].mention_count_1d;
-    if (typeof m === "number" && !Number.isNaN(m)) {
+    if (latestMentionCount === null && typeof m === "number" && !Number.isNaN(m)) {
       latestMentionCount = m;
-      break;
     }
+    const a = points[i].mention_count_7d_avg;
+    if (latestMention7dAvg === null && typeof a === "number" && !Number.isNaN(a)) {
+      latestMention7dAvg = a;
+    }
+    if (latestMentionCount !== null && latestMention7dAvg !== null) break;
   }
 
   const scored = points.filter(
@@ -94,7 +112,12 @@ function summarise(points: ThemeSignalPoint[]): ThemeHistory {
   const hypeSeries = scored.map((p) => p.hype_score);
 
   if (hypeSeries.length === 0)
-    return { ...EMPTY_HISTORY, points, latestMentionCount };
+    return {
+      ...EMPTY_HISTORY,
+      points,
+      latestMentionCount,
+      latestMention7dAvg,
+    };
 
   const latest = hypeSeries[hypeSeries.length - 1];
   const prev = hypeSeries.length >= 2 ? hypeSeries[hypeSeries.length - 2] : null;
@@ -116,6 +139,7 @@ function summarise(points: ThemeSignalPoint[]): ThemeHistory {
     delta5d: back5 === null ? null : latest - back5,
     percentile,
     latestMentionCount,
+    latestMention7dAvg,
   };
 }
 
@@ -140,7 +164,7 @@ export async function fetchThemeHistories(
   const { data, error } = await supabase
     .from("theme_signals_history")
     .select(
-      "theme_id, run_date, hype_score, trade_score, mention_count_1d, avg_sentiment, price_corr"
+      "theme_id, run_date, hype_score, trade_score, mention_count_1d, mention_count_7d_avg, avg_sentiment, price_corr"
     )
     .in("theme_id", themeIds)
     .order("run_date", { ascending: true })

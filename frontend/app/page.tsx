@@ -283,6 +283,7 @@ function ConvictionPageInner() {
           ...t,
           delta_1d: h?.delta1d ?? undefined,
           mention_count_1d: h?.latestMentionCount ?? null,
+          mention_count_7d_avg: h?.latestMention7dAvg ?? null,
           history: h && h.hypeSeries.length >= 2 ? h.hypeSeries : undefined,
           crowding_pct:
             h?.percentile === null || h?.percentile === undefined

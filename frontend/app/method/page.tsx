@@ -858,7 +858,7 @@ export default function MethodPage() {
               })}
             </ol>
 
-            <div className="mt-3 grid gap-3">
+            <div className="mt-3 grid grid-cols-1 gap-3">
               <Note tone="info" label="How to read the absence of a row">
                 <Code>scripts/daily_refresh.py</Code> wraps only L0, L2, L3 and L5 in{" "}
                 <Code>record_pipeline_run()</Code>. For those four, the sentinel row is written
@@ -905,7 +905,7 @@ export default function MethodPage() {
             remedy="Insert the four hype weights into scoring_config (param_name, value). The formula cannot be rendered without them."
           />
         ) : (
-          <div className="grid gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <Formula label="live weights from scoring_config">
               {`HypeScore = 100 × ( ${dec(wVol, 2)}·Volume  +  ${dec(wSent, 2)}·Sentiment  +  ${dec(wCorr, 2)}·|ρ|  +  ${dec(wMom, 2)}·Momentum )`}
             </Formula>
@@ -999,7 +999,7 @@ export default function MethodPage() {
                   {topTheme ? `themes.hype_score desc · limit 1` : "—"}
                 </span>
               </div>
-              <div className="card-body grid gap-3">
+              <div className="card-body grid grid-cols-1 gap-3">
                 {themes.error ? (
                   <QueryError table="themes" message={themes.error} />
                 ) : !topTheme ? (
@@ -1234,7 +1234,7 @@ export default function MethodPage() {
             </div>
 
             {/* Caveats */}
-            <div className="grid gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <Note tone="warn" label="HypeScore is relative, not absolute">
                 Volume and Momentum are min-max normalised <em>across the theme set on a single
                 day</em>. The loudest theme of the day scores 1.0 on Volume whether it drew ten
@@ -1335,7 +1335,7 @@ export default function MethodPage() {
             remedy="Insert both rows into scoring_config (param_name, value)."
           />
         ) : (
-          <div className="grid gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <Formula label="live weights from scoring_config">
               {[
                 `TradeScore   = ${dec(wTradeHype, 2)}·HypeMomentum  +  ${dec(wTradeSent, 2)}·Sentiment`,
@@ -1348,7 +1348,7 @@ export default function MethodPage() {
             </Formula>
 
             <div className="card">
-              <div className="card-body grid gap-2.5 text-[12.5px] text-text-secondary max-w-[92ch]">
+              <div className="card-body grid grid-cols-1 gap-2.5 text-[12.5px] text-text-secondary max-w-[92ch]">
                 <p className="m-0">
                   <span className="text-text-primary font-medium">Why a ratio.</span>{" "}
                   <span className="num">HypeMomentum</span> is the fractional day-over-day change
@@ -1391,7 +1391,7 @@ export default function MethodPage() {
             {signals.error ? (
               <QueryError table="theme_signals_history" message={signals.error} />
             ) : (
-              <div className="grid gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <Stat
                     label="Rows with a hype_score"
@@ -1446,7 +1446,7 @@ export default function MethodPage() {
                           run_date {tradeExample.run_date}
                         </span>
                       </div>
-                      <div className="card-body grid gap-3">
+                      <div className="card-body grid grid-cols-1 gap-3">
                         <Formula>
                           {[
                             `theme          = ${tradeExampleTheme?.name ?? tradeExample.theme_id}`,
@@ -1540,7 +1540,7 @@ export default function MethodPage() {
             remedy="Seed edge_trend_weight, edge_regime_weight, edge_carry_weight, edge_value_weight and edge_sentiment_weight into scoring_config. The 5-component formula cannot be rendered without all five."
           />
         ) : (
-          <div className="grid gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <Formula label="live weights from scoring_config">
               {[
                 `EdgeScore = ${dec(wEdgeTrend ?? 0, 2)}·Trend  +  ${dec(wEdgeRegime ?? 0, 2)}·Regime  +  ${dec(wEdgeCarry ?? 0, 2)}·Carry  +  ${dec(wEdgeValue ?? 0, 2)}·Value`,
@@ -1571,7 +1571,7 @@ export default function MethodPage() {
             </div>
 
             <div className="card">
-              <div className="card-body grid gap-2.5 text-[12.5px] text-text-secondary max-w-[92ch]">
+              <div className="card-body grid grid-cols-1 gap-2.5 text-[12.5px] text-text-secondary max-w-[92ch]">
                 <p className="m-0">
                   <span className="text-text-primary font-medium">Why not sentiment.</span> The old
                   rule set direction from <span className="num">sign(TradeScore)</span>, but on
@@ -1645,7 +1645,7 @@ export default function MethodPage() {
                     theme_signals_history · run_date {edgeExample.run_date}
                   </span>
                 </div>
-                <div className="card-body grid gap-3">
+                <div className="card-body grid grid-cols-1 gap-3">
                   <Note tone="info" label="Reading the block">
                     Each component is the value <Code>compute_edge_scores</Code> persisted for this
                     theme, multiplied by its live weight. A component shown as{" "}
@@ -1952,7 +1952,7 @@ export default function MethodPage() {
           </TableWrap>
         </div>
 
-        <div className="grid gap-3">
+        <div className="grid grid-cols-1 gap-3">
           {macro.error && <QueryError table="macro_indicators" message={macro.error} />}
           {assets.error && <QueryError table="market_assets" message={assets.error} />}
           {factors.error && <QueryError table="factor_exposures" message={factors.error} />}
@@ -2084,7 +2084,7 @@ export default function MethodPage() {
         }
       >
         <div className="card mb-3">
-          <div className="card-body grid gap-2.5 text-[12.5px] text-text-secondary max-w-[92ch]">
+          <div className="card-body grid grid-cols-1 gap-2.5 text-[12.5px] text-text-secondary max-w-[92ch]">
             <p className="m-0">
               <span className="text-text-primary font-medium">The contract.</span> The agent must
               emit, alongside its prose, a{" "}
@@ -2120,7 +2120,7 @@ export default function MethodPage() {
             remedy="Run the L5 stage (scripts/daily_refresh.py invokes run_q1_agent); it writes one row per invocation."
           />
         ) : (
-          <div className="grid gap-3">
+          <div className="grid grid-cols-1 gap-3">
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               <Stat label="Runs logged" value={int(totalAgentRuns)} sub="research_agent_runs" />
               <Stat

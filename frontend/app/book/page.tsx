@@ -372,9 +372,9 @@ function BookPageInner() {
   }, [rec]);
 
   return (
-    <main className="max-w-[1320px] mx-auto px-8 pt-7 pb-20">
+    <main className="max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-8 pt-7 pb-20 overflow-x-hidden">
       <div className="flex justify-between items-end mb-7 gap-6 flex-wrap">
-        <div className="min-w-[300px]">
+        <div className="min-w-0 flex-1">
           <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
             The $100M Book
           </h1>

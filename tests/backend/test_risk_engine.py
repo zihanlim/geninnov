@@ -25,6 +25,25 @@ def _returns(values):
     return pd.Series(values)
 
 
+def test_wrap_tolerates_as_of_ahead_of_now():
+    """UTC date-boundary regression: as_of (a run_date set to today's UTC-midnight)
+    can be AHEAD of now() in a +ve timezone (early morning in SGT = UTC+8). _wrap
+    must clamp computed_at so validate_numeric's 'computed_at >= as_of' holds,
+    rather than crash the whole L4 stage for a few hours each day."""
+    from datetime import datetime, timedelta, timezone
+    from backend.services.risk_engine import _wrap
+    from backend.derivations.numeric import SourceRecord
+
+    future = datetime.now(timezone.utc) + timedelta(hours=6)
+    d = _wrap(
+        "risk.var_95", "risk.var.v1", 1.0e6, "usd",
+        [SourceRecord(table="portfolio_returns", id="rollup", as_of=future)],
+        future, status="exact",
+    )
+    assert d.computed_at >= d.as_of                     # no ValueError raised
+    assert d.freshness.observed_age_seconds == 0        # future as_of -> age floored
+
+
 # ── _z_score / _normal_pdf ───────────────────────────────────────────────────
 
 

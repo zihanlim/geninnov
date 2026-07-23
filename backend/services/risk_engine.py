@@ -187,8 +187,14 @@ def _wrap(
     unavailable_reason: Optional[str] = None,
 ) -> NumericDerivation:
     """Build, validate, and return a NumericDerivation for a single risk metric."""
-    computed_at = datetime.now(timezone.utc)
-    # observed_age is "computed_at - as_of", but as_of may be in the past; floor at 0
+    # `as_of` can be nominally AHEAD of now at a UTC date boundary — a run_date set
+    # to today's UTC-midnight while now() is still the previous UTC day in a +ve
+    # timezone (e.g. early morning in SGT = UTC+8). Clamp computed_at to at least
+    # as_of: consistent with the age floor below, and required by validate_numeric
+    # ("computed_at must be >= as_of"). Otherwise the whole L4 stage crashes for a
+    # few hours each day around the date boundary.
+    computed_at = max(datetime.now(timezone.utc), as_of)
+    # observed_age is "computed_at - as_of", floored at 0 when as_of is ahead.
     age_seconds = max(0, int((computed_at - as_of).total_seconds()))
     d = NumericDerivation(
         field_id=field_id,

@@ -13,6 +13,7 @@ import {
   type ThemeEdge,
 } from "@/lib/themeSignals";
 import ThesisBlock from "@/components/research/ThesisBlock";
+import CollapsibleSection from "@/components/CollapsibleSection";
 import {
   AdvisoryDerivation,
   canRenderAdvisoryBody,
@@ -577,14 +578,15 @@ function BookPageInner() {
             thresholdIsLive={weightsResolved.abstainThreshold}
           />
 
-          {/* ── Screening funnel ───────────────────────────────────────── */}
-          <div className="card mb-6">
-            <div className="card-header">
-              <span className="card-title">Screening funnel</span>
-              <span className="text-[11px] text-text-tertiary">
-                What was rejected, and why
-              </span>
-            </div>
+          {/* ── Screening funnel (collapsed — audit detail) ────────────── */}
+          <CollapsibleSection
+            title="Screening funnel"
+            summary={
+              rec.screening_funnel && rec.screening_funnel.length > 0
+                ? `${rec.screening_funnel[rec.screening_funnel.length - 1]?.remaining ?? "—"} names cleared ${rec.screening_funnel.length} filters`
+                : "how the universe was filtered to the book"
+            }
+          >
             {rec.screening_funnel && rec.screening_funnel.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-[13px]">
@@ -639,31 +641,24 @@ function BookPageInner() {
                 compact
               />
             )}
-          </div>
+          </CollapsibleSection>
 
-          {/* ── Book risks ─────────────────────────────────────────────── */}
+          {/* ── Book risks (collapsed — expand for the tail risks) ─────── */}
           {canRenderAdvisoryBody(advisory) &&
             rec.book_risks &&
             rec.book_risks.length > 0 && (
-              <div
-                className="card p-7"
-                style={{
-                  background: "var(--bg-elevated)",
-                  borderColor: "rgba(159, 23, 42,0.3)",
-                }}
+              <CollapsibleSection
+                title="Cross-cutting book risks"
+                summary={`${rec.book_risks.length} things that could break the book`}
               >
-                <h3 className="text-[18px] font-semibold m-0 mb-1">
-                  Cross-cutting book risks
-                </h3>
-                <div className="text-text-secondary text-[13px] mb-4">
-                  What kills the book if it goes wrong.
+                <div className="card-body">
+                  <ul className="m-0 pl-[18px] leading-[1.8] text-text-primary text-[13.5px]">
+                    {rec.book_risks.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
                 </div>
-                <ul className="m-0 pl-[18px] leading-[1.8] text-text-primary text-[13.5px]">
-                  {rec.book_risks.map((r, i) => (
-                    <li key={i}>{r}</li>
-                  ))}
-                </ul>
-              </div>
+              </CollapsibleSection>
             )}
 
           <div className="mt-6 text-[12px] text-text-secondary">

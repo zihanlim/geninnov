@@ -56,6 +56,14 @@ export interface ThemeHistory {
    * relative to how much attention that theme normally gets. Null under 5 obs.
    */
   percentile: number | null;
+  /**
+   * Raw mention count on the most recent run (`mention_count_1d`) — the literal
+   * news + social volume that feeds the attention score. Taken from the latest
+   * row regardless of whether it carries a scored hype_score, so the headline
+   * "Mentions" figure is populated even before the hype series is backfilled.
+   * Null only when no row carries a count.
+   */
+  latestMentionCount: number | null;
 }
 
 const EMPTY_HISTORY: ThemeHistory = {
@@ -64,16 +72,29 @@ const EMPTY_HISTORY: ThemeHistory = {
   delta1d: null,
   delta5d: null,
   percentile: null,
+  latestMentionCount: null,
 };
 
 function summarise(points: ThemeSignalPoint[]): ThemeHistory {
+  // Latest mention count is independent of the hype series: `points` is ascending
+  // by run_date, so the last row with a numeric count is today's attention volume.
+  let latestMentionCount: number | null = null;
+  for (let i = points.length - 1; i >= 0; i--) {
+    const m = points[i].mention_count_1d;
+    if (typeof m === "number" && !Number.isNaN(m)) {
+      latestMentionCount = m;
+      break;
+    }
+  }
+
   const scored = points.filter(
     (p): p is ThemeSignalPoint & { hype_score: number } =>
       typeof p.hype_score === "number" && !Number.isNaN(p.hype_score)
   );
   const hypeSeries = scored.map((p) => p.hype_score);
 
-  if (hypeSeries.length === 0) return { ...EMPTY_HISTORY, points };
+  if (hypeSeries.length === 0)
+    return { ...EMPTY_HISTORY, points, latestMentionCount };
 
   const latest = hypeSeries[hypeSeries.length - 1];
   const prev = hypeSeries.length >= 2 ? hypeSeries[hypeSeries.length - 2] : null;
@@ -94,6 +115,7 @@ function summarise(points: ThemeSignalPoint[]): ThemeHistory {
     delta1d: prev === null ? null : latest - prev,
     delta5d: back5 === null ? null : latest - back5,
     percentile,
+    latestMentionCount,
   };
 }
 

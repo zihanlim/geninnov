@@ -25,7 +25,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={`${sans.variable} ${mono.variable} font-sans antialiased`}>
-        <div className="min-h-screen grid grid-rows-[56px_1fr]">
+        {/* grid-cols-[minmax(0,1fr)]: the single column must be allowed to
+            shrink below its min-content, otherwise a wide child (e.g. the
+            640px min-width position table) sets a min-content floor that
+            forces the whole page wider than a phone viewport — the column
+            defaults to `auto`, which does exactly that. minmax(0,…) caps
+            every page's <main> at the viewport so wide tables scroll locally
+            in their own overflow-x-auto wrapper instead of scrolling the body. */}
+        <div className="min-h-screen grid grid-cols-[minmax(0,1fr)] grid-rows-[56px_1fr]">
           <TopBar />
           {children}
         </div>

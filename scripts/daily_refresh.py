@@ -1074,9 +1074,18 @@ def main():
     except ImportError as exc:
         print(f"[{run_date}] [L5] langchain/langgraph not available ({exc}): skipping research agent.")
     except Exception as exc:
-        print(f"[{run_date}] [L5] Research agent failed ({exc.__class__.__name__}): skipping. Run with langchain installed to enable.")
+        # Log the traceback, and persist the failing frame with the error. Without
+        # this, an L5 failure recorded only "unsupported format string passed to
+        # NoneType.__format__" in pipeline_runs — true, but not locatable, which
+        # made a GitHub Action failure undiagnosable without local reproduction.
+        import traceback as _tb
+        _trace = _tb.format_exc()
+        print(f"[{run_date}] [L5] Research agent failed ({exc.__class__.__name__}): skipping.")
+        print(_trace)
+        _frames = [ln.strip() for ln in _trace.splitlines() if ln.strip().startswith("File ")]
+        _where = _frames[-1] if _frames else "unknown frame"
         try:
-            record_pipeline_run(supabase, l5_id, "failure", run_date=run_date, stage="L5", duration_s=(datetime.now(timezone.utc)-l5_started).total_seconds(), error=str(exc))
+            record_pipeline_run(supabase, l5_id, "failure", run_date=run_date, stage="L5", duration_s=(datetime.now(timezone.utc)-l5_started).total_seconds(), error=f"{exc} @ {_where}")
         except Exception as exc:
             # Telemetry must never abort the pipeline, but a silent
             # swallow here left every stage stuck at 'partial' in

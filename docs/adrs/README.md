@@ -35,6 +35,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0027](0027-citation-value-grounding.md) | Citation guardrail grounds on value, not source-label exactness | accepted | 2026-07-23 |
 | [0028](0028-minmax-correlation-consistency.md) | Min-max \|corr\| across themes (supersedes T22 raw-abs) | accepted | 2026-07-23 |
 | [0029](0029-two-sided-book-decouple-direction-revive-momentum.md) | Two-sided book: decouple direction from the hype gate + revive momentum | accepted | 2026-07-23 |
+| [0030](0030-unify-l5-candidate-pool-with-l1.md) | Unify the L5 candidate pool with L1 (screen_candidates consumes rank_trade_candidates) | accepted | 2026-07-23 |
 
 ## When to write an ADR
 

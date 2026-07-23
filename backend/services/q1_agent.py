@@ -476,25 +476,38 @@ def aggregate_context(state: Q1State) -> Q1State:
 
 def screen_candidates(state: Q1State) -> Q1State:
     """
-    Apply hard filters to theme_scores → candidate pool of 20-30 (asset, direction).
-    Hard rules (all must pass):
-      1. HypeScore >= hype_threshold
-      2. |trade_score| > 0  (has a direction)
-      3. Asset has a factor beta (R² >= 0.1) — excludes illiquid/insufficient history
-      4. Asset has ADV >= $2M/day — liquidity filter (avoids uninvestable positions)
-      5. Lens filter — if state["lens"] != "multi_asset", only assets in the lens are kept
+    Filter the L1 candidate pool down to the tradable set the LLM sees (ADR-0030).
 
-    Assets without factor data but in the default universe (ETFs) are permitted
-    without the R² check since ETFs have stable liquid histories.
+    The pool is ``state["candidates"]`` — the candidates ``daily_refresh`` already
+    ranked in ``rank_trade_candidates``: hype-gated (HypeScore >= threshold),
+    directioned by sign(TradeScore), and made two-sided by the ADR-0029 backfill.
+    Those decisions are INHERITED here, not re-derived. Before ADR-0030 this node
+    rebuilt the pool from ``theme_scores`` with its own ``hype >= threshold AND
+    sign`` logic and NO backfill — a second, divergent copy of the direction rule,
+    so the L5 book could go one-sided even on a day the L1 book didn't.
+
+    This node now applies only the L5-specific filters L1 doesn't:
+      1. Lens filter — if state["lens"] != "multi_asset", keep only in-lens assets
+      2. Factor R² >= 0.10 for equities (ETFs exempt — stable liquid histories)
+      3. Dedupe (asset, direction), keep the highest-HypeScore entry
+      4. Cap at 30 for the LLM context window
     """
     cfg: ScoringConfig = state["cfg"]
-    threshold = cfg.hype_score_threshold
-    factor_exp = state["factor_exposures"]
+    factor_exp = state.get("factor_exposures") or {}
+    if not factor_exp:
+        print("[screen_candidates] No factor_exposures available — the R^2 "
+              "liquidity filter is skipped; equities pass through unchecked.")
     lens: str = state.get("lens", "multi_asset")
     if lens not in VALID_LENSES:
         print(f"[screen_candidates] Unknown lens '{lens}' — defaulting to multi_asset")
         lens = "multi_asset"
-    eligible: list[dict] = []
+
+    # The pool handed over by L1 (via run_q1_agent): each entry already carries a
+    # direction from sign(TradeScore) and HypeScore >= threshold, and the pool is
+    # two-sided by construction (ADR-0029 backfill). We inherit those decisions —
+    # only the L5-specific filters below run here.
+    l1_pool: list[dict] = state.get("candidates") or []
+    name_by_id = {t["theme_id"]: t["name"] for t in (state.get("theme_scores") or [])}
 
     # Universe of liquid ETFs — always allowed (no R² check needed)
     LIQUID_ETF_UNIVERSE = set(SECTOR_MAP.keys())
@@ -504,54 +517,41 @@ def screen_candidates(state: Q1State) -> Q1State:
     if lens != "multi_asset":
         lens_tickers = set(LENS_TICKER_FALLBACK.get(lens, set()))
 
-    # Attrition tracking. "What did the screen reject, and why" is the first
-    # question asked of any systematic book, and until now the answer existed
-    # only as `continue` statements. Counted here, persisted as
-    # research_recommendations.screening_funnel, rendered on /book.
-    themes_total = len(state["theme_scores"])
-    dropped_hype = 0
-    dropped_direction = 0
+    # Attrition tracking, persisted as research_recommendations.screening_funnel
+    # and rendered on /book.
+    l1_total = len(l1_pool)
     dropped_lens = 0
     dropped_r2 = 0
-    top_score_below_threshold = 0.0
+    eligible: list[dict] = []
 
-    for t in state["theme_scores"]:
-        if t["hype_score"] < threshold:
-            dropped_hype += 1
-            top_score_below_threshold = max(top_score_below_threshold, t["hype_score"])
-            continue
-        if t["trade_score"] == 0:
-            dropped_direction += 1
+    for c in l1_pool:
+        asset = c["asset"]
+        # Lens filter — drop assets outside the selected lens
+        if lens_tickers is not None and asset not in lens_tickers:
+            dropped_lens += 1
             continue
 
-        direction = "long" if t["trade_score"] > 0 else "short"
-        assets = _theme_default_assets(t["name"])
+        is_etf = asset in LIQUID_ETF_UNIVERSE
 
-        for asset in assets:
-            # Lens filter — drop assets outside the selected lens
-            if lens_tickers is not None and asset not in lens_tickers:
-                dropped_lens += 1
-                continue
+        # Factor beta check: ETFs always pass; equities need R² >= 0.1
+        if factor_exp:
+            fe = factor_exp.get(asset, {})
+            r2 = fe.get("r_squared", 0.0)
+            if not is_etf and r2 < 0.10:
+                dropped_r2 += 1
+                continue   # insufficient history for this equity
 
-            is_etf = asset in LIQUID_ETF_UNIVERSE
-
-            # Factor beta check: ETFs always pass; equities need R² >= 0.1
-            if factor_exp:
-                fe = factor_exp.get(asset, {})
-                r2 = fe.get("r_squared", 0.0)
-                if not is_etf and r2 < 0.10:
-                    dropped_r2 += 1
-                    continue   # insufficient history for this equity
-
-            eligible.append({
-                "asset": asset,
-                "direction": direction,
-                "theme_id": t["theme_id"],
-                "theme_name": t["name"],
-                "hype_score": t["hype_score"],
-                "trade_score": t["trade_score"],
-                "avg_sentiment": t["avg_sentiment"],
-            })
+        eligible.append({
+            "asset": asset,
+            "direction": c["direction"],
+            "theme_id": c.get("theme_id"),
+            # L1 leaves theme_name blank; backfill it from theme_scores so the
+            # candidate table and /book provenance name the theme.
+            "theme_name": c.get("theme_name") or name_by_id.get(c.get("theme_id"), ""),
+            "hype_score": c.get("hype_score", 0.0),
+            "trade_score": c.get("trade_score", 0.0),
+            "avg_sentiment": c.get("avg_sentiment", 0.0),
+        })
 
     # Deduplicate: keep highest-hype entry per (asset, direction)
     seen: dict[tuple[str, str], dict] = {}
@@ -574,30 +574,17 @@ def screen_candidates(state: Q1State) -> Q1State:
     deduped = len(eligible) - len(candidate_pool)
     state["screening_funnel"] = [
         {
-            "stage": "themes scored",
-            "remaining": themes_total,
+            "stage": "L1 ranked candidates",
+            "remaining": l1_total,
             "removed": 0,
-            "reason": "All themes with an L1 signal for this run.",
-        },
-        {
-            "stage": f"HypeScore >= {threshold:g}",
-            "remaining": themes_total - dropped_hype,
-            "removed": dropped_hype,
             "reason": (
-                f"Below the attention threshold. Highest rejected score: "
-                f"{top_score_below_threshold:.1f}."
-                if dropped_hype else "No themes rejected on attention."
+                "From rank_trade_candidates: HypeScore >= threshold, direction = "
+                "sign(TradeScore), two-sided via backfill (ADR-0029/0030)."
             ),
         },
         {
-            "stage": "has a direction",
-            "remaining": themes_total - dropped_hype - dropped_direction,
-            "removed": dropped_direction,
-            "reason": "TradeScore == 0, so neither long nor short is indicated.",
-        },
-        {
             "stage": f"lens = {lens}",
-            "remaining": len(eligible) + dropped_r2,
+            "remaining": l1_total - dropped_lens,
             "removed": dropped_lens,
             "reason": (
                 "Asset outside the selected asset-class lens."
@@ -1506,8 +1493,9 @@ def fallback_picks(state: Q1State) -> Q1State:
     a deterministic ranking: top 5 longs + top 5 shorts by HypeScore.
     Thesis is templated. This never produces a blank output.
 
-    Falls back to theme_scores if candidates is empty (e.g. screen_candidates
-    was not called before fallback in tests or error path).
+    Ranks the SAME screened L1 pool (state["candidates"]) the LLM would have
+    seen — it does NOT rebuild a divergent universe from theme_scores (ADR-0030).
+    An empty pool yields an empty book, not a fabricated one.
     """
     cfg: ScoringConfig = state.get("cfg") or ScoringConfig(
         hype_volume_weight=0.30,
@@ -1523,26 +1511,15 @@ def fallback_picks(state: Q1State) -> Q1State:
     theme_scores = state.get("theme_scores") or []
     themes = {t["theme_id"]: t["name"] for t in theme_scores}
 
-    if not candidates and theme_scores:
-        # Build candidate pool from theme_scores
-        threshold = cfg.hype_score_threshold
-        for t in theme_scores:
-            if t.get("hype_score", 0) < threshold:
-                continue
-            direction = "long" if t.get("trade_score", 0) > 0 else "short" if t.get("trade_score", 0) < 0 else None
-            if direction is None:
-                continue
-            assets = _theme_default_assets(t["name"])
-            for asset in assets:
-                candidates.append({
-                    "asset": asset,
-                    "direction": direction,
-                    "theme_id": t["theme_id"],
-                    "theme_name": themes.get(t["theme_id"], t.get("name", "")),
-                    "hype_score": t["hype_score"],
-                    "trade_score": t["trade_score"],
-                    "avg_sentiment": t.get("avg_sentiment", 0.0),
-                })
+    if not candidates:
+        # ADR-0030: the LLM-free fallback ranks the SAME screened L1 pool the LLM
+        # would have seen. It does NOT rebuild a divergent universe from
+        # theme_scores via the old hardcoded _theme_default_assets map — that path
+        # had no ADR-0029 backfill and could fabricate a one-sided book, defeating
+        # the whole point of unifying on the L1 pool. An empty pool means L1
+        # produced no candidates this run, so we honestly emit no picks.
+        print("[fallback_picks] No screened candidates — emitting an empty book "
+              "(L1 produced no candidates this run).")
 
     longs = [c for c in candidates if c["direction"] == "long"]
     shorts = [c for c in candidates if c["direction"] == "short"]

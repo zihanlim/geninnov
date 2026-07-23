@@ -53,7 +53,7 @@ flowchart TB
         subgraph L5["L5 — Q1 Reasoning Agent<br/>backend/services/q1_agent.py"]
             direction TB
             N1["1. aggregate_context<br/><i>pull L0–L4 from Supabase</i>"]
-            N2["2. screen_candidates<br/><i>hard filter: hype, direction,<br/>R²≥0.10, ADV≥$2M, lens</i>"]
+            N2["2. screen_candidates<br/><i>filter L1 pool: lens, R²≥0.10,<br/>dedupe, cap (hype + direction +<br/>two-sided inherited from L1, ADR-0030)</i>"]
             N3["3. classify_news<br/>🤖 <b>LLM</b> — tag headlines<br/>{category, sentiment, theme}"]
             N4["4. compute_book_metrics<br/><i>FF5+UMD tilts, caps,<br/>correlation matrix</i>"]
             N5["5. run_scenario_analysis<br/><i>4 stress: VIX / rates / USD / credit</i>"]
@@ -193,6 +193,7 @@ flowchart TB
     DB -- "L0–L4 snapshot" --> N1
     DB -- "scoring_config" --> N1
     T_NEWS -. "recent headlines" .-> N1
+    TG -- "L1 candidate pool<br/>(hype-gated, directioned,<br/>two-sided) — ADR-0030" --> N2
 
     %% ───────── LLM edges ─────────
     MINIMAX -. "preferred" .-> N3
@@ -299,7 +300,7 @@ L4: daily_refresh.py / compute_and_persist_risk
 
 L5: q1_agent.py / run_q1_agent
     → L0–L4 outputs (aggregate_context)
-    → screen_candidates: hype ≥ 50, trade_score ≠ 0, R² ≥ 0.10, dedup
+    → screen_candidates: filter the L1 pool (lens, R² ≥ 0.10, dedupe, cap) — hype gate + direction + two-sided inherited from L1 (ADR-0030)
     → compute_book_metrics: FF5+UMD tilts, net/gross exposure, cap violations, corr matrix
     → run_scenario_analysis: 4 stress scenarios (VIX/rates/USD/credit)
     → reason_picks: LLM (Claude Sonnet) → top 5 long + top 5 short + thesis + counter-thesis

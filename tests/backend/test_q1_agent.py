@@ -88,6 +88,32 @@ MOCK_MACRO_SNAPSHOT = {
 }
 
 
+def _make_l1_candidates(theme_scores=MOCK_THEME_SCORES) -> list[dict]:
+    """Mirror the L1 candidate pool daily_refresh hands to run_q1_agent: themes
+    that clear the hype gate, direction = sign(TradeScore), expanded to assets.
+    Since ADR-0030 screen_candidates FILTERS this pool rather than rebuilding it
+    from theme_scores, tests must seed it the way L1 would."""
+    pool: list[dict] = []
+    for t in theme_scores:
+        if t["hype_score"] < MOCK_CFG.hype_score_threshold or t["trade_score"] == 0:
+            continue
+        direction = "long" if t["trade_score"] > 0 else "short"
+        for asset in q1_agent._theme_default_assets(t["name"]):
+            pool.append({
+                "asset": asset,
+                "direction": direction,
+                "theme_id": t["theme_id"],
+                # L1 (run_q1_agent) hands over theme_name="" — screen_candidates
+                # backfills it from theme_scores. Mirror that so the backfill path
+                # is exercised, not bypassed (adversarial-review finding).
+                "theme_name": "",
+                "hype_score": t["hype_score"],
+                "trade_score": t["trade_score"],
+                "avg_sentiment": t.get("avg_sentiment", 0.0),
+            })
+    return pool
+
+
 def _make_state(**overrides) -> Q1State:
     """Build a minimal Q1State suitable for driving deterministic graph nodes."""
     base = Q1State({
@@ -101,7 +127,7 @@ def _make_state(**overrides) -> Q1State:
         "risk_metrics": {"var_95": 1_840_000.0, "cvar_95": 2_760_000.0, "sharpe": 1.42, "beta": 0.68},
         "news_headlines": [],
         "classified_news": [],
-        "candidates": [],
+        "candidates": _make_l1_candidates(),
         "picks": [],
         "book_view": "",
         "book_risks": [],
@@ -334,6 +360,161 @@ def test_q1_llm_path_persists_advisory_with_display_status(stub_llm):
     assert len(stub_llm.calls) >= 1
     # And the prompt contained the macro snapshot (sanity-check real wiring).
     assert "MACRO SNAPSHOT" in stub_llm.calls[0][0]
+
+
+def test_screen_candidates_inherits_l1_pool_without_regating_hype():
+    """ADR-0030: screen_candidates filters the L1 pool and does NOT re-apply the
+    hype gate or re-derive direction. A backfilled long from a SUB-threshold theme
+    (the ADR-0029 two-sided guarantee) survives into the L5 candidate pool. Before
+    ADR-0030 the L5 screen rebuilt the pool from theme_scores with its own
+    hype>=threshold gate and dropped it, so the L5 book could go one-sided even
+    when the L1 book was two-sided."""
+    state = _make_state(
+        candidates=[
+            # eligible short (hype 80, clears the gate)
+            {"asset": "FXI", "direction": "short", "theme_id": "tid-chg",
+             "theme_name": "China Growth", "hype_score": 80.0, "trade_score": -0.2,
+             "avg_sentiment": -0.1},
+            # backfilled long from a SUB-threshold theme (hype 39 < 50 gate)
+            {"asset": "HYG", "direction": "long", "theme_id": "tid-crd",
+             "theme_name": "Corporate Credit", "hype_score": 39.0, "trade_score": 0.04,
+             "avg_sentiment": 0.09},
+        ],
+        factor_exposures={},
+    )
+    state = screen_candidates(state)
+    pairs = {(c["asset"], c["direction"]) for c in state["candidates"]}
+    assert ("HYG", "long") in pairs      # sub-threshold backfilled long survives
+    assert ("FXI", "short") in pairs
+    assert {c["direction"] for c in state["candidates"]} == {"long", "short"}
+
+
+def test_screen_candidates_backfills_theme_name_from_theme_scores():
+    """ADR-0030: L1 hands over theme_name="" ; screen_candidates backfills it from
+    theme_scores so the candidate table and /book provenance name the theme."""
+    state = _make_state()   # _make_l1_candidates seeds theme_name="" (as L1 does)
+    state = screen_candidates(state)
+    assert state["candidates"], "expected a non-empty pool"
+    assert all(c["theme_name"] for c in state["candidates"]), \
+        "every candidate must have a backfilled theme_name"
+    # e.g. the China Growth ticker FXI resolves to its theme name
+    fxi = next(c for c in state["candidates"] if c["asset"] == "FXI")
+    assert fxi["theme_name"] == "China Growth"
+
+
+def test_screen_candidates_lens_filter_drops_out_of_lens():
+    """lens != multi_asset keeps only in-lens assets; the drop is counted in the funnel."""
+    state = _make_state(
+        lens="credit",
+        candidates=[
+            {"asset": "HYG", "direction": "long", "theme_id": "tid-crd",
+             "theme_name": "Corporate Credit", "hype_score": 60.0, "trade_score": 0.1, "avg_sentiment": 0.1},
+            {"asset": "FXI", "direction": "short", "theme_id": "tid-chg",
+             "theme_name": "China Growth", "hype_score": 70.0, "trade_score": -0.2, "avg_sentiment": -0.1},
+        ],
+        factor_exposures={},
+    )
+    state = screen_candidates(state)
+    assets = {c["asset"] for c in state["candidates"]}
+    assert "HYG" in assets          # in the credit lens
+    assert "FXI" not in assets      # equity, outside the credit lens
+    lens_stage = next(s for s in state["screening_funnel"] if s["stage"].startswith("lens"))
+    assert lens_stage["removed"] == 1
+
+
+def test_screen_candidates_r2_filter_drops_illiquid_equity_exempts_etf():
+    """Equities need R^2 >= 0.10; ETFs (in SECTOR_MAP) are exempt."""
+    state = _make_state(
+        candidates=[
+            # ZEQ: not an ETF (absent from SECTOR_MAP) with R^2 0.05 -> dropped
+            {"asset": "ZEQ", "direction": "long", "theme_id": "tid-fed",
+             "theme_name": "Fed Policy", "hype_score": 80.0, "trade_score": 0.3, "avg_sentiment": 0.2},
+            # SPY: an ETF -> exempt from the R^2 check even at 0.05
+            {"asset": "SPY", "direction": "short", "theme_id": "tid-inf",
+             "theme_name": "Inflation", "hype_score": 70.0, "trade_score": -0.2, "avg_sentiment": -0.1},
+        ],
+        factor_exposures={"ZEQ": {"r_squared": 0.05}, "SPY": {"r_squared": 0.05}},
+    )
+    state = screen_candidates(state)
+    assets = {c["asset"] for c in state["candidates"]}
+    assert "ZEQ" not in assets      # illiquid equity dropped
+    assert "SPY" in assets          # ETF exempt
+    r2_stage = next(s for s in state["screening_funnel"] if s["stage"].startswith("factor"))
+    assert r2_stage["removed"] == 1
+
+
+def test_screen_candidates_dedupes_keeping_highest_hype():
+    """Same (asset, direction) reached via two themes -> keep the higher-HypeScore one."""
+    state = _make_state(
+        candidates=[
+            {"asset": "GLD", "direction": "long", "theme_id": "tid-a",
+             "theme_name": "A", "hype_score": 55.0, "trade_score": 0.1, "avg_sentiment": 0.1},
+            {"asset": "GLD", "direction": "long", "theme_id": "tid-b",
+             "theme_name": "B", "hype_score": 88.0, "trade_score": 0.2, "avg_sentiment": 0.2},
+        ],
+        factor_exposures={},
+    )
+    state = screen_candidates(state)
+    golds = [c for c in state["candidates"] if c["asset"] == "GLD"]
+    assert len(golds) == 1
+    assert golds[0]["hype_score"] == 88.0     # higher-hype entry kept
+
+
+def test_screen_candidates_caps_at_30():
+    """The pool handed to the LLM is capped at 30."""
+    cands = [
+        {"asset": f"T{i}", "direction": "long", "theme_id": f"tid-{i}",
+         "theme_name": f"Theme {i}", "hype_score": 90.0 - i * 0.1, "trade_score": 0.2,
+         "avg_sentiment": 0.1}
+        for i in range(35)
+    ]
+    state = _make_state(candidates=cands, factor_exposures={})
+    state = screen_candidates(state)
+    assert len(state["candidates"]) == 30
+    cap_stage = next(s for s in state["screening_funnel"] if "cap 30" in s["stage"])
+    assert cap_stage["removed"] == 5
+
+
+def test_screen_candidates_empty_l1_pool_is_clean():
+    """An empty L1 pool produces an empty candidate list and a well-formed funnel."""
+    state = _make_state(candidates=[], factor_exposures={})
+    state = screen_candidates(state)
+    assert state["candidates"] == []
+    assert state["screening_funnel"][0]["remaining"] == 0
+
+
+def test_screen_candidates_funnel_arithmetic_reconciles():
+    """Every funnel stage must satisfy remaining[i] == remaining[i-1] - removed[i],
+    so the attrition accounting can't silently drift on a refactor."""
+    state = _make_state()   # default pool has (GLD/TLT/SLV) dupes across themes
+    state = screen_candidates(state)
+    funnel = state["screening_funnel"]
+    for prev, cur in zip(funnel, funnel[1:]):
+        assert cur["remaining"] == prev["remaining"] - cur["removed"], \
+            f"funnel stage '{cur['stage']}' breaks the running total"
+
+
+def test_fallback_picks_preserves_two_sided_l1_pool():
+    """ADR-0030: the deterministic fallback ranks the screened L1 pool, so a
+    two-sided pool yields a two-sided fallback book (no divergent rebuild)."""
+    state = _make_state(candidates=[
+        {"asset": "HYG", "direction": "long", "theme_id": "tid-crd",
+         "theme_name": "Corporate Credit", "hype_score": 60.0, "trade_score": 0.1, "avg_sentiment": 0.1},
+        {"asset": "FXI", "direction": "short", "theme_id": "tid-chg",
+         "theme_name": "China Growth", "hype_score": 70.0, "trade_score": -0.2, "avg_sentiment": -0.1},
+    ])
+    state = q1_agent.fallback_picks(state)
+    dirs = {p["direction"] for p in state["picks"]}
+    assert dirs == {"long", "short"}
+
+
+def test_fallback_picks_empty_pool_emits_no_picks_no_fabrication():
+    """ADR-0030: an empty screened pool yields an empty fallback book — the old
+    path rebuilt from theme_scores via _theme_default_assets (no ADR-0029
+    backfill), which could fabricate a one-sided book. It must not do that now."""
+    state = _make_state(candidates=[])   # theme_scores still present
+    state = q1_agent.fallback_picks(state)
+    assert state["picks"] == []
 
 
 # ─── Test 2: heuristic fallback must NEVER be display_status='verified' ─────

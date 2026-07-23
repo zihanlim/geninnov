@@ -692,8 +692,8 @@ export default function TradeDerivationDrawer({
           <div
             className="rounded-[8px] border px-4 py-3 text-[12.5px] leading-[1.6]"
             style={{
-              background: "rgba(248, 81, 73, 0.08)",
-              borderColor: "rgba(248, 81, 73, 0.3)",
+              background: "rgba(159, 23, 42, 0.08)",
+              borderColor: "rgba(159, 23, 42, 0.3)",
               color: "var(--text-primary)",
             }}
           >

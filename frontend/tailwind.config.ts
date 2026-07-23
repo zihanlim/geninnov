@@ -9,35 +9,38 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Surfaces
-        "bg-primary": "#0a0e14",
-        "bg-surface": "#11151c",
-        "bg-elevated": "#161b24",
-        "bg-hover": "#1c2230",
-        // Borders
-        border: "#1f2733",
-        "border-strong": "#2a3344",
-        // Text
-        "text-primary": "#e6edf3",
-        "text-secondary": "#8b96a8",
-        "text-tertiary": "#5a6477",
-        // Accents
-        accent: "#4d8fff",
-        "accent-dim": "rgba(77,143,255,0.12)",
-        // Direction
-        long: "#3fb950",
-        "long-dim": "#1f3a25",
-        short: "#f85149",
-        "short-dim": "#3a1f1f",
-        warning: "#d29922",
-        "warning-dim": "#3a2f15",
+        // "Ledger" light theme — see app/globals.css for the design rationale.
+        // Surfaces (warm paper)
+        "bg-primary": "#f6f3ee",
+        "bg-surface": "#ffffff",
+        "bg-elevated": "#fcfaf6",
+        "bg-hover": "#f0ebe2",
+        // Borders (warm hairline)
+        border: "#e7e0d3",
+        "border-strong": "#d6ccb9",
+        // Ink
+        "text-primary": "#1c1815",
+        "text-secondary": "#6b6156",
+        "text-tertiary": "#9c9182",
+        // Brand / attention
+        accent: "#e11048",          // interactive / active (bright crimson-pink)
+        "accent-dim": "rgba(225,16,72,0.10)",
+        brand: "#9f172a",           // primary crimson — emphasis
+        "brand-dim": "rgba(159,23,42,0.09)",
+        // Direction (ledger ink: green long / crimson short)
+        long: "#147a5c",
+        "long-dim": "rgba(20,122,92,0.11)",
+        short: "#9f172a",
+        "short-dim": "rgba(159,23,42,0.10)",
+        warning: "#f97316",
+        "warning-dim": "rgba(249,115,22,0.12)",
         // Legacy alias (kept for backward compat)
-        neutral: "#58a6ff",
-        edge: "#30363d",
+        neutral: "#6b6156",
+        edge: "#e7e0d3",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "Menlo", "monospace"],
+        sans: ["var(--font-sans)", "Hanken Grotesk", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "JetBrains Mono", "Menlo", "monospace"],
       },
       animation: {
         "fade-in": "fadeIn 200ms ease-out",

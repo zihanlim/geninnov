@@ -609,7 +609,7 @@ function BookPageInner() {
                 className="card p-7"
                 style={{
                   background: "var(--bg-elevated)",
-                  borderColor: "rgba(248,81,73,0.3)",
+                  borderColor: "rgba(159, 23, 42,0.3)",
                 }}
               >
                 <h3 className="text-[18px] font-semibold m-0 mb-1">
@@ -1003,8 +1003,8 @@ function PositionRow({
                   <div
                     className="rounded-md px-3 py-2.5 text-[12.5px] leading-[1.6] border"
                     style={{
-                      background: "rgba(248, 81, 73, 0.06)",
-                      borderColor: "rgba(248, 81, 73, 0.3)",
+                      background: "rgba(159, 23, 42, 0.06)",
+                      borderColor: "rgba(159, 23, 42, 0.3)",
                     }}
                   >
                     {pick.counter_thesis}

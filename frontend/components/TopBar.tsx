@@ -72,7 +72,7 @@ export default function TopBar() {
   return (
     <header className="sticky top-0 z-50 grid grid-cols-[220px_1fr_auto] items-center px-5 h-14 border-b border-border bg-bg-primary/85 backdrop-blur-md">
       <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-[0.08em] text-text-primary">
-        <div className="w-[22px] h-[22px] rounded bg-gradient-to-br from-accent to-long grid place-items-center text-[11px] text-bg-primary font-bold">
+        <div className="w-[22px] h-[22px] rounded bg-gradient-to-br from-accent to-brand grid place-items-center text-[11px] text-white font-bold">
           A
         </div>
         <span>ANDROMEDA</span>

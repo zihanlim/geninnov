@@ -3,26 +3,40 @@
 @tailwind utilities;
 
 @layer base {
+  /* ─────────────────────────────────────────────────────────────────────────
+     Andromeda "Ledger" — a warm-paper, ledger-inspired quant identity.
+     Cream paper + ink instead of the generic near-black dashboard. Direction is
+     ledger ink: forest-green = long, crimson = short (like red/green in an old
+     ledger). Brand pink (#E11048) is interactive/emphasis, orange (#F97316) is
+     attention. Every figure is JetBrains Mono — the "tape". Prose is Hanken
+     Grotesk. This palette (crimson / pink / orange on warm paper) is the app's
+     personality; it is deliberately NOT the interchangeable dark-neon default.
+     ───────────────────────────────────────────────────────────────────────── */
   :root {
-    --bg-primary: #0a0e14;
-    --bg-surface: #11151c;
-    --bg-elevated: #161b24;
-    --bg-hover: #1c2230;
-    --border: #1f2733;
-    --border-strong: #2a3344;
-    --text-primary: #e6edf3;
-    --text-secondary: #8b96a8;
-    --text-tertiary: #5a6477;
-    --accent: #4d8fff;
-    --long: #3fb950;
-    --short: #f85149;
-    --warning: #d29922;
+    /* Surfaces — warm paper */
+    --bg-primary: #f6f3ee;   /* page */
+    --bg-surface: #ffffff;   /* cards */
+    --bg-elevated: #fcfaf6;  /* raised */
+    --bg-hover: #f0ebe2;     /* hover */
+    --border: #e7e0d3;       /* warm hairline */
+    --border-strong: #d6ccb9;
+    /* Ink */
+    --text-primary: #1c1815; /* warm near-black */
+    --text-secondary: #6b6156;
+    --text-tertiary: #9c9182;
+    /* Brand + attention (your palette) */
+    --accent: #e11048;       /* interactive / links / active nav (bright crimson-pink) */
+    --brand: #9f172a;        /* primary crimson — emphasis, brand marks */
+    --warning: #f97316;      /* tertiary orange — attention / near-limit */
+    /* Direction — ledger ink */
+    --long: #147a5c;         /* forest-emerald — up / long */
+    --short: #9f172a;        /* crimson — down / short */
   }
 
   html, body {
     background-color: var(--bg-primary);
     color: var(--text-primary);
-    font-family: "Inter", system-ui, sans-serif;
+    font-family: var(--font-sans), "Hanken Grotesk", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -31,7 +45,7 @@
     line-height: 1.5;
   }
 
-  ::selection { background: rgba(77, 143, 255, 0.3); }
+  ::selection { background: rgba(225, 16, 72, 0.16); }
 }
 
 @layer components {

@@ -76,7 +76,7 @@ export default function ConvictionCard({
 }: Props) {
   const score = Math.round(theme.hype_score ?? 0);
   const delta = theme.delta_1d ?? 0;
-  const color = score >= 70 ? "#4d8fff" : score >= 50 ? "#3fb950" : "#f85149";
+  const color = score >= 70 ? "#e11048" : score >= 50 ? "#147a5c" : "#9f172a";
   const synthetic = isSynthetic(provenance?.data_source ?? null);
   const pct = theme.crowding_pct;
   const hasPct = typeof pct === "number";
@@ -85,7 +85,7 @@ export default function ConvictionCard({
     <div
       className={`flex flex-col rounded-[10px] p-[18px] border cursor-pointer transition-all duration-200 relative group ${
         hero
-          ? "bg-gradient-to-b from-[#1a2230] to-[#131822] border-border-strong"
+          ? "bg-gradient-to-b from-brand-dim to-bg-surface border-border-strong"
           : "bg-bg-surface border-border hover:border-border-strong hover:bg-bg-elevated"
       }`}
       onClick={() => onOpenDerivation?.(theme)}

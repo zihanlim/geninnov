@@ -359,8 +359,8 @@ export function thresholdFromPairs(pairs: CorrelationPair[]): number | null {
 export function correlationCellColor(corr: number): string {
   const alpha = Math.min(Math.abs(corr), 1) * 0.55;
   return corr >= 0
-    ? `rgba(248, 81, 73, ${alpha.toFixed(3)})`
-    : `rgba(63, 185, 80, ${alpha.toFixed(3)})`;
+    ? `rgba(159, 23, 42, ${alpha.toFixed(3)})`
+    : `rgba(20, 122, 92, ${alpha.toFixed(3)})`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

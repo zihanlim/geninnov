@@ -80,7 +80,7 @@ export default function ThesisBlock({ advisory, citations, className }: Props) {
         className={`card p-7 ${className ?? ""}`}
         style={{
           background: "var(--bg-elevated)",
-          borderColor: "rgba(248, 81, 73, 0.3)",
+          borderColor: "rgba(159, 23, 42, 0.3)",
         }}
         role="status"
         aria-label="Thesis unavailable"
@@ -91,9 +91,9 @@ export default function ThesisBlock({ advisory, citations, className }: Props) {
             className="badge"
             style={{
               fontSize: 10,
-              background: "rgba(248, 81, 73, 0.12)",
+              background: "rgba(159, 23, 42, 0.12)",
               color: "var(--short)",
-              borderColor: "rgba(248, 81, 73, 0.4)",
+              borderColor: "rgba(159, 23, 42, 0.4)",
             }}
             aria-label="Unavailable"
           >

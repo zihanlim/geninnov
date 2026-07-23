@@ -8,15 +8,15 @@ const SENTIMENT_CONFIG: Record<
   string,
   { label: string; color: string; bg: string }
 > = {
-  "risk-on": { label: "Upbeat", color: "#3fb950", bg: "rgba(63,185,80,0.12)" },
-  "risk-off": { label: "Risk-off", color: "#f85149", bg: "rgba(248,81,73,0.12)" },
+  "risk-on": { label: "Upbeat", color: "#147a5c", bg: "rgba(20, 122, 92,0.12)" },
+  "risk-off": { label: "Risk-off", color: "#9f172a", bg: "rgba(159, 23, 42,0.12)" },
 };
 
 const CYCLE_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  early: { label: "Early Cycle", color: "#4d8fff", bg: "rgba(77,143,255,0.12)" },
-  mid: { label: "Mid Cycle", color: "#4d8fff", bg: "rgba(77,143,255,0.12)" },
+  early: { label: "Early Cycle", color: "#e11048", bg: "rgba(225, 16, 72,0.12)" },
+  mid: { label: "Mid Cycle", color: "#e11048", bg: "rgba(225, 16, 72,0.12)" },
   late: { label: "Late Cycle", color: "#e3b341", bg: "rgba(227,179,65,0.12)" },
-  recession: { label: "Recession", color: "#f85149", bg: "rgba(248,81,73,0.12)" },
+  recession: { label: "Recession", color: "#9f172a", bg: "rgba(159, 23, 42,0.12)" },
 };
 
 function sentimentStyle(s?: string | null) {

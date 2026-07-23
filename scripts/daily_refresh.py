@@ -228,36 +228,22 @@ def compute_hype_scores(raw_signals: list[dict], cfg: ScoringConfig) -> list[dic
 def compute_trade_scores(hyped: list[dict], run_date: date) -> list[dict]:
     cfg = load_config()
 
-    # Get yesterday's scores for momentum. If the theme_signals_history table
-    # doesn't have a hype_score column (migration 003 not yet applied), the
-    # query raises a PostgREST APIError. We catch it and fall back to using
-    # today's score as yesterday's, which collapses HypeMomentum to 0
-    # (TradeScore becomes sentiment-only -- degraded but not broken).
-    yesterday = (run_date - timedelta(days=1)).isoformat()
-    try:
-        yesterday_rows = (
-            supabase.table("theme_signals_history")
-            .select("theme_id, hype_score")
-            .eq("run_date", yesterday)
-            .execute()
-            .data
-        )
-        hype_yesterday_map = {r["theme_id"]: r["hype_score"] for r in yesterday_rows}
-    except Exception as exc:
-        print(f"[compute_trade_scores] hype_score column unavailable ({exc.__class__.__name__}); "
-              f"HypeMomentum will be 0. Apply migration 003 to enable.")
-        hype_yesterday_map = {}
-
-    # T22: Per-theme prior-run lookup for elapsed_days. Without this the
-    # HypeMomentum normalization always divides by 1 day, even after a
-    # weekend or a missed run. Fetch the most recent prior run_date per
-    # theme in one round-trip; themes with no prior row default to
-    # elapsed_days=1 with a warning.
+    # Most-recent prior snapshot per theme, in ONE round-trip, feeding BOTH
+    # HypeMomentum (needs yesterday's hype_score) and elapsed_days (needs
+    # yesterday's date). The original code looked for a row dated *exactly*
+    # run_date - 1 day, so any gap in the cadence -- a weekend, a missed run, or
+    # several runs on one calendar day -- left hype_yesterday empty and collapsed
+    # the 0.55-weighted momentum term to 0. We now take the latest prior row per
+    # theme, and for momentum the latest prior row that actually carries a
+    # non-null hype_score (ADR-0029). Momentum stays 0 only when no prior run has
+    # ever persisted a hype_score for that theme -- self-heals once the daily job
+    # writes one, which persist() does.
+    prior_hype: dict[str, float] = {}
     prior_run_dates: dict[str, date] = {}
     try:
         prior_rows = (
             supabase.table("theme_signals_history")
-            .select("theme_id, run_date")
+            .select("theme_id, run_date, hype_score")
             .lt("run_date", run_date.isoformat())
             .order("run_date", desc=True)
             .execute()
@@ -267,27 +253,33 @@ def compute_trade_scores(hyped: list[dict], run_date: date) -> list[dict]:
             tid = r["theme_id"]
             if tid not in prior_run_dates:
                 prior_run_dates[tid] = date.fromisoformat(r["run_date"])
+            if tid not in prior_hype and r.get("hype_score") is not None:
+                prior_hype[tid] = r["hype_score"]
     except Exception as exc:
-        print(f"[compute_trade_scores] prior-run lookup failed ({exc.__class__.__name__}); "
-              f"defaulting elapsed_days to 1.")
+        print(f"[compute_trade_scores] prior-run lookup failed "
+              f"({exc.__class__.__name__}): {exc}. HypeMomentum will be 0 and "
+              f"elapsed_days default to 1. Apply migration 003 if hype_score is missing.")
 
     scored = []
     missing_prior = 0
+    missing_hype = 0
     for r in hyped:
         theme_id = r["theme_id"]
-        # .get(key, default) returns the stored value when the key exists, so a
-        # row whose hype_score column is NULL yields None rather than the
-        # default. Treat a missing value the same as a missing row.
-        hype_yest = hype_yesterday_map.get(theme_id)
+
+        # Momentum baseline: the most recent prior hype_score. A theme with no
+        # usable prior falls back to today's own score, which zeroes momentum
+        # (TradeScore becomes sentiment-only) rather than crashing.
+        hype_yest = prior_hype.get(theme_id)
         if hype_yest is None:
             hype_yest = r["hype_score"]
+            missing_hype += 1
 
-        prior_date = prior_run_dates.get(theme_id)
-        if prior_date is None:
+        pdate = prior_run_dates.get(theme_id)
+        if pdate is None:
             elapsed_days = 1
             missing_prior += 1
         else:
-            elapsed_days = max(1, (run_date - prior_date).days)
+            elapsed_days = max(1, (run_date - pdate).days)
 
         ts = trade_score(
             hype_today=r["hype_score"],
@@ -301,6 +293,10 @@ def compute_trade_scores(hyped: list[dict], run_date: date) -> list[dict]:
     if missing_prior:
         print(f"[compute_trade_scores] WARN: no prior run_date found for "
               f"{missing_prior}/{len(hyped)} themes; defaulted elapsed_days=1.")
+    if missing_hype:
+        print(f"[compute_trade_scores] NOTE: no prior hype_score for "
+              f"{missing_hype}/{len(hyped)} themes; HypeMomentum=0 for those "
+              f"until a prior run persists hype_score.")
     return scored
 
 
@@ -530,8 +526,11 @@ def rank_and_persist_trade_candidates(
     theme_ids = [s["theme_id"] for s in scored]
     theme_assets_map = load_theme_assets_map(theme_ids, run_date)
 
+    # min_side=1 guarantees the book is never one-sided while opposite-sign
+    # signal exists: if every hype-eligible theme shares one direction, the thin
+    # side is backfilled from the strongest sub-threshold theme (ADR-0029).
     longs, shorts = rank_trade_candidates(
-        scored, theme_assets_map, cfg.hype_score_threshold, top_n=5
+        scored, theme_assets_map, cfg.hype_score_threshold, top_n=5, min_side=1
     )
 
     # Drop any candidate whose ticker isn't in all three taxonomy maps before it

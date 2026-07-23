@@ -1,10 +1,19 @@
 """
 Trade ranking and position sizing.
 
-Spec section 6.2 -- Long/short ranking:
+Spec section 6.2 -- Long/short ranking (revised by ADR-0029):
   - Direction rule: Sign(TradeScore) determines direction. Positive -> long, Negative -> short.
-  - Top 5 Longs:  5 highest TradeScore values where direction = long, HypeScore >= threshold.
-  - Top 5 Shorts: 5 lowest TradeScore values where direction = short, HypeScore >= threshold.
+  - Hype-eligible themes (HypeScore >= threshold) fill each side first, ordered
+    by TradeScore (longs highest-first, shorts lowest-first), up to top_n.
+  - Direction is DECOUPLED from the hype gate: the gate sets *priority*, not
+    whether a side can exist. If a side is still short of `min_side` after the
+    eligible pass, it is backfilled from the strongest sub-threshold themes of
+    that direction, so the book is two-sided whenever the signal is. Backfilled
+    positions carry a low HypeScore, so hype-weighted sizing keeps them small.
+  - A side stays empty only when NO theme of that sign exists anywhere (honest:
+    a genuinely one-directional day). The original rule intersected
+    `eligible AND sign`, so a day where every hype-eligible theme shared one sign
+    produced an empty opposite side (the "0 long candidates" pathology).
 
 Spec section 7.1 -- Position sizing:
   - Weight each candidate by HypeScore/100 (higher confidence = more capital).
@@ -135,32 +144,48 @@ def rank_trade_candidates(
     theme_assets_map: dict[str, list[str]],
     hype_threshold: float,
     top_n: int = 5,
+    min_side: int = 1,
 ) -> tuple[list[TradeCandidate], list[TradeCandidate]]:
-    """Select top N longs and top N shorts from scored themes.
+    """Select up to N longs and N shorts from scored themes (ADR-0029).
 
     Args:
         scored:            list of dicts with keys theme_id, trade_score, hype_score, avg_sentiment.
         theme_assets_map:  {theme_id: [ticker, ...]} - how to expand each theme into candidates.
                            Use empty list to skip a theme.
-        hype_threshold:    only consider themes with hype_score >= this value.
-        top_n:             number of long candidates AND number of short candidates to return.
+        hype_threshold:    themes with hype_score >= this value fill each side first.
+        top_n:             max long themes AND max short themes to return.
+        min_side:          guaranteed minimum themes per side. If the hype-eligible
+                           pass yields fewer than this on a side, backfill from the
+                           strongest sub-threshold themes of that direction so the
+                           book is never one-sided while opposite-sign signal exists.
 
     Returns:
         (longs, shorts) as lists of TradeCandidate.
     """
+    def _pool(rows: list[dict], positive: bool) -> list[dict]:
+        # Themes of the requested direction, strongest-signal-first. Excludes
+        # exactly-zero trade_score (no directional signal either way).
+        side = [
+            r for r in rows
+            if (r.get("trade_score") or 0) != 0
+            and ((r.get("trade_score") or 0) > 0) == positive
+        ]
+        side.sort(key=lambda r: r["trade_score"], reverse=positive)
+        return side
+
     eligible = [r for r in scored if (r.get("hype_score") or 0) >= hype_threshold]
+    below = [r for r in scored if (r.get("hype_score") or 0) < hype_threshold]
 
-    long_pool = [r for r in eligible if (r.get("trade_score") or 0) > 0]
-    short_pool = [r for r in eligible if (r.get("trade_score") or 0) < 0]
+    def _select(positive: bool) -> list[dict]:
+        picks = _pool(eligible, positive)[:top_n]
+        if len(picks) < min_side:
+            seen = {r["theme_id"] for r in picks}
+            backfill = [r for r in _pool(below, positive) if r["theme_id"] not in seen]
+            picks = picks + backfill[: min_side - len(picks)]
+        return picks
 
-    long_pool.sort(key=lambda r: r["trade_score"], reverse=True)
-    short_pool.sort(key=lambda r: r["trade_score"])
-
-    top_long_themes = long_pool[:top_n]
-    top_short_themes = short_pool[:top_n]
-
-    longs = _expand(top_long_themes, theme_assets_map, direction="long")
-    shorts = _expand(top_short_themes, theme_assets_map, direction="short")
+    longs = _expand(_select(positive=True), theme_assets_map, direction="long")
+    shorts = _expand(_select(positive=False), theme_assets_map, direction="short")
 
     return longs, shorts
 

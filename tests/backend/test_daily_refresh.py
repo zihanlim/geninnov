@@ -202,9 +202,9 @@ def test_compute_trade_scores_returns_list():
     run_date = date.today()
     with patch("daily_refresh.load_config", return_value=cfg), \
          patch("daily_refresh.supabase") as mock_supabase:
-        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
-        # T22: prior-run lookup also goes through supabase; same mock returns []
-        # so elapsed_days defaults to 1 (with a warning).
+        # ADR-0029: a single prior-run lookup (.lt().order().execute()) feeds both
+        # momentum and elapsed_days. Empty -> no prior -> momentum 0, elapsed 1.
+        mock_supabase.table.return_value.select.return_value.lt.return_value.order.return_value.execute.return_value.data = []
         result = compute_trade_scores(hyped, run_date)
 
     assert isinstance(result, list)
@@ -240,8 +240,9 @@ def test_compute_trade_scores_handles_missing_hype_score_column():
 
     with patch("daily_refresh.load_config", return_value=cfg), \
          patch("daily_refresh.supabase") as mock_supabase:
-        # Simulate the APIError raised when the column doesn't exist
-        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.side_effect = Exception("column hype_score does not exist")
+        # Simulate the APIError raised when the column doesn't exist -- the single
+        # prior-run lookup fails, so momentum falls back to 0 (ADR-0029).
+        mock_supabase.table.return_value.select.return_value.lt.return_value.order.return_value.execute.side_effect = Exception("column hype_score does not exist")
         result = compute_trade_scores(hyped, date.today())
 
     # Should not crash; should produce a TradeScore = 0.55 * 0 + 0.45 * sentiment
@@ -304,10 +305,9 @@ def test_compute_trade_scores_passes_real_elapsed_days(capsys):
     # Simpler: every select returns a chain where .eq/.lt/.order all return
     # chainable, and .execute() returns what's been staged.
     queue = [
-        # First query: yesterday lookup
-        MagicMock(data=[]),
-        # Second query: prior lookup (5 days ago)
-        MagicMock(data=[{"theme_id": 42, "run_date": prior}]),
+        # ADR-0029: one prior-run lookup returns the 5-days-ago row, now carrying
+        # hype_score (for momentum) alongside run_date (for elapsed_days).
+        MagicMock(data=[{"theme_id": 42, "run_date": prior, "hype_score": 80.0}]),
     ]
     queue_iter = iter(queue)
 
@@ -334,6 +334,49 @@ def test_compute_trade_scores_passes_real_elapsed_days(capsys):
     # No missing-prior warning expected
     captured = capsys.readouterr()
     assert "no prior run_date found" not in captured.out
+
+
+def test_compute_trade_scores_revives_momentum_from_recent_prior():
+    """ADR-0029: momentum reads the most-recent prior hype_score, not a row dated
+    exactly D-1. A snapshot several days ago with a different hype_score now
+    produces a non-zero HypeMomentum term. Pre-fix this collapsed to 0 because no
+    row was dated exactly yesterday, so TradeScore silently became sentiment-only.
+    """
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    from daily_refresh import compute_trade_scores
+    from services.hype_calculator import ScoringConfig
+
+    cfg = ScoringConfig(
+        hype_volume_weight=0.30, hype_sentiment_weight=0.20,
+        hype_corr_weight=0.30, hype_momentum_weight=0.20,
+        trade_hype_weight=0.55, trade_sentiment_weight=0.45,
+    )
+
+    run_date = date.today()
+    prior = (run_date - timedelta(days=5)).isoformat()   # NOT exactly yesterday
+    # sentiment 0 so TradeScore is momentum-only; hype 80 today vs 40 five days ago.
+    hyped = [{"theme_id": 7, "hype_score": 80.0, "avg_sentiment": 0.0}]
+
+    chain = MagicMock()
+    chain.select.return_value = chain
+    chain.lt.return_value = chain
+    chain.order.return_value = chain
+    chain.execute.return_value = MagicMock(
+        data=[{"theme_id": 7, "run_date": prior, "hype_score": 40.0}]
+    )
+    supabase = MagicMock()
+    supabase.table.return_value = chain
+
+    with patch("daily_refresh.load_config", return_value=cfg), \
+         patch("daily_refresh.supabase", supabase):
+        result = compute_trade_scores(hyped, run_date)
+
+    # HypeMomentum = (80-40)/40 / 5 = 0.2 ; TradeScore = 0.55*0.2 + 0.45*0 = 0.11
+    assert result[0]["elapsed_days"] == 5
+    assert result[0]["trade_score"] == pytest.approx(0.55 * 0.2)
+    assert result[0]["trade_score"] != 0.0   # the whole point: momentum is alive
 
 
 def test_build_theme_signals_falls_back_to_most_recent_assets():

@@ -89,6 +89,66 @@ def test_rank_skips_theme_with_no_assets():
     assert [c.theme_id for c in longs] == ["t1"]
 
 
+def test_rank_backfills_thin_side_from_below_threshold():
+    """ADR-0029: when every hype-eligible theme shares one direction, the empty
+    side is backfilled from the strongest sub-threshold theme of the other sign,
+    so the book is two-sided. Reproduces the real "0 long candidates" day where
+    China Growth (90) and US Dollar (71.8) were both mildly bearish and every
+    positive-signal theme sat below the hype gate."""
+    scored = [
+        {"theme_id": "china", "hype_score": 90.0, "trade_score": -0.002, "avg_sentiment": -0.004},
+        {"theme_id": "usd", "hype_score": 71.8, "trade_score": -0.002, "avg_sentiment": -0.004},
+        {"theme_id": "credit", "hype_score": 39.0, "trade_score": 0.040, "avg_sentiment": 0.088},
+        {"theme_id": "election", "hype_score": 49.9, "trade_score": 0.039, "avg_sentiment": 0.086},
+    ]
+    assets = {t["theme_id"]: [t["theme_id"].upper()] for t in scored}
+    longs, shorts = rank_trade_candidates(scored, assets, hype_threshold=50.0, top_n=5, min_side=1)
+    assert [c.theme_id for c in shorts] == ["china", "usd"]  # from eligible pool
+    assert len(longs) == 1                                   # backfilled to min_side
+    assert longs[0].theme_id == "credit"                     # strongest positive (0.040 > 0.039)
+    assert longs[0].direction == "long"
+
+
+def test_rank_no_backfill_when_both_sides_populated():
+    """Backfill fires only for a thin side; a stronger sub-threshold theme is NOT
+    pulled in when the eligible pool already covers that direction."""
+    scored = [
+        {"theme_id": "long_elig", "hype_score": 80.0, "trade_score": 0.5, "avg_sentiment": 0.3},
+        {"theme_id": "short_elig", "hype_score": 70.0, "trade_score": -0.5, "avg_sentiment": -0.3},
+        {"theme_id": "long_below", "hype_score": 20.0, "trade_score": 0.9, "avg_sentiment": 0.6},
+    ]
+    assets = {t["theme_id"]: [t["theme_id"].upper()] for t in scored}
+    longs, shorts = rank_trade_candidates(scored, assets, hype_threshold=50.0, top_n=5, min_side=1)
+    assert [c.theme_id for c in longs] == ["long_elig"]      # long_below not pulled despite 0.9 > 0.5
+    assert [c.theme_id for c in shorts] == ["short_elig"]
+
+
+def test_rank_side_stays_empty_when_no_opposite_sign_exists():
+    """Two-sidedness is guaranteed only when the signal supports it: a side stays
+    empty when no theme of that sign exists anywhere. The fix never fabricates."""
+    scored = [
+        {"theme_id": "s1", "hype_score": 80.0, "trade_score": -0.4, "avg_sentiment": -0.2},
+        {"theme_id": "s2", "hype_score": 30.0, "trade_score": -0.9, "avg_sentiment": -0.5},
+    ]
+    assets = {t["theme_id"]: [t["theme_id"].upper()] for t in scored}
+    longs, shorts = rank_trade_candidates(scored, assets, hype_threshold=50.0, min_side=1)
+    assert longs == []                                       # no positive theme to backfill
+    assert [c.theme_id for c in shorts] == ["s1"]
+
+
+def test_rank_backfill_respects_min_side():
+    """min_side controls how many themes are backfilled onto a thin side."""
+    scored = [
+        {"theme_id": "short_elig", "hype_score": 70.0, "trade_score": -0.5, "avg_sentiment": -0.3},
+        {"theme_id": "l1", "hype_score": 40.0, "trade_score": 0.30, "avg_sentiment": 0.2},
+        {"theme_id": "l2", "hype_score": 35.0, "trade_score": 0.20, "avg_sentiment": 0.1},
+        {"theme_id": "l3", "hype_score": 30.0, "trade_score": 0.10, "avg_sentiment": 0.05},
+    ]
+    assets = {t["theme_id"]: [t["theme_id"].upper()] for t in scored}
+    longs, _ = rank_trade_candidates(scored, assets, hype_threshold=50.0, top_n=5, min_side=2)
+    assert [c.theme_id for c in longs] == ["l1", "l2"]       # top-2 sub-threshold longs
+
+
 def test_allocate_proportional_to_hype_score():
     """Capital split proportional to each candidate's hype_score.
 

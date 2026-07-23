@@ -243,8 +243,8 @@ Where:
 ### 6.2 Long / Short Ranking
 
 - **Direction rule**: Sign(TradeScore) determines direction. Positive → long candidate, Negative → short candidate.
-- **Top 5 Longs**: 5 highest TradeScore values where direction = long, HypeScore ≥ threshold
-- **Top 5 Shorts**: 5 lowest TradeScore values where direction = short, HypeScore ≥ threshold
+- **Eligible-first**: themes with HypeScore ≥ threshold fill each side first — up to 5 longs (highest TradeScore) and 5 shorts (lowest TradeScore).
+- **Direction is decoupled from the hype gate** ([ADR-0029](../../adrs/0029-two-sided-book-decouple-direction-revive-momentum.md)): the gate sets *priority*, not whether a side can exist. If a side is short of `min_side` (default 1) after the eligible pass, it is backfilled from the strongest **sub-threshold** themes of that direction, so the book is two-sided whenever the signal is. A side stays empty only when no theme of that sign exists anywhere (never fabricated). Backfilled picks carry low HypeScore, so hype-weighted sizing keeps them small. *Supersedes the earlier `eligible ∩ sign` rule, which produced an all-short book on a day when both hype-eligible themes shared one sign.*
 - **HypeScore threshold**: Default 50, stored in `scoring_config` (editable without code changes)
 
 ### 6.3 Asset Mapping

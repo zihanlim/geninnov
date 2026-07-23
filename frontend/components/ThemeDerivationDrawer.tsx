@@ -31,6 +31,13 @@ interface ThemeAssetRow {
   asset_class: string | null;
 }
 
+interface ThemeNewsRow {
+  source: string | null;
+  headline: string | null;
+  published_date: string | null;
+  run_date: string | null;
+}
+
 /**
  * `method_id` referencing the selection method used for the displayed
  * correlation. See backend ADR-0016 + `docs/superpowers/specs/...` for the
@@ -62,6 +69,22 @@ function RescaleVader({ v }: { v: number | null | undefined }) {
   // Same rescale as backend: (compound + 1) / 2 → [0, 1]
   const r = (v + 1) / 2;
   return <>{r.toFixed(2)}</>;
+}
+
+/** Colour + honesty for a headline's source tag. Anything starting `mock_`
+ * (mock_brave, mock_reddit, …) is synthetic fallback and flagged. */
+function sourceMeta(source: string | null): { label: string; color: string; synthetic: boolean } {
+  const s = (source ?? "unknown").toLowerCase();
+  const synthetic = s.startsWith("mock") || s.includes("synthetic") || s.includes("fallback");
+  if (synthetic) return { label: source ?? "mock", color: "var(--short)", synthetic: true };
+  if (s.includes("brave")) return { label: source ?? "brave", color: "var(--accent)", synthetic: false };
+  if (s.includes("reddit")) return { label: source ?? "reddit", color: "var(--warning)", synthetic: false };
+  return { label: source ?? "unknown", color: "var(--text-tertiary)", synthetic: false };
+}
+
+function fmtDay(d: string | null): string {
+  if (!d) return "—";
+  return d.slice(0, 10);
 }
 
 function CrossThemeCorrelations({ themeId }: { themeId: string }) {
@@ -144,6 +167,7 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
   const [sourceCounts, setSourceCounts] = useState<Record<string, number> | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [themeAssets, setThemeAssets] = useState<ThemeAssetRow[]>([]);
+  const [headlines, setHeadlines] = useState<ThemeNewsRow[]>([]);
 
   useEffect(() => {
     if (!open || !theme) return;
@@ -178,20 +202,26 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
       // an absent source.
       const { data: newsRows, error: newsErr } = await supabase
         .from("theme_news")
-        .select("source")
+        .select("source, headline, published_date, run_date")
         .eq("theme_id", theme.id)
-        .eq("run_date", runDate);
+        .eq("run_date", runDate)
+        .order("published_date", { ascending: false })
+        .limit(40);
       if (cancelled) return;
       if (newsErr) {
         setSourceCounts(null);
+        setHeadlines([]);
         setSourceError(newsErr.message);
       } else {
+        const rows = (newsRows ?? []) as ThemeNewsRow[];
         const counts: Record<string, number> = {};
-        for (const r of (newsRows ?? []) as { source: string }[]) {
+        for (const r of rows) {
           const key = r.source || "unknown";
           counts[key] = (counts[key] ?? 0) + 1;
         }
         setSourceCounts(Object.keys(counts).length ? counts : null);
+        // Keep only rows that carry an actual headline to read.
+        setHeadlines(rows.filter((r) => (r.headline ?? "").trim().length > 0));
         setSourceError(null);
       }
     })();
@@ -383,6 +413,69 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
           )}
         </li>
       </ul>
+
+      {/* ── Raw headlines behind the score ──────────────────────────────── */}
+      <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mt-6 mb-2">
+        Headlines behind the score
+      </div>
+      <div className="text-[11px] text-text-tertiary mb-2">
+        The actual items collected for this theme on{" "}
+        <span className="num">{fmtDay(theme.run_date ?? null)}</span>, source-tagged.
+        The Volume and Sentiment sub-scores are computed from exactly these.
+      </div>
+      {sourceError ? (
+        <div className="text-text-tertiary text-[12px] py-2">
+          theme_news unavailable ({sourceError})
+        </div>
+      ) : headlines.length === 0 ? (
+        <div className="text-text-tertiary text-[12px] py-2">
+          No headline rows for this theme on this run date (theme_news). The
+          aggregate sub-scores may still exist, but there is no raw item to read
+          behind them.
+        </div>
+      ) : (
+        <ul className="m-0 pl-0 list-none flex flex-col gap-1.5">
+          {headlines.map((h, i) => {
+            const meta = sourceMeta(h.source);
+            return (
+              <li
+                key={`${h.headline}-${i}`}
+                className="rounded-[6px] border border-border bg-bg-elevated px-3 py-2"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span
+                    className="inline-flex items-center rounded px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.06em] num"
+                    style={{
+                      color: meta.color,
+                      border: `1px solid ${meta.color}`,
+                    }}
+                    title={meta.synthetic ? "Synthetic fallback — no live source" : undefined}
+                  >
+                    {meta.label}
+                  </span>
+                  {meta.synthetic && (
+                    <span className="text-warning text-[10px] font-semibold">
+                      synthetic
+                    </span>
+                  )}
+                  <span className="num text-[10.5px] text-text-tertiary ml-auto">
+                    {fmtDay(h.published_date)}
+                  </span>
+                </div>
+                <div className="text-[12.5px] text-text-primary leading-[1.45]">
+                  {h.headline}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {headlines.some((h) => sourceMeta(h.source).synthetic) && (
+        <div className="text-[11px] text-warning mt-2 font-sans">
+          Some items are mock fallback — treat this theme&apos;s HypeScore as
+          estimated, not measured.
+        </div>
+      )}
 
       {/* ── Cross-theme correlation ─────────────────────────────────────── */}
       <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mt-6 mb-2">

@@ -165,13 +165,29 @@ export function CorrelationMatrix({
         <SectionGap copy={gap} tone={state.status === "query_error" ? "error" : "empty"} />
       ) : (
         <>
-          <p className="m-0 px-[18px] pt-3.5 text-[12px] text-text-secondary leading-[1.6] max-w-[86ch]">
-            Same-direction pairs above the{" "}
-            {threshold !== null ? threshold.toFixed(2) : "flagging"} threshold mean the
-            book is doubling a bet, not diversifying: two lines of risk that will draw
-            down together and size like one position. Inverse pairs are the opposite —
-            one leg is hedging the other, which caps the upside as well as the loss.
-            Either can be intentional; neither should be accidental.
+          <div className="px-[18px] pt-3.5">
+            <div className="inline-flex items-center gap-2 rounded-md border border-border bg-bg-elevated px-3 py-1.5">
+              <span className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
+                Flagging threshold
+              </span>
+              <span className="num text-[15px] font-semibold text-text-primary">
+                {threshold !== null ? `|ρ| ≥ ${threshold.toFixed(2)}` : "not recorded"}
+              </span>
+            </div>
+            <p className="m-0 mt-1.5 text-[11px] text-text-tertiary leading-[1.6] max-w-[86ch]">
+              Only pairs whose 252-day |ρ| clears this threshold are persisted to{" "}
+              <Ident>correlation_pairs</Ident>. Every unflagged pair — and every empty
+              cell in the heatmap below — was computed and found below the threshold; it
+              is unknown-but-small, not zero. This is a sparse view of a flagged subset,
+              never the full matrix.
+            </p>
+          </div>
+          <p className="m-0 px-[18px] pt-3 text-[12px] text-text-secondary leading-[1.6] max-w-[86ch]">
+            Same-direction pairs above the threshold mean the book is doubling a bet, not
+            diversifying: two lines of risk that will draw down together and size like one
+            position. Inverse pairs are the opposite — one leg is hedging the other, which
+            caps the upside as well as the loss. Either can be intentional; neither should
+            be accidental.
           </p>
 
           <div className="overflow-x-auto">

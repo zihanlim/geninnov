@@ -13,9 +13,17 @@ import { StatusBadge } from "@/components/status/StatusBadge";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
 import {
   fetchThemeHistories,
+  fetchThemeEdge,
   totalScoredObservations,
+  DEFAULT_EDGE_WEIGHTS,
   type ThemeHistory,
+  type ThemeEdge,
 } from "@/lib/themeSignals";
+import {
+  fetchThemeProvenance,
+  attentionConcentration,
+  type ThemeProvenance,
+} from "@/lib/themeProvenance";
 import type { NumericStatus } from "@/lib/derivations/numeric";
 
 interface Regime {
@@ -126,6 +134,11 @@ function ConvictionPageInner() {
   const [themeError, setThemeError] = useState<string | null>(null);
   const [histories, setHistories] = useState<Record<string, ThemeHistory>>({});
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [edges, setEdges] = useState<Record<string, ThemeEdge>>({});
+  const [provenance, setProvenance] = useState<Record<string, ThemeProvenance>>({});
+  const [abstainThreshold, setAbstainThreshold] = useState<number>(
+    DEFAULT_EDGE_WEIGHTS.abstainThreshold
+  );
   const [loading, setLoading] = useState(true);
   const [runDate, setRunDate] = useState<string | null>(null);
   const [lastPipelineRun, setLastPipelineRun] = useState<string | null>(null);
@@ -207,16 +220,33 @@ function ConvictionPageInner() {
       }
 
       // Real attention history — drives deltas, sparklines and percentiles.
+      // Plus the resolved EdgeScore direction (the trade the theme implies) and
+      // the signal provenance (real / mock / mixed) per theme.
       const ids = rawThemes.map((t) => t.id).filter(Boolean);
-      const { byTheme, error: histErr } = await fetchThemeHistories(ids, 30);
+      const [
+        { byTheme, error: histErr },
+        { byTheme: edgeByTheme },
+        { byTheme: provByTheme },
+      ] = await Promise.all([
+        fetchThemeHistories(ids, 30),
+        fetchThemeEdge(ids),
+        fetchThemeProvenance(ids),
+      ]);
       setHistories(byTheme);
       setHistoryError(histErr);
+      setEdges(edgeByTheme);
+      setProvenance(provByTheme);
 
       const cfg = Object.fromEntries(
         ((cfgRes.data ?? []) as { param_name: string; value: string }[]).map(
           (r) => [r.param_name, Number(r.value)]
         )
       );
+      // Live abstain threshold — never hardcode. Falls back to the migration
+      // default only when scoring_config has no row for it.
+      if (Number.isFinite(cfg.edge_abstain_threshold)) {
+        setAbstainThreshold(cfg.edge_abstain_threshold);
+      }
       const cands = (candidateRes.data ?? []) as {
         direction: string;
         hype_score: number;
@@ -253,6 +283,11 @@ function ConvictionPageInner() {
           ...t,
           delta_1d: h?.delta1d ?? undefined,
           history: h && h.hypeSeries.length >= 2 ? h.hypeSeries : undefined,
+          crowding_pct:
+            h?.percentile === null || h?.percentile === undefined
+              ? undefined
+              : h.percentile,
+          history_obs: h?.hypeSeries.length ?? 0,
           crowding:
             h?.percentile === null || h?.percentile === undefined
               ? undefined
@@ -279,6 +314,13 @@ function ConvictionPageInner() {
 
   const scoredObs = totalScoredObservations(histories);
   const vol = volRegime(regime);
+
+  // Attention concentration — the attention analogue of the book's HHI.
+  // Answers "is attention itself crowding into a few themes today?".
+  const attn = useMemo(
+    () => attentionConcentration(themes.map((t) => t.hype_score)),
+    [themes]
+  );
 
   const observed_age_seconds = runDate
     ? Math.max(0, Math.floor((Date.now() - new Date(runDate).getTime()) / 1000))
@@ -391,7 +433,13 @@ function ConvictionPageInner() {
                 />
               </div>
             ) : (
-              <ThemeHeatmap themes={enriched} onSelect={setDrawerTheme} />
+              <ThemeHeatmap
+                themes={enriched}
+                onSelect={setDrawerTheme}
+                edgeByTheme={edges}
+                abstainThreshold={abstainThreshold}
+                provByTheme={provenance}
+              />
             )}
           </div>
 
@@ -443,6 +491,9 @@ function ConvictionPageInner() {
                   theme={t}
                   hero={i === 0}
                   onOpenDerivation={setDrawerTheme}
+                  edge={edges[t.id]}
+                  abstainThreshold={abstainThreshold}
+                  provenance={provenance[t.id]}
                 />
               ))}
             </div>
@@ -500,6 +551,57 @@ function ConvictionPageInner() {
                   value={counts.avgHype.toFixed(1)}
                   sub={`Top theme at ${counts.topScore.toFixed(1)}`}
                 />
+                <Stat
+                  label="Attention concentration"
+                  value={
+                    attn.top3Share === null
+                      ? "—"
+                      : `${(attn.top3Share * 100).toFixed(0)}%`
+                  }
+                  sub={
+                    attn.hhi === null
+                      ? "Need ≥2 scored themes to measure crowding"
+                      : `Top-3 share of HypeScore · HHI ${attn.hhi.toFixed(
+                          2
+                        )} ≈ ${
+                          attn.effectiveThemes
+                            ? attn.effectiveThemes.toFixed(1)
+                            : "—"
+                        } effective themes`
+                  }
+                />
+                {attn.hhi !== null && attn.hhi >= 0.25 && (
+                  <div
+                    className="rounded-[6px] border px-3 py-2.5 text-[12px] leading-[1.6]"
+                    style={{
+                      borderColor: "var(--warning)",
+                      background: "var(--bg-elevated)",
+                      color: "var(--text-secondary)",
+                    }}
+                  >
+                    <span className="text-warning font-semibold">
+                      Attention is crowded.
+                    </span>{" "}
+                    The top 3 themes hold{" "}
+                    <span className="num text-text-primary">
+                      {((attn.top3Share ?? 0) * 100).toFixed(0)}%
+                    </span>{" "}
+                    of all HypeScore across{" "}
+                    <span className="num text-text-primary">
+                      {attn.scoredCount}
+                    </span>{" "}
+                    scored themes (HHI{" "}
+                    <span className="num text-text-primary">
+                      {attn.hhi.toFixed(2)}
+                    </span>
+                    ) — today&apos;s attention is spread across only{" "}
+                    <span className="num text-text-primary">
+                      {attn.effectiveThemes?.toFixed(1) ?? "—"}
+                    </span>{" "}
+                    effective themes. The attention analogue of the book&apos;s
+                    concentration HHI.
+                  </div>
+                )}
                 {counts.longCount + counts.shortCount === 0 && counts.total > 0 && (
                   <div
                     className="rounded-[6px] border px-3 py-2.5 text-[12px] leading-[1.6]"

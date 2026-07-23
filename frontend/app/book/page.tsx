@@ -3,13 +3,34 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import CitationList, { Citation } from "@/components/CitationList";
-import { StatusBadge } from "@/components/status/StatusBadge";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
+import {
+  DEFAULT_EDGE_WEIGHTS,
+  edgeRationale,
+  fetchThemeEdge,
+  type EdgeWeights,
+  type ThemeEdge,
+} from "@/lib/themeSignals";
 import ThesisBlock from "@/components/research/ThesisBlock";
 import {
   AdvisoryDerivation,
   canRenderAdvisoryBody,
 } from "@/lib/derivations/advisory";
+import EdgeBars from "@/components/book/EdgeBars";
+import SizingChainView from "@/components/book/SizingChainView";
+import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
+import AbstentionRoster from "@/components/book/AbstentionRoster";
+import {
+  buildSizingChain,
+  edgeWeightsFromConfig,
+  marginalContribution,
+  resolvePositionEdge,
+  topSibling,
+  type CorrelationPairLite,
+  type PositionEdgeRow,
+  type ResolvedEdge,
+  type ScoringConfigRow,
+} from "@/lib/book/positionEdge";
 
 /**
  * /book — the $100M long-short book, as ONE object.
@@ -92,6 +113,7 @@ interface Recommendation {
     violations: string[];
   } | null;
   screening_funnel?: FunnelStage[] | null;
+  correlation_pairs?: CorrelationPairLite[] | null;
   lens?: string | null;
 }
 
@@ -133,20 +155,81 @@ function BookPageInner() {
   const [rec, setRec] = useState<Recommendation | null>(null);
   const [recError, setRecError] = useState<string | null>(null);
   const [citations, setCitations] = useState<Citation[] | undefined>();
+  // Edge for positions' themes only (fast path when position rows lack columns).
+  const [edgeByTheme, setEdgeByTheme] = useState<Record<string, ThemeEdge>>({});
+  // Edge for EVERY theme — drives the abstention roster.
+  const [allEdgeByTheme, setAllEdgeByTheme] = useState<Record<string, ThemeEdge>>({});
+  const [themeNames, setThemeNames] = useState<Record<string, string>>({});
+  // Migration-025 edge columns on portfolio_positions, keyed by asset.
+  const [posEdgeByAsset, setPosEdgeByAsset] = useState<
+    Record<string, PositionEdgeRow>
+  >({});
+  // Live EdgeScore weights + abstain threshold from scoring_config.
+  const [edgeWeights, setEdgeWeights] = useState<EdgeWeights>(DEFAULT_EDGE_WEIGHTS);
+  const [weightsResolved, setWeightsResolved] = useState<
+    Record<keyof EdgeWeights, boolean>
+  >({ trend: false, regime: false, carry: false, value: false, abstainThreshold: false });
   const [loading, setLoading] = useState(true);
   const [openAsset, setOpenAsset] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
-      const { data, error } = await supabase
-        .from("research_recommendations")
-        .select(
-          "run_date, picks, book_view, book_risks, agent_run_id, advisory_derivation, book_metrics, scenario_results, cap_utilisation, screening_funnel, lens"
-        )
-        .order("run_date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // The book row, the live scoring weights, the per-position edge columns,
+      // and the full theme roster are independent reads — fire them together.
+      const [recRes, cfgRes, posRes, themesRes] = await Promise.all([
+        supabase
+          .from("research_recommendations")
+          .select(
+            "run_date, picks, book_view, book_risks, agent_run_id, advisory_derivation, book_metrics, scenario_results, cap_utilisation, screening_funnel, correlation_pairs, lens"
+          )
+          .order("run_date", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase.from("scoring_config").select("param_name, value"),
+        supabase
+          .from("portfolio_positions")
+          .select(
+            "asset, theme_id, edge_score, trend_signal, regime_bias, carry_signal, value_signal, conviction, vol"
+          ),
+        supabase.from("themes").select("id, name"),
+      ]);
 
+      // Live EdgeScore weights + abstain threshold. Missing rows fall back to the
+      // migration-024 defaults, and `resolved` records which were actually found.
+      const cfg = edgeWeightsFromConfig(
+        (cfgRes.data as ScoringConfigRow[] | null) ?? null,
+        DEFAULT_EDGE_WEIGHTS
+      );
+      setEdgeWeights(cfg.weights);
+      setWeightsResolved(cfg.resolved);
+
+      // Per-position edge columns (migration 025), keyed by asset.
+      const posMap: Record<string, PositionEdgeRow> = {};
+      for (const row of (posRes.data as PositionEdgeRow[] | null) ?? []) {
+        if (row.asset) posMap[row.asset] = row;
+      }
+      setPosEdgeByAsset(posMap);
+
+      // Theme id → name, for the abstention roster and position links.
+      const names: Record<string, string> = {};
+      const allThemeIds: string[] = [];
+      for (const row of (themesRes.data as { id: string; name: string }[] | null) ??
+        []) {
+        if (row.id) {
+          names[row.id] = row.name;
+          allThemeIds.push(row.id);
+        }
+      }
+      setThemeNames(names);
+
+      // The abstention roster needs the latest edge for EVERY theme, not just the
+      // ten that made the book. This is the read that surfaces "scored, not traded".
+      if (allThemeIds.length) {
+        const { byTheme: allEdge } = await fetchThemeEdge(allThemeIds);
+        setAllEdgeByTheme(allEdge);
+      }
+
+      const { data, error } = recRes;
       if (error) {
         setRecError(error.message);
         setLoading(false);
@@ -167,6 +250,16 @@ function BookPageInner() {
               })()
             : [];
         setRec({ ...r, picks });
+
+        // EdgeScore per position theme — the theme-latest fallback when a
+        // position row carries no edge columns (ADR-0031/0032).
+        const themeIds = Array.from(
+          new Set(picks.map((p) => p.theme_id).filter((x): x is string => !!x))
+        );
+        if (themeIds.length) {
+          const { byTheme } = await fetchThemeEdge(themeIds);
+          setEdgeByTheme(byTheme);
+        }
 
         if (r.agent_run_id) {
           const { data: run } = await supabase
@@ -191,6 +284,47 @@ function BookPageInner() {
     () => (rec?.picks ?? []).filter((p) => p.direction === "short"),
     [rec]
   );
+
+  // Resolve the EdgeScore for every position once: position columns first, theme
+  // latest as fallback (positionEdge.resolvePositionEdge). Keyed by "asset" — the
+  // stable identity a pick joins on.
+  const edgeByAsset = useMemo(() => {
+    const m: Record<string, ResolvedEdge> = {};
+    for (const p of rec?.picks ?? []) {
+      m[p.asset] = resolvePositionEdge(
+        posEdgeByAsset[p.asset],
+        p.theme_id ? edgeByTheme[p.theme_id] : undefined
+      );
+    }
+    return m;
+  }, [rec, posEdgeByAsset, edgeByTheme]);
+
+  // Σ conviction across every sized position with a non-null conviction — the
+  // normalisation denominator the sizing chain shows.
+  const convictionSum = useMemo(() => {
+    let sum = 0;
+    let any = false;
+    for (const p of rec?.picks ?? []) {
+      const c = edgeByAsset[p.asset]?.conviction;
+      if (c !== null && c !== undefined && Number.isFinite(c)) {
+        sum += Math.abs(c);
+        any = true;
+      }
+    }
+    return any ? sum : null;
+  }, [rec, edgeByAsset]);
+
+  const allPicks = useMemo(
+    () =>
+      (rec?.picks ?? []).map((p) => ({
+        asset: p.asset,
+        direction: p.direction,
+        notional: p.notional,
+      })),
+    [rec]
+  );
+
+  const correlationPairs = rec?.correlation_pairs ?? null;
 
   const bm = rec?.book_metrics ?? null;
   const advisory = rec?.advisory_derivation ?? null;
@@ -218,8 +352,10 @@ function BookPageInner() {
             The $100M Book
           </h1>
           <p className="m-0 text-text-secondary text-[13px]">
-            Top longs and shorts with thesis, sizing derivation, and stress
-            exposure. Expand any position for the full chain.
+            Every side is <span className="num">sign(EdgeScore)</span> —
+            0.35·Trend + 0.25·Regime + 0.20·Carry + 0.20·Value — and every size is
+            conviction (<span className="num">|Edge|/vol</span>) × inverse-vol,
+            capped. Expand any position for the full chain.
           </p>
         </div>
         <div className="text-right text-text-secondary text-[12px] shrink-0">
@@ -365,6 +501,11 @@ function BookPageInner() {
                 citations={citations}
                 advisory={advisory}
                 capByAsset={capByAsset}
+                edgeByAsset={edgeByAsset}
+                edgeWeights={edgeWeights}
+                convictionSum={convictionSum}
+                allPicks={allPicks}
+                correlationPairs={correlationPairs}
                 scenarios={rec.scenario_results ?? []}
               />
               <PositionSection
@@ -377,11 +518,24 @@ function BookPageInner() {
                 citations={citations}
                 advisory={advisory}
                 capByAsset={capByAsset}
+                edgeByAsset={edgeByAsset}
+                edgeWeights={edgeWeights}
+                convictionSum={convictionSum}
+                allPicks={allPicks}
+                correlationPairs={correlationPairs}
                 scenarios={rec.scenario_results ?? []}
                 emptyNote="This book has no short positions. A $100M long-short mandate with zero shorts carries full directional market exposure — check the screening funnel for why no theme produced a negative TradeScore."
               />
             </>
           )}
+
+          {/* ── Abstention roster ───────────────────────────────────────── */}
+          <AbstentionRoster
+            edgeByTheme={allEdgeByTheme}
+            themeNames={themeNames}
+            abstainThreshold={edgeWeights.abstainThreshold}
+            thresholdIsLive={weightsResolved.abstainThreshold}
+          />
 
           {/* ── Screening funnel ───────────────────────────────────────── */}
           <div className="card mb-6">
@@ -535,6 +689,11 @@ function PositionSection({
   citations,
   advisory,
   capByAsset,
+  edgeByAsset,
+  edgeWeights,
+  convictionSum,
+  allPicks,
+  correlationPairs,
   scenarios,
   emptyNote,
 }: {
@@ -547,6 +706,11 @@ function PositionSection({
   citations?: Citation[];
   advisory: AdvisoryDerivation | null;
   capByAsset: Map<string, CapRow>;
+  edgeByAsset: Record<string, ResolvedEdge>;
+  edgeWeights: EdgeWeights;
+  convictionSum: number | null;
+  allPicks: { asset: string; direction: "long" | "short"; notional?: number }[];
+  correlationPairs: CorrelationPairLite[] | null;
   scenarios: ScenarioResult[];
   emptyNote?: string;
 }) {
@@ -573,6 +737,19 @@ function PositionSection({
         </div>
       ) : (
         <div className="card overflow-hidden">
+          {/* Column legend for the dense row grid below. */}
+          <div
+            className="px-[18px] py-2 grid items-center gap-3 border-b border-border bg-bg-elevated text-[10px] uppercase tracking-[0.08em] text-text-tertiary"
+            style={{ gridTemplateColumns: "28px 1fr 132px 78px 78px 78px 24px" }}
+          >
+            <span>#</span>
+            <span>Asset · theme · rationale</span>
+            <span className="text-right">Weight · notional</span>
+            <span className="text-right">Edge</span>
+            <span className="text-right">Conv.</span>
+            <span className="text-right">Cap</span>
+            <span />
+          </div>
           {picks.map((p, i) => (
             <PositionRow
               key={`${p.asset}-${i}`}
@@ -589,6 +766,11 @@ function PositionSection({
               citations={citations}
               advisory={advisory}
               cap={capByAsset.get(p.asset)}
+              edge={edgeByAsset[p.asset]}
+              edgeWeights={edgeWeights}
+              convictionSum={convictionSum}
+              allPicks={allPicks}
+              correlationPairs={correlationPairs}
               scenarios={scenarios}
             />
           ))}
@@ -606,6 +788,11 @@ function PositionRow({
   citations,
   advisory,
   cap,
+  edge,
+  edgeWeights,
+  convictionSum,
+  allPicks,
+  correlationPairs,
   scenarios,
 }: {
   pick: Pick;
@@ -615,12 +802,65 @@ function PositionRow({
   citations?: Citation[];
   advisory: AdvisoryDerivation | null;
   cap?: CapRow;
+  edge?: ResolvedEdge;
+  edgeWeights: EdgeWeights;
+  convictionSum: number | null;
+  allPicks: { asset: string; direction: "long" | "short"; notional?: number }[];
+  correlationPairs: CorrelationPairLite[] | null;
   scenarios: ScenarioResult[];
 }) {
   const isLong = pick.direction === "long";
   const dirColor = isLong ? "var(--long)" : "var(--short)";
   const showProse = canRenderAdvisoryBody(advisory);
   const themeName = pick.theme_name ?? pick.theme ?? null;
+
+  const hasEdge =
+    !!edge &&
+    (edge.trend_signal !== null ||
+      edge.regime_bias !== null ||
+      edge.carry_signal !== null ||
+      edge.value_signal !== null);
+  const conviction = edge?.conviction ?? null;
+
+  // Always-visible one-line rationale (never hidden behind expand). ADR-0032.
+  const rationale = hasEdge && edge ? edgeRationale(edge) : null;
+
+  // The sizing derivation — conviction × inverse-vol → cap → notional.
+  const sizingChain = buildSizingChain({
+    direction: pick.direction,
+    edge:
+      edge ?? {
+        edge_score: null,
+        trend_signal: null,
+        regime_bias: null,
+        carry_signal: null,
+        value_signal: null,
+        conviction: null,
+        vol: null,
+        direction: null,
+        run_date: null,
+        source: "none",
+      },
+    weight: pick.weight,
+    signedWeight: pick.signed_weight,
+    notional: pick.notional,
+    hypeScore: pick.hype_score,
+    cap: cap
+      ? {
+          weight: cap.weight,
+          cap: cap.cap,
+          utilisation: cap.utilisation,
+          breached: cap.breached,
+        }
+      : undefined,
+    convictionSum,
+  });
+
+  const marginal = marginalContribution(
+    { asset: pick.asset, direction: pick.direction, notional: pick.notional },
+    allPicks
+  );
+  const sibling = topSibling(pick.asset, correlationPairs);
 
   // Per-position scenario lines, parsed from the breakdown strings the backend
   // already emits (e.g. "  TLT (long): +8.0% × +4% = +0.32%").
@@ -636,20 +876,50 @@ function PositionRow({
 
   return (
     <div className="border-b border-border last:border-b-0">
-      <button
-        type="button"
+      {/* A div, not a button: the theme name is an <a>, which cannot be nested
+          inside a <button>. Keyboard + ARIA are wired by hand to keep the row a
+          single toggle target while the inner link stays independently focusable. */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
         aria-expanded={open}
-        className="w-full text-left px-[18px] py-3.5 hover:bg-bg-elevated transition-colors grid items-center gap-3"
-        style={{ gridTemplateColumns: "28px 1fr 130px 90px 90px 90px 24px" }}
+        className="w-full text-left px-[18px] py-3.5 hover:bg-bg-elevated transition-colors grid items-center gap-3 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        style={{ gridTemplateColumns: "28px 1fr 132px 78px 78px 78px 24px" }}
       >
         <span className="num text-text-tertiary text-[12px]">#{rank}</span>
-        <span className="flex items-baseline gap-2 min-w-0">
-          <span className="num font-semibold text-[14px]" style={{ color: dirColor }}>
-            {pick.asset}
+        <span className="flex flex-col min-w-0 gap-0.5">
+          <span className="flex items-baseline gap-2 min-w-0">
+            <span
+              className="num font-semibold text-[14px]"
+              style={{ color: dirColor }}
+            >
+              {pick.asset}
+            </span>
+            {pick.theme_id && themeName ? (
+              <Link
+                href={`/?theme=${pick.theme_id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-text-secondary text-[12px] truncate hover:text-accent hover:underline"
+                title={`Attention trend for ${themeName}`}
+              >
+                {themeName}
+              </Link>
+            ) : (
+              <span className="text-text-secondary text-[12px] truncate">
+                {themeName ?? "—"}
+              </span>
+            )}
           </span>
-          <span className="text-text-secondary text-[12px] truncate">
-            {themeName ?? "—"}
+          {/* Always-visible IC-defensible rationale — the "why this side". */}
+          <span className="text-text-tertiary text-[11px] truncate" title={rationale ?? undefined}>
+            {rationale ?? "EdgeScore not persisted for this position"}
           </span>
         </span>
         <span className="text-right">
@@ -660,14 +930,32 @@ function PositionRow({
             {fmtUSD(pick.notional)}
           </span>
         </span>
-        <span className="num text-right text-[12px] text-text-secondary">
-          {pick.hype_score?.toFixed(1) ?? "—"}
-        </span>
+        {/* EdgeScore — the number whose sign is the side. */}
         <span
           className="num text-right text-[12px] font-semibold"
-          style={{ color: dirColor }}
+          style={{ color: hasEdge ? dirColor : "var(--text-tertiary)" }}
+          title="EdgeScore = 0.35·Trend + 0.25·Regime + 0.20·Carry + 0.20·Value"
         >
-          {fmtSigned(pick.trade_score)}
+          {edge && edge.edge_score !== null ? fmtSigned(edge.edge_score) : "—"}
+        </span>
+        {/* Conviction chip — |Edge|/vol, always visible. */}
+        <span className="text-right">
+          {conviction !== null ? (
+            <span
+              className="num text-[11px] px-1.5 py-0.5 rounded"
+              style={{ background: "var(--bg-elevated)", color: "var(--text-secondary)" }}
+              title="Conviction = |EdgeScore| / vol — the inverse-vol sizing weight"
+            >
+              {conviction.toFixed(1)}×
+            </span>
+          ) : (
+            <span
+              className="text-text-tertiary text-[11px]"
+              title="No conviction persisted — this position was sized by HypeScore"
+            >
+              hype
+            </span>
+          )}
         </span>
         <span className="text-right">
           {cap ? (
@@ -691,7 +979,7 @@ function PositionRow({
         <span className="text-text-tertiary text-[12px] text-right">
           {open ? "−" : "+"}
         </span>
-      </button>
+      </div>
 
       {open && (
         <div className="px-[18px] pb-5 pt-1 bg-bg-elevated/40">
@@ -741,38 +1029,51 @@ function PositionRow({
                   </span>
                 </div>
               )}
+
+              {/* P1 — marginal contribution to the whole book. */}
+              <SubHead className="mt-4">Contribution to book</SubHead>
+              <PositionMarginalRisk marginal={marginal} sibling={sibling} />
             </div>
 
             <div>
-              <SubHead>Sizing</SubHead>
-              <div className="rounded-[8px] border border-border overflow-hidden text-[12px]">
-                <Row
-                  k="Raw weight (HypeScore / 100)"
-                  v={
-                    pick.hype_score === undefined
-                      ? "—"
-                      : (pick.hype_score / 100).toFixed(3)
-                  }
-                />
-                <Row k="Final weight" v={fmtPct(pick.weight)} />
-                <Row
-                  k="Signed weight"
-                  v={
-                    pick.signed_weight !== undefined
-                      ? fmtPct(pick.signed_weight)
-                      : fmtPct(isLong ? pick.weight : -(pick.weight ?? 0))
-                  }
-                />
-                <Row
-                  k="Single-name cap"
-                  v={
-                    cap
-                      ? `${(cap.weight * 100).toFixed(1)}% of ${(cap.cap * 100).toFixed(0)}%${cap.breached ? " — BREACHED" : ""}`
-                      : "—"
-                  }
-                  warn={cap?.breached}
-                />
-                <Row k="Notional" v={fmtUSD(pick.notional)} last />
+              <SubHead>
+                Why {isLong ? "long" : "short"} — EdgeScore decomposition
+              </SubHead>
+              {hasEdge && edge ? (
+                <div className="mb-4">
+                  <EdgeBars
+                    edge={edge}
+                    weights={edgeWeights}
+                    direction={pick.direction}
+                  />
+                  {edge.source === "theme_latest" && (
+                    <p className="m-0 mt-2 text-[10.5px] text-text-tertiary leading-[1.5]">
+                      From the theme&apos;s latest{" "}
+                      <code className="num">theme_signals_history</code> row — the
+                      position row carried no edge columns, so this is the theme
+                      signal, not necessarily the one that sized this book.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="m-0 mb-4 text-[12px] text-text-tertiary leading-[1.6]">
+                  Direction is <code className="num">sign(EdgeScore)</code>, where{" "}
+                  <code className="num">
+                    EdgeScore = 0.35·Trend + 0.25·Regime + 0.20·Carry +
+                    0.20·Value
+                  </code>
+                  . No component was persisted for this position or its
+                  theme&apos;s latest run. See{" "}
+                  <Link href="/method#edgescore" className="text-accent">
+                    Method §4
+                  </Link>
+                  .
+                </p>
+              )}
+
+              <SubHead>Sizing — conviction × inverse-vol</SubHead>
+              <div className="mb-1">
+                <SizingChainView chain={sizingChain} />
               </div>
 
               {pick.factor_tilts && Object.keys(pick.factor_tilts).length > 0 && (
@@ -848,33 +1149,6 @@ function SubHead({
       className={`text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2 ${className}`}
     >
       {children}
-    </div>
-  );
-}
-
-function Row({
-  k,
-  v,
-  last,
-  warn,
-}: {
-  k: string;
-  v: string;
-  last?: boolean;
-  warn?: boolean;
-}) {
-  return (
-    <div
-      className={`px-3 py-2 flex justify-between gap-3 ${last ? "" : "border-b border-border"}`}
-      style={last ? { background: "var(--bg-elevated)" } : undefined}
-    >
-      <span className="text-text-secondary">{k}</span>
-      <span
-        className="num font-semibold text-right"
-        style={{ color: warn ? "var(--short)" : undefined }}
-      >
-        {v}
-      </span>
     </div>
   );
 }

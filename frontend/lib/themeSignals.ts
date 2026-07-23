@@ -150,3 +150,144 @@ export function totalScoredObservations(
 ): number {
   return Object.values(byTheme).reduce((n, h) => n + h.hypeSeries.length, 0);
 }
+
+// ── EdgeScore: the direction signal (ADR-0031) ──────────────────────────────
+//
+// Direction is `sign(EdgeScore)`, NOT `sign(TradeScore)`. EdgeScore =
+// w_trend·trend + w_regime·regime_bias, anchoring long/short to a price-trend
+// and regime-fit basis instead of near-zero news sentiment. TradeScore now only
+// ranks WITHIN a side. Persisted on theme_signals_history by migration 023,
+// explicitly "for /method and the derivation drawer" — so anything that shows a
+// direction must read it here rather than reconstructing the superseded rule.
+
+export interface ThemeEdge {
+  edge_score: number | null;
+  /** The four EdgeScore components, each in [-1, 1] (ADR-0031/0032). */
+  trend_signal: number | null;
+  regime_bias: number | null;
+  carry_signal: number | null;
+  value_signal: number | null;
+  /** conviction = |edge_score| / vol — the Stage-4 sizing weight. */
+  conviction: number | null;
+  vol: number | null;
+  /** Resolved side, sign(edge_score). null = abstain / unknown. */
+  direction: "long" | "short" | null;
+  run_date: string | null;
+}
+
+/** The four EdgeScore component weights (from scoring_config), with defaults
+ * matching migration 024. Callers should override with live scoring_config. */
+export interface EdgeWeights {
+  trend: number;
+  regime: number;
+  carry: number;
+  value: number;
+  abstainThreshold: number;
+}
+
+export const DEFAULT_EDGE_WEIGHTS: EdgeWeights = {
+  trend: 0.35,
+  regime: 0.25,
+  carry: 0.2,
+  value: 0.2,
+  abstainThreshold: 0.15,
+};
+
+/** Weighted contribution of each component to the EdgeScore, for the 4-bar
+ * decomposition. Components absent (null) contribute 0 and are flagged. */
+export function edgeContributions(edge: ThemeEdge, w: EdgeWeights) {
+  return [
+    { key: "Trend", raw: edge.trend_signal, weight: w.trend, contribution: (edge.trend_signal ?? 0) * w.trend },
+    { key: "Regime", raw: edge.regime_bias, weight: w.regime, contribution: (edge.regime_bias ?? 0) * w.regime },
+    { key: "Carry", raw: edge.carry_signal, weight: w.carry, contribution: (edge.carry_signal ?? 0) * w.carry },
+    { key: "Value", raw: edge.value_signal, weight: w.value, contribution: (edge.value_signal ?? 0) * w.value },
+  ];
+}
+
+/** One-line, IC-defensible rationale, e.g.
+ * "Short — 6m trend -0.90, regime +0.50, carry 0.00, value 0.00 · conviction 9.5x". */
+export function edgeRationale(edge: ThemeEdge): string {
+  if (edge.edge_score === null) return "EdgeScore not yet computed";
+  const side = edge.direction ? edge.direction[0].toUpperCase() + edge.direction.slice(1) : "Abstain";
+  const f = (v: number | null) => (v === null ? "n/a" : v.toFixed(2));
+  const conv = edge.conviction === null ? "" : ` · conviction ${edge.conviction.toFixed(1)}×`;
+  return `${side} — trend ${f(edge.trend_signal)}, regime ${f(edge.regime_bias)}, carry ${f(edge.carry_signal)}, value ${f(edge.value_signal)}${conv}`;
+}
+
+function edgeDirection(edge: number | null, abstainThreshold = 0): "long" | "short" | null {
+  if (edge === null || Number.isNaN(edge)) return null;
+  if (Math.abs(edge) < abstainThreshold) return null; // abstained — weak signal
+  if (edge === 0) return null;
+  return edge > 0 ? "long" : "short";
+}
+
+/**
+ * Latest EdgeScore breakdown per theme, keyed by theme_id.
+ *
+ * A theme whose latest row predates migration 023 has null components — render
+ * that as "not yet computed", never as a zero tilt. The `error` field is set on
+ * a query failure (e.g. the columns don't exist yet) so callers can say so
+ * rather than silently showing every direction as unknown.
+ */
+export async function fetchThemeEdge(
+  themeIds: string[]
+): Promise<{ byTheme: Record<string, ThemeEdge>; error: string | null }> {
+  if (themeIds.length === 0) return { byTheme: {}, error: null };
+
+  const { data, error } = await supabase
+    .from("theme_signals_history")
+    .select(
+      "theme_id, run_date, edge_score, trend_signal, regime_bias, carry_signal, value_signal, conviction, vol"
+    )
+    .in("theme_id", themeIds)
+    .order("run_date", { ascending: false })
+    .limit(themeIds.length * 40);
+
+  if (error) return { byTheme: {}, error: error.message };
+
+  // First (most recent) row per theme wins.
+  const byTheme: Record<string, ThemeEdge> = {};
+  for (const row of data ?? []) {
+    const r = row as {
+      theme_id: string;
+      run_date: string;
+      edge_score: number | null;
+      trend_signal: number | null;
+      regime_bias: number | null;
+      carry_signal: number | null;
+      value_signal: number | null;
+      conviction: number | null;
+      vol: number | null;
+    };
+    if (byTheme[r.theme_id]) continue;
+    byTheme[r.theme_id] = {
+      edge_score: r.edge_score,
+      trend_signal: r.trend_signal,
+      regime_bias: r.regime_bias,
+      carry_signal: r.carry_signal,
+      value_signal: r.value_signal,
+      conviction: r.conviction,
+      vol: r.vol,
+      direction: edgeDirection(r.edge_score),
+      run_date: r.run_date,
+    };
+  }
+  return { byTheme, error: null };
+}
+
+/**
+ * The abstention roster: themes the engine considered but declined because
+ * |EdgeScore| < abstain_threshold (ADR-0032). These are computed every run and
+ * never surfaced today. Returns themes sorted by |EdgeScore| descending (the
+ * "closest to a trade" first). `abstainThreshold` should come from scoring_config.
+ */
+export function abstainedThemes(
+  byTheme: Record<string, ThemeEdge>,
+  themeNames: Record<string, string>,
+  abstainThreshold: number
+): Array<ThemeEdge & { theme_id: string; name: string }> {
+  return Object.entries(byTheme)
+    .filter(([, e]) => e.edge_score !== null && Math.abs(e.edge_score) < abstainThreshold)
+    .map(([theme_id, e]) => ({ ...e, theme_id, name: themeNames[theme_id] ?? theme_id }))
+    .sort((a, b) => Math.abs(b.edge_score ?? 0) - Math.abs(a.edge_score ?? 0));
+}

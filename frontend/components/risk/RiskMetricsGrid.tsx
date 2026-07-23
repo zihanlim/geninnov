@@ -21,7 +21,12 @@ import {
   type QueryFailure,
   type RiskRow,
 } from "@/lib/risk/analytics";
+import type { MetricDelta } from "@/lib/risk/riskBoard";
+import { DeltaChip } from "./DeltaChip";
 import { Ident } from "./SectionGap";
+
+/** Keys into the deltas map, matching computeRiskDeltas output. */
+type DeltaKey = "var_95" | "cvar_95" | "sharpe" | "beta" | "concentration_hhi";
 
 const STATUSES: NumericStatus[] = [
   "exact",
@@ -65,7 +70,20 @@ interface MetricDef {
   methodId: string;
   format: (v: number) => string;
   color?: string;
+  /** Which prior-run delta applies to this card, if any. */
+  deltaKey?: DeltaKey;
+  /** For the delta chip: whether an increase in this metric is bad. */
+  deltaHigherIsWorse?: boolean;
+  /** Formats a raw delta magnitude for the chip (may differ from `format`). */
+  deltaFormat?: (v: number) => string;
 }
+
+const signedUsdM = (v: number): string =>
+  `${v >= 0 ? "+" : "−"}$${Math.abs(v / 1_000_000).toFixed(1)}M`;
+const signedRatio = (v: number): string =>
+  `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
+const signedHhi = (v: number): string =>
+  `${v >= 0 ? "+" : "−"}${Math.abs(v) > 1 ? Math.abs(v).toFixed(0) : Math.abs(v).toFixed(3)}`;
 
 const METRICS: MetricDef[] = [
   {
@@ -77,6 +95,9 @@ const METRICS: MetricDef[] = [
     methodId: "risk.var.parametric.v1",
     format: (v) => fmtUsdAsMillions(v),
     color: "text-short",
+    deltaKey: "var_95",
+    deltaHigherIsWorse: true,
+    deltaFormat: signedUsdM,
   },
   {
     derivationKey: "cvar_95",
@@ -87,6 +108,9 @@ const METRICS: MetricDef[] = [
     methodId: "risk.cvar.parametric.v1",
     format: (v) => fmtUsdAsMillions(v),
     color: "text-short",
+    deltaKey: "cvar_95",
+    deltaHigherIsWorse: true,
+    deltaFormat: signedUsdM,
   },
   {
     derivationKey: "sharpe",
@@ -96,6 +120,9 @@ const METRICS: MetricDef[] = [
     unit: "ratio",
     methodId: "risk.sharpe.v1",
     format: (v) => fmtRatio(v),
+    deltaKey: "sharpe",
+    deltaHigherIsWorse: false,
+    deltaFormat: signedRatio,
   },
   {
     derivationKey: "beta",
@@ -106,6 +133,11 @@ const METRICS: MetricDef[] = [
     methodId: "risk.beta.v1",
     format: (v) => `${v >= 0 ? "+" : "-"}${Math.abs(v).toFixed(2)}`,
     color: "text-accent",
+    deltaKey: "beta",
+    // Beta drift in either direction is undesirable for a market-neutral book,
+    // but we colour the raw signed change: up = red (more market exposure).
+    deltaHigherIsWorse: true,
+    deltaFormat: signedRatio,
   },
   {
     derivationKey: "hhi",
@@ -115,6 +147,9 @@ const METRICS: MetricDef[] = [
     unit: "ratio",
     methodId: "risk.hhi.v1",
     format: (v) => (v > 1 ? v.toFixed(0) : v.toFixed(3)),
+    deltaKey: "concentration_hhi",
+    deltaHigherIsWorse: true,
+    deltaFormat: signedHhi,
   },
 ];
 
@@ -123,11 +158,17 @@ function RiskCard({
   value,
   derivation,
   color = "text-text-primary",
+  delta,
 }: {
   label: string;
   value: string;
   derivation: NumericDerivation;
   color?: string;
+  delta?: {
+    value: MetricDelta;
+    format: (v: number) => string;
+    higherIsWorse: boolean;
+  };
 }) {
   const present = derivation.value !== null;
   return (
@@ -138,12 +179,21 @@ function RiskCard({
         </span>
         <StatusBadge status={derivation.display_status} />
       </div>
-      <div
-        className={`num text-[22px] font-semibold leading-[1.1] ${
-          present ? color : "text-text-tertiary"
-        }`}
-      >
-        {value}
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <div
+          className={`num text-[22px] font-semibold leading-[1.1] ${
+            present ? color : "text-text-tertiary"
+          }`}
+        >
+          {value}
+        </div>
+        {present && delta && (
+          <DeltaChip
+            delta={delta.value}
+            format={delta.format}
+            higherIsWorse={delta.higherIsWorse}
+          />
+        )}
       </div>
       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
         {present && (
@@ -173,12 +223,18 @@ export function RiskMetricsGrid({
   risk,
   failure,
   orderingNote,
+  deltas,
+  prevRunDate,
 }: {
   loading: boolean;
   risk: RiskRow | null;
   failure: QueryFailure | null;
   /** Set when portfolio_risk had to be read with a fallback ordering. */
   orderingNote?: string | null;
+  /** Signed change of each metric vs the previous portfolio_risk run. */
+  deltas?: Record<DeltaKey, MetricDelta> | null;
+  /** run_date of the previous risk run, for the header note. */
+  prevRunDate?: string | null;
 }) {
   const persisted = (risk?.numeric_derivations ?? null) as Record<
     string,
@@ -238,6 +294,7 @@ export function RiskMetricsGrid({
           {isNum(risk?.total_capital)
             ? ` · capital ${fmtUsdAsMillions(risk?.total_capital)}`
             : ""}
+          {prevRunDate ? ` · Δ vs ${prevRunDate}` : ""}
         </span>
       </div>
 
@@ -254,6 +311,14 @@ export function RiskMetricsGrid({
               const derivation = buildDerivation(def);
               const value =
                 derivation.value !== null ? def.format(derivation.value) : "—";
+              const delta =
+                def.deltaKey && deltas
+                  ? {
+                      value: deltas[def.deltaKey],
+                      format: def.deltaFormat ?? def.format,
+                      higherIsWorse: def.deltaHigherIsWorse ?? true,
+                    }
+                  : undefined;
               return (
                 <RiskCard
                   key={def.derivationKey}
@@ -261,6 +326,7 @@ export function RiskMetricsGrid({
                   value={value}
                   derivation={derivation}
                   color={def.color}
+                  delta={delta}
                 />
               );
             })}

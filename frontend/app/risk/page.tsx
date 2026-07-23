@@ -20,10 +20,15 @@ import { CapUtilisation } from "@/components/risk/CapUtilisation";
 import { BookFactorTilt } from "@/components/risk/BookFactorTilt";
 import { RiskMetricsGrid } from "@/components/risk/RiskMetricsGrid";
 import { DrawdownChart } from "@/components/risk/DrawdownChart";
+import { RiskLimitBoard } from "@/components/risk/RiskLimitBoard";
+import { PositionRiskAttribution } from "@/components/risk/PositionRiskAttribution";
+import { AttentionCrowding } from "@/components/risk/AttentionCrowding";
+import { WhatIfScenario } from "@/components/risk/WhatIfScenario";
 import { Ident } from "@/components/risk/SectionGap";
 import {
   classify,
   isNum,
+  buildDrawdownSeries,
   type AnalyticsSource,
   type BookMetrics,
   type CapUtilisation as CapUtilisationData,
@@ -34,6 +39,20 @@ import {
   type RiskRow,
   type ScenarioResult,
 } from "@/lib/risk/analytics";
+import {
+  buildLimitBoard,
+  buildPositionAttribution,
+  buildCrowding,
+  computeRiskDeltas,
+  configMap,
+  factorsByAsset,
+  type ConfigRow,
+  type CrowdingHistoryLite,
+  type FactorExposureRow,
+  type LimitBoardInputs,
+  type PositionRow,
+} from "@/lib/risk/riskBoard";
+import { fetchThemeHistories } from "@/lib/themeSignals";
 
 const ANALYTICS_COLUMNS =
   "run_date, lens, scenario_results, correlation_pairs, cap_utilisation, book_metrics";
@@ -41,6 +60,10 @@ const BASE_COLUMNS = "run_date, lens";
 const RISK_COLUMNS =
   "run_date, updated_at, total_capital, var_95, cvar_95, sharpe, beta, concentration_hhi, numeric_derivations";
 const RETURN_COLUMNS = "run_date, daily_return, cumulative_return, portfolio_value";
+const POSITION_COLUMNS =
+  "id, theme_id, asset, direction, notional, weight, hype_score, trade_score, edge_score, trend_signal, regime_bias, carry_signal, value_signal, conviction, vol";
+const FACTOR_COLUMNS =
+  "asset, run_date, beta_mkt, beta_smb, beta_hml, beta_rmw, beta_cma, beta_umd, r_squared";
 
 interface PostgrestLikeError {
   message: string;
@@ -76,10 +99,21 @@ interface PageData {
   runDate: string | null;
   lens: string | null;
   risk: RiskRow | null;
+  /** The two most recent risk rows (newest-first) for prior-run deltas. */
+  riskRows: RiskRow[];
   riskFailure: QueryFailure | null;
   riskOrderingNote: string | null;
   returns: ReturnRow[];
   returnsFailure: QueryFailure | null;
+  // ── Actionable-risk inputs ──────────────────────────────────────────────
+  positions: PositionRow[];
+  positionsFailure: string | null;
+  factors: FactorExposureRow[];
+  factorsFailure: string | null;
+  config: ConfigRow[];
+  themeNames: Record<string, string>;
+  crowding: Record<string, CrowdingHistoryLite>;
+  crowdingFailure: string | null;
 }
 
 const INITIAL: PageData = {
@@ -91,10 +125,19 @@ const INITIAL: PageData = {
   runDate: null,
   lens: null,
   risk: null,
+  riskRows: [],
   riskFailure: null,
   riskOrderingNote: null,
   returns: [],
   returnsFailure: null,
+  positions: [],
+  positionsFailure: null,
+  factors: [],
+  factorsFailure: null,
+  config: [],
+  themeNames: {},
+  crowding: {},
+  crowdingFailure: null,
 };
 
 export default function RiskPage() {
@@ -118,7 +161,16 @@ function RiskPageInner() {
     let cancelled = false;
 
     (async () => {
-      const [analyticsRes, baseRes, riskRes, returnsRes] = await Promise.all([
+      const [
+        analyticsRes,
+        baseRes,
+        riskRes,
+        returnsRes,
+        positionsRes,
+        factorsRes,
+        configRes,
+        themesRes,
+      ] = await Promise.all([
         supabase
           .from("research_recommendations")
           .select(ANALYTICS_COLUMNS)
@@ -131,21 +183,33 @@ function RiskPageInner() {
           .select(BASE_COLUMNS)
           .order("run_date", { ascending: false })
           .limit(1),
+        // Two rows: the latest metrics and the prior run for signed deltas.
         supabase
           .from("portfolio_risk")
           .select(RISK_COLUMNS)
           .order("run_date", { ascending: false })
-          .limit(1),
+          .limit(2),
         supabase
           .from("portfolio_returns")
           .select(RETURN_COLUMNS)
           .order("run_date", { ascending: true }),
+        supabase
+          .from("portfolio_positions")
+          .select(POSITION_COLUMNS)
+          .order("notional", { ascending: false }),
+        // Newest factor rows across assets; factorsByAsset keeps the first per asset.
+        supabase
+          .from("factor_exposures")
+          .select(FACTOR_COLUMNS)
+          .order("run_date", { ascending: false })
+          .limit(2000),
+        supabase.from("scoring_config").select("param_name, value"),
+        supabase.from("themes").select("id, name"),
       ]);
 
       // portfolio_risk.run_date only exists from migration 016. If ordering by it
       // is rejected, fall back to updated_at and say so rather than showing nothing.
-      let risk: RiskRow | null =
-        (riskRes.data?.[0] as RiskRow | undefined) ?? null;
+      let riskRows: RiskRow[] = (riskRes.data as RiskRow[] | null) ?? [];
       let riskFailure = toFailure(
         "portfolio_risk",
         RISK_COLUMNS,
@@ -158,9 +222,9 @@ function RiskPageInner() {
           .from("portfolio_risk")
           .select("*")
           .order("updated_at", { ascending: false })
-          .limit(1);
+          .limit(2);
         if (!fallback.error) {
-          risk = (fallback.data?.[0] as RiskRow | undefined) ?? null;
+          riskRows = (fallback.data as RiskRow[] | null) ?? [];
           riskFailure = null;
           riskOrderingNote =
             `portfolio_risk could not be read as requested (${riskRes.error.code ?? "error"}: ` +
@@ -168,12 +232,37 @@ function RiskPageInner() {
             `apply supabase/migrations/016_portfolio_risk_run_date.sql to restore run_date ordering.`;
         }
       }
+      const risk: RiskRow | null = riskRows[0] ?? null;
 
       const baseRow = baseRes.data?.[0] as
         | { run_date: string | null; lens: string | null }
         | undefined;
       const analyticsRow =
         (analyticsRes.data?.[0] as ResearchAnalyticsRow | undefined) ?? null;
+
+      const positions = (positionsRes.data as PositionRow[] | null) ?? [];
+      const themeNames: Record<string, string> = {};
+      for (const t of (themesRes.data as { id: string; name: string }[] | null) ?? []) {
+        if (t.id) themeNames[t.id] = t.name;
+      }
+
+      // Attention-crowding histories, keyed by the theme_ids the book holds. Only
+      // themes present in the sized book matter for the positioning join.
+      const bookThemeIds = Array.from(
+        new Set(positions.map((p) => p.theme_id).filter((id): id is string => Boolean(id))),
+      );
+      let crowding: Record<string, CrowdingHistoryLite> = {};
+      let crowdingFailure: string | null = null;
+      if (bookThemeIds.length > 0) {
+        const hist = await fetchThemeHistories(bookThemeIds);
+        crowdingFailure = hist.error;
+        crowding = Object.fromEntries(
+          Object.entries(hist.byTheme).map(([id, h]) => [
+            id,
+            { percentile: h.percentile, delta1d: h.delta1d },
+          ]),
+        );
+      }
 
       if (cancelled) return;
       setData({
@@ -193,6 +282,7 @@ function RiskPageInner() {
         runDate: analyticsRow?.run_date ?? baseRow?.run_date ?? null,
         lens: analyticsRow?.lens ?? baseRow?.lens ?? null,
         risk,
+        riskRows,
         riskFailure,
         riskOrderingNote,
         returns: (returnsRes.data as ReturnRow[] | null) ?? [],
@@ -201,6 +291,14 @@ function RiskPageInner() {
           RETURN_COLUMNS,
           returnsRes.error as PostgrestLikeError | null,
         ),
+        positions,
+        positionsFailure: positionsRes.error?.message ?? null,
+        factors: (factorsRes.data as FactorExposureRow[] | null) ?? [],
+        factorsFailure: factorsRes.error?.message ?? null,
+        config: (configRes.data as ConfigRow[] | null) ?? [],
+        themeNames,
+        crowding,
+        crowdingFailure,
       });
     })();
 
@@ -276,6 +374,79 @@ function RiskPageInner() {
     [source],
   );
 
+  // ── Actionable-risk derivations ──────────────────────────────────────────
+  // Book metrics (exposures) and cap peaks come from the analytics row when it
+  // classified "ok"; otherwise they stay null and the board renders "unknown".
+  const bookMetrics = bookState.status === "ok" ? bookState.value : null;
+  const capData =
+    capState.status === "ok" ? capState.value : null;
+  const correlationPairs = useMemo(
+    () => (correlationState.status === "ok" ? correlationState.value : []),
+    [correlationState],
+  );
+
+  const cfgMap = useMemo(() => configMap(data.config), [data.config]);
+  const factorMap = useMemo(() => factorsByAsset(data.factors), [data.factors]);
+
+  const drawdown = useMemo(
+    () => buildDrawdownSeries(data.returns),
+    [data.returns],
+  );
+
+  const peakCap = (rows: { utilisation?: number | null; weight?: number | null }[] | null | undefined): number | null => {
+    if (!rows || rows.length === 0) return null;
+    let max: number | null = null;
+    for (const r of rows) {
+      const w = isNum(r.weight) ? r.weight : null;
+      if (w !== null) max = max === null ? w : Math.max(max, w);
+    }
+    return max;
+  };
+
+  const limitBoard = useMemo(() => {
+    const inputs: LimitBoardInputs = {
+      config: cfgMap,
+      totalCapital: data.risk?.total_capital ?? null,
+      var95Usd: data.risk?.var_95 ?? null,
+      cvar95Usd: data.risk?.cvar_95 ?? null,
+      beta: data.risk?.beta ?? null,
+      hhi: data.risk?.concentration_hhi ?? null,
+      grossExposure: bookMetrics?.gross_exposure ?? null,
+      netExposure: bookMetrics?.net_exposure ?? null,
+      maxDrawdown: drawdown?.maxDrawdown ?? null,
+      singleNameWeight: peakCap(capData?.single_name),
+      sectorWeight: peakCap(capData?.sector),
+      geoWeight: peakCap(capData?.geo),
+    };
+    return buildLimitBoard(inputs);
+  }, [cfgMap, data.risk, bookMetrics, drawdown, capData]);
+
+  const limitCoverageNote = useMemo(() => {
+    const missing: string[] = [];
+    if (!data.risk) missing.push("portfolio_risk (VaR/CVaR/beta/HHI)");
+    if (!bookMetrics) missing.push("book_metrics (net/gross exposure)");
+    if (!capData) missing.push("cap_utilisation (single-name/sector/geo)");
+    if (!drawdown) missing.push("portfolio_returns (max drawdown)");
+    if (missing.length === 0) return null;
+    return `Some limits show "no data" because their input is unavailable: ${missing.join(", ")}.`;
+  }, [data.risk, bookMetrics, capData, drawdown]);
+
+  const attribution = useMemo(
+    () => buildPositionAttribution(data.positions, factorMap, correlationPairs),
+    [data.positions, factorMap, correlationPairs],
+  );
+
+  const crowdingRows = useMemo(
+    () => buildCrowding(data.crowding, data.themeNames, data.positions),
+    [data.crowding, data.themeNames, data.positions],
+  );
+
+  const riskDeltas = useMemo(
+    () => computeRiskDeltas(data.riskRows),
+    [data.riskRows],
+  );
+  const prevRunDate = data.riskRows[1]?.run_date ?? null;
+
   const failures = [
     data.analyticsFailure,
     data.baseFailure,
@@ -291,10 +462,11 @@ function RiskPageInner() {
             Book Risk
           </h1>
           <p className="m-0 text-text-secondary text-[13px] max-w-[80ch]">
-            Stress scenarios, correlation crowding, cap headroom, factor tilt and
-            realised drawdown for the sized long-short book. Every figure is read
-            from a persisted pipeline artefact; nothing here is estimated in the
-            browser.
+            Limits, per-position attribution, attention crowding, a live what-if,
+            stress scenarios, correlation crowding, cap headroom, factor tilt and
+            realised drawdown for the sized long-short book. Persisted figures are read
+            from pipeline artefacts; the what-if is a browser-side estimate, labelled as
+            one.
           </p>
         </div>
         <div className="text-right text-text-secondary text-[12px]">
@@ -345,27 +517,73 @@ function RiskPageInner() {
         </div>
       )}
 
-      {/* 1 — Stress scenarios */}
-      <StressScenarios state={scenarioState} />
+      {/* 1 — Risk-limit board: the scan-first "what is near/over" view. */}
+      <RiskLimitBoard
+        loading={data.loading}
+        rows={limitBoard}
+        coverageNote={limitCoverageNote}
+      />
 
-      {/* 2 — Correlation */}
-      <CorrelationMatrix state={correlationState} />
-
-      {/* 3 — Cap utilisation */}
-      <CapUtilisation state={capState} />
-
-      {/* 4 — Book factor tilt */}
-      <BookFactorTilt state={bookState} />
-
-      {/* 5 — Risk metrics (always rendered) */}
+      {/* 2 — Risk metrics (always rendered) + prior-run deltas. */}
       <RiskMetricsGrid
         loading={data.loading}
         risk={data.risk}
         failure={data.riskFailure}
         orderingNote={data.riskOrderingNote}
+        deltas={riskDeltas}
+        prevRunDate={prevRunDate}
       />
 
-      {/* 6 — Drawdown & daily P&L */}
+      {/* 3 — Per-position risk attribution: "which trade to cut". */}
+      <PositionRiskAttribution
+        loading={data.loading}
+        rows={attribution}
+        bookBeta={data.risk?.beta ?? null}
+        positionsFailure={data.positionsFailure}
+        factorsFailure={data.factorsFailure}
+        hasPositions={data.positions.length > 0}
+      />
+
+      {/* 4 — Theme attention crowding: the risk-monitoring half of the engine. */}
+      <AttentionCrowding
+        loading={data.loading}
+        rows={crowdingRows}
+        historyFailure={data.crowdingFailure}
+        observationNote={
+          data.positions.length === 0
+            ? "No sized positions, so there are no book themes to score for crowding."
+            : null
+        }
+      />
+
+      {/* 5 — What-if scenario builder: live browser-side estimate. */}
+      <WhatIfScenario
+        loading={data.loading}
+        positions={data.positions}
+        factors={factorMap}
+        totalCapital={data.risk?.total_capital ?? null}
+        dataFailure={
+          data.positionsFailure
+            ? `portfolio_positions read failed: ${data.positionsFailure}`
+            : data.factorsFailure
+              ? `factor_exposures read failed: ${data.factorsFailure}`
+              : null
+        }
+      />
+
+      {/* 6 — Stress scenarios (persisted). */}
+      <StressScenarios state={scenarioState} />
+
+      {/* 7 — Correlation (persisted, flagged pairs + threshold). */}
+      <CorrelationMatrix state={correlationState} />
+
+      {/* 8 — Cap utilisation (persisted). */}
+      <CapUtilisation state={capState} />
+
+      {/* 9 — Book factor tilt (persisted). */}
+      <BookFactorTilt state={bookState} />
+
+      {/* 10 — Drawdown & daily P&L. */}
       <DrawdownChart
         loading={data.loading}
         rows={data.returns}

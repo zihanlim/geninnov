@@ -1,4 +1,6 @@
-import { toDisplayScore } from "@/lib/themeSignals";
+import { toDisplayScore, type ThemeEdge } from "@/lib/themeSignals";
+import { EdgeDirectionChip, ProvenanceDot, PositionsLink } from "./ThemeEdgeChips";
+import { isSynthetic, type ThemeProvenance } from "@/lib/themeProvenance";
 
 export interface HeatmapTheme {
   id: string;
@@ -17,6 +19,12 @@ export interface HeatmapTheme {
 interface Props<T extends HeatmapTheme> {
   themes: T[];
   onSelect?: (theme: T) => void;
+  /** Resolved EdgeScore per theme_id — drives the long/short/abstain column. */
+  edgeByTheme?: Record<string, ThemeEdge>;
+  /** |EdgeScore| abstain threshold from scoring_config (live). */
+  abstainThreshold?: number;
+  /** Latest-run data_source per theme_id — drives the provenance dot. */
+  provByTheme?: Record<string, ThemeProvenance>;
 }
 
 // Diverging color: red (low) → gray (mid) → green (high) on a 0-100 scale.
@@ -55,7 +63,13 @@ function tierBadge(tier?: string) {
   return "·";
 }
 
-export default function ThemeHeatmap<T extends HeatmapTheme>({ themes, onSelect }: Props<T>) {
+export default function ThemeHeatmap<T extends HeatmapTheme>({
+  themes,
+  onSelect,
+  edgeByTheme,
+  abstainThreshold = 0.15,
+  provByTheme,
+}: Props<T>) {
   if (themes.length === 0) {
     return (
       <div className="card p-8 text-center text-text-tertiary text-[13px]">
@@ -66,6 +80,12 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({ themes, onSelect 
 
   // Sort by hype_score desc
   const sorted = [...themes].sort((a, b) => (b.hype_score ?? 0) - (a.hype_score ?? 0));
+
+  // How many themes carry a synthetic (mock/mixed) HypeScore this run — an
+  // honesty count so a PM knows the heatmap is not all live signal.
+  const syntheticCount = provByTheme
+    ? sorted.filter((t) => isSynthetic(provByTheme[t.id]?.data_source ?? null)).length
+    : 0;
 
   return (
     <div className="card overflow-hidden">
@@ -96,8 +116,9 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({ themes, onSelect 
         <table className="w-full border-collapse text-[12px]">
           <caption className="sr-only">
             Theme sub-score heatmap · {themes.length} themes × 4 sub-scores
-            (Volume, Sentiment, Correlation, Momentum) plus HypeScore and 1-day
-            delta.
+            (Volume, Sentiment, Correlation, Momentum) plus HypeScore, 1-day
+            delta, the resolved EdgeScore trade direction, signal provenance,
+            and a link to each theme&apos;s positions in the book.
           </caption>
           <thead>
             <tr className="border-b border-border">
@@ -106,6 +127,12 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({ themes, onSelect 
               </th>
               <th className="text-center text-[10.5px] uppercase tracking-[0.1em] text-text-tertiary font-semibold px-2 py-2 w-[40px]">
                 Tier
+              </th>
+              <th
+                className="text-center text-[10.5px] uppercase tracking-[0.1em] text-text-tertiary font-semibold px-2 py-2 w-[92px]"
+                title="Resolved trade side from EdgeScore = 0.35·Trend + 0.25·Regime + 0.20·Carry + 0.20·Value"
+              >
+                Trade
               </th>
               {SUBSCORES.map((s) => (
                 <th
@@ -122,6 +149,9 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({ themes, onSelect 
               <th className="text-center text-[10.5px] uppercase tracking-[0.1em] text-text-tertiary font-semibold px-2 py-2 w-[60px]">
                 Δ1d
               </th>
+              <th className="text-right text-[10.5px] uppercase tracking-[0.1em] text-text-tertiary font-semibold px-3 py-2 w-[80px]">
+                Book
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -131,8 +161,19 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({ themes, onSelect 
                 className={`border-b border-border last:border-b-0 ${onSelect ? "cursor-pointer hover:bg-bg-elevated" : ""}`}
                 onClick={() => onSelect?.(t)}
               >
-                <td className="px-3 py-2 font-semibold text-text-primary">{t.name}</td>
+                <td className="px-3 py-2 font-semibold text-text-primary">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <ProvenanceDot source={provByTheme?.[t.id]?.data_source ?? null} size={7} />
+                    <span className="truncate">{t.name}</span>
+                  </span>
+                </td>
                 <td className="px-2 py-2 text-center text-text-tertiary text-[10.5px]">{tierBadge(t.tier)}</td>
+                <td className="px-2 py-2 text-center whitespace-nowrap">
+                  <EdgeDirectionChip
+                    edge={edgeByTheme?.[t.id]}
+                    abstainThreshold={abstainThreshold}
+                  />
+                </td>
                 {SUBSCORES.map((s) => {
                   // Sub-scores persist as [0,1]; the ramp is 0–100.
                   const v = toDisplayScore(t[s.key]);
@@ -178,19 +219,41 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({ themes, onSelect 
                     ? `${t.delta_1d >= 0 ? "+" : ""}${t.delta_1d.toFixed(1)}`
                     : "—"}
                 </td>
+                <td className="px-3 py-2 text-right">
+                  <PositionsLink themeId={t.id} />
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <div className="px-4 py-2.5 border-t border-border text-[11px] text-text-tertiary">
-        Click any row for the full score derivation. Sub-scores are min-max
-        normalised across these {themes.length} themes on the run date and
-        weighted per <code className="num">scoring_config</code> — see{" "}
-        <a href="/method" className="text-accent hover:underline">
-          Method
-        </a>{" "}
-        for the live weights and formula.
+      <div className="px-4 py-2.5 border-t border-border text-[11px] text-text-tertiary flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        <span>
+          Click any row for the full score derivation. Sub-scores are min-max
+          normalised across these {themes.length} themes on the run date and
+          weighted per <code className="num">scoring_config</code> — see{" "}
+          <a href="/method" className="text-accent hover:underline">
+            Method
+          </a>{" "}
+          for the live weights and formula.
+        </span>
+        <span className="flex items-center gap-2 ml-auto">
+          <span className="uppercase tracking-[0.08em]">Dot:</span>
+          <span className="flex items-center gap-1">
+            <ProvenanceDot source="real" size={7} /> real
+          </span>
+          <span className="flex items-center gap-1">
+            <ProvenanceDot source="mixed" size={7} /> mixed
+          </span>
+          <span className="flex items-center gap-1">
+            <ProvenanceDot source="mock" size={7} /> mock
+          </span>
+          {syntheticCount > 0 && (
+            <span className="text-warning font-semibold">
+              · {syntheticCount} synthetic
+            </span>
+          )}
+        </span>
       </div>
     </div>
   );

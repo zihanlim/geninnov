@@ -64,6 +64,14 @@ interface SignalRow {
   momentum_raw: number | null;
   hype_score: number | null;
   trade_score: number | null;
+  edge_score: number | null;
+  trend_signal: number | null;
+  regime_bias: number | null;
+  // EdgeScore components 3–4 + sizing inputs (migration 025).
+  carry_signal: number | null;
+  value_signal: number | null;
+  conviction: number | null;
+  vol: number | null;
 }
 
 interface ProvenanceRow {
@@ -130,6 +138,7 @@ async function q<T>(
 
 const int = (n: number) => n.toLocaleString("en-US");
 const dec = (n: number, d = 2) => n.toFixed(d);
+const fmtSigned = (n: number, d = 2) => `${n >= 0 ? "+" : ""}${n.toFixed(d)}`;
 
 function fmtTs(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -282,7 +291,7 @@ export default function MethodPage() {
           supabase
             .from("theme_signals_history")
             .select(
-              "theme_id,run_date,mention_count_1d,mention_count_7d_avg,mention_count_7d_std,avg_sentiment,price_corr,momentum_raw,hype_score,trade_score",
+              "theme_id,run_date,mention_count_1d,mention_count_7d_avg,mention_count_7d_std,avg_sentiment,price_corr,momentum_raw,hype_score,trade_score,edge_score,trend_signal,regime_bias,carry_signal,value_signal,conviction,vol",
             )
             .order("run_date", { ascending: false })
             .limit(1000),
@@ -385,6 +394,14 @@ export default function MethodPage() {
   const hypeThreshold = cfgNum("hype_score_threshold");
   const wTradeHype = cfgNum("trade_hype_weight");
   const wTradeSent = cfgNum("trade_sentiment_weight");
+  // EdgeScore direction weights — the full 4-component model (ADR-0031/0032,
+  // migrations 024/025). All four read live from scoring_config; nothing here
+  // is hardcoded, and a missing weight surfaces as an EmptyState below.
+  const wEdgeTrend = cfgNum("edge_trend_weight");
+  const wEdgeRegime = cfgNum("edge_regime_weight");
+  const wEdgeCarry = cfgNum("edge_carry_weight");
+  const wEdgeValue = cfgNum("edge_value_weight");
+  const edgeAbstain = cfgNum("edge_abstain_threshold");
   const lookback7 = cfgNum("lookback_momentum_7d");
   const hypeWeightsOk =
     wVol !== null && wSent !== null && wCorr !== null && wMom !== null;
@@ -487,6 +504,86 @@ export default function MethodPage() {
     tradeRecomputed !== null && typeof tradeExample?.trade_score === "number"
       ? tradeRecomputed - tradeExample.trade_score
       : null;
+
+  // EdgeScore worked example — the most recent row that actually carries an
+  // edge_score, so the 4-component direction rule shows real numbers rather than
+  // a formula over nulls.
+  const edgeExample =
+    signals.rows.find((r) => typeof r.edge_score === "number") ?? null;
+  const edgeExampleTheme = edgeExample
+    ? (themes.rows.find((t) => t.id === edgeExample.theme_id) ?? null)
+    : null;
+  const edgeWeightsOk =
+    wEdgeTrend !== null &&
+    wEdgeRegime !== null &&
+    wEdgeCarry !== null &&
+    wEdgeValue !== null;
+  const missingEdgeWeights = [
+    ["edge_trend_weight", wEdgeTrend],
+    ["edge_regime_weight", wEdgeRegime],
+    ["edge_carry_weight", wEdgeCarry],
+    ["edge_value_weight", wEdgeValue],
+  ]
+    .filter(([, v]) => v === null)
+    .map(([k]) => k as string);
+  const edgeWeightSum = edgeWeightsOk
+    ? (wEdgeTrend ?? 0) + (wEdgeRegime ?? 0) + (wEdgeCarry ?? 0) + (wEdgeValue ?? 0)
+    : null;
+
+  // The four weighted contributions for the worked example, each read from the
+  // persisted component × the live weight. A null component contributes 0 and is
+  // flagged, never silently treated as a tilt.
+  const edgeTerms =
+    edgeExample && edgeWeightsOk
+      ? ([
+          { sym: "w_trend  × Trend", w: wEdgeTrend!, x: edgeExample.trend_signal },
+          { sym: "w_regime × Regime", w: wEdgeRegime!, x: edgeExample.regime_bias },
+          { sym: "w_carry  × Carry", w: wEdgeCarry!, x: edgeExample.carry_signal },
+          { sym: "w_value  × Value", w: wEdgeValue!, x: edgeExample.value_signal },
+        ] as const)
+      : null;
+  const edgeRecomputed = edgeTerms
+    ? edgeTerms.reduce((acc, t) => acc + t.w * (t.x ?? 0), 0)
+    : null;
+  const edgeDelta =
+    edgeRecomputed !== null && typeof edgeExample?.edge_score === "number"
+      ? edgeRecomputed - edgeExample.edge_score
+      : null;
+  // conviction = |EdgeScore| / vol (Stage-4 sizing weight). Prefer the persisted
+  // conviction; fall back to recomputing it only when both inputs are present.
+  const edgeConviction =
+    edgeExample && typeof edgeExample.conviction === "number"
+      ? edgeExample.conviction
+      : edgeExample &&
+          typeof edgeExample.edge_score === "number" &&
+          typeof edgeExample.vol === "number" &&
+          edgeExample.vol > 0
+        ? Math.abs(edgeExample.edge_score) / edgeExample.vol
+        : null;
+  const anyEdge = signals.rows.some((r) => typeof r.edge_score === "number");
+
+  // Abstention roster: themes the engine scored on the latest signal run but
+  // declined because |EdgeScore| < edge_abstain_threshold. Computed off the
+  // latest-run signals already in memory — no theme takes a position here.
+  const abstainedRoster =
+    edgeAbstain !== null
+      ? latestSignals
+          .filter(
+            (r) =>
+              typeof r.edge_score === "number" &&
+              Math.abs(r.edge_score) < edgeAbstain,
+          )
+          .map((r) => ({
+            row: r,
+            name: themes.rows.find((t) => t.id === r.theme_id)?.name ?? r.theme_id,
+          }))
+          .sort(
+            (a, b) => Math.abs(b.row.edge_score ?? 0) - Math.abs(a.row.edge_score ?? 0),
+          )
+      : [];
+  const scoredEdgeCount = latestSignals.filter(
+    (r) => typeof r.edge_score === "number",
+  ).length;
 
   // Worked HypeScore example.
   const wx = (() => {
@@ -1213,12 +1310,14 @@ export default function MethodPage() {
       <Section
         id="tradescore"
         index="03"
-        title="TradeScore — turning attention into a direction"
+        title="TradeScore — conviction, and ranking within a side"
         lede={
           <>
             HypeScore says a theme is loud. TradeScore says whether the loudness is building or
-            fading, and on which side to express it. It is deliberately a change measure: the
-            level of attention is already priced, the second derivative is what is tradable.
+            fading. It is a change measure — the level of attention is already priced, the second
+            derivative is what is tradable. It <span className="text-text-primary">no longer
+            picks the side</span>: since ADR-0031 direction comes from EdgeScore (section 4), and
+            TradeScore only ranks names <em>within</em> the side EdgeScore has chosen.
           </>
         }
       >
@@ -1262,17 +1361,17 @@ export default function MethodPage() {
                   dominating the ranking on arithmetic alone.
                 </p>
                 <p className="m-0">
-                  <span className="text-text-primary font-medium">Direction rule.</span> The sign
-                  of TradeScore picks the side.{" "}
-                  <span className="num text-long">TradeScore &gt; 0</span> → long pool,{" "}
-                  <span className="num text-short">TradeScore &lt; 0</span> → short pool, exactly
-                  zero → neither. Within each pool, themes are ranked by |TradeScore| and the top
-                  N are expanded into one candidate per mapped asset. Both terms can flip the
-                  sign: rising attention on deteriorating sentiment (positive momentum, negative
-                  VADER) nets out according to the two weights, which is why the sentiment term
-                  keeps its raw <span className="num">[−1, +1]</span> range here while HypeScore
-                  rescales it to <span className="num">[0, 1]</span>. In HypeScore the question is
-                  &ldquo;how much attention&rdquo;; here it is &ldquo;which way&rdquo;.
+                  <span className="text-text-primary font-medium">Ranking, not direction.</span>{" "}
+                  TradeScore used to set the side via its sign — but with HypeMomentum near zero on
+                  sparse data that collapsed to the sign of near-zero VADER sentiment, an unstable
+                  basis for a long/short call. Direction now comes from{" "}
+                  <span className="num">sign(EdgeScore)</span> (section 4). Once EdgeScore has
+                  chosen long or short for a theme, names within that side are ordered by
+                  |TradeScore| and the top N are expanded into one candidate per mapped asset.
+                  Sentiment keeps its raw <span className="num">[−1, +1]</span> range here (a
+                  conviction weight that can be negative) whereas HypeScore rescales it to{" "}
+                  <span className="num">[0, 1]</span>: there the question is &ldquo;how much
+                  attention&rdquo;, here it is &ldquo;building or fading&rdquo;.
                 </p>
                 <p className="m-0">
                   <span className="text-text-primary font-medium">Null handling.</span> When{" "}
@@ -1411,10 +1510,331 @@ export default function MethodPage() {
         )}
       </Section>
 
-      {/* ═══ 4. Data sources ═══════════════════════════════════════════════ */}
+      {/* ═══ 4. EdgeScore — direction ══════════════════════════════════════ */}
+      <Section
+        id="edgescore"
+        index="04"
+        title="EdgeScore — which side, how hard, and why"
+        lede={
+          <>
+            The answer to task question 1&apos;s &ldquo;why long / why short&rdquo;. Direction is{" "}
+            <span className="num">sign(EdgeScore)</span>, a weighted blend of four measurable
+            expected-return proxies — trend, regime fit, carry and value — rather than the sign of
+            near-zero news sentiment it used to collapse to (ADR-0031/0032). A theme whose signal is
+            too weak takes <span className="text-text-primary">no position at all</span>, and the
+            surviving names are sized by conviction, not by loudness.
+          </>
+        }
+      >
+        {cfg.error ? (
+          <QueryError table="scoring_config" message={cfg.error} />
+        ) : !edgeWeightsOk ? (
+          <EmptyState
+            table="scoring_config"
+            cause={`Missing or non-numeric weight rows: ${missingEdgeWeights.join(", ") || "none parsed"}.`}
+            remedy="Seed edge_trend_weight, edge_regime_weight, edge_carry_weight and edge_value_weight into scoring_config. The 4-component formula cannot be rendered without all four."
+          />
+        ) : (
+          <div className="grid gap-4">
+            <Formula label="live weights from scoring_config">
+              {[
+                `EdgeScore = ${dec(wEdgeTrend ?? 0, 2)}·Trend  +  ${dec(wEdgeRegime ?? 0, 2)}·Regime  +  ${dec(wEdgeCarry ?? 0, 2)}·Carry  +  ${dec(wEdgeValue ?? 0, 2)}·Value`,
+                ``,
+                `Trend   = tanh( mean 6-month basket return / 0.15 )          ∈ [−1, +1]`,
+                `Regime  = risk_beta(asset_class)·sentiment_sign + cycle_tilt  ∈ [−1, +1]`,
+                `Carry   = normalised yield / roll / funding advantage         ∈ [−1, +1]`,
+                `Value   = normalised cheapness vs fair value                  ∈ [−1, +1]`,
+                ``,
+                `direction = long    if EdgeScore ≥ +${dec(edgeAbstain ?? 0, 2)}`,
+                `            short   if EdgeScore ≤ −${dec(edgeAbstain ?? 0, 2)}`,
+                `            abstain if |EdgeScore| <  ${dec(edgeAbstain ?? 0, 2)}   (edge_abstain_threshold)`,
+                ``,
+                `conviction = |EdgeScore| / vol      →  sizing weight ∝ conviction (conviction × inverse-vol)`,
+              ].join("\n")}
+            </Formula>
+
+            <div className="text-[12px] text-text-tertiary">
+              Component weights sum to{" "}
+              <span
+                className={`num ${Math.abs((edgeWeightSum ?? 0) - 1) < 1e-9 ? "text-text-secondary" : "text-warning"}`}
+              >
+                {dec(edgeWeightSum ?? 0, 2)}
+              </span>
+              {Math.abs((edgeWeightSum ?? 0) - 1) < 1e-9
+                ? " — a convex combination, so EdgeScore stays inside [−1, +1] where each component does."
+                : " — not a convex combination, so the [−1, +1] envelope is not guaranteed."}
+            </div>
+
+            <div className="card">
+              <div className="card-body grid gap-2.5 text-[12.5px] text-text-secondary max-w-[92ch]">
+                <p className="m-0">
+                  <span className="text-text-primary font-medium">Why not sentiment.</span> The old
+                  rule set direction from <span className="num">sign(TradeScore)</span>, but on
+                  sparse data HypeMomentum is ~0 and TradeScore reduces to the sign of a VADER score
+                  hovering around zero — so a long/short call turned on news-tone noise. The four
+                  EdgeScore components are slower and grounded in prices and fundamentals, which is
+                  what a side ought to rest on.
+                </p>
+                <p className="m-0">
+                  <span className="text-text-primary font-medium">Trend</span>{" "}
+                  <span className="num">(w {dec(wEdgeTrend ?? 0, 2)})</span> — mean trailing six-month
+                  return across the theme&apos;s mapped assets, squashed through{" "}
+                  <span className="num">tanh(x / 0.15)</span> so a +15% basket maps to ~+0.76 and
+                  extreme moves saturate instead of dominating. No computable return → 0.
+                </p>
+                <p className="m-0">
+                  <span className="text-text-primary font-medium">Regime</span>{" "}
+                  <span className="num">(w {dec(wEdgeRegime ?? 0, 2)})</span> — each asset class has a
+                  risk-on beta (equity/credit <span className="num">+1</span>, government rates and
+                  USD <span className="num">−1</span>), multiplied by the regime sentiment sign and
+                  nudged by the cycle, so a risk-off tape shorts equity and goes long rates.
+                </p>
+                <p className="m-0">
+                  <span className="text-text-primary font-medium">Carry</span>{" "}
+                  <span className="num">(w {dec(wEdgeCarry ?? 0, 2)})</span> — the normalised
+                  yield / roll / funding advantage of holding the position: a positive-carry long or
+                  a negative-carry short is paid to wait, and the term tilts EdgeScore toward the
+                  side that earns the carry rather than bleeds it.
+                </p>
+                <p className="m-0">
+                  <span className="text-text-primary font-medium">Value</span>{" "}
+                  <span className="num">(w {dec(wEdgeValue ?? 0, 2)})</span> — normalised cheapness
+                  against a fair-value anchor: cheap tilts long, rich tilts short. Slow-moving, it is
+                  the counterweight that keeps Trend from chasing an already-extended move.
+                </p>
+                <p className="m-0">
+                  <span className="text-text-primary font-medium">Abstention.</span> When{" "}
+                  <span className="num">|EdgeScore| &lt; {dec(edgeAbstain ?? 0, 2)}</span> the four
+                  components have not agreed strongly enough to justify risk, and the theme is left
+                  out of the book entirely — the discipline of <em>not</em> trading a weak signal is
+                  as much of the edge as the trades taken. The roster below is who sat out this run.
+                </p>
+                <p className="m-0">
+                  <span className="text-text-primary font-medium">Conviction sizing.</span> A
+                  surviving name&apos;s pre-cap weight is <span className="num">∝ conviction =
+                  |EdgeScore| / vol</span> — the classic conviction × inverse-vol rule, so a strong
+                  signal in a quiet asset outsizes an equally strong signal in a jumpy one. This
+                  replaces the old <span className="num">HypeScore / 100</span> sizing, which paid up
+                  for attention rather than for edge-per-unit-risk. Caps (single-name / sector / geo)
+                  are then applied — see the sizing walk-through under any trade&apos;s derivation.
+                </p>
+              </div>
+            </div>
+
+            {/* Live worked example — all four components reconciled to edge_score */}
+            {signals.error ? (
+              <QueryError table="theme_signals_history" message={signals.error} />
+            ) : !anyEdge ? (
+              <EmptyState
+                table="theme_signals_history"
+                cause="No row carries a non-null edge_score yet (columns exist but are unpopulated for these runs)."
+                remedy="Run daily_refresh.py; compute_edge_scores writes edge_score with its four components (trend/regime/carry/value), conviction and vol."
+              />
+            ) : edgeExample && edgeTerms ? (
+              <div className="card">
+                <div className="card-header">
+                  <span className="card-title">
+                    Worked example{edgeExampleTheme ? ` · ${edgeExampleTheme.name}` : ""}
+                  </span>
+                  <span className="text-[11px] text-text-tertiary num">
+                    theme_signals_history · run_date {edgeExample.run_date}
+                  </span>
+                </div>
+                <div className="card-body grid gap-3">
+                  <Note tone="info" label="Reading the block">
+                    Each component is the value <Code>compute_edge_scores</Code> persisted for this
+                    theme, multiplied by its live weight. A component shown as{" "}
+                    <span className="num">null</span> was not computable and contributes exactly 0 —
+                    it is an honest absence, not a zero tilt.
+                  </Note>
+
+                  <Formula label="substituting the persisted components">
+                    {[
+                      ...edgeTerms.map(
+                        (t) =>
+                          `  ${pad(t.sym, 20)} = ${dec(t.w, 2)} × ${
+                            t.x === null ? pad("null", 8) : lpad(dec(t.x, 4), 8)
+                          } = ${lpad(dec(t.w * (t.x ?? 0), 6), 10)}${t.x === null ? "   (null → 0)" : ""}`,
+                      ),
+                      `  ${" ".repeat(20)}   ${" ".repeat(13)}${"─".repeat(10)}`,
+                      `  ${pad("EdgeScore (recomputed)", 20)} = ${" ".repeat(13)}${lpad(dec(edgeRecomputed ?? 0, 6), 10)}`,
+                      `  ${pad("EdgeScore (persisted)", 20)} = ${" ".repeat(13)}${lpad(dec(edgeExample.edge_score ?? 0, 6), 10)}`,
+                      ``,
+                      `  |EdgeScore| = ${lpad(dec(Math.abs(edgeExample.edge_score ?? 0), 4), 8)}   vs abstain ${dec(edgeAbstain ?? 0, 2)}`,
+                      `  direction   = ${
+                        edgeAbstain !== null &&
+                        typeof edgeExample.edge_score === "number" &&
+                        Math.abs(edgeExample.edge_score) < edgeAbstain
+                          ? "ABSTAIN (below threshold — no position)"
+                          : (edgeExample.edge_score ?? 0) > 0
+                            ? "LONG"
+                            : (edgeExample.edge_score ?? 0) < 0
+                              ? "SHORT"
+                              : "abstain (exactly zero)"
+                      }`,
+                      `  vol         = ${edgeExample.vol === null ? "null" : dec(edgeExample.vol, 4)}`,
+                      `  conviction  = |EdgeScore| / vol = ${edgeConviction === null ? "unavailable" : `${dec(edgeConviction, 3)}×`}${
+                        edgeExample.conviction !== null ? "   (persisted)" : ""
+                      }`,
+                    ].join("\n")}
+                  </Formula>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <Stat
+                      label="EdgeScore recomputed"
+                      value={edgeRecomputed === null ? "—" : fmtSigned(edgeRecomputed, 4)}
+                      sub="Σ of the four weighted components above"
+                    />
+                    <Stat
+                      label="Persisted edge_score"
+                      value={
+                        typeof edgeExample.edge_score === "number"
+                          ? fmtSigned(edgeExample.edge_score, 4)
+                          : "—"
+                      }
+                      sub="what sizing and the drawer read"
+                    />
+                    <Stat
+                      label="Δ"
+                      value={edgeDelta === null ? "—" : fmtSigned(edgeDelta, 4)}
+                      tone={
+                        edgeDelta === null
+                          ? "muted"
+                          : Math.abs(edgeDelta) < 0.005
+                            ? "good"
+                            : "bad"
+                      }
+                      sub={
+                        edgeDelta === null
+                          ? "no persisted score to compare"
+                          : Math.abs(edgeDelta) < 0.005
+                            ? "reconciles exactly"
+                            : "does NOT reconcile"
+                      }
+                    />
+                  </div>
+
+                  {edgeDelta !== null && Math.abs(edgeDelta) >= 0.005 && (
+                    <Note tone="bad" label="Reconciliation failure">
+                      Applying the live weights to the persisted components yields{" "}
+                      <span className="num">{fmtSigned(edgeRecomputed ?? 0, 4)}</span>, but{" "}
+                      <Code>theme_signals_history.edge_score</Code> holds{" "}
+                      <span className="num">{fmtSigned(edgeExample.edge_score ?? 0, 4)}</span>. Either
+                      the weights changed after this row was written, or a component column and the
+                      score column were not written from the same inputs.
+                    </Note>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Abstention roster — themes the engine declined this run */}
+            <div>
+              <SubHead
+                note={
+                  latestSignalDate ? (
+                    <span className="num">
+                      theme_signals_history · run_date {latestSignalDate}
+                    </span>
+                  ) : undefined
+                }
+              >
+                Themes that abstained this run
+              </SubHead>
+              {edgeAbstain === null ? (
+                <EmptyState
+                  table="scoring_config"
+                  cause="edge_abstain_threshold is missing or non-numeric, so no abstention line can be drawn."
+                  remedy="Seed edge_abstain_threshold into scoring_config."
+                />
+              ) : scoredEdgeCount === 0 ? (
+                <EmptyState
+                  table="theme_signals_history"
+                  cause={`No theme on the latest run_date${latestSignalDate ? ` (${latestSignalDate})` : ""} carries an edge_score, so abstention cannot be evaluated.`}
+                  remedy="Run daily_refresh.py; compute_edge_scores writes edge_score for every scored theme."
+                />
+              ) : abstainedRoster.length === 0 ? (
+                <Note tone="ok" label="Full conviction — nobody sat out">
+                  All <span className="num">{scoredEdgeCount}</span> themes scored on{" "}
+                  <span className="num">{latestSignalDate}</span> cleared{" "}
+                  <span className="num">|EdgeScore| ≥ {dec(edgeAbstain, 2)}</span>, so every scored
+                  theme took a side this run. Abstention is a live gate, not a permanent exclusion —
+                  a theme drops out the moment its edge decays below the threshold.
+                </Note>
+              ) : (
+                <div className="card">
+                  <div className="card-header">
+                    <span className="card-title">
+                      {abstainedRoster.length} of {scoredEdgeCount} scored themes abstained
+                    </span>
+                    <span className="text-[11px] text-text-tertiary num">
+                      |EdgeScore| &lt; {dec(edgeAbstain, 2)} · closest-to-a-trade first
+                    </span>
+                  </div>
+                  <TableWrap>
+                    <table className="w-full border-collapse text-[12.5px]">
+                      <caption className="sr-only">
+                        Themes whose EdgeScore fell below the abstention threshold on{" "}
+                        {latestSignalDate}, with their four components.
+                      </caption>
+                      <thead>
+                        <tr>
+                          <Th>Theme</Th>
+                          <Th align="right">EdgeScore</Th>
+                          <Th align="right">Trend</Th>
+                          <Th align="right">Regime</Th>
+                          <Th align="right">Carry</Th>
+                          <Th align="right">Value</Th>
+                          <Th align="right">Gap to trade</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {abstainedRoster.map(({ row, name }) => {
+                          const es = row.edge_score ?? 0;
+                          const gap = edgeAbstain - Math.abs(es);
+                          return (
+                            <tr key={row.theme_id} className="hover:bg-bg-elevated">
+                              <Td>{name}</Td>
+                              <Td mono align="right" className="text-text-tertiary">
+                                {fmtSigned(es, 3)}
+                              </Td>
+                              <Td mono align="right">
+                                {row.trend_signal === null ? "—" : fmtSigned(row.trend_signal, 2)}
+                              </Td>
+                              <Td mono align="right">
+                                {row.regime_bias === null ? "—" : fmtSigned(row.regime_bias, 2)}
+                              </Td>
+                              <Td mono align="right">
+                                {row.carry_signal === null ? "—" : fmtSigned(row.carry_signal, 2)}
+                              </Td>
+                              <Td mono align="right">
+                                {row.value_signal === null ? "—" : fmtSigned(row.value_signal, 2)}
+                              </Td>
+                              <Td mono align="right" className="text-warning">
+                                {dec(gap, 3)}
+                              </Td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </TableWrap>
+                  <div className="px-4 py-2.5 text-[11.5px] text-text-tertiary leading-[1.55] border-t border-border">
+                    &ldquo;Gap to trade&rdquo; is how much more <span className="num">|EdgeScore|</span>{" "}
+                    each theme needs to clear the threshold. These are the themes to watch: a small gap
+                    means one more session of trend or a regime flip could pull them into the book.
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {/* ═══ 5. Data sources ═══════════════════════════════════════════════ */}
       <Section
         id="sources"
-        index="04"
+        index="05"
         title="Data sources and provenance"
         lede={
           <>
@@ -1644,10 +2064,10 @@ export default function MethodPage() {
         </div>
       </Section>
 
-      {/* ═══ 5. Guardrails ═════════════════════════════════════════════════ */}
+      {/* ═══ 6. Guardrails ═════════════════════════════════════════════════ */}
       <Section
         id="guardrails"
-        index="05"
+        index="06"
         title="Guardrails on the reasoning layer"
         lede={
           <>

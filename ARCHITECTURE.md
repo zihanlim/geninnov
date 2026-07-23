@@ -119,10 +119,14 @@ flowchart TB
             PG_BOOK["<b>/book — The $100M Book</b><br/>app/book/page.tsx<br/><i>positions + thesis + sizing<br/>+ screening funnel</i>"]
             PG_RISK["<b>/risk — Risk &amp; Stress</b><br/>app/risk/page.tsx<br/><i>scenarios, correlation,<br/>cap headroom, drawdown</i>"]
             PG_METH["<b>/method — Method &amp; Lineage</b><br/>app/method/page.tsx<br/><i>live formulas + pipeline health</i>"]
-            PG_TR["/trades — Trade Ideas (legacy)<br/>app/trades/page.tsx"]
-            PG_PF["/portfolio — Portfolio (legacy)<br/>app/portfolio/page.tsx"]
-            PG_RS["/research — Research Thesis (legacy)<br/>app/research/page.tsx"]
+            PG_TR["/trades — retired<br/>app/trades/page.tsx<br/><i>server redirect() → /book</i>"]
+            PG_PF["/portfolio — retired<br/>app/portfolio/page.tsx<br/><i>server redirect() → /book</i>"]
+            PG_RS["/research — retired<br/>app/research/page.tsx<br/><i>server redirect() → /book</i>"]
         end
+
+        PG_TR -. "redirect()" .-> PG_BOOK
+        PG_PF -. "redirect()" .-> PG_BOOK
+        PG_RS -. "redirect()" .-> PG_BOOK
 
         subgraph L7["L7 — Provenance UI (components/)"]
             REGIME["RegimeHero + RegimeInputsPanel"]
@@ -266,8 +270,8 @@ The diagram is a single source of truth. If you add a node, table, page, compone
 | L3 | Regime Classifier | `backend/services/regime_classifier.py` | `regime` dict (cycle + sentiment) |
 | L4 | Risk Engine | `scripts/daily_refresh.py` → `compute_and_persist_risk` (derive-aware `compute_risk` returns `NumericDerivation`, T9) | `portfolio_risk` table + `numeric_derivations` JSONB column (T15) |
 | L5 | **Q1 Reasoning Agent** | `backend/services/q1_agent.py` → `run_q1_agent` | `research_recommendations` + `research_agent_runs` tables; 8 nodes (aggregate → screen → book metrics → scenario analysis → reason_picks LLM → verify_citations → size_positions → persist). Emits `AdvisoryDerivation` with T18 strict fallback policy. Supports `lens` parameter (multi_asset/credit/rates/equity/fx/commodity) per [ADR-0015](docs/adrs/0015-lens-mode-asset-class.md) |
-| L6 | Writeup | `frontend/app/{book,risk,method}/` (+ legacy `{trades,portfolio,research}/`) | Book-centric IA ([ADR-0025](docs/adrs/0025-book-centric-information-architecture.md)): `/book` = positions + thesis + full sizing chain + screening funnel; `/risk` = stress scenarios, correlation matrix, cap headroom, factor tilt, drawdown; `/method` = live HypeScore/TradeScore formulas + `pipeline_runs` health + source provenance |
-| L7 | **Provenance UI** | `frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs,LensSelector}.tsx` + `frontend/components/status/{StatusBadge,FreshnessLabel,UncertaintyBand}.tsx` + `frontend/components/portfolio/{CumulativeReturn,DailyPLHistory,ExposureSummary}.tsx` | Click-through audit trail for every score; asset-class lens toggle on `/portfolio` and `/trades`; status/freshness/uncertainty read-models render derivations |
+| L6 | Writeup | `frontend/app/{book,risk,method}/` (legacy `{trades,portfolio,research}/` now `redirect()` → `/book`) | Book-centric IA ([ADR-0025](docs/adrs/0025-book-centric-information-architecture.md)): `/book` = positions + thesis + full sizing chain + screening funnel; `/risk` = stress scenarios, correlation matrix, cap headroom, factor tilt, drawdown; `/method` = live HypeScore/TradeScore/**4-component EdgeScore** formulas + conviction×inverse-vol sizing + abstention roster + `pipeline_runs` health. The three legacy pages are thin server redirects to the consolidated triad |
+| L7 | **Provenance UI** | `frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs,LensSelector}.tsx` + `frontend/components/status/{StatusBadge,FreshnessLabel,UncertaintyBand}.tsx` + `frontend/components/portfolio/{CumulativeReturn,DailyPLHistory,ExposureSummary}.tsx` | Click-through audit trail for every score (incl. the 4-component EdgeScore decomposition + conviction sizing in `TradeDerivationDrawer`); asset-class lens toggle on the `/book` triad; status/freshness/uncertainty read-models render derivations |
 | — | **Derivations** | `backend/derivations/{numeric.py,advisory.py}` (mirrored in `frontend/lib/derivations/{numeric,advisory,format}.ts`) | Frozen dataclasses + validators (`NumericDerivation`, `AdvisoryDerivation`) consumed by L4, L5 and the L7 read-models |
 | — | **Pipeline Runs** | `backend/services/pipeline_runs.py` | `pipeline_runs` table — per-stage execution audit (run_id, stage, status, duration_s, source_freshness) |
 
@@ -431,7 +435,7 @@ pytest tests/backend/ -v
 - [x] L3: Regime classifier (cycle × sentiment)
 - [x] L4: Historical VaR, CVaR, Sharpe, beta, HHI (T9: derive-aware `compute_risk` returns `NumericDerivation`)
 - [x] L5: **Q1 reasoning agent** — 8-node pipeline (aggregate → screen → book metrics → scenario analysis → LLM reason_picks → verify_citations → size_positions → persist). Citation guardrail with 2-retry max + deterministic fallback. Factor-tilt aware, scenario-aware, cap-enforced.
-- [x] L5 lens mode — `lens` parameter on `run_q1_agent` + `<LensSelector>` on `/portfolio` and `/trades` (ADR-0015)
+- [x] L5 lens mode — `lens` parameter on `run_q1_agent` + `<LensSelector>` on the `/book` triad (ADR-0015). The former `/portfolio` and `/trades` hosts now `redirect()` → `/book`
 - [x] L5 emits `AdvisoryDerivation` with T18 strict policy — deterministic fallback cannot be marked `verified`
 - [x] L5 candidate taxonomy seam — `classify(ticker)` from `frontend/lib/assetMetadata.ts` (T20)
 - [x] L5 TradeScore plumbing of per-theme `elapsed_days` (T22)

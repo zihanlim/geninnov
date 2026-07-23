@@ -145,19 +145,22 @@ export function CorrelationMatrix({
   ).length;
 
   return (
-    <section className="card mb-6" aria-labelledby="risk-corr-heading">
-      <div className="card-header">
+    <details className="card mb-6 group" aria-labelledby="risk-corr-heading">
+      <summary className="card-header cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
         <h2 id="risk-corr-heading" className="card-title m-0">
           Correlation — flagged pairs
         </h2>
-        <span className="text-[11px] text-text-tertiary num">
-          {state.status === "ok"
-            ? `${pairs.length} flagged · ${sameDirection} same-direction${
-                threshold !== null ? ` · |ρ| ≥ ${threshold.toFixed(2)}` : ""
-              }`
-            : "252d lookback"}
+        <span className="flex items-center gap-2">
+          <span className="text-[11px] text-text-tertiary num">
+            {state.status === "ok"
+              ? `${pairs.length} flagged · ${sameDirection} same-direction${
+                  threshold !== null ? ` · |ρ| ≥ ${threshold.toFixed(2)}` : ""
+                }`
+              : "252d lookback"}
+          </span>
+          <span className="text-[10px] text-text-tertiary transition-transform group-open:rotate-90">▸</span>
         </span>
-      </div>
+      </summary>
 
       {state.status === "loading" ? (
         <SectionSkeleton height={200} />
@@ -275,6 +278,6 @@ export function CorrelationMatrix({
           )}
         </>
       )}
-    </section>
+    </details>
   );
 }

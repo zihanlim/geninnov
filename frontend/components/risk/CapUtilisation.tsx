@@ -185,19 +185,22 @@ export function CapUtilisation({
     (data?.geo?.length ?? 0);
 
   return (
-    <section className="card mb-6" aria-labelledby="risk-caps-heading">
-      <div className="card-header">
+    <details className="card mb-6 group" aria-labelledby="risk-caps-heading">
+      <summary className="card-header cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
         <h2 id="risk-caps-heading" className="card-title m-0">
           Cap utilisation
         </h2>
-        <span className="text-[11px] text-text-tertiary num">
-          {state.status === "ok"
-            ? `${totalRows} limit${totalRows === 1 ? "" : "s"} monitored · ${violations.length} breach${
-                violations.length === 1 ? "" : "es"
-              }`
-            : "Single name · sector · geography"}
+        <span className="flex items-center gap-2">
+          <span className="text-[11px] text-text-tertiary num">
+            {state.status === "ok"
+              ? `${totalRows} limit${totalRows === 1 ? "" : "s"} monitored · ${violations.length} breach${
+                  violations.length === 1 ? "" : "es"
+                }`
+              : "Single name · sector · geography"}
+          </span>
+          <span className="text-[10px] text-text-tertiary transition-transform group-open:rotate-90">▸</span>
         </span>
-      </div>
+      </summary>
 
       {state.status === "loading" ? (
         <SectionSkeleton height={240} />
@@ -243,6 +246,6 @@ export function CapUtilisation({
           </p>
         </div>
       )}
-    </section>
+    </details>
   );
 }

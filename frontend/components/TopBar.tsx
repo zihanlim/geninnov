@@ -70,12 +70,12 @@ export default function TopBar() {
   }, [lastUpdated]);
 
   return (
-    <header className="sticky top-0 z-50 grid grid-cols-[220px_1fr_auto] items-center px-5 h-14 border-b border-border bg-bg-primary/85 backdrop-blur-md">
-      <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-[0.08em] text-text-primary">
-        <div className="w-[22px] h-[22px] rounded bg-gradient-to-br from-accent to-brand grid place-items-center text-[11px] text-white font-bold">
+    <header className="sticky top-0 z-50 grid grid-cols-[auto_1fr_auto] gap-2 items-center px-3 sm:px-5 h-14 border-b border-border bg-bg-primary/85 backdrop-blur-md">
+      <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-[0.08em] text-text-primary shrink-0">
+        <div className="w-[22px] h-[22px] rounded bg-gradient-to-br from-accent to-brand grid place-items-center text-[11px] text-white font-bold shrink-0">
           A
         </div>
-        <span>ANDROMEDA</span>
+        <span className="hidden sm:inline">ANDROMEDA</span>
       </Link>
 
       <nav

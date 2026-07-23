@@ -210,6 +210,44 @@ export function edgeContributions(edge: ThemeEdge, w: EdgeWeights) {
   ];
 }
 
+/** A PLAIN-ENGLISH rationale that names the dominant driver, e.g.
+ * "Long · riding a strong price uptrend" or
+ * "Short · a price downtrend outweighs a supportive regime".
+ * The numeric breakdown lives in edgeRationale / the EdgeScore bars — this is the
+ * always-visible line a reader understands without decoding component values. */
+export function plainRationale(edge: ThemeEdge, w: EdgeWeights = DEFAULT_EDGE_WEIGHTS): string | null {
+  if (edge.edge_score === null) return null;
+  const abstained = Math.abs(edge.edge_score) < w.abstainThreshold;
+  const side = abstained ? "Held out" : (edge.edge_score >= 0 ? "Long" : "Short");
+  const phrase = (key: string, raw: number): string => {
+    const up = raw >= 0;
+    switch (key) {
+      case "Trend": return up ? "a strong price uptrend" : "a price downtrend";
+      case "Regime": return up ? "a supportive macro regime" : "an unfavourable macro regime";
+      case "Carry": return up ? "attractive carry (paid to hold)" : "negative carry";
+      case "Value": return up ? "a cheap valuation vs its own history" : "a rich valuation vs its own history";
+      case "Sentiment": return up ? "a fadeable pessimistic crowd" : "a fadeable optimistic crowd";
+      default: return "its edge signals";
+    }
+  };
+  const contribs = edgeContributions(edge, w)
+    .filter((c) => c.raw !== null && Math.abs(c.contribution) > 1e-9)
+    .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+  if (contribs.length === 0) return `${side} · weak net edge`;
+  const lead = contribs[0];
+  const sideSign = (edge.edge_score ?? 0) >= 0 ? 1 : -1;
+  const opposer = contribs.find(
+    (c) => Math.sign(c.contribution) !== sideSign && Math.abs(c.contribution) > Math.abs(lead.contribution) * 0.5
+  );
+  if (abstained) {
+    return opposer
+      ? "Held out · signals conflict, no net edge"
+      : "Held out · signal too weak to trade";
+  }
+  const base = `${side} · ${phrase(lead.key, lead.raw as number)}`;
+  return opposer ? `${base}, outweighing ${phrase(opposer.key, opposer.raw as number)}` : base;
+}
+
 /** One-line, IC-defensible rationale, e.g.
  * "Short — trend -0.90, regime +0.50, carry 0.00, value 0.00, sent +0.01 · conviction 9.5x". */
 export function edgeRationale(edge: ThemeEdge): string {

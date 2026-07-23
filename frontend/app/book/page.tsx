@@ -7,6 +7,7 @@ import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
 import {
   DEFAULT_EDGE_WEIGHTS,
   edgeRationale,
+  plainRationale,
   fetchThemeEdge,
   type EdgeWeights,
   type ThemeEdge,
@@ -861,8 +862,11 @@ function PositionRow({
       edge.value_signal !== null);
   const conviction = edge?.conviction ?? null;
 
-  // Always-visible one-line rationale (never hidden behind expand). ADR-0032.
-  const rationale = hasEdge && edge ? edgeRationale(edge) : null;
+  // Always-visible plain-English rationale (never hidden behind expand). The
+  // numeric component breakdown (edgeRationale) becomes the hover title and the
+  // expanded EdgeScore bars — a reader gets the "why" without decoding values.
+  const rationale = hasEdge && edge ? plainRationale(edge, edgeWeights) : null;
+  const rationaleDetail = hasEdge && edge ? edgeRationale(edge) : undefined;
 
   // The sizing derivation — conviction × inverse-vol → cap → notional.
   const sizingChain = buildSizingChain({
@@ -957,8 +961,9 @@ function PositionRow({
               </span>
             )}
           </span>
-          {/* Always-visible IC-defensible rationale — the "why this side". */}
-          <span className="text-text-tertiary text-[11px] truncate" title={rationale ?? undefined}>
+          {/* Always-visible PLAIN rationale — the "why this side". Numeric
+              component breakdown is the hover title + the expanded bars. */}
+          <span className="text-text-secondary text-[11.5px] truncate" title={rationaleDetail}>
             {rationale ?? "EdgeScore not persisted for this position"}
           </span>
         </span>

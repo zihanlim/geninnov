@@ -1,7 +1,7 @@
 import Sparkline from "./Sparkline";
 import SubScoreBars from "./SubScoreBars";
 import ScoreDeltaBadge from "./ScoreDeltaBadge";
-import { toDisplayScore, edgeRationale, type ThemeEdge } from "@/lib/themeSignals";
+import { toDisplayScore, edgeRationale, plainRationale, type ThemeEdge } from "@/lib/themeSignals";
 import { EdgeDirectionChip, ProvenanceDot, PositionsLink } from "./ThemeEdgeChips";
 import { isSynthetic, provenanceLabel, type ThemeProvenance } from "@/lib/themeProvenance";
 
@@ -125,8 +125,11 @@ export default function ConvictionCard({
         <PositionsLink themeId={theme.id} className="ml-auto text-[11px] text-text-tertiary hover:text-accent transition-colors whitespace-nowrap" />
       </div>
       {edge && edge.edge_score !== null && (
-        <div className="text-[10.5px] text-text-secondary leading-[1.5] mb-2 num">
-          {edgeRationale(edge)}
+        <div
+          className="text-[11px] text-text-secondary leading-[1.5] mb-2"
+          title={edgeRationale(edge)}
+        >
+          {plainRationale(edge)}
         </div>
       )}
 

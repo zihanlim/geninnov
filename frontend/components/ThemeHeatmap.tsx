@@ -115,7 +115,7 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[12px]">
+        <table className="w-full min-w-[760px] border-collapse text-[12px]">
           <caption className="sr-only">
             Theme sub-score heatmap · {themes.length} themes × 4 sub-scores
             (Volume, Sentiment, Correlation, Momentum) plus HypeScore, 1-day

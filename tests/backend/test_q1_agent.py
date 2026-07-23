@@ -828,6 +828,27 @@ def test_classify_news_caps_llm_calls(monkeypatch):
     assert calls["n"] <= 2, f"classify_news made {calls['n']} calls; must stay bounded"
 
 
+def test_finalise_book_analytics_tolerates_none_scenario_return(monkeypatch):
+    """Regression: a scenario whose estimated_book_return is None (a pick with no
+    factor beta and no direct shock) must not crash the L5 stage — surfaced by
+    the GitHub Action run whose fresh factor data produced an unestimable scenario."""
+    from types import SimpleNamespace
+    monkeypatch.setattr(q1_agent, "compute_book_metrics",
+                        lambda **k: SimpleNamespace(gross_exposure=1.0, net_exposure=0.0))
+    monkeypatch.setattr(q1_agent, "compute_correlation_matrix", lambda *a, **k: [])
+    monkeypatch.setattr(q1_agent, "run_scenario_analysis", lambda **k: object())
+    monkeypatch.setattr(q1_agent, "book_metrics_to_dict", lambda bm: {})
+    monkeypatch.setattr(q1_agent, "scenario_results_to_dict",
+                        lambda s: [{"estimated_book_return": None}, {"estimated_book_return": -0.05}])
+    monkeypatch.setattr(q1_agent, "correlation_pairs_to_dict", lambda c: [])
+    monkeypatch.setattr(q1_agent, "cap_utilisation", lambda bm, picks: {"violations": []})
+
+    state = _make_state(picks=[{"asset": "FXI", "direction": "long", "weight": 0.5}])
+    out = q1_agent.finalise_book_analytics(state)   # must not raise
+    # None estimate is filtered from the worst-case calc; the data still preserves it.
+    assert out["scenario_results_final"][0]["estimated_book_return"] is None
+
+
 def test_make_factor_table_tolerates_null_betas():
     """Real factor_exposures rows can carry NULL betas / r_squared; the prompt
     table formatter must not crash on them. Regression for the L5 TypeError

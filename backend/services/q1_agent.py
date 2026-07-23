@@ -1478,8 +1478,12 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
     state["correlation_pairs_final"] = correlation_pairs_to_dict(corr_pairs)
     state["cap_utilisation_final"] = cap_utilisation(bm, picks)
 
+    # Guard against a None scenario return (a pick with no factor beta AND no
+    # direct shock yields an unestimable scenario) — min() would otherwise return
+    # None and the f"{worst:+.2%}" below crashes the whole L5 stage.
     worst = min(
-        (s["estimated_book_return"] for s in state["scenario_results_final"]),
+        (s["estimated_book_return"] for s in state["scenario_results_final"]
+         if s.get("estimated_book_return") is not None),
         default=0.0,
     )
     print(

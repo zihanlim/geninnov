@@ -85,7 +85,13 @@ export default function RegimeHero({
   return (
     <div
       className="rounded-[12px] p-7 mb-6 grid gap-8 border border-border"
-      style={{ background: "linear-gradient(180deg, #131822 0%, #0e131c 100%)", gridTemplateColumns: "1.4fr 1fr 1fr" }}
+      style={{
+        // Ledger light theme: a pale crimson wash into paper gives the hero
+        // presence without a dark slab (which left every token-coloured ink
+        // string inside it invisible).
+        background: "linear-gradient(180deg, rgba(159,23,42,0.06) 0%, #ffffff 100%)",
+        gridTemplateColumns: "1.4fr 1fr 1fr",
+      }}
     >
       <div>
         <div className="flex items-center gap-2.5 mb-2">

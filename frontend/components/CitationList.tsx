@@ -76,33 +76,49 @@ export default function CitationList({ text, citations }: Props) {
     return <p className="m-0 leading-[1.7] text-text-primary text-[14px]">{text}</p>;
   }
 
+  // The backend emits citations as {text, source, value} with no `n`, and often
+  // repeats a source (four "scenario analysis" rows). Number them here from
+  // position and collapse exact duplicates, so the panel reads as a clean source
+  // list rather than "1. [] CL=F" twenty-three times.
+  const seen = new Set<string>();
+  const sources = citations
+    .filter((c) => {
+      const key = `${c.source}|${c.detail ?? ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((c, i) => ({ ...c, n: c.n ?? i + 1 }));
+
   return (
     <div>
       <p className="m-0 leading-[1.7] text-text-primary text-[14px]">
         <InlineWithCitations text={text} citations={citations} />
       </p>
-      <ol
-        className="m-0 mt-3 pl-5 text-text-secondary text-[12px] leading-[1.65] space-y-1"
-        style={{ listStyle: "decimal" }}
-      >
-        {citations.map((c) => (
-          <li key={c.n} id={`cite-${c.n}`} className="scroll-mt-20">
-            <span className="text-accent num mr-1.5">[{c.n}]</span>
-            <span className="text-text-primary font-medium">{c.source}</span>
-            {c.detail && <span className="text-text-secondary"> · {c.detail}</span>}
-            {c.href && (
-              <a
-                href={c.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent hover:underline ml-1.5"
-              >
-                ↗
-              </a>
-            )}
-          </li>
-        ))}
-      </ol>
+      <div className="mt-3 flex items-baseline gap-2">
+        <span className="text-[10.5px] uppercase tracking-[0.12em] text-text-tertiary shrink-0">
+          Sources
+        </span>
+        <ul className="m-0 p-0 flex flex-wrap gap-x-3 gap-y-1 text-text-secondary text-[11.5px] leading-[1.6] list-none">
+          {sources.map((c) => (
+            <li key={`${c.source}-${c.n}`} id={`cite-${c.n}`} className="scroll-mt-20">
+              <span className="text-text-tertiary num mr-1">{c.n}</span>
+              <span className="text-text-primary num">{c.source}</span>
+              {c.detail && <span className="text-text-tertiary"> · {c.detail}</span>}
+              {c.href && (
+                <a
+                  href={c.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent hover:underline ml-1"
+                >
+                  ↗
+                </a>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }

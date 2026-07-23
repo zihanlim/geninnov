@@ -95,11 +95,16 @@ export default function CitationList({ text, citations }: Props) {
       <p className="m-0 leading-[1.7] text-text-primary text-[14px]">
         <InlineWithCitations text={text} citations={citations} />
       </p>
-      <div className="mt-3 flex items-baseline gap-2">
-        <span className="text-[10.5px] uppercase tracking-[0.12em] text-text-tertiary shrink-0">
-          Sources
-        </span>
-        <ul className="m-0 p-0 flex flex-wrap gap-x-3 gap-y-1 text-text-secondary text-[11.5px] leading-[1.6] list-none">
+      {/* Progressive disclosure: a compact count by default, the full source
+          keys on click. The keys (FRED IDs, L4 risk, book_metrics) are audit
+          provenance, not reader-facing prose — collapsed so they don't drown
+          the thesis. */}
+      <details className="mt-3 group">
+        <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none text-[11.5px] text-text-secondary hover:text-text-primary select-none">
+          <span className="num font-medium">{sources.length}</span> verified sources
+          <span className="text-text-tertiary text-[10px] group-open:rotate-90 transition-transform">▸</span>
+        </summary>
+        <ul className="m-0 mt-2 p-0 flex flex-wrap gap-x-3 gap-y-1 text-text-secondary text-[11px] leading-[1.6] list-none">
           {sources.map((c) => (
             <li key={`${c.source}-${c.n}`} id={`cite-${c.n}`} className="scroll-mt-20">
               <span className="text-text-tertiary num mr-1">{c.n}</span>
@@ -118,7 +123,7 @@ export default function CitationList({ text, citations }: Props) {
             </li>
           ))}
         </ul>
-      </div>
+      </details>
     </div>
   );
 }

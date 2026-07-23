@@ -53,13 +53,13 @@ function FactorBar({ name, beta }: Factor) {
         <div className="absolute left-1/2 top-[-2px] bottom-[-2px] w-px bg-text-tertiary" />
         <div
           className={`absolute top-0 bottom-0 h-full rounded-r-sm ${
-            beta < 0 ? "bg-short rounded-l-sm right-1/2" : "bg-accent left-1/2"
+            beta < 0 ? "bg-short rounded-l-sm right-1/2" : "bg-long left-1/2"
           }`}
           style={{ width: `${widthPct}%` }}
         />
       </div>
       <span
-        className={`num text-right ${beta < 0 ? "text-short" : "text-accent"}`}
+        className={`num text-right ${beta < 0 ? "text-short" : "text-long"}`}
       >
         {beta >= 0 ? "+" : ""}
         {beta.toFixed(2)}

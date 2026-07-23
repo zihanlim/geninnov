@@ -50,12 +50,21 @@ def correlation_with_mentions(price_df: pd.DataFrame, mention_series: pd.Series,
     if price_ticker.empty or len(price_ticker) < 5:
         return 0.0
 
-    # Align by date
-    common_dates = mention_series.index.intersection(price_ticker.index)
+    # Normalize BOTH indices to datetime.date before aligning. The mention series
+    # is keyed by ISO strings ("2026-07-23") while price dates are datetime.date;
+    # intersecting the two types is ALWAYS empty, so this silently returned 0 for
+    # every theme — the 30% correlation weight was dead. (ADR-0028 root cause.)
+    def _as_date_index(s: pd.Series) -> pd.Series:
+        out = s.copy()
+        out.index = pd.to_datetime(out.index, errors="coerce").date
+        return out
+
+    mentions = _as_date_index(mention_series)
+    returns = _as_date_index(price_ticker)
+
+    common_dates = mentions.index.intersection(returns.index)
     if len(common_dates) < 5:
         return 0.0
 
-    mentions_aligned = mention_series.loc[common_dates]
-    returns_aligned = price_ticker.loc[common_dates]
-
-    return mentions_aligned.corr(returns_aligned)
+    corr = mentions.loc[common_dates].corr(returns.loc[common_dates])
+    return 0.0 if pd.isna(corr) else float(corr)

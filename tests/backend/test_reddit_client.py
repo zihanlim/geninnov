@@ -50,6 +50,30 @@ class TestFetchPostsForThemeNoCredentials:
         assert all(k in post for k in ["title", "subreddit", "score", "date"])
 
 
+class TestMockProvenanceTag:
+    def test_mock_posts_tagged_mock_reddit(self):
+        result = _mock_posts("Inflation", 7)
+        assert all(p.get("source") == "mock_reddit" for p in result)
+
+    @patch.dict(os.environ, {"REDDIT_CLIENT_ID": "", "REDDIT_CLIENT_SECRET": ""}, clear=True)
+    def test_fetch_without_creds_is_source_tagged_mock(self):
+        result = fetch_posts_for_theme("Inflation")
+        assert result and all(p.get("source") == "mock_reddit" for p in result)
+
+
+class TestMockDisabled:
+    @patch.dict(os.environ, {"REDDIT_CLIENT_ID": "", "REDDIT_CLIENT_SECRET": "",
+                             "ANDROMEDA_ALLOW_MOCK": "0"}, clear=True)
+    def test_no_creds_and_mock_disabled_returns_empty(self):
+        # Production policy: no fabricated post — real feed or nothing.
+        assert fetch_posts_for_theme("Inflation") == []
+
+    @patch.dict(os.environ, {"REDDIT_CLIENT_ID": "", "REDDIT_CLIENT_SECRET": "",
+                             "ANDROMEDA_ALLOW_MOCK": "1"}, clear=True)
+    def test_no_creds_and_mock_enabled_returns_mock(self):
+        assert len(fetch_posts_for_theme("Inflation")) > 0
+
+
 class TestThemeKeywords:
     def test_all_themes_have_keywords(self):
         themes = ["Fed Policy", "Inflation", "China Growth", "US Dollar",

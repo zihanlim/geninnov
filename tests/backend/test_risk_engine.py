@@ -317,3 +317,44 @@ class TestVaRIsScaledToDollars:
         for key in ("sharpe", "beta", "hhi"):
             assert small[key].value == pytest.approx(large[key].value)
             assert small[key].unit == "ratio"
+
+
+class TestBetaAlignsByDate:
+    """Beta must align portfolio and SPX returns by DATE, not by position.
+
+    daily_refresh loads both as date-indexed Series, but flattened them to
+    plain lists before compute_risk, so _beta_to_spx concatenated them on a
+    positional RangeIndex: element 0 of a handful of portfolio rows against
+    element 0 of ~252 SPX rows. Beta was meaningless whenever the two series
+    differed in length or coverage, which is always.
+    """
+
+    def test_beta_uses_date_overlap_not_position(self):
+        from backend.services.risk_engine import compute_risk
+
+        # Portfolio moves exactly 2x SPX on the three shared dates. If beta
+        # aligns by date it recovers ~2.0; if it aligns by position against the
+        # longer, offset SPX series it does not.
+        p_dates = ["2026-07-20", "2026-07-21", "2026-07-22"]
+        p_vals = [0.02, -0.04, 0.03]
+        m_dates = ["2026-07-17", "2026-07-18", "2026-07-20", "2026-07-21", "2026-07-22"]
+        m_vals = [0.005, -0.011, 0.01, -0.02, 0.015]
+
+        r = compute_risk(
+            book=[{"ticker": "A", "weight": 1.0, "sector": "tech", "geo": "us"}],
+            history=p_vals, spx_returns=m_vals,
+            history_dates=p_dates, spx_dates=m_dates,
+            portfolio_value=100_000_000.0,
+        )
+        assert r["beta"].value == pytest.approx(2.0, abs=1e-6)
+
+    def test_positional_fallback_preserved_without_dates(self):
+        """Equal-length lists with no dates keep the old positional behavior."""
+        from backend.services.risk_engine import compute_risk
+
+        r = compute_risk(
+            book=[{"ticker": "A", "weight": 1.0, "sector": "tech", "geo": "us"}],
+            history=[0.02, -0.04, 0.03], spx_returns=[0.01, -0.02, 0.015],
+            portfolio_value=100_000_000.0,
+        )
+        assert r["beta"].value == pytest.approx(2.0, abs=1e-6)

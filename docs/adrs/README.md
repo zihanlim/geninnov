@@ -24,6 +24,16 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0016](0016-signed-weights-portfolio-accounting.md) | Signed-weights portfolio accounting convention (`direction` derived from sign) | accepted | 2026-07-22 |
 | [0017](0017-since-inception-cumulative-performance.md) | Since-inception cumulative performance is compounded daily (`portfolio_cumulative_return`) | accepted | 2026-07-22 |
 | [0018](0018-provenance-read-model-seam.md) | Provenance read-model seam between Python derivations and TypeScript status components | accepted | 2026-07-22 |
+| [0019](0019-citation-value-reconciliation.md) | Citation guardrail reconciles cited values, not just source keys | accepted | 2026-07-23 |
+| [0020](0020-theme-news-store-for-l5.md) | theme_news store feeds the L5 agent real news | accepted | 2026-07-23 |
+| [0021](0021-signal-robustness-momentum-crowding.md) | Signal robustness: robust momentum + signed crowding | accepted | 2026-07-23 |
+| [0022](0022-hypescore-ic-backtest.md) | HypeScore validation via Information-Coefficient backtest | accepted | 2026-07-23 |
+| [0023](0023-data-provenance-and-fabrication-guard.md) | Data provenance labels + fabricated-data (R0) guard | accepted | 2026-07-23 |
+| [0024](0024-persist-book-analytics-not-prompt-strings.md) | Persist book analytics as structured records, not prompt strings | accepted | 2026-07-23 |
+| [0025](0025-book-centric-information-architecture.md) | Book-centric information architecture (`/book`, `/risk`, `/method`) | accepted | 2026-07-23 |
+| [0026](0026-gemini-third-l5-provider.md) | Google Gemini as a third L5 LLM provider | accepted | 2026-07-23 |
+| [0027](0027-citation-value-grounding.md) | Citation guardrail grounds on value, not source-label exactness | accepted | 2026-07-23 |
+| [0028](0028-minmax-correlation-consistency.md) | Min-max \|corr\| across themes (supersedes T22 raw-abs) | accepted | 2026-07-23 |
 
 ## When to write an ADR
 

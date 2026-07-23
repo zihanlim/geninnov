@@ -1,8 +1,12 @@
+import { toDisplayScore } from "@/lib/themeSignals";
+
 export interface HeatmapTheme {
   id: string;
   name: string;
   tier?: string;
+  /** 0–100. */
   hype_score?: number;
+  /** Persisted as [0,1] — converted to 0–100 for the colour ramp below. */
   volume_score?: number;
   sentiment_score?: number;
   corr_score?: number;
@@ -15,26 +19,26 @@ interface Props<T extends HeatmapTheme> {
   onSelect?: (theme: T) => void;
 }
 
-// Diverging color: red (low) → gray (mid) → green (high) on a 0-100 scale
-// Midpoint at 50; ±50 gives the saturation.
-function cellColor(value: number | undefined): string {
-  const v = value ?? 0;
-  // Normalize around 50
-  const t = Math.max(0, Math.min(100, v));
+// Diverging color: red (low) → gray (mid) → green (high) on a 0-100 scale.
+// Midpoint at 50; ±50 gives the saturation. A null value gets no fill at all,
+// so an absent sub-score reads as absent rather than as a deep-red zero.
+function cellColor(value: number | null): string {
+  if (value === null) return "transparent";
+  const t = Math.max(0, Math.min(100, value));
   const dev = (t - 50) / 50; // -1 .. +1
   if (dev >= 0) {
-    // green: rgba(63, 185, 80, dev)
     const a = 0.15 + dev * 0.55;
     return `rgba(63, 185, 80, ${a.toFixed(2)})`;
-  } else {
-    const a = 0.15 + Math.abs(dev) * 0.55;
-    return `rgba(248, 81, 73, ${a.toFixed(2)})`;
   }
+  const a = 0.15 + Math.abs(dev) * 0.55;
+  return `rgba(248, 81, 73, ${a.toFixed(2)})`;
 }
 
-function cellTextColor(value: number | undefined): string {
-  const v = value ?? 0;
-  return v >= 35 && v <= 65 ? "var(--text-secondary)" : "var(--text-primary)";
+function cellTextColor(value: number | null): string {
+  if (value === null) return "var(--text-tertiary)";
+  return value >= 35 && value <= 65
+    ? "var(--text-secondary)"
+    : "var(--text-primary)";
 }
 
 const SUBSCORES = [
@@ -69,7 +73,8 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({ themes, onSelect 
         <div>
           <span className="card-title">Theme × Sub-score heatmap</span>
           <span className="text-text-tertiary text-[11px] ml-2">
-            12 themes · 4 dimensions · red=low / green=high (0-100)
+            {themes.length} theme{themes.length === 1 ? "" : "s"} · 4 dimensions ·
+            red=low / green=high (0–100)
           </span>
         </div>
         <div className="flex items-center gap-3 text-[10.5px] text-text-tertiary">
@@ -90,8 +95,9 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({ themes, onSelect 
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[12px]">
           <caption className="sr-only">
-            Theme sub-score heatmap · 12 themes × 4 sub-scores (Volume, Sentiment,
-            Correlation, Momentum) plus HypeScore and 1-day delta.
+            Theme sub-score heatmap · {themes.length} themes × 4 sub-scores
+            (Volume, Sentiment, Correlation, Momentum) plus HypeScore and 1-day
+            delta.
           </caption>
           <thead>
             <tr className="border-b border-border">
@@ -128,7 +134,8 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({ themes, onSelect 
                 <td className="px-3 py-2 font-semibold text-text-primary">{t.name}</td>
                 <td className="px-2 py-2 text-center text-text-tertiary text-[10.5px]">{tierBadge(t.tier)}</td>
                 {SUBSCORES.map((s) => {
-                  const v = t[s.key];
+                  // Sub-scores persist as [0,1]; the ramp is 0–100.
+                  const v = toDisplayScore(t[s.key]);
                   return (
                     <td
                       key={s.key}
@@ -137,17 +144,21 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({ themes, onSelect 
                         background: cellColor(v),
                         color: cellTextColor(v),
                       }}
-                      title={`${s.label}: ${Math.round(v ?? 0)}`}
+                      title={
+                        v === null
+                          ? `${s.label}: not scored this run`
+                          : `${s.label}: ${Math.round(v)}`
+                      }
                     >
-                      {v !== undefined ? Math.round(v) : "—"}
+                      {v === null ? "—" : Math.round(v)}
                     </td>
                   );
                 })}
                 <td
                   className="px-2 py-2 text-center num font-semibold"
                   style={{
-                    background: cellColor(t.hype_score),
-                    color: cellTextColor(t.hype_score),
+                    background: cellColor(t.hype_score ?? null),
+                    color: cellTextColor(t.hype_score ?? null),
                   }}
                 >
                   {t.hype_score !== undefined ? Math.round(t.hype_score) : "—"}
@@ -173,8 +184,13 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({ themes, onSelect 
         </table>
       </div>
       <div className="px-4 py-2.5 border-t border-border text-[11px] text-text-tertiary">
-        Click any row to see the full score derivation. Sub-scores from{" "}
-        <code className="num">scoring_config</code> (Volume 0.30, Sentiment 0.20, Correlation 0.30, Momentum 0.20).
+        Click any row for the full score derivation. Sub-scores are min-max
+        normalised across these {themes.length} themes on the run date and
+        weighted per <code className="num">scoring_config</code> — see{" "}
+        <a href="/method" className="text-accent hover:underline">
+          Method
+        </a>{" "}
+        for the live weights and formula.
       </div>
     </div>
   );

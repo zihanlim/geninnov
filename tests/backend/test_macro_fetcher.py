@@ -9,9 +9,20 @@ class TestFREDSeriesCatalog:
     def test_expected_series_present(self):
         assert "DGS10" in FRED_SERIES
         assert "BAMLH0A0HYM2" in FRED_SERIES
-        assert "CPALTT01USM" in FRED_SERIES
         assert FRED_SERIES["DGS10"]["unit"] == "pct"
-        assert FRED_SERIES["BAMLH0A0HYM2"]["unit"] == "bps"
+        # FRED reports credit OAS in PERCENT (2.69 = 2.69% = 269bps), not bps.
+        assert FRED_SERIES["BAMLH0A0HYM2"]["unit"] == "pct"
+
+    def test_new_theme_aligned_series_present(self):
+        # Working FRED codes covering Fed Policy (DFF), Corporate Credit
+        # (BAMLC0A0CM), inflation (CPIAUCSL), real yield + curve points.
+        for sid in ("CPIAUCSL", "DFF", "BAMLC0A0CM", "DFII10", "DGS5", "DGS30"):
+            assert sid in FRED_SERIES, f"expected {sid} in FRED catalog"
+
+    def test_dead_series_removed(self):
+        # These FRED codes 404 / were discontinued and silently returned nothing.
+        for dead in ("CPALTT01USM", "TEDRATE", "DPRRE"):
+            assert dead not in FRED_SERIES
 
     def test_yfinance_tickers(self):
         assert "^VIX" in YFINANCE_TICKERS
@@ -38,6 +49,48 @@ class TestYfinanceBatch:
         result = _yfinance_batch(["^VIX"], pd.Timestamp("2025-01-01").date(), pd.Timestamp("2025-01-31").date())
         assert isinstance(result, pd.DataFrame)
         assert result.empty
+
+
+class TestSnapshotDedup:
+    """macro_indicators is a latest-snapshot table; re-running the same day must
+    REPLACE the day's rows, not append duplicates."""
+
+    def test_snapshot_deletes_todays_rows_before_insert(self):
+        from macro_fetcher import MacroFetcher, FRED_SERIES
+
+        calls = []
+
+        class _Tbl:
+            def __init__(self, name):
+                self._name = name
+
+            def delete(self):
+                calls.append(("delete", self._name)); return self
+
+            def eq(self, *_a, **_k):
+                return self
+
+            def insert(self, payload, **_k):
+                calls.append(("insert", self._name, len(payload))); return self
+
+            def execute(self):
+                return type("R", (), {"data": []})()
+
+        class _SB:
+            def table(self, name):
+                return _Tbl(name)
+
+        f = MacroFetcher.__new__(MacroFetcher)
+        f.supabase = _SB()
+
+        sid = next(iter(FRED_SERIES))
+        fred = pd.DataFrame({"trading_date": ["2026-07-23"], sid: [4.5]})
+        n = f.upsert_latest_snapshot(fred, pd.DataFrame())
+
+        assert n >= 1
+        kinds = [c[0] for c in calls]
+        assert "delete" in kinds and "insert" in kinds
+        assert kinds.index("delete") < kinds.index("insert"), "must delete today's rows before insert"
 
 
 class TestMacroFetcherInstantiation:

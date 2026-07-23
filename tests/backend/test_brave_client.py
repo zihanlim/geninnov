@@ -27,6 +27,10 @@ class TestMockNews:
         result = _mock_news("Inflation", 7)
         assert any("Inflation" in item["headline"] for item in result)
 
+    def test_mock_news_tagged_mock_brave(self):
+        result = _mock_news("Inflation", 7)
+        assert all(item.get("source") == "mock_brave" for item in result)
+
 
 class TestFetchNewsForTheme:
     def test_returns_list(self):
@@ -73,7 +77,7 @@ class TestFetchNewsForTheme:
 
     @patch("backend.data.brave_client.subprocess.run")
     def test_mcp_unavailable_returns_mock(self, mock_run):
-        """Mock data is returned when MCP is unavailable."""
+        """Mock data is returned when MCP is unavailable (default policy)."""
         mock_run.side_effect = FileNotFoundError
         result = fetch_news_for_theme("Corporate Credit")
         assert isinstance(result, list)
@@ -83,11 +87,20 @@ class TestFetchNewsForTheme:
             assert "date" in item
             assert "url" in item
 
+    @patch.dict("os.environ", {"ANDROMEDA_ALLOW_MOCK": "0"})
+    @patch("backend.data.brave_client.subprocess.run")
+    def test_mcp_unavailable_returns_empty_when_mock_disabled(self, mock_run):
+        """Production policy: a failed feed returns [] rather than fabricating."""
+        mock_run.side_effect = FileNotFoundError
+        assert fetch_news_for_theme("Corporate Credit") == []
+
     @patch("backend.data.brave_client.subprocess.run")
     def test_mcp_returns_zero_code_returns_data(self, mock_run):
-        """When MCP returns returncode 0, its data is used."""
+        """When MCP returns returncode 0, its data is used and tagged 'brave'."""
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = '[{"headline": "Test", "date": "2026-07-21", "url": "https://test.com"}]'
         result = fetch_news_for_theme("Fed Policy")
         assert len(result) == 1
         assert result[0]["headline"] == "Test"
+        # Real MCP data is source-tagged so it is distinguishable from mock.
+        assert result[0]["source"] == "brave"

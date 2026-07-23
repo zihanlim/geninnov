@@ -7,7 +7,68 @@ from hype_calculator import (
     rescale_vader,
     hype_score,
     compute_hype_scores,
+    crowding_score,
+    crowding_label,
+    robust_momentum,
 )
+
+
+class TestRobustMomentum:
+    def test_spike_is_positive_and_clipped(self):
+        mom, degenerate = robust_momentum(10, [2, 3, 2, 3, 2, 3])
+        assert degenerate is False
+        assert mom == pytest.approx(4.0)   # large spike clips at +4
+
+    def test_drop_is_negative(self):
+        mom, degenerate = robust_momentum(0, [8, 9, 8, 9, 8, 9])
+        assert degenerate is False
+        assert mom < 0
+
+    def test_ignores_a_single_outlier_in_history(self):
+        # A lone 100 in history should NOT distort the read of a normal value.
+        # mean/std would report a spurious non-zero; median/MAD reports ~0.
+        mom, degenerate = robust_momentum(2, [1, 2, 1, 2, 1, 2, 100])
+        assert degenerate is False
+        assert abs(mom) < 0.5
+
+    def test_flat_window_is_degenerate(self):
+        mom, degenerate = robust_momentum(5, [3, 3, 3, 3, 3, 3])
+        assert degenerate is True
+        assert mom == 0.0
+
+    def test_empty_history_is_degenerate(self):
+        mom, degenerate = robust_momentum(5, [])
+        assert degenerate is True
+        assert mom == 0.0
+
+
+class TestCrowding:
+    def test_crowding_score_preserves_sign(self):
+        assert crowding_score(0.6) == pytest.approx(0.6)
+        assert crowding_score(-0.6) == pytest.approx(-0.6)
+
+    def test_crowding_score_clamps_to_unit_interval(self):
+        assert crowding_score(1.9) == 1.0
+        assert crowding_score(-3.0) == -1.0
+
+    def test_crowding_score_handles_non_numeric(self):
+        assert crowding_score(None) == 0.0
+
+    def test_label_crowded_on_strong_positive(self):
+        assert crowding_label(0.6) == "crowded"
+
+    def test_label_hedge_on_strong_negative(self):
+        assert crowding_label(-0.6) == "hedge"
+
+    def test_label_neutral_on_weak_correlation(self):
+        assert crowding_label(0.2) == "neutral"
+
+    def test_label_neutral_when_attention_is_low(self):
+        # Strong correlation but low volume → not really crowded.
+        assert crowding_label(0.9, volume_norm=0.3) == "neutral"
+
+    def test_label_crowded_when_attention_is_high(self):
+        assert crowding_label(0.9, volume_norm=0.8) == "crowded"
 
 
 class TestMinMaxNorm:
@@ -73,9 +134,11 @@ class TestHypeScoreIdenticalSignals:
         ]
         scored = compute_hype_scores(raw_signals, cfg)
         for s in scored:
-            # With identical values, volume and momentum normalize to 0.5,
-            # sent=0.5, corr_abs=0.0. Weighted: 0.25*0.5 + 0.25*0.5 + 0 + 0.25*0.5 = 0.375
-            assert 37.4 < s["hype_score"] < 37.6
+            # ADR-0028: corr is now min-max'd like volume/momentum, so identical
+            # signals put ALL four sub-scores at their 0.5 neutral → 0.25*4*0.5 =
+            # 0.5 → 50. (The old raw-abs corr gave 0 here, so the test name
+            # "score_50" disagreed with its own 37.5 assertion.)
+            assert 49.9 < s["hype_score"] < 50.1
 
 
 class TestHypeScoreHighestVolume:
@@ -88,11 +151,11 @@ class TestHypeScoreHighestVolume:
             {"mention_count_1d": 20, "avg_sentiment": 0.0, "price_corr": 0.0, "momentum_raw": 0.0},
         ]
         scored = compute_hype_scores(raw_signals, cfg)
-        # Theme A: volume=0, momentum=0.5, sent=0.5, corr=0 -> 0.25*0 + 0.25*0.5 + 0 + 0.25*0.5 = 0.25
-        # Theme B: volume=1, momentum=0.5, sent=0.5, corr=0 -> 0.25*1 + 0.25*0.5 + 0 + 0.25*0.5 = 0.5
-        # Theme B should score higher than Theme A
+        # ADR-0028: corr min-max'd → identical corr(0) is 0.5, not 0.
+        # Theme A: volume=0, momentum=corr=sent=0.5 -> 0.375 -> 37.5
+        # Theme B: volume=1, momentum=corr=sent=0.5 -> 0.625 -> 62.5
         assert scored[1]["hype_score"] > scored[0]["hype_score"]
-        assert 49.9 < scored[1]["hype_score"] < 50.1
+        assert 62.4 < scored[1]["hype_score"] < 62.6
 
 
 class TestSentimentRescaling:
@@ -104,9 +167,9 @@ class TestSentimentRescaling:
         ]
         scored = compute_hype_scores(raw_signals, cfg)
         score_pos = scored[1]["hype_score"]
-        # Theme B: volume=0.5, sent=1.0, corr=0, momentum=0.5
-        # weighted: 0.25*0.5 + 0.25*1.0 + 0 + 0.25*0.5 = 0.5, *100 = 50
-        assert 49.9 < score_pos < 50.1
+        # Theme B: volume=0.5, sent=1.0, corr=0.5 (ADR-0028), momentum=0.5
+        # weighted: 0.25*0.5 + 0.25*1.0 + 0.25*0.5 + 0.25*0.5 = 0.625, *100 = 62.5
+        assert 62.4 < score_pos < 62.6
 
     def test_negative_sentiment_rescaled_to_zero(self):
         cfg = ScoringConfig(0.25, 0.25, 0.25, 0.25, 0.0, 0.0)
@@ -116,9 +179,9 @@ class TestSentimentRescaling:
         ]
         scored = compute_hype_scores(raw_signals, cfg)
         score_neg = scored[1]["hype_score"]
-        # Theme B: volume=0.5, sent=0.0, corr=0, momentum=0.5
-        # weighted: 0.25*0.5 + 0.25*0.0 + 0 + 0.25*0.5 = 0.25, *100 = 25
-        assert 24.9 < score_neg < 25.1
+        # Theme B: volume=0.5, sent=0.0, corr=0.5 (ADR-0028), momentum=0.5
+        # weighted: 0.25*0.5 + 0.25*0.0 + 0.25*0.5 + 0.25*0.5 = 0.375, *100 = 37.5
+        assert 37.4 < score_neg < 37.6
 
 
 # Brief test (Task 22): sign-folded correlation.
@@ -132,6 +195,21 @@ def test_hype_uses_unsigned_correlation_strength():
     # negative correlation with positive returns should score the same magnitude (abs)
     neg = hype_score(volume=1.0, sentiment=0.5, corr=-0.9, momentum=0.1, cfg=cfg)
     assert pos == pytest.approx(neg)
+
+
+def test_corr_is_minmax_normalized_across_themes():
+    """ADR-0028: |corr| is min-max'd across themes like volume/momentum. When
+    corr VARIES, the top-|corr| theme claims the FULL corr weight (raw abs would
+    have given it only its small raw magnitude, e.g. 0.5). abs fold preserved."""
+    cfg = ScoringConfig(0.0, 0.0, 1.0, 0.0, 0.0, 0.0)  # 100% corr weight, isolate it
+    raw_signals = [
+        {"mention_count_1d": 10, "avg_sentiment": 0.0, "price_corr": 0.1, "momentum_raw": 0.0},
+        {"mention_count_1d": 10, "avg_sentiment": 0.0, "price_corr": -0.5, "momentum_raw": 0.0},
+    ]
+    scored = compute_hype_scores(raw_signals, cfg)
+    # min-max abs(corr): |0.1| -> 0.0 (min), |-0.5| -> 1.0 (max, abs fold)
+    assert scored[0]["hype_score"] == pytest.approx(0.0)
+    assert scored[1]["hype_score"] == pytest.approx(100.0)
 
 
 # T22 Minor: compute_hype_scores([]) must short-circuit instead of raising

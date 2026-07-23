@@ -141,7 +141,8 @@ function CrossThemeCorrelations({ themeId }: { themeId: string }) {
 export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
   const [signal, setSignal] = useState<ThemeSignalRow | null>(null);
   const [cfg, setCfg] = useState<ScoringConfig | null>(null);
-  const [sourceCounts, setSourceCounts] = useState<{ brave: number; reddit: number; yfinance: number } | null>(null);
+  const [sourceCounts, setSourceCounts] = useState<Record<string, number> | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [themeAssets, setThemeAssets] = useState<ThemeAssetRow[]>([]);
 
   useEffect(() => {
@@ -167,12 +168,31 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
       setSignal((sigRes.data as ThemeSignalRow) ?? null);
       setCfg((cfgRes.data as ScoringConfig) ?? null);
       setThemeAssets((assetsRes.data as ThemeAssetRow[]) ?? []);
-      // Source counts are not directly available; estimate from theme_signals mention_count
-      if (sigRes.data) {
-        const m = (sigRes.data as ThemeSignalRow).mention_count_1d ?? 0;
-        setSourceCounts({ brave: Math.round(m * 0.62), reddit: Math.round(m * 0.30), yfinance: Math.round(m * 0.08) });
-      } else {
+
+      // Real per-source counts from theme_news. The previous implementation
+      // split the mention count by fixed ratios (×0.62 Brave, ×0.30 Reddit,
+      // ×0.08 yfinance) and rendered the result as though it were a measured
+      // breakdown. It was arithmetic on a single number, and it was wrong in a
+      // way that mattered: with empty Reddit credentials the social feed falls
+      // back to one synthetic post per theme, so the invented "Reddit 7" masked
+      // an absent source.
+      const { data: newsRows, error: newsErr } = await supabase
+        .from("theme_news")
+        .select("source")
+        .eq("theme_id", theme.id)
+        .eq("run_date", runDate);
+      if (cancelled) return;
+      if (newsErr) {
         setSourceCounts(null);
+        setSourceError(newsErr.message);
+      } else {
+        const counts: Record<string, number> = {};
+        for (const r of (newsRows ?? []) as { source: string }[]) {
+          const key = r.source || "unknown";
+          counts[key] = (counts[key] ?? 0) + 1;
+        }
+        setSourceCounts(Object.keys(counts).length ? counts : null);
+        setSourceError(null);
       }
     })();
     return () => {
@@ -275,7 +295,7 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
                   <code className="num">method_id={CORR_SELECTION_METHOD_ID}</code>
                 </span>
                 <br />
-                Normalized across 12 themes
+                Min-max normalised across the themes scored on this run
               </>
             ),
           },
@@ -288,7 +308,7 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
               <>
                 z-score: <span className="num">{fmt(signal?.momentum_raw, 2)}</span>
                 <br />
-                Normalized across 12 themes
+                Min-max normalised across the themes scored on this run
               </>
             ),
           },
@@ -330,21 +350,36 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
           Weights from <code className="num">scoring_config</code>:
           <span className="num">
             {" "}
-            v={wv.toFixed(2)} · s={ws.toFixed(2)} · c={wc.toFixed(2)} · m={wm.toFixed(2)}
+            v={wv.toFixed(2)} · s={ws.toFixed(2)} · c={wc.toFixed(2)} · m=
+            {wm.toFixed(2)}
           </span>
         </li>
         <li>
-          Normalization: min-max across {sourceCounts ? "~12" : "—"} themes on the same run date
+          Normalisation: min-max across all themes scored on this run date, so
+          each sub-score is a <em>relative</em> rank, not an absolute level.
         </li>
         <li>
-          Source counts (estimated from mention volume):
-          {sourceCounts ? (
+          Source counts:{" "}
+          {sourceError ? (
+            <span className="text-text-tertiary">
+              unavailable ({sourceError})
+            </span>
+          ) : sourceCounts ? (
             <span className="num">
-              {" "}
-              Brave News {sourceCounts.brave} · Reddit {sourceCounts.reddit} · yfinance {sourceCounts.yfinance}
+              {Object.entries(sourceCounts)
+                .sort((a, b) => b[1] - a[1])
+                .map(([src, n]) => `${src} ${n}`)
+                .join(" · ")}
+              {Object.keys(sourceCounts).some((s) => s.startsWith("mock")) && (
+                <span className="text-warning ml-1.5 font-sans">
+                  — includes fallback data; treat this score as estimated
+                </span>
+              )}
             </span>
           ) : (
-            " —"
+            <span className="text-text-tertiary">
+              no per-source rows for this run (theme_news)
+            </span>
           )}
         </li>
       </ul>

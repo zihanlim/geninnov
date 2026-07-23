@@ -8,13 +8,20 @@ Stores both a "latest snapshot" (macro_indicators) and a daily time-series
 
 FRED series used:
   DGS10        10y Treasury yield (%)
+  DGS5         5y Treasury yield (%)
   DGS2         2y Treasury yield (%)
-  BAMLH0A0HYM2 HY credit OAS (bps)
+  DGS30        30y Treasury yield (%)
+  DFF          Fed funds effective rate (%)   — Fed Policy theme
+  BAMLH0A0HYM2 HY credit OAS (%)
+  BAMLC0A0CM   IG credit OAS (%)              — Corporate Credit theme
   T10YIE       10y breakeven inflation (%)
-  CPALTT01USM  CPIYoY (%)
-  PCECTPI      PCE price index
+  DFII10       10y real yield / TIPS (%)
+  CPIAUCSL     CPI index, all-urban           — replaces dead CPALTT01USM
   PAYEMS       NFP payrolls (k)
   UNRATE       Unemployment rate (%)
+
+Removed (dead/discontinued FRED codes that silently returned nothing):
+  CPALTT01USM (404), DPRRE (404), TEDRATE (discontinued 2022).
 
 yfinance tickers:
   ^VIX         VIX spot
@@ -45,14 +52,19 @@ from supabase import Client, create_client
 # ---------------------------------------------------------------------------
 FRED_SERIES = {
     "DGS10": {"name": "10y Treasury Yield", "unit": "pct"},
-    "DGS2": {"name": "2y Treasury Yield", "unit": "pct"},
-    "BAMLH0A0HYM2": {"name": "HY Credit OAS", "unit": "bps"},
+    "DGS5":  {"name": "5y Treasury Yield", "unit": "pct"},
+    "DGS2":  {"name": "2y Treasury Yield", "unit": "pct"},
+    "DGS30": {"name": "30y Treasury Yield", "unit": "pct"},
+    "DFF":   {"name": "Fed Funds Rate", "unit": "pct"},
+    # BAMLH0A0HYM2 / BAMLC0A0CM are reported by FRED in PERCENT (e.g. 2.69 = 2.69%
+    # = 269bps), NOT basis points — the old "bps" label misrepresented the value.
+    "BAMLH0A0HYM2": {"name": "HY Credit OAS", "unit": "pct"},
+    "BAMLC0A0CM":   {"name": "IG Credit OAS", "unit": "pct"},
     "T10YIE": {"name": "10y Breakeven Inflation", "unit": "pct"},
-    "CPALTT01USM": {"name": "CPI YoY", "unit": "pct"},
+    "DFII10": {"name": "10y Real Yield", "unit": "pct"},
+    "CPIAUCSL": {"name": "CPI (Index, All Urban)", "unit": "index"},
     "PAYEMS": {"name": "NFP Payrolls", "unit": "k"},
     "UNRATE": {"name": "Unemployment Rate", "unit": "pct"},
-    "TEDRATE": {"name": "TED Spread", "unit": "bps"},
-    "DPRRE": {"name": "Dallas Fed PCE RLE", "unit": "pct"},
 }
 
 YFINANCE_TICKERS = {
@@ -246,7 +258,15 @@ class MacroFetcher:
         if not rows:
             return 0
 
-        self.supabase.table("macro_indicators").upsert(rows, on_conflict="series_id,fetch_date").execute()
+        # macro_indicators is a "latest snapshot" — one row per series per
+        # fetch_date. It has no UNIQUE(series_id, fetch_date) constraint, so a
+        # plain upsert *appended* every run and the table accumulated stale
+        # duplicates (two VIX values for the same day). Replace today's rows.
+        try:
+            self.supabase.table("macro_indicators").delete().eq("fetch_date", today).execute()
+        except Exception as exc:
+            print(f"[macro] snapshot dedup delete failed ({exc.__class__.__name__}); continuing")
+        self.supabase.table("macro_indicators").insert(rows).execute()
         return len(rows)
 
     def fetch_today(self) -> dict[str, dict[str, Any]]:

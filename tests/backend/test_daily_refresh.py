@@ -479,7 +479,13 @@ def test_rank_and_persist_trade_candidates_writes_to_supabase():
 
 
 def test_rank_and_persist_trade_candidates_no_qualifying_themes():
-    """If no theme passes the threshold, the function returns ([], []) and writes nothing."""
+    """If no theme passes the threshold, the function returns ([], []) and
+    upserts nothing — but it must still PRUNE any stale rows from a prior run.
+
+    A zero-candidate day used to leave the previous run's rows in place, so a
+    stale book was served as current. The function now deletes run_date < today
+    even when it writes no new rows, which correctly empties the table.
+    """
     os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
     os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
 
@@ -495,9 +501,17 @@ def test_rank_and_persist_trade_candidates_no_qualifying_themes():
 
     assert longs == []
     assert shorts == []
-    # No trade_candidates writes should have happened
-    table_names = [c.args[0] for c in mock_supabase.table.call_args_list if c.args]
-    assert "trade_candidates" not in table_names
+    # No upsert should have happened, but a prune (delete of stale rows) must.
+    upserts = [
+        c for c in mock_supabase.mock_calls
+        if ".upsert(" in str(c) and "trade_candidates" in str(c)
+    ]
+    assert not upserts, "no candidate should be upserted on a zero-candidate day"
+    deletes = [
+        c for c in mock_supabase.mock_calls
+        if ".delete(" in str(c)
+    ]
+    assert deletes, "stale trade_candidates must be pruned even on a zero-candidate day"
 
 
 def test_allocate_and_persist_portfolio_writes_positions():
@@ -733,3 +747,131 @@ class TestSignalsHistoryPersistsScores:
         assert not missing, f"signals history payload missing {missing}"
         assert row["hype_score"] == 52.5
         assert row["trade_score"] == 0.11
+
+
+# ─── Task 2: wire real news into L5 (theme_news store) ───────────────────────
+
+
+def test_build_theme_signals_attaches_source_tagged_headlines():
+    """build_theme_signals attaches a source-tagged `headlines` list per theme
+    so persist_theme_news can write the L5 agent's news context."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    from daily_refresh import build_theme_signals
+
+    today = date.today().isoformat()
+    news = [{"headline": "Fed holds rates steady", "date": today}]
+    posts = [{"title": "WSB debates the Fed", "date": today}]
+
+    with patch("daily_refresh.fetch_news_for_theme", return_value=news), \
+         patch("daily_refresh.fetch_posts_for_theme", return_value=posts), \
+         patch("daily_refresh.batch_sentiment", return_value=[0.1, 0.1]), \
+         patch("daily_refresh.supabase") as mock_supabase:
+        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = []
+        result = build_theme_signals([{"id": "t1", "name": "Fed Policy"}], date.today())
+
+    r = result[0]
+    assert "headlines" in r
+    assert len(r["headlines"]) == 2
+    assert {h["source"] for h in r["headlines"]} == {"brave", "reddit"}
+    assert {h["text"] for h in r["headlines"]} == {"Fed holds rates steady", "WSB debates the Fed"}
+
+
+def _capture_upserts(monkeypatch):
+    """Patch daily_refresh.supabase with a recorder that captures upsert payloads."""
+    import scripts.daily_refresh as dr
+    captured = {"payloads": [], "on_conflict": [], "raise_on_upsert": False}
+
+    class _Tbl:
+        def __init__(self, name):
+            self._name = name
+
+        def upsert(self, payload, **kw):
+            if captured["raise_on_upsert"]:
+                raise Exception('relation "theme_news" does not exist')
+            captured["payloads"].append(payload)
+            captured["on_conflict"].append(kw.get("on_conflict"))
+            return self
+
+        def execute(self):
+            return type("R", (), {"data": []})()
+
+    class _SB:
+        def table(self, name):
+            return _Tbl(name)
+
+    monkeypatch.setattr(dr, "supabase", _SB())
+    return dr, captured
+
+
+def test_persist_theme_news_writes_dedupes_and_guards_bad_dates(monkeypatch):
+    dr, captured = _capture_upserts(monkeypatch)
+
+    scored = [{
+        "theme_id": "t1",
+        "headlines": [
+            {"source": "brave", "text": "Fed holds rates", "date": "2026-07-23T10:00:00"},
+            {"source": "mock_reddit", "text": "Discussion: Fed", "date": "2 days ago"},  # bad date → None
+            {"source": "brave", "text": "Fed holds rates", "date": "2026-07-23"},          # duplicate → skipped
+            {"source": "brave", "text": "   ", "date": ""},                                # blank → skipped
+        ],
+    }]
+
+    n = dr.persist_theme_news(date(2026, 7, 23), scored)
+
+    assert n == 2, "duplicate and blank headlines must be dropped"
+    rows = captured["payloads"][0]
+    assert captured["on_conflict"][0] == "theme_id,run_date,headline"
+    by_text = {r["headline"]: r for r in rows}
+    assert by_text["Fed holds rates"]["published_date"] == "2026-07-23"
+    # Non-ISO "2 days ago" must not poison the batch — it lands as NULL.
+    assert by_text["Discussion: Fed"]["published_date"] is None
+
+
+def test_persist_theme_news_returns_zero_when_table_missing(monkeypatch):
+    dr, captured = _capture_upserts(monkeypatch)
+    captured["raise_on_upsert"] = True
+    scored = [{"theme_id": "t1", "headlines": [{"source": "brave", "text": "x", "date": ""}]}]
+    # Must not raise even if migration 018 is not deployed.
+    assert dr.persist_theme_news(date(2026, 7, 23), scored) == 0
+
+
+def test_persist_theme_news_no_headlines_is_noop(monkeypatch):
+    dr, captured = _capture_upserts(monkeypatch)
+    assert dr.persist_theme_news(date(2026, 7, 23), [{"theme_id": "t1"}]) == 0
+    assert captured["payloads"] == []
+
+
+# ─── Task 6: data-source provenance (RESIDUAL R0b) ────────────────────────────
+
+
+def test_classify_data_source():
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+    from daily_refresh import _classify_data_source
+
+    assert _classify_data_source([]) == "none"
+    assert _classify_data_source([{"source": "brave"}, {"source": "reddit"}]) == "real"
+    assert _classify_data_source([{"source": "mock_brave"}, {"source": "mock_reddit"}]) == "mock"
+    assert _classify_data_source([{"source": "brave"}, {"source": "mock_reddit"}]) == "mixed"
+
+
+def test_build_theme_signals_flags_mock_provenance():
+    """When the fetchers return mock-tagged items, the signal row is labelled."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+    from daily_refresh import build_theme_signals
+
+    today = date.today().isoformat()
+    mock_news = [{"headline": "Fed mock", "date": today, "source": "mock_brave"}]
+    mock_posts = [{"title": "Fed mock post", "date": today, "source": "mock_reddit"}]
+
+    with patch("daily_refresh.fetch_news_for_theme", return_value=mock_news), \
+         patch("daily_refresh.fetch_posts_for_theme", return_value=mock_posts), \
+         patch("daily_refresh.batch_sentiment", return_value=[0.0, 0.0]), \
+         patch("daily_refresh.supabase") as mock_supabase:
+        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = []
+        result = build_theme_signals([{"id": "t1", "name": "Fed Policy"}], date.today())
+
+    assert result[0]["data_source"] == "mock"

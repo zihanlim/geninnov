@@ -161,3 +161,42 @@ def test_unmapped_ticker_raises():
     """Unmapped tickers must raise — no silent fallback."""
     with pytest.raises(KeyError):
         classify("ZZZZ")
+
+
+def test_taxonomy_maps_are_co_extensive():
+    """The three taxonomy maps must have identical keys.
+
+    classify() and the hard-indexing sites in allocate_portfolio /
+    compute_book_metrics require a ticker to be in all three maps. When they
+    drift apart, classify() raises for a ticker that looks mapped — and it did:
+    the credit-lens ETFs (JNK, BKLN, ANGL, EMB, BIL) were in the asset-class map
+    but not sector/geo, so the flagship credit lens aborted the daily run. This
+    test fails at build time instead, the moment a ticker is added to one map
+    and not the others.
+    """
+    from backend.services.trade_ranker import _ASSET_CLASS_MAP
+    from backend.services.book_metrics import SECTOR_MAP, GEO_MAP
+
+    sector, geo, cls = set(SECTOR_MAP), set(GEO_MAP), set(_ASSET_CLASS_MAP)
+    assert sector == geo == cls, (
+        "taxonomy maps disagree — "
+        f"class-only: {sorted(cls - (sector & geo))}, "
+        f"sector/geo-only: {sorted((sector & geo) - cls)}"
+    )
+
+
+def test_every_mapped_ticker_classifies():
+    """Given co-extensive maps, classify() must succeed for every mapped ticker."""
+    from backend.services.book_metrics import SECTOR_MAP
+
+    for ticker in SECTOR_MAP:
+        result = classify(ticker)
+        assert result["ticker"] == ticker
+        assert result["sector"] and result["geo"] and result["asset_class"]
+
+
+def test_is_classified_matches_classify():
+    from backend.services.trade_ranker import is_classified
+
+    assert is_classified("HYG") is True
+    assert is_classified("ZZZZ") is False

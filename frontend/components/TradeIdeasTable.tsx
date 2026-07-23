@@ -28,18 +28,12 @@ interface TradeCandidate {
 type SortKey = "trade_score" | "hype_score" | "asset" | "theme";
 type DirectionFilter = "all" | "long" | "short";
 
-const FALLBACK_THESIS: Record<string, string> = {
-  TLT: "Powell signals September cut; 2s10s disinverting. Duration overweight into Jackson Hole.",
-  NVDA: "Hyperscaler capex revisions; Blackwell ramp on track. Sized smaller due to crowding.",
-  VST: "Power is the bottleneck; data-center utilities at 18x P/E vs 25x for hyperscalers.",
-  "RHM.DE": "Germany supplementary budget; order book +28% YoY. Multi-year rearmament cycle.",
-  INDA: "Domestic capex cycle in early innings; RBI in easing mode; FX stable.",
-  KWEB: "Property drag persists; deflation entrenched. Sentiment deteriorating, not stabilizing.",
-  ARKK: "Funding-dependent models at risk in late-cycle. Rate pivot bullish for duration, not growth.",
-  XHB: "Mortgage rates sticky; affordability at 2007 lows; builder sentiment rolling over.",
-  UNG: "Storage builds accelerating; curve in deep contango.",
-  SKF: "CRE exposure + deposit beta lag. NIM compression continues 2-3 quarters.",
-};
+// No FALLBACK_THESIS map here. This file used to carry ten hardcoded per-ticker
+// investment theses ("Powell signals September cut...") used whenever the real
+// `entry_thesis` was absent. They were authored in the frontend, presented in
+// the same grammar as pipeline output, and — as it happens — assigned to a
+// computed variable that the JSX never rendered. A missing thesis now reads as
+// missing.
 
 const TOTAL_NOTIONAL = 100_000_000; // $100M book
 
@@ -94,13 +88,6 @@ function fmtSignedWeight(d: NumericDerivation): string {
   const v = d.value * 100;
   const sign = v >= 0 ? "+" : "−";
   return `${sign}${Math.abs(v).toFixed(1)}%`;
-}
-
-function fmtPct(d: NumericDerivation): string {
-  if (d.value === null) return "—";
-  const v = d.value * 100;
-  const sign = v >= 0 ? "+" : "−";
-  return `${sign}${Math.abs(v).toFixed(2)}%`;
 }
 
 function fmtUsd(d: NumericDerivation): string {
@@ -233,9 +220,11 @@ export default function TradeIdeasTable({ initialLens }: { initialLens?: Lens } 
                 <th className="text-left px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Theme</th>
                 <th className="text-right px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">HypeScore</th>
                 <th className="text-right px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">TradeScore</th>
+                {/* `Asset Return` and `Contribution` used to sit here. Neither
+                    is persisted on trade_candidates, so both rendered "—" for
+                    every row of every book, forever. A column that can never
+                    populate is not a column. */}
                 <th className="text-right px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Signed Weight</th>
-                <th className="text-right px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Asset Return</th>
-                <th className="text-right px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Contribution</th>
                 <th className="text-right px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Notional</th>
                 <th className="text-left px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated">Status</th>
               </tr>
@@ -253,26 +242,6 @@ export default function TradeIdeasTable({ initialLens }: { initialLens?: Lens } 
                   weight !== null ? (isLong ? weight : -weight) : null;
                 const swStatus: NumericStatus =
                   signedWeight !== null ? "estimated" : "unavailable";
-
-                // Asset return: not persisted on trade_candidates. Until the
-                // pipeline wires a per-asset daily return column we mark this
-                // as unavailable rather than fabricating a number.
-                const assetReturn: NumericDerivation = derive(
-                  `trade.${c.asset}.asset_return`,
-                  null,
-                  "pct",
-                  "unavailable",
-                  runDateIso
-                );
-
-                // Contribution = signed_weight × asset_return. Stays
-                // unavailable unless we have both numbers.
-                const contribution: number | null =
-                  signedWeight !== null && assetReturn.value !== null
-                    ? signedWeight * assetReturn.value
-                    : null;
-                const contribStatus: NumericStatus =
-                  contribution !== null ? "estimated" : "unavailable";
 
                 // Notional: read straight from the row; the column is
                 // backfilled by daily_refresh via portfolio_positions join.
@@ -293,25 +262,14 @@ export default function TradeIdeasTable({ initialLens }: { initialLens?: Lens } 
                   swStatus,
                   runDateIso
                 );
-                const contribDer = derive(
-                  `trade.${c.asset}.contribution`,
-                  contribution,
-                  "pct",
-                  contribStatus,
-                  runDateIso
-                );
-
                 // Worst status drives the row badge.
                 const rowStatus: NumericStatus = [
                   swStatus,
-                  assetReturn.display_status,
-                  contribStatus,
                   notionalStatus,
-                ].reduce<NumericStatus>((worst, cur) =>
-                  severity(cur) > severity(worst) ? cur : worst,
+                ].reduce<NumericStatus>(
+                  (worst, cur) => (severity(cur) > severity(worst) ? cur : worst),
                   "exact"
                 );
-                const thesis = c.entry_thesis || FALLBACK_THESIS[c.asset] || `${c.asset} — ${c.themes?.name ?? "theme"} ${isLong ? "long" : "short"} candidate.`;
                 return (
                   <tr
                     key={c.id}
@@ -351,18 +309,6 @@ export default function TradeIdeasTable({ initialLens }: { initialLens?: Lens } 
                       }}
                     >
                       {fmtSignedWeight(swDer)}
-                    </td>
-                    <td
-                      className="px-[14px] py-3.5 border-b border-border text-right num text-text-secondary"
-                      data-testid="cell-asset-return"
-                    >
-                      {fmtPct(assetReturn)}
-                    </td>
-                    <td
-                      className="px-[14px] py-3.5 border-b border-border text-right num text-text-secondary"
-                      data-testid="cell-contribution"
-                    >
-                      {fmtPct(contribDer)}
                     </td>
                     <td
                       className="px-[14px] py-3.5 border-b border-border text-right num"

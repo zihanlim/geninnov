@@ -13,6 +13,15 @@ interface RegimeHeroProps {
   volLabel?: string;
   /** Optional date to scope the regime inputs panel to a specific run. */
   runDate?: string;
+  /**
+   * Share of the book's gross weight covered by a usable factor regression
+   * (R² ≥ 0.10), from `portfolio_factor_exposure.coverage`. A tilt computed over
+   * half the book is not the same claim as one computed over all of it, so it is
+   * labelled rather than presented bare.
+   */
+  factorCoverage?: number | null;
+  /** Why the factor tilt is absent. Shown instead of a bare "awaiting" string. */
+  factorUnavailableReason?: string;
 }
 
 const CYCLE_BADGE: Record<string, string> = {
@@ -70,6 +79,8 @@ export default function RegimeHero({
   cycleLabel,
   volLabel,
   runDate,
+  factorCoverage,
+  factorUnavailableReason,
 }: RegimeHeroProps) {
   return (
     <div
@@ -103,11 +114,33 @@ export default function RegimeHero({
       </div>
 
       <div>
-        <div className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-2.5">Factor tilt of book</div>
+        <div className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-2.5">
+          Factor tilt of book
+        </div>
         {factors.length > 0 ? (
-          factors.map((f) => <FactorBar key={f.name} {...f} />)
+          <>
+            {factors.map((f) => (
+              <FactorBar key={f.name} {...f} />
+            ))}
+            {typeof factorCoverage === "number" && (
+              <div
+                className="text-[10.5px] text-text-tertiary mt-2"
+                title="Share of gross book weight with a usable FF5+UMD regression (R² ≥ 0.10)"
+              >
+                Coverage {(factorCoverage * 100).toFixed(0)}% of gross
+                {factorCoverage < 0.999 && (
+                  <span className="text-warning ml-1">
+                    · tilt describes the covered sleeve only
+                  </span>
+                )}
+              </div>
+            )}
+          </>
         ) : (
-          <div className="text-text-tertiary text-[12px] py-2">Awaiting factor run…</div>
+          <div className="text-text-tertiary text-[12px] py-2 leading-[1.55]">
+            {factorUnavailableReason ??
+              "No book-level factor tilt for the latest run."}
+          </div>
         )}
       </div>
     </div>

@@ -333,6 +333,34 @@ def run_scenario_analysis(
     return results
 
 
+def scenario_results_to_dict(results: list[ScenarioResult]) -> list[dict]:
+    """Structured scenario results for persistence and rendering.
+
+    ``format_scenario_table`` renders these as a string for the LLM prompt; that
+    string is a dead end for the UI. This is the machine-readable twin persisted
+    to ``research_recommendations.scenario_results`` and rendered on /risk.
+
+    ``description`` is carried through from the Scenario definition so the UI can
+    explain what each shock assumes without duplicating the calibration.
+    """
+    by_name = {s.name: s for s in SCENARIOS}
+    out: list[dict] = []
+    for r in results:
+        scenario = by_name.get(r.scenario_name)
+        out.append({
+            "scenario_name": r.scenario_name,
+            "label": r.label,
+            "description": scenario.description if scenario else "",
+            "factor_shocks": dict(scenario.factor_shocks) if scenario else {},
+            "estimated_book_return": r.estimated_book_return,
+            "estimated_dollar_pnl": r.estimated_dollar_pnl,
+            "severity": r.severity,
+            # First entry is the summary line; the rest are per-position rows.
+            "contribution_breakdown": list(r.contribution_breakdown[1:]),
+        })
+    return out
+
+
 def format_scenario_table(results: list[ScenarioResult]) -> str:
     """Format scenario results as a compact table for the LLM prompt."""
     if not results:

@@ -1,7 +1,12 @@
 interface WatchItem {
   name: string;
   score: number;
-  delta: number;
+  /**
+   * Change in HypeScore vs the prior run, from theme_signals_history.
+   * `null` when no prior scored observation exists — rendered as "—" rather
+   * than an arrow, because a missing delta is not a flat one.
+   */
+  delta: number | null;
 }
 
 export default function Watchlist({ items }: { items: WatchItem[] }) {
@@ -9,8 +14,15 @@ export default function Watchlist({ items }: { items: WatchItem[] }) {
   return (
     <div className="flex flex-col gap-3">
       {items.map((t) => {
-        const up = t.delta >= 0;
-        const color = up ? "var(--long)" : "var(--short)";
+        const known = t.delta !== null;
+        const up = (t.delta ?? 0) >= 0;
+        // Bar colour tracks the score itself when no delta is known, so an
+        // unknown change never masquerades as a decline.
+        const color = !known
+          ? "var(--text-tertiary)"
+          : up
+            ? "var(--long)"
+            : "var(--short)";
         return (
           <div
             key={t.name}
@@ -25,8 +37,12 @@ export default function Watchlist({ items }: { items: WatchItem[] }) {
               />
             </div>
             <span className="num text-right text-text-secondary">{t.score.toFixed(1)}</span>
-            <span className={`num text-right font-semibold`} style={{ color }}>
-              {up ? "↑" : "↓"} {Math.abs(t.delta).toFixed(1)}
+            <span
+              className="num text-right font-semibold"
+              style={{ color }}
+              title={known ? undefined : "No prior scored run to compare against"}
+            >
+              {known ? `${up ? "↑" : "↓"} ${Math.abs(t.delta!).toFixed(1)}` : "—"}
             </span>
           </div>
         );

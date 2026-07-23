@@ -23,7 +23,7 @@ if (!apiKey) {
 
 const params = new URLSearchParams({
   q: query,
-  count: '20',
+  count: '50',   // max news results — denser attention signal (ADR-0028 root cause)
   ...(dateFrom ? { from: dateFrom } : {}),
 });
 
@@ -47,11 +47,16 @@ const req = https.get(
       }
       try {
         const data = JSON.parse(body);
-        const results = (data.results || []).map((item) => ({
-          headline: item.title,
-          date: (item.age || new Date().toISOString().split('T')[0]),
-          url: item.url,
-        }));
+        const today = new Date().toISOString().split('T')[0];
+        const results = (data.results || []).map((item) => {
+          // Brave returns `page_age` as an ISO timestamp ("2026-07-08T00:00:00")
+          // and `age` as a relative string ("2 weeks ago"). Use the ISO date so
+          // the Python side can bucket mentions by day (HypeScore volume +
+          // momentum depend on per-day counts); relative strings broke that.
+          const iso = (item.page_age || '').slice(0, 10);
+          const date = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : today;
+          return { headline: item.title, date, url: item.url };
+        });
         console.log(JSON.stringify(results));
       } catch (err) {
         console.error(`Failed to parse Brave response: ${err.message}`);

@@ -45,21 +45,39 @@ _ASSET_CLASS_MAP: dict[str, str] = {
     "UUP": "fx", "FXE": "fx", "EWZ": "fx", "DXY": "fx",
     # commodity
     "GLD": "commodity", "SLV": "commodity", "UNG": "commodity",
-    "OIH": "commodity", "CL": "commodity",
+    "OIH": "commodity", "CL": "commodity", "IAU": "commodity",
+    # equity (GDX holds gold-miner equities, so it is an equity ETF even though
+    # its theme is commodity-adjacent)
+    "GDX": "equity",
 }
+
+
+def is_classified(ticker: str) -> bool:
+    """True iff ``ticker`` is present in all three taxonomy maps.
+
+    Use this to filter a candidate pool BEFORE it reaches allocate_portfolio /
+    compute_book_metrics, which hard-index the maps. `theme_discovery` can emit
+    a ticker nobody has mapped yet; dropping that one candidate with a warning
+    keeps the daily run alive, whereas letting it reach the hard-index sites
+    aborts the entire pipeline. The maps themselves are kept co-extensive and a
+    test enforces it, so this only fires for a genuinely new ticker.
+    """
+    return (
+        ticker in SECTOR_MAP
+        and ticker in GEO_MAP
+        and ticker in _ASSET_CLASS_MAP
+    )
 
 
 def classify(ticker: str) -> dict:
     """Single seam for asset taxonomy. Unmapped tickers raise — no silent fallback.
 
     Returns ``{"ticker", "sector", "geo", "asset_class"}``. If any of the three
-    underlying maps is missing the ticker, raises ``KeyError``.
+    underlying maps is missing the ticker, raises ``KeyError``. Callers that must
+    survive a novel ticker should gate on `is_classified` first rather than
+    catch this.
     """
-    if (
-        ticker not in SECTOR_MAP
-        or ticker not in GEO_MAP
-        or ticker not in _ASSET_CLASS_MAP
-    ):
+    if not is_classified(ticker):
         raise KeyError(f"unclassified ticker: {ticker}")
     return {
         "ticker": ticker,

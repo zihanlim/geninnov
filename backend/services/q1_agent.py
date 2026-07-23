@@ -41,15 +41,23 @@ from typing import Any
 from supabase import Client, create_client
 
 from .hype_calculator import ScoringConfig
-from .trade_ranker import TradeCandidate
+from .trade_ranker import TradeCandidate, allocate_portfolio
 from .book_metrics import (
     compute_book_metrics,
     compute_correlation_matrix,
     format_book_metrics_summary,
+    book_metrics_to_dict,
+    correlation_pairs_to_dict,
+    cap_utilisation,
     MIN_ADV_Millions,
     SECTOR_MAP,
+    GEO_MAP,
 )
-from .scenario_analysis import run_scenario_analysis, format_scenario_table
+from .scenario_analysis import (
+    run_scenario_analysis,
+    format_scenario_table,
+    scenario_results_to_dict,
+)
 
 from ..derivations.advisory import (
     AdvisoryDerivation,
@@ -60,8 +68,8 @@ from ..derivations.advisory import (
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LLM client — MiniMax (preferred) → Anthropic Claude (fallback)
-# Priority: MINIMAX_API_KEY > ANTHROPIC_API_KEY
+# LLM client — MiniMax (preferred) → Anthropic Claude → Gemini (fallbacks)
+# Priority: MINIMAX_API_KEY > ANTHROPIC_API_KEY > GEMINI_API_KEY
 # ─────────────────────────────────────────────────────────────────────────────
 
 MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "")
@@ -70,7 +78,48 @@ MINIMAX_ENDPOINT = "https://api.minimax.io/v1/chat/completions"
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 DEFAULT_MODEL     = os.environ.get("ANTHROPIC_MODEL_ID", "claude-sonnet-4-20250514")
+
+# Google Gemini (final fallback) — see ADR-0026. Provider-agnostic per ADR-0013:
+# the citation guardrail + candidate hard-filter constrain whichever LLM answers,
+# so the provider is swappable without weakening the L5 contract.
+GEMINI_API_KEY  = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL    = os.environ.get("GEMINI_MODEL_ID", "gemini-flash-latest")
+GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+# Explicit provider selector. Without it, auto-priority (MiniMax > Anthropic >
+# Gemini) means a stray ANTHROPIC_API_KEY in the shell, or a MiniMax key in
+# backend/.env, silently hijacks a run the operator intended for Gemini. Set
+# LLM_PROVIDER=gemini|anthropic|minimax to pin it; "auto" keeps the old priority.
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "auto").strip().lower()
+
 PROMPT_VERSION = "v2.1.0"          # v2.1: added lens mode (multi_asset | credit | rates | equity | fx | commodity)
+
+
+def _select_provider() -> str:
+    """Which LLM provider _llm_complete will use. An explicit LLM_PROVIDER wins
+    when its key is set; otherwise fall back to priority order among the
+    configured keys. Returns 'minimax' | 'anthropic' | 'gemini' | 'none'."""
+    keyed = {
+        "minimax": bool(MINIMAX_API_KEY),
+        "anthropic": bool(ANTHROPIC_API_KEY),
+        "gemini": bool(GEMINI_API_KEY),
+    }
+    if LLM_PROVIDER in keyed and keyed[LLM_PROVIDER]:
+        return LLM_PROVIDER
+    for name in ("minimax", "anthropic", "gemini"):
+        if keyed[name]:
+            return name
+    return "none"
+
+
+def _active_model_id() -> str:
+    """The model id _llm_complete would use, for the audit log. Reflects the
+    model that actually answered (was hardcoded to the Anthropic default)."""
+    return {
+        "minimax": MINIMAX_MODEL,
+        "anthropic": DEFAULT_MODEL,
+        "gemini": GEMINI_MODEL,
+    }.get(_select_provider(), "none")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Lens mode — see ADR-0015
@@ -123,14 +172,37 @@ LENS_PROMPT_FRAMING: dict[str, str] = {
 }
 
 
-def _llm_complete(prompt: str, system: str = "", temperature: float = 0.0) -> str:
+def _strip_reasoning_and_fences(text: str) -> str:
+    """Clean an LLM completion for json.loads: drop MiniMax <think> blocks and
+    markdown ```json fences. Handles an UNCLOSED opening fence (a truncated
+    response) by stripping just the leading fence rather than failing to match
+    and leaving a leading ``` that breaks json.loads."""
+    import re
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    m = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    text = re.sub(r"^\s*```(?:json)?\s*", "", text)   # unclosed / truncated fence
+    text = re.sub(r"\s*```\s*$", "", text)
+    return text.strip()
+
+
+def _llm_complete(prompt: str, system: str = "", temperature: float = 0.0,
+                  response_schema: dict | None = None) -> str:
     """
-    Route LLM call: MiniMax (preferred) → Anthropic Claude (fallback).
-    Raises ValueError if neither provider is configured.
+    Route LLM call: MiniMax (preferred) → Anthropic Claude → Gemini (fallbacks).
+    Raises ValueError if no provider is configured.
     Returns raw text response.
+
+    ``response_schema`` (Gemini only): an OpenAPI-subset JSON schema that forces
+    the model to emit structured JSON. Used by reason_picks to *require* the
+    citations array — free-tier Gemini-flash otherwise omits it and the citation
+    guardrail falls back. Ignored by MiniMax/Anthropic (they get JSON via prompt).
     """
+    provider = _select_provider()
+
     # ── MiniMax (OpenAI-compatible) ──────────────────────────────────────────
-    if MINIMAX_API_KEY:
+    if provider == "minimax":
         import requests as _rq
 
         messages: list[dict[str, str]] = []
@@ -139,18 +211,28 @@ def _llm_complete(prompt: str, system: str = "", temperature: float = 0.0) -> st
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
+        payload: dict[str, Any] = {
+            "model": MINIMAX_MODEL,
+            "messages": messages,
+            # MiniMax-M3 is a reasoning model: internal reasoning eats the token
+            # budget, so 8192 was consumed before any JSON `content` was emitted
+            # (empty content → parse fail → fallback). Give generous headroom so
+            # reasoning AND the full 10-pick book fit.
+            "max_tokens": int(os.environ.get("MINIMAX_MAX_TOKENS", "24000")),
+            "temperature": temperature,
+        }
+        if response_schema is not None:
+            # JSON mode: return a single JSON object (suppresses <think> / prose)
+            # so the citations the model already writes inline become parseable.
+            payload["response_format"] = {"type": "json_object"}
+
         resp = _rq.post(
             MINIMAX_ENDPOINT,
             headers={
                 "Authorization": f"Bearer {MINIMAX_API_KEY}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": MINIMAX_MODEL,
-                "messages": messages,
-                "max_tokens": 4096,
-                "temperature": temperature,
-            },
+            json=payload,
             timeout=120,
         )
         if resp.status_code != 200:
@@ -160,19 +242,10 @@ def _llm_complete(prompt: str, system: str = "", temperature: float = 0.0) -> st
                 f"{err.get('error', {}).get('message', resp.text[:200])}"
             )
         text = resp.json()["choices"][0]["message"]["content"]
-        # MiniMax M-series prepends <think>...</think> reasoning blocks
-        # and often wraps the JSON in ```json ... ``` markdown fences.
-        # Strip both so JSON parsing in reason_picks / classify_news works cleanly.
-        import re
-        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-        # Strip markdown code fences (```json ... ``` or ``` ... ```)
-        md_match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
-        if md_match:
-            text = md_match.group(1)
-        return text.strip()
+        return _strip_reasoning_and_fences(text)
 
     # ── Anthropic Claude (fallback) ─────────────────────────────────────────
-    if ANTHROPIC_API_KEY:
+    if provider == "anthropic":
         import anthropic
 
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -187,9 +260,49 @@ def _llm_complete(prompt: str, system: str = "", temperature: float = 0.0) -> st
         resp = client.messages.create(**kwargs)
         return resp.content[0].text
 
-    # ── Neither configured ───────────────────────────────────────────────────
+    # ── Google Gemini (fallback) ─────────────────────────────────────────────
+    if provider == "gemini":
+        import requests as _rq
+
+        gen_cfg: dict[str, Any] = {"temperature": temperature, "maxOutputTokens": 4096}
+        if response_schema is not None:
+            # Structured output: force valid JSON matching the schema (so the
+            # citations array is always present). Response comes back un-fenced.
+            gen_cfg["responseMimeType"] = "application/json"
+            gen_cfg["responseSchema"] = response_schema
+        body: dict[str, Any] = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": gen_cfg,
+        }
+        if system:
+            body["system_instruction"] = {"parts": [{"text": system}]}
+
+        resp = _rq.post(
+            GEMINI_ENDPOINT.format(model=GEMINI_MODEL),
+            params={"key": GEMINI_API_KEY},
+            headers={"Content-Type": "application/json"},
+            json=body,
+            timeout=120,
+        )
+        if resp.status_code != 200:
+            err = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+            raise ValueError(
+                f"Gemini API error {resp.status_code}: "
+                f"{err.get('error', {}).get('message', resp.text[:200])}"
+            )
+        data = resp.json()
+        try:
+            parts = data["candidates"][0]["content"]["parts"]
+            text = "".join(p.get("text", "") for p in parts)
+        except (KeyError, IndexError) as exc:
+            raise ValueError(f"Gemini returned no usable candidate: {str(data)[:200]}") from exc
+        # Gemini can still wrap JSON in ```json ... ``` fences when not in
+        # structured-output mode; strip them (robust to truncation) for json.loads.
+        return _strip_reasoning_and_fences(text)
+
+    # ── None configured ──────────────────────────────────────────────────────
     raise ValueError(
-        "No LLM provider configured. Set MINIMAX_API_KEY or ANTHROPIC_API_KEY."
+        "No LLM provider configured. Set MINIMAX_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY."
     )
 
 
@@ -224,6 +337,46 @@ class Q1State(dict):
 # ─────────────────────────────────────────────────────────────────────────────
 # Node 1: aggregate_context  (pure fn)
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _load_recent_headlines(sb: Client, run_date: str, lookback_days: int = 7) -> list[dict]:
+    """
+    Read last-N-days headlines from `theme_news` for classify_news / reason_picks.
+
+    Returns [{text, date, theme_id, source}]. Returns [] — and the agent falls
+    back to macro-only context — when the table is absent (migration 018 not
+    applied) or empty. This is the read side of the news-wiring: previously
+    aggregate_context hardcoded an empty list so the LLM never saw any news.
+    """
+    from datetime import date as _date, timedelta as _timedelta
+    try:
+        cutoff = (_date.fromisoformat(run_date) - _timedelta(days=lookback_days)).isoformat()
+    except (TypeError, ValueError):
+        cutoff = run_date
+    try:
+        rows = (
+            sb.table("theme_news")
+            .select("theme_id, headline, source, published_date, run_date")
+            .gte("run_date", cutoff)
+            .lte("run_date", run_date)
+            .limit(500)
+            .execute()
+            .data
+        )
+    except Exception as exc:
+        print(f"[aggregate_context] theme_news unavailable ({exc.__class__.__name__}); "
+              f"L5 proceeds with macro-only context.")
+        return []
+    return [
+        {
+            "text": r.get("headline", ""),
+            "date": r.get("published_date") or r.get("run_date"),
+            "theme_id": r.get("theme_id"),
+            "source": r.get("source"),
+        }
+        for r in (rows or [])
+        if r.get("headline")
+    ]
+
 
 def aggregate_context(state: Q1State) -> Q1State:
     """
@@ -291,19 +444,11 @@ def aggregate_context(state: Q1State) -> Q1State:
     risk_rows = sb.table("portfolio_risk").select("*").limit(1).execute().data
     risk_metrics = dict(risk_rows[0]) if risk_rows else {}
 
-    # L1 news: collect last-7d raw headlines for classify_news node
-    news_rows = (
-        sb.table("theme_signals_history")
-        .select("theme_id")
-        .eq("run_date", state["run_date"])
-        .execute()
-        .data
-    )
-    # News lives in Brave/Reddit — pull from the external fetch logs stored in Supabase
-    # We read from the raw news cache if it exists, otherwise build from theme signals
-    # (In production this would be the collected news table; for now we use an empty list
-    #  and let the LLM work with the macro_snapshot as the primary context.)
-    news_headlines: list[dict] = []
+    # L1 news: collect last-7d raw headlines for classify_news / reason_picks.
+    # Persisted by scripts/daily_refresh.persist_theme_news (migration 018).
+    # If the table is absent, this returns [] and the agent reasons over the
+    # macro snapshot alone — the prior behaviour, now an explicit fallback.
+    news_headlines = _load_recent_headlines(sb, state["run_date"])
 
     state["theme_scores"] = theme_scores
     state["factor_exposures"] = factor_exposures
@@ -359,10 +504,24 @@ def screen_candidates(state: Q1State) -> Q1State:
     if lens != "multi_asset":
         lens_tickers = set(LENS_TICKER_FALLBACK.get(lens, set()))
 
+    # Attrition tracking. "What did the screen reject, and why" is the first
+    # question asked of any systematic book, and until now the answer existed
+    # only as `continue` statements. Counted here, persisted as
+    # research_recommendations.screening_funnel, rendered on /book.
+    themes_total = len(state["theme_scores"])
+    dropped_hype = 0
+    dropped_direction = 0
+    dropped_lens = 0
+    dropped_r2 = 0
+    top_score_below_threshold = 0.0
+
     for t in state["theme_scores"]:
         if t["hype_score"] < threshold:
+            dropped_hype += 1
+            top_score_below_threshold = max(top_score_below_threshold, t["hype_score"])
             continue
         if t["trade_score"] == 0:
+            dropped_direction += 1
             continue
 
         direction = "long" if t["trade_score"] > 0 else "short"
@@ -371,6 +530,7 @@ def screen_candidates(state: Q1State) -> Q1State:
         for asset in assets:
             # Lens filter — drop assets outside the selected lens
             if lens_tickers is not None and asset not in lens_tickers:
+                dropped_lens += 1
                 continue
 
             is_etf = asset in LIQUID_ETF_UNIVERSE
@@ -380,6 +540,7 @@ def screen_candidates(state: Q1State) -> Q1State:
                 fe = factor_exp.get(asset, {})
                 r2 = fe.get("r_squared", 0.0)
                 if not is_etf and r2 < 0.10:
+                    dropped_r2 += 1
                     continue   # insufficient history for this equity
 
             eligible.append({
@@ -409,6 +570,59 @@ def screen_candidates(state: Q1State) -> Q1State:
               f"candidates (< 10). Consider widening the lens.")
 
     state["candidates"] = candidate_pool[:30]   # cap at 30 for LLM context
+
+    deduped = len(eligible) - len(candidate_pool)
+    state["screening_funnel"] = [
+        {
+            "stage": "themes scored",
+            "remaining": themes_total,
+            "removed": 0,
+            "reason": "All themes with an L1 signal for this run.",
+        },
+        {
+            "stage": f"HypeScore >= {threshold:g}",
+            "remaining": themes_total - dropped_hype,
+            "removed": dropped_hype,
+            "reason": (
+                f"Below the attention threshold. Highest rejected score: "
+                f"{top_score_below_threshold:.1f}."
+                if dropped_hype else "No themes rejected on attention."
+            ),
+        },
+        {
+            "stage": "has a direction",
+            "remaining": themes_total - dropped_hype - dropped_direction,
+            "removed": dropped_direction,
+            "reason": "TradeScore == 0, so neither long nor short is indicated.",
+        },
+        {
+            "stage": f"lens = {lens}",
+            "remaining": len(eligible) + dropped_r2,
+            "removed": dropped_lens,
+            "reason": (
+                "Asset outside the selected asset-class lens."
+                if lens != "multi_asset" else "No lens filter applied."
+            ),
+        },
+        {
+            "stage": "factor R^2 >= 0.10",
+            "remaining": len(eligible),
+            "removed": dropped_r2,
+            "reason": "Insufficient regression history to trust the beta (ETFs exempt).",
+        },
+        {
+            "stage": "dedupe (asset, direction)",
+            "remaining": len(candidate_pool),
+            "removed": deduped,
+            "reason": "Same asset reached via multiple themes; highest HypeScore kept.",
+        },
+        {
+            "stage": "candidate pool (cap 30)",
+            "remaining": len(state["candidates"]),
+            "removed": max(0, len(candidate_pool) - 30),
+            "reason": "Truncated to fit the LLM context window.",
+        },
+    ]
 
     return state
 
@@ -552,20 +766,30 @@ Headlines:
 
 Return only the JSON array."""
 
+# classify_news is a *nice-to-have* digest; reason_picks is the critical call.
+# On a rate-limited free tier (Gemini: ~20 req/min) classifying all ~160 daily
+# headlines in batches of 10 burned the whole quota before reason_picks ran →
+# every book fell back. Cap the sample and use large batches so classify_news
+# costs ≤2 calls and leaves quota for the picks. Tune via env if you have a
+# higher tier.
+CLASSIFY_MAX_HEADLINES = int(os.environ.get("CLASSIFY_MAX_HEADLINES", "40"))
+CLASSIFY_BATCH_SIZE = int(os.environ.get("CLASSIFY_BATCH_SIZE", "20"))
+
 
 def classify_news(state: Q1State) -> Q1State:
     """
-    Batch LLM call: tag last-7d headlines with {category, sentiment, theme, summary}.
-    Runs in batches of 10. Results stored in state for reason_picks to use.
+    Batch LLM call: tag recent headlines with {category, sentiment, theme, summary}.
+    Bounded to CLASSIFY_MAX_HEADLINES in batches of CLASSIFY_BATCH_SIZE so it never
+    starves reason_picks of a rate-limited LLM quota. Results feed reason_picks.
     """
-    headlines = state.get("news_headlines", [])
+    headlines = state.get("news_headlines", [])[:CLASSIFY_MAX_HEADLINES]
     if not headlines:
         # No news collected — use macro snapshot keys as the news context
         state["classified_news"] = []
         return state
 
     classified: list[dict] = []
-    batch_size = 10
+    batch_size = CLASSIFY_BATCH_SIZE
 
     for i in range(0, len(headlines), batch_size):
         batch = headlines[i : i + batch_size]
@@ -589,6 +813,49 @@ def classify_news(state: Q1State) -> Q1State:
 # Node 4: reason_picks  (main LLM call)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Gemini structured-output schema (OpenAPI subset). Forces the model to emit the
+# citations array — free-tier Gemini-flash otherwise omits it, so verify_citations
+# rejects every run and the book silently degrades to the deterministic fallback.
+# `minItems` on citations guarantees the array is non-empty.
+_CITATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "text": {"type": "string"},
+        "source": {"type": "string"},
+        "value": {"type": "number"},
+    },
+    "required": ["text", "source"],
+}
+REASON_PICKS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "picks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "rank": {"type": "integer"},
+                    "direction": {"type": "string", "enum": ["long", "short"]},
+                    "asset": {"type": "string"},
+                    "theme": {"type": "string"},
+                    "hype_score": {"type": "number"},
+                    "trade_score": {"type": "number"},
+                    "time_horizon": {"type": "string"},
+                    "thesis": {"type": "string"},
+                    "counter_thesis": {"type": "string"},
+                    "risk": {"type": "string"},
+                    "citations": {"type": "array", "items": _CITATION_SCHEMA},
+                },
+                "required": ["direction", "asset", "theme", "thesis", "counter_thesis"],
+            },
+        },
+        "book_view": {"type": "string"},
+        "book_risks": {"type": "array", "items": {"type": "string"}},
+        "citations": {"type": "array", "items": _CITATION_SCHEMA, "minItems": 2},
+    },
+    "required": ["picks", "book_view", "book_risks", "citations"],
+}
+
 REASON_PICKS_SYSTEM = """You are a systematic macro portfolio manager producing a Q1 investment book
 for a quantitative hedge fund. You are rigorous, specific, and cite every numeric claim.
 
@@ -603,7 +870,7 @@ You are given:
   - Tradable candidates ranked by HypeScore
 
 Your job:
-  1. Select the top 5 LONG and top 5 SHORT from the candidate pool
+  1. Select the best LONG and SHORT picks from the candidate pool — up to 5 each
   2. Ensure the resulting book has coherent factor tilts (avoid unintended crowded bets)
   3. Reference the pre-computed book_metrics and scenario analysis in your reasoning
   4. For each pick: specify a time horizon and a measurable counter-thesis
@@ -642,7 +909,8 @@ Output format (respond ONLY with valid JSON, no markdown):
 }
 
 Rules:
-- picks must contain exactly 5 longs and 5 shorts (total 10 picks)
+- pick UP TO 5 longs and UP TO 5 shorts, drawn ONLY from the candidate pool; if the
+  pool is thin, return FEWER picks — never invent tickers that aren't candidates
 - every numeric value in thesis, catalysts, risk, counter_thesis, or book_view MUST cite a source
 - time_horizon must be specific: "1-2 weeks" | "2-4 weeks" | "1-3 months" | "3-6 months"
 - counter_thesis MUST include a measurable disqualifier: a specific price/yield/data level, not a vague concern
@@ -697,7 +965,7 @@ Concentration HHI: {hhi}
 {news_summary}
 
 === INSTRUCTIONS ===
-Select top 5 LONG and top 5 SHORT from the candidate pool.
+Select up to 5 LONG and up to 5 SHORT from the candidate pool (fewer if the pool is thin).
 Check the correlation warnings — do not add picks that compound existing high-correlation exposures.
 Check the cap violations — avoid picks that worsen sector/geo concentration.
 Reference the scenario analysis in your book_risks.
@@ -739,17 +1007,30 @@ def _make_theme_table(theme_scores: list[dict]) -> str:
     return header + "\n" + "\n".join(rows)
 
 
+def _num(v, default: float = 0.0) -> float:
+    """Coerce a possibly-NULL DB numeric to a float for formatting.
+
+    dict.get(k, default) returns a *stored* None rather than the default, and
+    real factor_exposures rows carry NULL betas / r_squared — `None:>7.2f` then
+    raises `TypeError: unsupported format string passed to NoneType.__format__`
+    and takes down the whole L5 run. Coerce None (and non-numeric) to default.
+    """
+    try:
+        return float(v) if v is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
 def _make_factor_table(factor_exp: dict[str, dict]) -> str:
     if not factor_exp:
         return "(no factor exposure data)"
     header = "  asset | beta_mkt | beta_smb | beta_hml | beta_rmw | beta_cma | beta_umd | R2"
     rows = []
     for asset, vals in list(factor_exp.items())[:15]:
-        r2 = vals.get("r_squared")
         rows.append(
-            f"  {asset:<8} | {vals.get('beta_mkt', 0):>8.2f} | {vals.get('beta_smb', 0):>7.2f} | "
-            f"{vals.get('beta_hml', 0):>8.2f} | {vals.get('beta_rmw', 0):>8.2f} | "
-            f"{vals.get('beta_cma', 0):>8.2f} | {vals.get('beta_umd', 0):>7.2f} | {r2:>4.2f}"
+            f"  {asset:<8} | {_num(vals.get('beta_mkt')):>8.2f} | {_num(vals.get('beta_smb')):>7.2f} | "
+            f"{_num(vals.get('beta_hml')):>8.2f} | {_num(vals.get('beta_rmw')):>8.2f} | "
+            f"{_num(vals.get('beta_cma')):>8.2f} | {_num(vals.get('beta_umd')):>7.2f} | {_num(vals.get('r_squared')):>4.2f}"
         )
     return header + "\n" + "\n".join(rows)
 
@@ -815,13 +1096,27 @@ def reason_picks(state: Q1State) -> Q1State:
 
     while retries <= max_retries:
         try:
-            raw = _llm_complete(prompt, system=REASON_PICKS_SYSTEM)
+            raw = _llm_complete(prompt, system=REASON_PICKS_SYSTEM,
+                                response_schema=REASON_PICKS_SCHEMA)
             parsed = json.loads(raw)
 
             state["picks"] = parsed.get("picks", [])
             state["book_view"] = parsed.get("book_view", "")
             state["book_risks"] = parsed.get("book_risks", [])
-            state["citations"] = parsed.get("citations", [])
+            citations = parsed.get("citations", []) or []
+            if not citations:
+                # Some models cite inside each pick but omit the top-level summary
+                # array that verify_citations scans. Aggregate the per-pick
+                # citations (deduped) so a well-cited book isn't rejected on a
+                # formatting technicality.
+                seen: set = set()
+                for p in state["picks"]:
+                    for c in (p.get("citations") or []):
+                        key = (c.get("source"), c.get("text"))
+                        if c.get("source") and key not in seen:
+                            seen.add(key)
+                            citations.append(c)
+            state["citations"] = citations
             state["retries"] = retries
             # T18: LLM succeeded — the body is NOT a fallback synthesis.
             state["fallback_used"] = False
@@ -845,12 +1140,144 @@ def reason_picks(state: Q1State) -> Q1State:
 # Node 5: verify_citations  (pure fn guardrail)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Citation value-reconciliation tolerance. A cited number is accepted when it is
+# within max(CITATION_ABS_TOL, CITATION_REL_TOL * |actual|) of the source value.
+# The snapshot is fed to the LLM *with units* (e.g. BAMLH0A0HYM2 = 320.0 in bps,
+# DGS10 = 4.32 in pct), so a well-behaved citation reports the value in the same
+# units as the source — no cross-unit conversion is needed here.
+CITATION_REL_TOL = 0.02   # 2% relative band
+CITATION_ABS_TOL = 0.01   # absolute floor (keeps small-magnitude scores checkable)
+
+
+def _citation_claimed_value(cit: dict) -> float | None:
+    """
+    The number a citation asserts about its source.
+
+    Prefer the explicit ``value`` field (the LLM's structured claim). If absent,
+    fall back to the *sole* number in the citation text. Text with zero or
+    multiple numbers is ambiguous — we can't reconcile it to a single source
+    value, so we return None and let the source-key check stand on its own.
+    """
+    v = cit.get("value")
+    if isinstance(v, (int, float)):
+        return float(v)
+    import re
+    nums = re.findall(r"-?\d+\.?\d*", cit.get("text", "") or "")
+    if len(nums) == 1:
+        try:
+            return float(nums[0])
+        except ValueError:
+            return None
+    return None
+
+
+def _citation_value_matches(claimed: float, actual) -> bool:
+    """True when ``claimed`` is within tolerance of the numeric ``actual``."""
+    if actual is None:
+        return False
+    try:
+        actual_f = float(actual)
+    except (TypeError, ValueError):
+        return False
+    tol = max(CITATION_ABS_TOL, CITATION_REL_TOL * abs(actual_f))
+    return abs(claimed - actual_f) <= tol
+
+
+def _collect_known_values(state: Q1State) -> list[float]:
+    """Every numeric value the model was shown across the L0–L4 surfaces — the
+    universe a cited number must be grounded in. Includes macro, theme scores,
+    risk, regime, and the numbers embedded in the computed tables (book metrics,
+    scenarios, factor/theme tables) that the prompt renders verbatim."""
+    import re
+    vals: list[float] = []
+
+    def add(x):
+        try:
+            vals.append(float(x))
+        except (TypeError, ValueError):
+            pass
+
+    for meta in (state.get("macro_snapshot") or {}).values():
+        add(meta.get("value"))
+    for t in (state.get("theme_scores") or []):
+        add(t.get("hype_score")); add(t.get("trade_score")); add(t.get("avg_sentiment"))
+    risk = state.get("risk_metrics") or {}
+    for k in ("var_95", "cvar_95", "sharpe", "beta", "concentration_hhi"):
+        add(risk.get(k))
+    regime = state.get("regime") or {}
+    for k in ("vix_level", "hy_oas", "yield_curve_slope", "real_rate", "spx_breadth", "vix_term_diff"):
+        add(regime.get(k))
+
+    # Standard derived macro metrics a PM routinely cites — deterministic
+    # functions of grounded inputs, so they ARE grounded even though they aren't
+    # raw series (VIX term structure, 2s10s slope in pct & bps, real rate).
+    m = state.get("macro_snapshot") or {}
+
+    def mv(k):
+        try:
+            return float(m[k]["value"])
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    vix, vix3m = mv("^VIX"), mv("^VIX3M")
+    dgs10, dgs2, t10yie = mv("DGS10"), mv("DGS2"), mv("T10YIE")
+    if vix is not None and vix3m is not None:
+        add(vix - vix3m)
+    if dgs10 is not None and dgs2 is not None:
+        add(dgs10 - dgs2); add((dgs10 - dgs2) * 100)
+    if dgs10 is not None and t10yie is not None:
+        add(dgs10 - t10yie)
+
+    blobs = [state.get("book_metrics_summary") or "", state.get("scenario_table") or ""]
+    try:
+        blobs.append(_make_theme_table(state.get("theme_scores") or []))
+        blobs.append(_make_factor_table(state.get("factor_exposures") or {}))
+    except Exception:
+        pass
+    for b in blobs:
+        for n in re.findall(r"-?\d+\.?\d*", b):
+            add(n)
+    return vals
+
+
+def _value_is_grounded(claimed: float, known: list[float]) -> bool:
+    """True when ``claimed`` matches some value the model was shown (tight tol)."""
+    for kv in known:
+        if abs(claimed - kv) <= max(0.02, 0.01 * abs(kv)):
+            return True
+    return False
+
+
+def _citation_numbers(cit: dict) -> list[float]:
+    """Every number a citation references — the explicit value field plus every
+    number in its text. Lets grounding accept a citation that quotes a derived
+    metric (a VIX term structure) *alongside* its grounded components, while a
+    citation whose only number is fabricated still has nothing grounded."""
+    import re
+    nums: list[float] = []
+    v = cit.get("value")
+    if isinstance(v, (int, float)):
+        nums.append(float(v))
+    for n in re.findall(r"-?\d+\.?\d*", cit.get("text", "") or ""):
+        try:
+            nums.append(float(n))
+        except ValueError:
+            pass
+    return nums
+
+
 def verify_citations(state: Q1State) -> Q1State:
     """
-    Scan picks + book_view for un-cited numbers.
-    Pull cited values from macro_snapshot / theme_scores / risk_metrics.
-    If a cited value doesn't match or a number is un-cited → reject + retry reason_picks.
-    Max 2 retries (enforced by reason_picks).
+    Guardrail: every cited *number* must be grounded in the frozen L0–L4 inputs.
+
+    A citation passes when either (1) its source key resolves in the snapshot and
+    the value matches within tolerance (ADR-0019 exact reconciliation), or (2) its
+    value is grounded — it matches some number the model was actually shown across
+    macro / regime / theme / risk / book-metrics / scenario surfaces. Grounding
+    (ADR-0027) accepts correctly-valued citations that use a human source *label*
+    (e.g. "L3 regime classification") instead of the exact key, while still
+    rejecting a number that appears nowhere in the inputs (a hallucination).
+    Any failure → reject → retry reason_picks (max 2).
     """
     if not state.get("citations"):
         # No citations means the LLM skipped the citation requirement
@@ -861,6 +1288,7 @@ def verify_citations(state: Q1State) -> Q1State:
     macro = state.get("macro_snapshot") or {}
     theme_scores = state.get("theme_scores") or []
     risk = state.get("risk_metrics") or {}
+    regime = state.get("regime") or {}
 
     # Build lookup: source key → actual value
     source_map: dict[str, float | str | None] = {}
@@ -872,26 +1300,52 @@ def verify_citations(state: Q1State) -> Q1State:
         source_map[f"theme:{t['theme_id']}:sentiment"] = t["avg_sentiment"]
     for key in ["var_95", "cvar_95", "sharpe", "beta", "concentration_hhi"]:
         source_map[key] = risk.get(key)
+    for k in ("vix_level", "hy_oas", "yield_curve_slope", "real_rate", "spx_breadth", "vix_term_diff"):
+        if regime.get(k) is not None:
+            source_map[f"regime:{k}"] = regime[k]
 
+    known_values = _collect_known_values(state)
+
+    checked = 0
     failures: list[str] = []
     for cit in state.get("citations", []):
         src = cit.get("source", "")
         text = cit.get("text", "")
-        # Extract numeric value from text (crude but sufficient)
-        import re
-        numbers = re.findall(r"-?\d+\.?\d*", text)
-        if not numbers:
+        claimed = _citation_claimed_value(cit)
+        nums = _citation_numbers(cit)
+        if claimed is None and not nums:
+            # Qualitative citation — no number to reconcile. Accept, don't count.
             continue
-        expected = source_map.get(src)
-        if expected is None:
-            # Source key not in snapshot — flag it
-            failures.append(f"Unrecognised source key '{src}' in citation: '{text}'")
 
-    if failures:
+        checked += 1
+        # (1) exact source-key value match (ADR-0019)
+        if claimed is not None and src in source_map and _citation_value_matches(claimed, source_map[src]):
+            continue
+        # (2) value-grounding: any number in the citation is a real input value
+        if any(_value_is_grounded(n, known_values) for n in nums):
+            continue
+
+        if src in source_map:
+            failures.append(
+                f"Cited value {claimed} does not match source '{src}'="
+                f"{source_map[src]} and is not grounded: '{text}'"
+            )
+        else:
+            failures.append(f"Cited value {claimed} (source '{src}') not grounded: '{text}'")
+
+    # Verify when nearly all numeric citations ground. A derived metric the model
+    # computed from grounded inputs (a term structure, a spread) is not a
+    # hallucination, so a small ungrounded minority is tolerated; a book where a
+    # large share of numbers appear nowhere in the inputs is rejected (ADR-0027).
+    grounded_ratio = ((checked - len(failures)) / checked) if checked else 1.0
+    if failures and grounded_ratio < 0.8:
         state["verified"] = False
-        state["error"] = "Citation verification failed: " + "; ".join(failures)
+        state["error"] = "Citation verification failed: " + "; ".join(failures[:8])
         return state
 
+    if failures:
+        print(f"[verify_citations] tolerated {len(failures)}/{checked} ungrounded "
+              f"citations ({grounded_ratio:.0%} grounded, e.g. {failures[0][:100]})")
     state["verified"] = True
     state["error"] = None
     return state
@@ -903,31 +1357,138 @@ def verify_citations(state: Q1State) -> Q1State:
 
 def size_positions(state: Q1State) -> Q1State:
     """
-    HypeScore-weighted allocation of $100M across the 10 picks.
-    Each pick gets: notional = (hype_score / sum_hype) * total_capital
-    Also enriches picks with notional + weight fields.
+    HypeScore-weighted allocation of $100M across the 10 picks, WITH the
+    single-name / sector / geography caps enforced.
+
+    This delegates to ``trade_ranker.allocate_portfolio`` rather than
+    reimplementing the weighting. The previous implementation normalised by
+    HypeScore alone and applied no caps at all, despite the module docstring and
+    ARCHITECTURE.md both claiming cap enforcement — so a single dominant theme
+    could take an unbounded share of the book. It also assigned *positive*
+    weights to shorts, which made the resulting book report gross = 100% and
+    net = 100%: arithmetically not a long-short book.
+
+    Each pick is enriched with:
+      weight         unsigned share of capital (what the caps are applied to)
+      signed_weight  negative for shorts — the number book/risk math must use
+      notional       weight * total_capital
     """
     picks = state.get("picks", [])
     if not picks:
         state["error"] = "No picks to size — using fallback"
         return fallback_picks(state)
 
-    total_capital = state.get("cfg", None)
-    total_capital = total_capital.total_capital if total_capital else 100_000_000.0
+    cfg = state.get("cfg")
+    total_capital = cfg.total_capital if cfg else 100_000_000.0
 
-    total_hype = sum(p.get("hype_score", 0) for p in picks)
-    if total_hype == 0:
-        per_pick = total_capital / len(picks)
-        for p in picks:
-            p["notional"] = per_pick
-            p["weight"] = 1.0 / len(picks)
-    else:
-        for p in picks:
-            share = p.get("hype_score", 0) / total_hype
-            p["notional"] = share * total_capital
-            p["weight"] = share
+    # allocate_portfolio operates on TradeCandidate; build them from the picks.
+    # An unmapped ticker raises KeyError inside classify()/SECTOR_MAP by design
+    # (no silent fallback), so drop unmappable picks loudly rather than crash the
+    # whole run — the LLM is constrained to the candidate set, but a fallback
+    # path or a hand-edited pick could still introduce one.
+    sizable: list[TradeCandidate] = []
+    kept: list[dict] = []
+    dropped: list[str] = []
+    for p in picks:
+        asset = p.get("asset", "")
+        if asset not in SECTOR_MAP or asset not in GEO_MAP:
+            dropped.append(asset or "<blank>")
+            continue
+        sizable.append(TradeCandidate(
+            theme_id=p.get("theme_id") or "",
+            asset=asset,
+            direction=p.get("direction", "long"),
+            trade_score=float(p.get("trade_score") or 0.0),
+            hype_score=float(p.get("hype_score") or 0.0),
+            avg_sentiment=float(p.get("avg_sentiment") or 0.0),
+        ))
+        kept.append(p)
 
-    state["picks"] = picks
+    if dropped:
+        print(f"[size_positions] Dropped unmappable tickers (no sector/geo): {dropped}")
+
+    if not sizable:
+        state["error"] = "No sizable picks after taxonomy check — using fallback"
+        return fallback_picks(state)
+
+    positioned = allocate_portfolio(
+        sizable,
+        total_capital,
+        sector_map=SECTOR_MAP,
+        geo_map=GEO_MAP,
+    )
+
+    for pick, (_cand, notional, weight) in zip(kept, positioned):
+        sign = -1.0 if pick.get("direction") == "short" else 1.0
+        pick["weight"] = weight
+        pick["signed_weight"] = sign * weight
+        pick["notional"] = notional
+
+    state["picks"] = kept
+    return state
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Node 9: finalise_book_analytics  (pure fn)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def finalise_book_analytics(state: Q1State) -> Q1State:
+    """
+    Recompute book metrics, correlations and stress scenarios against the FINAL
+    SIZED book, and emit them as structured records for persistence.
+
+    ``compute_book_metrics_node`` and ``run_scenario_analysis_node`` run *before*
+    reason_picks, over the equal-weighted candidate pool, because the LLM needs
+    them as prompt context. That makes them a description of a portfolio nobody
+    holds: 30 candidates at 3.3% each, rather than 10 positions at their actual
+    cap-enforced weights. Both were also discarded after prompt construction.
+
+    This node closes both gaps. It runs last, on the real book, and writes
+    machine-readable dicts that `_persist_to_supabase` stores and the /risk page
+    renders.
+    """
+    picks = state.get("picks") or []
+    cfg = state.get("cfg")
+    total_capital = cfg.total_capital if cfg else 100_000_000.0
+
+    if not picks:
+        state["book_metrics_final"] = None
+        state["scenario_results_final"] = []
+        state["correlation_pairs_final"] = []
+        state["cap_utilisation_final"] = None
+        return state
+
+    factor_exp = state.get("factor_exposures") or {}
+
+    bm = compute_book_metrics(
+        picks=picks,
+        factor_exposures=factor_exp,
+        total_capital=total_capital,
+    )
+
+    corr_pairs = compute_correlation_matrix(picks, lookback_days=252)
+    scenarios = run_scenario_analysis(
+        picks=picks,
+        book_metrics=bm,
+        total_capital=total_capital,
+    )
+
+    state["book_metrics_final"] = book_metrics_to_dict(bm)
+    state["scenario_results_final"] = scenario_results_to_dict(scenarios)
+    state["correlation_pairs_final"] = correlation_pairs_to_dict(corr_pairs)
+    state["cap_utilisation_final"] = cap_utilisation(bm, picks)
+
+    worst = min(
+        (s["estimated_book_return"] for s in state["scenario_results_final"]),
+        default=0.0,
+    )
+    print(
+        f"[finalise_book_analytics] {len(picks)} positions | "
+        f"gross {bm.gross_exposure:.1%} net {bm.net_exposure:+.1%} | "
+        f"worst scenario {worst:+.2%} | "
+        f"{len(corr_pairs)} high-corr pairs | "
+        f"{len(state['cap_utilisation_final']['violations'])} cap violations"
+    )
     return state
 
 
@@ -1170,8 +1731,12 @@ def _persist_to_supabase(state: Q1State) -> bool:
     # Build the AdvisoryDerivation bundle (T18) and stash in state for callers.
     try:
         advisory = _build_advisory_derivation(state)
-        # Frozen dataclass → dict via asdict for JSONB persistence.
-        state["advisory_derivation"] = asdict(advisory)
+        # Frozen dataclass → dict via asdict for JSONB persistence. asdict leaves
+        # computed_at / as_of as datetime objects, which the PostgREST JSONB
+        # encoder rejects (TypeError) — the whole persist then failed and
+        # run_q1_agent returned None ("agent declined to produce output"). Round-
+        # trip through json (default=str) so datetimes coerce to strings.
+        state["advisory_derivation"] = json.loads(json.dumps(asdict(advisory), default=str))
     except ValueError as exc:
         # Validator rejected — refuse to persist an unverified row claiming verified.
         print(f"[_persist_to_supabase] AdvisoryDerivation validation failed: {exc}")
@@ -1182,7 +1747,7 @@ def _persist_to_supabase(state: Q1State) -> bool:
             "id": agent_run_id,
             "run_date": run_date,
             "prompt_version": PROMPT_VERSION,
-            "model_id": DEFAULT_MODEL,
+            "model_id": _active_model_id(),
             "input_snapshot": state.get("input_snapshot", {}),
             "raw_output": {
                 "picks": state.get("picks", []),
@@ -1196,14 +1761,46 @@ def _persist_to_supabase(state: Q1State) -> bool:
             "retries": state.get("retries", 0),
         }).execute()
 
-        sb.table("research_recommendations").upsert({
+        base_row = {
             "run_date": run_date,
             "picks": state.get("picks", []),
             "book_view": state.get("book_view", "") if state["advisory_derivation"].get("body") is not None else "",
             "book_risks": state.get("book_risks", []),
             "agent_run_id": agent_run_id,
             "advisory_derivation": state["advisory_derivation"],
-        }, on_conflict="run_date").execute()
+        }
+
+        # Structured book analytics (migration 022). These are the artefacts the
+        # agent has always computed and always thrown away: stress scenarios,
+        # book factor tilts, the correlation matrix and cap headroom. They are
+        # what /risk renders. Persist them alongside the picks so the numbers a
+        # PM sees are the ones the agent actually reasoned over.
+        analytics_row = {
+            **base_row,
+            "book_metrics": state.get("book_metrics_final"),
+            "scenario_results": state.get("scenario_results_final") or [],
+            "correlation_pairs": state.get("correlation_pairs_final") or [],
+            "cap_utilisation": state.get("cap_utilisation_final"),
+            "screening_funnel": state.get("screening_funnel") or [],
+            "lens": state.get("lens", "multi_asset"),
+        }
+
+        try:
+            sb.table("research_recommendations").upsert(
+                analytics_row, on_conflict="run_date"
+            ).execute()
+        except Exception as exc:
+            # Migration 021 not applied yet — persist the legacy shape rather
+            # than losing the run entirely. Loud, not silent: an operator needs
+            # to know /risk will have nothing to render.
+            print(
+                f"[_persist_to_supabase] Book-analytics columns unavailable "
+                f"({exc.__class__.__name__}): apply migration 022. "
+                f"Falling back to legacy row — /risk will render unavailable."
+            )
+            sb.table("research_recommendations").upsert(
+                base_row, on_conflict="run_date"
+            ).execute()
 
         return True
     except Exception as exc:
@@ -1317,7 +1914,6 @@ def run_q1_agent(
     state = classify_news(state)
     state = reason_picks(state)
     state = verify_citations(state)
-    state = size_positions(state)
 
     # Retry loop: if citations failed, re-call reason_picks (max 2 total)
     retry_count = 0
@@ -1328,6 +1924,12 @@ def run_q1_agent(
         state = reason_picks(state)
         state = verify_citations(state)
         retry_count += 1
+
+    # Size once, after the picks are final. Sizing before the retry loop meant a
+    # retry re-picked without re-sizing, leaving weights that belonged to the
+    # discarded pick set.
+    state = size_positions(state)
+    state = finalise_book_analytics(state)
 
     # Persist
     persisted = _persist_to_supabase(state)

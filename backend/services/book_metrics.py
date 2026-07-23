@@ -35,6 +35,11 @@ SECTOR_MAP: dict[str, str] = {
     "AGG":   "Rates",
     "LQD":   "Credit",
     "HYG":   "Credit",
+    "JNK":   "Credit",
+    "BKLN":  "Credit",
+    "ANGL":  "Credit",
+    "EMB":   "Credit",
+    "BIL":   "Rates",
     # Metals / inflation
     "GLD":   "Metals",
     "SLV":   "Metals",
@@ -80,6 +85,11 @@ GEO_MAP: dict[str, str] = {
     "AGG":   "US",
     "LQD":   "US",
     "HYG":   "US",
+    "JNK":   "US",
+    "BKLN":  "US",
+    "ANGL":  "US",
+    "EMB":   "EM",
+    "BIL":   "US",
     "GLD":   "Global",
     "SLV":   "Global",
     "TIPS":  "US",
@@ -337,6 +347,93 @@ def correlation_warning(pairs: list[tuple[str, str, float]]) -> list[str]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Format helpers (for LLM prompt injection)
 # ─────────────────────────────────────────────────────────────────────────────
+
+def book_metrics_to_dict(bm: BookMetrics) -> dict:
+    """Structured BookMetrics for persistence and charting.
+
+    ``format_book_metrics_summary`` renders the same data as a string for the LLM
+    prompt. That string is unusable downstream — a bar chart cannot be drawn from
+    prose — so this is the machine-readable twin persisted to
+    ``research_recommendations.book_metrics``.
+    """
+    return {
+        "computed": bm.computed,
+        "factor_tilts": {
+            "beta_mkt": bm.book_beta_mkt,
+            "beta_smb": bm.book_beta_smb,
+            "beta_hml": bm.book_beta_hml,
+            "beta_rmw": bm.book_beta_rmw,
+            "beta_cma": bm.book_beta_cma,
+            "beta_umd": bm.book_beta_umd,
+        },
+        "gross_exposure": bm.gross_exposure,
+        "net_exposure": bm.net_exposure,
+        "long_weight": bm.long_weight,
+        "short_weight": bm.short_weight,
+        "sector_weights": dict(bm.sector_weights),
+        "geo_weights": dict(bm.geo_weights),
+    }
+
+
+def correlation_pairs_to_dict(
+    pairs: list[tuple[str, str, float]],
+) -> list[dict]:
+    """High-correlation pairs as records, for the /risk correlation view."""
+    return [
+        {
+            "asset_a": a,
+            "asset_b": b,
+            "corr": corr,
+            "relationship": "same-direction" if corr > 0 else "inverse",
+            "threshold": HIGH_CORR_THRESHOLD,
+        }
+        for a, b, corr in pairs
+    ]
+
+
+def cap_utilisation(bm: BookMetrics, picks: list[dict]) -> dict:
+    """Headroom against each risk cap, for the limit monitor on /risk.
+
+    A violation list answers "am I over?"; a PM also needs "how close am I?" so a
+    limit can be managed before it binds. ``utilisation`` is weight/cap, so 1.0 is
+    exactly at the limit.
+    """
+    def _rows(weights: dict[str, float], cap: float) -> list[dict]:
+        return sorted(
+            (
+                {
+                    "key": key,
+                    "weight": w,
+                    "cap": cap,
+                    "utilisation": (w / cap) if cap else 0.0,
+                    "breached": w > cap,
+                }
+                for key, w in weights.items()
+            ),
+            key=lambda r: r["utilisation"],
+            reverse=True,
+        )
+
+    single_name = {
+        p.get("asset", ""): abs(p.get("weight", 0.0))
+        for p in picks
+        if p.get("asset")
+    }
+
+    return {
+        "single_name": _rows(single_name, MAX_SINGLE_NAME_WEIGHT),
+        "sector": _rows(bm.sector_weights, MAX_SECTOR_WEIGHT),
+        "geo": _rows(bm.geo_weights, MAX_GEO_WEIGHT),
+        "limits": {
+            "single_name": MAX_SINGLE_NAME_WEIGHT,
+            "sector": MAX_SECTOR_WEIGHT,
+            "geo": MAX_GEO_WEIGHT,
+        },
+        "violations": list(
+            bm.weight_violations + bm.sector_violations + bm.geo_violations
+        ),
+    }
+
 
 def format_book_metrics_summary(bm: BookMetrics, pairs: list[tuple[str, str, float]]) -> str:
     """Format book metrics as a compact table for the LLM prompt."""

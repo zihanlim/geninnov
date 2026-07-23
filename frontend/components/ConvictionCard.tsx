@@ -1,6 +1,7 @@
 import Sparkline from "./Sparkline";
 import SubScoreBars from "./SubScoreBars";
 import ScoreDeltaBadge from "./ScoreDeltaBadge";
+import { toDisplayScore } from "@/lib/themeSignals";
 
 export interface ConvictionTheme {
   id: string;
@@ -12,17 +13,15 @@ export interface ConvictionTheme {
   corr_score?: number;
   momentum_score?: number;
   delta_1d?: number;
-  /** Sub-score deltas (when available) for the ScoreDeltaBadge tooltip. */
-  delta_components?: {
-    volume?: number;
-    sentiment?: number;
-    correlation?: number;
-    momentum?: number;
-  };
   history?: number[];
-  catalyst?: string;
+  /** Latest 1-day mention count from theme_signals_history. */
+  mention_count_1d?: number | null;
+  /**
+   * Percentile band of the current HypeScore within this theme's own history.
+   * "high" = crowded consensus, "low" = fading attention. Undefined when there
+   * is insufficient history — never guessed.
+   */
   crowding?: "healthy" | "low" | "high" | string;
-  thesis?: string;
   updated_at?: string;
   run_date?: string;
 }
@@ -34,11 +33,11 @@ interface Props {
   onOpenDerivation?: (theme: ConvictionTheme) => void;
 }
 
-const CONVICTION_LABELS: Record<number, string> = {
-  1: "#1 · High conviction",
-  2: "#2 · High conviction",
-  3: "#3 · Emerging",
-};
+// Rank only. The previous labels asserted "High conviction" / "Emerging" purely
+// from position in the list — a conviction claim the system never computed.
+function rankLabel(rank: number): string {
+  return `#${rank} by HypeScore`;
+}
 
 function tierBadge(tier: string) {
   if (tier === "anchor") return <span className="badge badge-tier-anchor">ANCHOR</span>;
@@ -85,7 +84,7 @@ export default function ConvictionCard({ rank, theme, hero = false, onOpenDeriva
       )}
       <div className="flex items-center justify-between mb-2">
         <span className="text-[10px] text-text-tertiary uppercase tracking-[0.15em] font-semibold">
-          {CONVICTION_LABELS[rank] ?? `#${rank}`}
+          {rankLabel(rank)}
         </span>
         {tierBadge(theme.tier)}
       </div>
@@ -95,7 +94,7 @@ export default function ConvictionCard({ rank, theme, hero = false, onOpenDeriva
         <span>HypeScore</span>
         <span className="num font-semibold text-text-primary">{score}</span>
         <span>·</span>
-        <ScoreDeltaBadge delta={delta} components={theme.delta_components} variant="1d" />
+        <ScoreDeltaBadge delta={delta} variant="1d" />
         {onOpenDerivation && (
           <span
             className="ml-auto text-[10px] text-text-tertiary group-hover:text-accent transition-colors uppercase tracking-[0.08em] hidden md:inline"
@@ -106,11 +105,10 @@ export default function ConvictionCard({ rank, theme, hero = false, onOpenDeriva
         )}
       </div>
 
-      {theme.thesis && (
-        <p className="text-[13px] text-text-secondary leading-[1.55] my-2 flex-1">
-          {theme.thesis}
-        </p>
-      )}
+      {/* No thesis here. This slot previously rendered a hardcoded per-theme
+          string ("Powell signals September cut...") that looked like analysis
+          but was authored in the frontend. A theme-level thesis is L5 output
+          and belongs on /book, where it carries a citation trail. */}
 
       {theme.history && theme.history.length > 0 && (
         <div className="mt-2">
@@ -118,28 +116,51 @@ export default function ConvictionCard({ rank, theme, hero = false, onOpenDeriva
         </div>
       )}
 
+      {/* Sub-scores persist as [0,1]; SubScoreBars renders on 0–100. */}
       <SubScoreBars
-        volume={theme.volume_score}
-        sentiment={theme.sentiment_score}
-        correlation={theme.corr_score}
-        momentum={theme.momentum_score}
+        volume={toDisplayScore(theme.volume_score)}
+        sentiment={toDisplayScore(theme.sentiment_score)}
+        correlation={toDisplayScore(theme.corr_score)}
+        momentum={toDisplayScore(theme.momentum_score)}
       />
 
       <div className="grid grid-cols-3 gap-2.5 pt-3 mt-3 border-t border-border">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-0.5">Catalyst</div>
-          <div className="text-[13px] font-semibold">{theme.catalyst ?? "—"}</div>
-        </div>
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-0.5">Crowding</div>
-          <div className={`text-[13px] font-semibold ${crowdingColor(theme.crowding)}`}>
-            {theme.crowding ? theme.crowding[0].toUpperCase() + theme.crowding.slice(1) : "—"}
+          <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-0.5">
+            Mentions
+          </div>
+          <div className="text-[13px] font-semibold num">
+            {theme.mention_count_1d ?? "—"}
           </div>
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-0.5">Δ1d</div>
+          <div
+            className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-0.5"
+            title="Where today's HypeScore sits within this theme's own 30-day range"
+          >
+            Crowding
+          </div>
+          <div className={`text-[13px] font-semibold ${crowdingColor(theme.crowding)}`}>
+            {theme.crowding
+              ? theme.crowding[0].toUpperCase() + theme.crowding.slice(1)
+              : "—"}
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-0.5">
+            Δ1d
+          </div>
           <div className="text-[13px] font-semibold num">
-            <ScoreDeltaBadge delta={delta} components={theme.delta_components} variant="1d" />
+            {theme.delta_1d === undefined ? (
+              <span
+                className="text-text-tertiary"
+                title="No prior scored run in theme_signals_history"
+              >
+                —
+              </span>
+            ) : (
+              <ScoreDeltaBadge delta={delta} variant="1d" />
+            )}
           </div>
         </div>
       </div>

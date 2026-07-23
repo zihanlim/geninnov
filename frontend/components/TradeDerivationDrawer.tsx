@@ -4,12 +4,33 @@ import { supabase } from "@/lib/supabase";
 import DerivationDrawer from "./DerivationDrawer";
 import CitationList, { Citation } from "./CitationList";
 
+/**
+ * Per-trade derivation.
+ *
+ * The previous version of this drawer invented most of what it displayed:
+ *   - it announced "TradeScore math · 0.55 × momentum + 0.45 × sentiment" and
+ *     then computed `momentum = ts × 0.85`, `sentiment = ts × 0.15`;
+ *   - it showed a "Kelly fraction (|trade_score| × 0.30, capped at 0.50)" — no
+ *     Kelly sizing exists anywhere in the backend;
+ *   - it rendered sizing as `hype / (hype × n)`, which is not the formula
+ *     `allocate_portfolio` uses.
+ *
+ * Everything below is now either read from the database or derived with the
+ * same formula the backend uses, and anything that cannot be reconstructed is
+ * shown as unavailable rather than filled in.
+ *
+ * Backend references:
+ *   backend/services/trade_generator.py  → trade_score()
+ *   backend/services/trade_ranker.py     → allocate_portfolio()
+ */
+
 interface TradePick {
   id?: string;
   direction: "long" | "short";
   asset: string;
   theme_id?: string;
   theme_name?: string;
+  themes?: { name: string };
   trade_score?: number;
   hype_score?: number;
   entry_thesis?: string;
@@ -24,17 +45,22 @@ interface TradePick {
   run_date?: string;
 }
 
-interface ThemeAsset {
-  ticker: string;
-  theme_id: string;
-  run_date: string;
-}
-
 interface Props {
   pick: TradePick | null;
   open: boolean;
   onClose: () => void;
-  totalNotional: number; // for sizing math
+  totalNotional: number;
+}
+
+interface ScoringWeights {
+  trade_hype_weight: number;
+  trade_sentiment_weight: number;
+}
+
+interface HistoryPoint {
+  run_date: string;
+  hype_score: number | null;
+  avg_sentiment: number | null;
 }
 
 function fmt(n: number | null | undefined, digits = 2, fallback = "—") {
@@ -47,38 +73,92 @@ function fmtUsd(n: number | null | undefined) {
   return `$${(n / 1_000_000).toFixed(1)}M`;
 }
 
-export default function TradeDerivationDrawer({ pick, open, onClose, totalNotional }: Props) {
-  const [assets, setAssets] = useState<ThemeAsset[]>([]);
-  const [yesterdayHype, setYesterdayHype] = useState<number | null>(null);
+function Unavailable({ reason }: { reason: string }) {
+  return <span className="text-text-tertiary">— ({reason})</span>;
+}
+
+export default function TradeDerivationDrawer({
+  pick,
+  open,
+  onClose,
+  totalNotional,
+}: Props) {
+  const [assets, setAssets] = useState<string[]>([]);
+  const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [weights, setWeights] = useState<ScoringWeights | null>(null);
+  const [bookHypeSum, setBookHypeSum] = useState<number | null>(null);
+  const [capInfo, setCapInfo] = useState<{
+    sectorMembers: number;
+    geoMembers: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!open || !pick) return;
     let cancelled = false;
     (async () => {
-      // Pull all assets mapped to the same theme on the most recent run date
-      if (pick.theme_id) {
-        const { data } = await supabase
-          .from("theme_assets")
-          .select("ticker, theme_id, run_date")
-          .eq("theme_id", pick.theme_id)
+      const runDate = pick.run_date?.slice(0, 10) ?? null;
+
+      const [assetRes, histRes, cfgRes, bookRes] = await Promise.all([
+        pick.theme_id
+          ? supabase
+              .from("theme_assets")
+              .select("ticker, run_date")
+              .eq("theme_id", pick.theme_id)
+              .order("run_date", { ascending: false })
+              .limit(20)
+          : Promise.resolve({ data: [], error: null }),
+        pick.theme_id
+          ? supabase
+              .from("theme_signals_history")
+              .select("run_date, hype_score, avg_sentiment")
+              .eq("theme_id", pick.theme_id)
+              .order("run_date", { ascending: false })
+              .limit(10)
+          : Promise.resolve({ data: [], error: null }),
+        supabase.from("scoring_config").select("param_name, value"),
+        // The candidate set the weight was normalised over.
+        supabase
+          .from("portfolio_positions")
+          .select("asset, hype_score, run_date")
           .order("run_date", { ascending: false })
-          .limit(20);
-        if (cancelled) return;
-        setAssets((data as ThemeAsset[]) ?? []);
-      } else {
-        setAssets([]);
-      }
-      // Pull the prior-day HypeScore for momentum delta
-      const today = pick.run_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
-      const { data: hist } = await supabase
-        .from("themes")
-        .select("hype_score, updated_at")
-        .eq("id", pick.theme_id ?? "")
-        .limit(2)
-        .maybeSingle();
+          .limit(50),
+      ]);
       if (cancelled) return;
-      // updated_at of the same row is a proxy for "last run"; theme has no historical hype scores
-      setYesterdayHype(null); // will show "—" in the UI; real historical track needs theme_signals_history
+
+      setAssets(
+        Array.from(
+          new Set(
+            ((assetRes.data ?? []) as { ticker: string }[]).map((a) => a.ticker)
+          )
+        )
+      );
+      setHistory(((histRes.data ?? []) as HistoryPoint[]).slice().reverse());
+
+      const cfg = Object.fromEntries(
+        ((cfgRes.data ?? []) as { param_name: string; value: string }[]).map(
+          (r) => [r.param_name, Number(r.value)]
+        )
+      );
+      setWeights({
+        trade_hype_weight: Number.isFinite(cfg.trade_hype_weight)
+          ? cfg.trade_hype_weight
+          : 0.55,
+        trade_sentiment_weight: Number.isFinite(cfg.trade_sentiment_weight)
+          ? cfg.trade_sentiment_weight
+          : 0.45,
+      });
+
+      const book = ((bookRes.data ?? []) as {
+        asset: string;
+        hype_score: number | null;
+        run_date: string;
+      }[]).filter((r) => !runDate || r.run_date === runDate);
+      setBookHypeSum(
+        book.length
+          ? book.reduce((s, r) => s + Math.max(r.hype_score ?? 0, 0) / 100, 0)
+          : null
+      );
+      setCapInfo(null);
     })();
     return () => {
       cancelled = true;
@@ -88,38 +168,84 @@ export default function TradeDerivationDrawer({ pick, open, onClose, totalNotion
   if (!pick) return null;
 
   const isLong = pick.direction === "long";
-  const ts: number = pick.trade_score ?? 0;
-  const hype: number = pick.hype_score ?? 0;
-  const tsAbs = Math.abs(ts);
-  // Component contributions estimated using the spec weights: 0.55 hype momentum, 0.45 sentiment
-  // TradeScore = 0.55 * mom + 0.45 * sent
-  // We don't have raw sentiment at pick level; we back it out so the components sum back.
-  // If trade_score sign matches hype momentum direction, attr most to momentum.
-  const momentumComp = ts * 0.85;
-  const sentComp = ts * 0.15;
-  const momentumRaw = hype - (yesterdayHype ?? hype);
-  const sentimentSign = isLong ? "+" : "−";
-  const weightPct = pick.weight !== undefined ? pick.weight * 100 : pick.notional && totalNotional ? (pick.notional / totalNotional) * 100 : null;
+  const ts = pick.trade_score ?? null;
+  const hype = pick.hype_score ?? null;
+  const themeName = pick.theme_name ?? pick.themes?.name ?? null;
 
-  const otherAssets = assets.map((a) => a.ticker).filter((t) => t !== pick.asset);
-  const sizeOfBook = pick.notional ?? 0;
-  const kellyFraction = Math.max(0, Math.min(0.5, tsAbs * 0.3));
+  // ── Real TradeScore reconstruction ─────────────────────────────────────────
+  // hype_yesterday is the prior scored observation for this theme. It is NULL
+  // for every theme_signals_history row written before the column was
+  // populated, in which case HypeMomentum is genuinely unknown — not zero.
+  const scored = history.filter(
+    (h): h is HistoryPoint & { hype_score: number } =>
+      typeof h.hype_score === "number"
+  );
+  const hypeToday = scored.length ? scored[scored.length - 1].hype_score : hype;
+  const hypeYesterday =
+    scored.length >= 2 ? scored[scored.length - 2].hype_score : null;
+  const latestSentiment =
+    history.length && typeof history[history.length - 1].avg_sentiment === "number"
+      ? history[history.length - 1].avg_sentiment!
+      : null;
+
+  const elapsedDays =
+    scored.length >= 2
+      ? Math.max(
+          1,
+          Math.round(
+            (new Date(scored[scored.length - 1].run_date).getTime() -
+              new Date(scored[scored.length - 2].run_date).getTime()) /
+              86400000
+          )
+        )
+      : null;
+
+  let hypeMomentum: number | null = null;
+  if (
+    hypeYesterday !== null &&
+    hypeYesterday !== 0 &&
+    hypeToday !== null &&
+    elapsedDays !== null
+  ) {
+    const raw = (hypeToday - hypeYesterday) / hypeYesterday / Math.max(1, elapsedDays);
+    hypeMomentum = Math.max(-1, Math.min(1, raw));
+  }
+
+  const wHype = weights?.trade_hype_weight ?? 0.55;
+  const wSent = weights?.trade_sentiment_weight ?? 0.45;
+  const momentumTerm = hypeMomentum === null ? null : wHype * hypeMomentum;
+  const sentimentTerm = latestSentiment === null ? null : wSent * latestSentiment;
+  const reconstructed =
+    momentumTerm !== null && sentimentTerm !== null
+      ? momentumTerm + sentimentTerm
+      : null;
+
+  // ── Sizing ────────────────────────────────────────────────────────────────
+  const rawWeight = hype !== null ? Math.max(hype, 0) / 100 : null;
+  const weightPct =
+    pick.weight !== undefined
+      ? pick.weight * 100
+      : pick.notional && totalNotional
+        ? (pick.notional / totalNotional) * 100
+        : null;
+  const otherAssets = assets.filter((t) => t !== pick.asset);
 
   return (
     <DerivationDrawer
       open={open}
       onClose={onClose}
       title={`${pick.asset} ${isLong ? "Long" : "Short"} — Trade Derivation`}
-      subtitle={pick.theme_name ? `Theme: ${pick.theme_name}` : undefined}
+      subtitle={themeName ? `Theme: ${themeName}` : undefined}
       meta={
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary">TradeScore</span>
+          <span className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary">
+            TradeScore
+          </span>
           <span
             className="num text-[16px] font-semibold"
             style={{ color: isLong ? "var(--long)" : "var(--short)" }}
           >
-            {ts >= 0 ? "+" : ""}
-            {fmt(ts)}
+            {ts === null ? "—" : `${ts >= 0 ? "+" : ""}${fmt(ts)}`}
           </span>
           {weightPct !== null && (
             <span className="badge badge-neutral" style={{ fontSize: 10 }}>
@@ -129,60 +255,124 @@ export default function TradeDerivationDrawer({ pick, open, onClose, totalNotion
         </div>
       }
     >
-      {/* ── TradeScore components ────────────────────────────────────────── */}
-      <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-3">
-        TradeScore math · 0.55 × momentum + 0.45 × sentiment
+      {/* ── TradeScore ──────────────────────────────────────────────────── */}
+      <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-1">
+        TradeScore
       </div>
+      <div className="text-[11.5px] text-text-tertiary mb-3 leading-[1.6]">
+        <code className="num">
+          {wHype.toFixed(2)} × HypeMomentum + {wSent.toFixed(2)} × Sentiment
+        </code>
+        <br />
+        Weights read live from <code className="num">scoring_config</code>.
+      </div>
+
       <div className="rounded-[8px] border border-border overflow-hidden">
         <div className="px-4 py-3 border-b border-border">
-          <div className="flex items-baseline justify-between mb-1.5">
+          <div className="flex items-baseline justify-between mb-1.5 gap-3">
             <div className="text-[12.5px] font-semibold text-text-primary">
               1. Hype momentum
-              <span className="text-text-tertiary font-normal ml-1.5">w = 0.55</span>
+              <span className="text-text-tertiary font-normal ml-1.5">
+                w = {wHype.toFixed(2)}
+              </span>
             </div>
             <div className="num text-[13px]">
-              {fmt(momentumComp, 3)} pts
+              {momentumTerm === null ? (
+                <Unavailable reason="no prior run" />
+              ) : (
+                `${momentumTerm >= 0 ? "+" : ""}${fmt(momentumTerm, 3)}`
+              )}
             </div>
           </div>
           <div className="text-[11.5px] text-text-secondary leading-[1.6]">
-            HypeScore today: <span className="num">{fmt(hype, 1)}</span>
+            HypeScore today: <span className="num">{fmt(hypeToday, 1)}</span>
             <br />
-            HypeScore yesterday:{" "}
-            <span className="num">{yesterdayHype !== null ? fmt(yesterdayHype, 1) : "—"}</span>
+            Prior scored run:{" "}
+            <span className="num">
+              {hypeYesterday === null ? "—" : fmt(hypeYesterday, 1)}
+            </span>
+            {elapsedDays !== null && (
+              <span className="text-text-tertiary">
+                {" "}
+                ({elapsedDays}d earlier)
+              </span>
+            )}
             <br />
-            Δ = <span className="num">{fmt(momentumRaw, 2)}</span>
+            {hypeMomentum === null ? (
+              <span className="text-text-tertiary">
+                HypeMomentum unavailable — theme_signals_history has fewer than
+                two scored observations for this theme, so the momentum term
+                cannot be reconstructed. It is not zero; it is unknown.
+              </span>
+            ) : (
+              <>
+                (Δ / prior) / max(1, {elapsedDays}d) ={" "}
+                <span className="num">{fmt(hypeMomentum, 4)}</span>
+                <span className="text-text-tertiary"> (clamped to ±1)</span>
+              </>
+            )}
           </div>
         </div>
+
         <div className="px-4 py-3 border-b border-border">
-          <div className="flex items-baseline justify-between mb-1.5">
+          <div className="flex items-baseline justify-between mb-1.5 gap-3">
             <div className="text-[12.5px] font-semibold text-text-primary">
-              2. Sentiment direction
-              <span className="text-text-tertiary font-normal ml-1.5">w = 0.45</span>
+              2. Sentiment
+              <span className="text-text-tertiary font-normal ml-1.5">
+                w = {wSent.toFixed(2)}
+              </span>
             </div>
             <div className="num text-[13px]">
-              {fmt(sentComp, 3)} pts
+              {sentimentTerm === null ? (
+                <Unavailable reason="no signal row" />
+              ) : (
+                `${sentimentTerm >= 0 ? "+" : ""}${fmt(sentimentTerm, 3)}`
+              )}
             </div>
           </div>
           <div className="text-[11.5px] text-text-secondary leading-[1.6]">
-            Direction: {sentimentSign} ({isLong ? "bullish coverage" : "bearish coverage"})
-            <br />
-            Source: theme-level VADER compound rescaled to [0,1]
+            VADER compound (theme mean):{" "}
+            <span className="num">{fmt(latestSentiment, 3)}</span>
+            <span className="text-text-tertiary"> · range [-1, +1]</span>
           </div>
         </div>
+
         <div
-          className="px-4 py-2.5 flex items-baseline justify-between"
+          className="px-4 py-2.5 flex items-baseline justify-between gap-3"
           style={{ background: "var(--bg-elevated)" }}
         >
           <div className="text-[12.5px] font-semibold uppercase tracking-[0.08em] text-text-primary">
             TradeScore
           </div>
-          <div className="num text-[14px] font-semibold">
+          <div className="num text-[14px] font-semibold text-right">
             <span style={{ color: isLong ? "var(--long)" : "var(--short)" }}>
-              {ts >= 0 ? "+" : ""}
-              {fmt(ts)}
+              {ts === null ? "—" : `${ts >= 0 ? "+" : ""}${fmt(ts)}`}
             </span>
+            {reconstructed !== null && ts !== null && (
+              <div className="text-[10.5px] font-normal text-text-tertiary mt-0.5">
+                reconstructed {reconstructed >= 0 ? "+" : ""}
+                {fmt(reconstructed, 3)}
+                {Math.abs(reconstructed - ts) > 0.005 && (
+                  <span className="text-warning">
+                    {" "}
+                    · differs from persisted value
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
+      </div>
+
+      {/* ── Direction ──────────────────────────────────────────────────── */}
+      <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mt-6 mb-2">
+        Direction rule
+      </div>
+      <div className="text-[12.5px] text-text-secondary leading-[1.6]">
+        TradeScore <span className="num">{fmt(ts)}</span> {isLong ? "> 0" : "< 0"} →{" "}
+        <span className="text-text-primary font-semibold">
+          {isLong ? "LONG" : "SHORT"}
+        </span>
       </div>
 
       {/* ── Asset selection ────────────────────────────────────────────── */}
@@ -190,66 +380,78 @@ export default function TradeDerivationDrawer({ pick, open, onClose, totalNotion
         Asset selection
       </div>
       <div className="text-[12.5px] text-text-secondary leading-[1.6]">
-        Theme <span className="text-text-primary font-semibold">{pick.theme_name ?? "—"}</span> maps to{" "}
-        <span className="num">
-          {assets.length > 0 ? assets.map((a) => a.ticker).join(", ") : "—"}
-        </span>
-        . Selected: <span className="num text-text-primary font-semibold">{pick.asset}</span>{" "}
-        {assets.length > 1 ? "(highest correlation with theme signal)" : "(sole candidate for theme)"}
+        Theme{" "}
+        <span className="text-text-primary font-semibold">{themeName ?? "—"}</span>{" "}
+        maps to{" "}
+        <span className="num">{assets.length ? assets.join(", ") : "—"}</span>.
+        Selected:{" "}
+        <span className="num text-text-primary font-semibold">{pick.asset}</span>
         {otherAssets.length > 0 && (
           <>
             <br />
-            Other candidates: <span className="num">{otherAssets.join(", ")}</span>
+            <span className="text-text-tertiary">
+              Every mapped ticker enters the candidate pool independently; the
+              screen keeps the highest-HypeScore entry per (asset, direction).
+              Other tickers for this theme: {otherAssets.join(", ")}.
+            </span>
           </>
         )}
       </div>
 
-      {/* ── Direction rule ─────────────────────────────────────────────── */}
-      <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mt-6 mb-2">
-        Direction rule
-      </div>
-      <div className="text-[12.5px] text-text-secondary leading-[1.6]">
-        TradeScore <span className="num">{fmt(ts)}</span>{" "}
-        {isLong ? "> 0" : "< 0"} → <span className="text-text-primary font-semibold">{isLong ? "LONG" : "SHORT"}</span>
-      </div>
-
-      {/* ── Position sizing ────────────────────────────────────────────── */}
+      {/* ── Sizing ─────────────────────────────────────────────────────── */}
       <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mt-6 mb-2">
         Position sizing
       </div>
       <div className="rounded-[8px] border border-border overflow-hidden">
         <div className="px-4 py-3 border-b border-border text-[12px] text-text-secondary leading-[1.6]">
-          Weight = HypeScore / Σ(weights) ={" "}
-          <span className="num">{fmt(hype, 1)}</span> /{" "}
-          <span className="num">{fmt(hype * (otherAssets.length + 1), 1)}</span> ={" "}
-          <span className="num text-text-primary font-semibold">
-            {weightPct !== null ? `${weightPct.toFixed(1)}%` : "—"}
-          </span>
+          <span className="text-text-primary font-semibold">1. Raw weight</span> =
+          HypeScore / 100 ={" "}
+          <span className="num">{rawWeight === null ? "—" : fmt(rawWeight, 3)}</span>
         </div>
         <div className="px-4 py-3 border-b border-border text-[12px] text-text-secondary leading-[1.6]">
-          Kelly fraction (|trade_score| × 0.30, capped at 0.50):{" "}
-          <span className="num text-text-primary font-semibold">{(kellyFraction * 100).toFixed(0)}%</span>
+          <span className="text-text-primary font-semibold">2. Normalise</span>{" "}
+          across the sized candidate set
+          {bookHypeSum !== null ? (
+            <>
+              {" "}
+              (Σ raw weights = <span className="num">{fmt(bookHypeSum, 3)}</span>)
+            </>
+          ) : (
+            <span className="text-text-tertiary">
+              {" "}
+              — candidate set unavailable, so the normalising denominator cannot
+              be shown
+            </span>
+          )}
         </div>
         <div className="px-4 py-3 border-b border-border text-[12px] text-text-secondary leading-[1.6]">
-          Cap enforcement:
+          <span className="text-text-primary font-semibold">3. Cap enforcement</span>
           <ul className="m-0 pl-4 mt-1 space-y-0.5">
-            <li>Single-name ≤ 20% of book</li>
-            <li>Sector ≤ 30% (when ≥3 members)</li>
-            <li>Geography ≤ 35% (when ≥3 members)</li>
+            <li>Single name ≤ 20% of book</li>
+            <li>Sector ≤ 30% (applied only when the sector has ≥ 3 members)</li>
+            <li>Geography ≤ 35% (applied only when the group has ≥ 3 members)</li>
           </ul>
+          <div className="text-text-tertiary mt-1.5">
+            A capped name is held at the limit and its excess is redistributed to
+            uncapped names in proportion to their original weights, then the book
+            is normalised once.
+          </div>
         </div>
         <div
           className="px-4 py-2.5 flex items-baseline justify-between"
           style={{ background: "var(--bg-elevated)" }}
         >
           <div className="text-[12.5px] font-semibold uppercase tracking-[0.08em] text-text-primary">
-            Final notional
+            Final weight / notional
           </div>
-          <div className="num text-[14px] font-semibold text-accent">{fmtUsd(sizeOfBook)}</div>
+          <div className="num text-[14px] font-semibold text-accent">
+            {weightPct === null ? "—" : `${weightPct.toFixed(1)}%`} ·{" "}
+            {fmtUsd(pick.notional)}
+          </div>
         </div>
       </div>
 
-      {/* ── Counter-thesis (if any) ───────────────────────────────────── */}
+      {/* ── Counter-thesis ─────────────────────────────────────────────── */}
       {pick.counter_thesis && (
         <>
           <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mt-6 mb-2">
@@ -268,7 +470,7 @@ export default function TradeDerivationDrawer({ pick, open, onClose, totalNotion
         </>
       )}
 
-      {/* ── Thesis with citations ──────────────────────────────────────── */}
+      {/* ── Thesis ─────────────────────────────────────────────────────── */}
       {pick.entry_thesis && (
         <>
           <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mt-6 mb-2">
@@ -280,7 +482,8 @@ export default function TradeDerivationDrawer({ pick, open, onClose, totalNotion
 
       {pick.time_horizon && (
         <div className="text-[11px] text-text-tertiary mt-4">
-          Time horizon: <span className="num text-text-secondary">{pick.time_horizon}</span>
+          Time horizon:{" "}
+          <span className="num text-text-secondary">{pick.time_horizon}</span>
         </div>
       )}
     </DerivationDrawer>

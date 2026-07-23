@@ -5,6 +5,13 @@ from datetime import date, timedelta
 
 SUBREDDITS = ["wallstreetbets", "investing", "stocks", "economy", "finance"]
 
+
+def _mock_allowed() -> bool:
+    """Whether the mock fallback may be used. Default on (local dev + tests);
+    set ANDROMEDA_ALLOW_MOCK=0 in production so absent Reddit credentials yield
+    [] rather than one fabricated post per theme (RESIDUAL R0b)."""
+    return os.environ.get("ANDROMEDA_ALLOW_MOCK", "1").strip().lower() not in ("0", "false", "no")
+
 THEME_KEYWORDS = {
     "Fed Policy":       ["Federal Reserve", "FOMC", "interest rates", "Jerome Powell"],
     "Inflation":        ["CPI", "PPI", "inflation", "price index", "hot CPI"],
@@ -27,6 +34,10 @@ def fetch_posts_for_theme(theme: str, lookback_days: int = 7) -> list[dict]:
     user_agent = os.environ.get("REDDIT_USER_AGENT", "Andromeda/1.0")
 
     if not client_id or not client_secret:
+        # No credentials. In production (ANDROMEDA_ALLOW_MOCK=0) contribute
+        # nothing rather than a fabricated post; mock only for local dev / tests.
+        if not _mock_allowed():
+            return []
         return _mock_posts(theme, lookback_days)
 
     reddit = praw.Reddit(
@@ -52,6 +63,7 @@ def fetch_posts_for_theme(theme: str, lookback_days: int = 7) -> list[dict]:
                         "score": post.score,
                         "date": date.fromtimestamp(post.created_utc).isoformat(),
                         "url": post.url,
+                        "source": "reddit",
                     })
         except Exception:
             continue
@@ -59,6 +71,11 @@ def fetch_posts_for_theme(theme: str, lookback_days: int = 7) -> list[dict]:
     return results
 
 def _mock_posts(theme: str, lookback_days: int) -> list[dict]:
+    """Fallback used when PRAW credentials are absent (RESIDUAL R0b).
+
+    Tagged ``mock_reddit`` so a synthetic social signal is never blended
+    invisibly into an otherwise-real HypeScore.
+    """
     return [
-        {"title": f"Discussion: {theme} and what it means for markets", "subreddit": "investing", "score": 100, "date": date.today().isoformat()},
+        {"title": f"Discussion: {theme} and what it means for markets", "subreddit": "investing", "score": 100, "date": date.today().isoformat(), "source": "mock_reddit"},
     ]

@@ -256,7 +256,10 @@ class _StubLLM:
         self.payload = payload
         self.calls: list[tuple[str, str]] = []
 
-    def __call__(self, prompt: str, system: str = "", temperature: float = 0.0) -> str:
+    def __call__(self, prompt: str, system: str = "", temperature: float = 0.0,
+                 response_schema: dict | None = None) -> str:
+        # Mirror _llm_complete's signature — reason_picks now passes
+        # response_schema (Gemini structured output); the stub just ignores it.
         self.calls.append((prompt, system))
         return self.payload
 
@@ -531,3 +534,310 @@ def test_q1_advisory_downgrades_when_llm_returns_fallback_body(monkeypatch):
     assert persisted["display_status"] != "verified"
     assert persisted["body"] is None
     assert persisted["fallback_used"] is True
+
+
+# ─── verify_citations value reconciliation (P0 guardrail hardening) ───────────
+#
+# Historically verify_citations only checked that the *source key* existed; a
+# recognised key with a hallucinated value passed. These tests pin the stronger
+# contract: the cited value must MATCH the source value within tolerance.
+
+def _state_with_citations(citations: list[dict]) -> Q1State:
+    return _make_state(citations=citations)
+
+
+def test_verify_citations_accepts_matching_value():
+    """A citation whose value matches its source verifies cleanly."""
+    state = _state_with_citations([
+        {"text": "HY OAS at 320bps", "source": "BAMLH0A0HYM2", "value": 320.0},
+        {"text": "VIX at 14.5", "source": "^VIX", "value": 14.5},
+    ])
+    state = verify_citations(state)
+    assert state["verified"] is True, state.get("error")
+    assert state["error"] is None
+
+
+def test_verify_citations_accepts_value_within_tolerance():
+    """Within the ±2% (min ±0.01) band, small reporting drift is allowed."""
+    # BAMLH0A0HYM2 == 320.0 → tolerance is max(0.01, 6.4) = 6.4bps.
+    state = _state_with_citations([
+        {"text": "HY OAS ~324bps", "source": "BAMLH0A0HYM2", "value": 324.0},
+    ])
+    state = verify_citations(state)
+    assert state["verified"] is True, state.get("error")
+
+
+def test_verify_citations_rejects_mismatched_value():
+    """The core fix: a hallucinated value on a valid source is now rejected."""
+    state = _state_with_citations([
+        {"text": "HY OAS at 380bps", "source": "BAMLH0A0HYM2", "value": 380.0},
+    ])
+    state = verify_citations(state)
+    assert state["verified"] is False
+    assert "does not match" in (state["error"] or "")
+    assert "BAMLH0A0HYM2" in (state["error"] or "")
+
+
+def test_verify_citations_rejects_valueless_text_number_mismatch():
+    """With no explicit value field, the sole number in the text is reconciled."""
+    # ^VIX == 14.5; claiming 25 in the text should fail.
+    state = _state_with_citations([
+        {"text": "VIX at 25", "source": "^VIX"},
+    ])
+    state = verify_citations(state)
+    assert state["verified"] is False
+    assert "does not match" in (state["error"] or "")
+
+
+def test_verify_citations_accepts_valueless_text_number_match():
+    state = _state_with_citations([
+        {"text": "VIX printing 14.6", "source": "^VIX"},
+    ])
+    state = verify_citations(state)
+    assert state["verified"] is True, state.get("error")
+
+
+def test_verify_citations_reconciles_theme_sources():
+    """Theme trade/hype/sentiment source keys reconcile against theme_scores."""
+    # tid-fed trade_score == 0.41 in MOCK_THEME_SCORES.
+    ok = verify_citations(_state_with_citations([
+        {"text": "Trade score 0.41", "source": "theme:tid-fed:trade"},
+    ]))
+    assert ok["verified"] is True, ok.get("error")
+
+    bad = verify_citations(_state_with_citations([
+        {"text": "Trade score 0.99", "source": "theme:tid-fed:trade"},
+    ]))
+    assert bad["verified"] is False
+
+
+def test_verify_citations_rejects_ungrounded_value():
+    """A number that appears nowhere in the L0–L4 inputs is rejected, even with
+    a plausible-looking source label (value-grounding, ADR-0027)."""
+    state = _state_with_citations([
+        {"text": "Fed cut 25bps", "source": "FEDFUNDS", "value": 25.0},
+    ])
+    state = verify_citations(state)
+    assert state["verified"] is False
+    assert "not grounded" in (state["error"] or "")
+
+
+def test_verify_citations_grounds_value_despite_loose_source_label():
+    """A correctly-valued citation with a human source label (not the exact key)
+    passes because the value is grounded in the inputs (ADR-0027)."""
+    # ^VIX == 14.5 in MOCK_MACRO_SNAPSHOT; label is a descriptive category.
+    state = _state_with_citations([
+        {"text": "VIX at 14.5", "source": "L3 regime classification", "value": 14.5},
+    ])
+    state = verify_citations(state)
+    assert state["verified"] is True, state.get("error")
+
+
+def test_verify_citations_accepts_qualitative_citation():
+    """A citation with a valid source but no reconcilable number is accepted."""
+    state = _state_with_citations([
+        {"text": "Risk-on regime persists", "source": "^VIX"},
+    ])
+    state = verify_citations(state)
+    assert state["verified"] is True, state.get("error")
+
+
+# ─── _load_recent_headlines: L5 now reads real news (Task 2) ──────────────────
+
+class _NewsChain:
+    def __init__(self, data=None, raise_exc=None):
+        self._data = data or []
+        self._raise = raise_exc
+
+    def select(self, *a, **k):
+        return self
+
+    def gte(self, *a, **k):
+        return self
+
+    def lte(self, *a, **k):
+        return self
+
+    def limit(self, *a, **k):
+        return self
+
+    def execute(self):
+        if self._raise:
+            raise self._raise
+        return type("R", (), {"data": self._data})()
+
+
+class _NewsSB:
+    def __init__(self, chain):
+        self._chain = chain
+
+    def table(self, name):
+        return self._chain
+
+
+def test_load_recent_headlines_parses_and_filters():
+    rows = [
+        {"theme_id": "t1", "headline": "Fed holds rates", "source": "brave",
+         "published_date": "2026-07-22", "run_date": "2026-07-23"},
+        {"theme_id": "t2", "headline": "", "source": "reddit",
+         "published_date": None, "run_date": "2026-07-23"},  # blank → filtered
+    ]
+    out = q1_agent._load_recent_headlines(_NewsSB(_NewsChain(rows)), "2026-07-23")
+    assert len(out) == 1
+    assert out[0]["text"] == "Fed holds rates"
+    assert out[0]["date"] == "2026-07-22"
+    assert out[0]["source"] == "brave"
+
+
+def test_load_recent_headlines_falls_back_to_empty_when_table_absent():
+    chain = _NewsChain(raise_exc=Exception('relation "theme_news" does not exist'))
+    out = q1_agent._load_recent_headlines(_NewsSB(chain), "2026-07-23")
+    assert out == []
+
+
+# ─── Gemini provider (third L5 fallback, ADR-0026) ───────────────────────────
+
+class _FakeGeminiResp:
+    def __init__(self, status=200, text_payload=None, err=None):
+        self.status_code = status
+        self.headers = {"content-type": "application/json"}
+        self._text_payload = text_payload
+        self._err = err
+
+    def json(self):
+        if self._err is not None:
+            return {"error": {"message": self._err}}
+        return {"candidates": [{"content": {"parts": [{"text": self._text_payload}]}}]}
+
+    @property
+    def text(self):
+        return "error-body"
+
+
+def _only_gemini(monkeypatch, key="test-key"):
+    monkeypatch.setattr(q1_agent, "MINIMAX_API_KEY", "")
+    monkeypatch.setattr(q1_agent, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(q1_agent, "GEMINI_API_KEY", key)
+    monkeypatch.setattr(q1_agent, "LLM_PROVIDER", "auto")
+
+
+def test_gemini_path_strips_fences_and_passes_system(monkeypatch):
+    import requests
+    _only_gemini(monkeypatch)
+    captured = {}
+
+    def fake_post(url, params=None, headers=None, json=None, timeout=None):
+        captured["url"] = url
+        captured["params"] = params
+        captured["json"] = json
+        return _FakeGeminiResp(200, text_payload="```json\n{\"a\": 1}\n```")
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    out = q1_agent._llm_complete("prompt text", system="sys text")
+
+    assert out == '{"a": 1}'                       # fence stripped
+    assert "gemini" in captured["url"]
+    assert captured["params"]["key"] == "test-key"
+    assert captured["json"]["system_instruction"]["parts"][0]["text"] == "sys text"
+    assert captured["json"]["contents"][0]["parts"][0]["text"] == "prompt text"
+
+
+def test_gemini_error_status_raises(monkeypatch):
+    import requests
+    _only_gemini(monkeypatch)
+    monkeypatch.setattr(requests, "post",
+                        lambda *a, **k: _FakeGeminiResp(429, err="quota exceeded"))
+    with pytest.raises(ValueError, match="Gemini API error 429"):
+        q1_agent._llm_complete("p")
+
+
+def test_no_provider_configured_raises(monkeypatch):
+    monkeypatch.setattr(q1_agent, "MINIMAX_API_KEY", "")
+    monkeypatch.setattr(q1_agent, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(q1_agent, "GEMINI_API_KEY", "")
+    with pytest.raises(ValueError, match="No LLM provider configured"):
+        q1_agent._llm_complete("p")
+
+
+def test_gemini_response_schema_wired_into_generation_config(monkeypatch):
+    """response_schema forces Gemini structured output (so citations are present)."""
+    import requests
+    _only_gemini(monkeypatch)
+    captured = {}
+
+    def fake_post(url, params=None, headers=None, json=None, timeout=None):
+        captured["json"] = json
+        return _FakeGeminiResp(200, text_payload='{"ok": 1}')
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    schema = {"type": "object", "properties": {"x": {"type": "number"}}, "required": ["x"]}
+    q1_agent._llm_complete("p", response_schema=schema)
+
+    gc = captured["json"]["generationConfig"]
+    assert gc["responseMimeType"] == "application/json"
+    assert gc["responseSchema"] == schema
+
+
+def test_reason_picks_schema_requires_nonempty_citations():
+    s = q1_agent.REASON_PICKS_SCHEMA
+    assert "citations" in s["required"]
+    assert s["properties"]["citations"].get("minItems", 0) >= 1
+
+
+def test_active_model_id_reflects_provider(monkeypatch):
+    monkeypatch.setattr(q1_agent, "LLM_PROVIDER", "auto")
+    monkeypatch.setattr(q1_agent, "MINIMAX_API_KEY", "")
+    monkeypatch.setattr(q1_agent, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(q1_agent, "GEMINI_API_KEY", "k")
+    monkeypatch.setattr(q1_agent, "GEMINI_MODEL", "gemini-flash-latest")
+    assert q1_agent._active_model_id() == "gemini-flash-latest"
+    monkeypatch.setattr(q1_agent, "ANTHROPIC_API_KEY", "k")   # Anthropic outranks Gemini
+    assert q1_agent._active_model_id() == q1_agent.DEFAULT_MODEL
+    monkeypatch.setattr(q1_agent, "MINIMAX_API_KEY", "k")     # MiniMax outranks both
+    assert q1_agent._active_model_id() == q1_agent.MINIMAX_MODEL
+
+
+def test_select_provider_explicit_override_beats_priority(monkeypatch):
+    monkeypatch.setattr(q1_agent, "MINIMAX_API_KEY", "m")
+    monkeypatch.setattr(q1_agent, "ANTHROPIC_API_KEY", "a")   # ambient shell key
+    monkeypatch.setattr(q1_agent, "GEMINI_API_KEY", "g")
+    # Explicit override wins over the MiniMax/Anthropic priority.
+    monkeypatch.setattr(q1_agent, "LLM_PROVIDER", "gemini")
+    assert q1_agent._select_provider() == "gemini"
+    # auto falls back to priority order.
+    monkeypatch.setattr(q1_agent, "LLM_PROVIDER", "auto")
+    assert q1_agent._select_provider() == "minimax"
+    # override whose key is absent falls back to priority.
+    monkeypatch.setattr(q1_agent, "LLM_PROVIDER", "gemini")
+    monkeypatch.setattr(q1_agent, "GEMINI_API_KEY", "")
+    assert q1_agent._select_provider() == "minimax"
+
+
+def test_classify_news_caps_llm_calls(monkeypatch):
+    """classify_news must not burn the whole rate-limited quota — bounded to
+    CLASSIFY_MAX_HEADLINES / CLASSIFY_BATCH_SIZE calls (default 40/20 = 2)."""
+    calls = {"n": 0}
+
+    def fake(prompt, system="", temperature=0.0, response_schema=None):
+        calls["n"] += 1
+        return "[]"
+
+    monkeypatch.setattr(q1_agent, "_llm_complete", fake)
+    state = _make_state(news_headlines=[{"text": f"headline {i}"} for i in range(100)])
+    q1_agent.classify_news(state)
+    assert calls["n"] <= 2, f"classify_news made {calls['n']} calls; must stay bounded"
+
+
+def test_make_factor_table_tolerates_null_betas():
+    """Real factor_exposures rows can carry NULL betas / r_squared; the prompt
+    table formatter must not crash on them. Regression for the L5 TypeError
+    (`unsupported format string passed to NoneType.__format__`)."""
+    fe = {
+        "TLT": {"beta_mkt": 0.2, "beta_smb": None, "beta_hml": 0.1,
+                "beta_rmw": None, "beta_cma": 0.0, "beta_umd": None, "r_squared": None},
+        "SPY": {"beta_mkt": 1.0, "beta_smb": 0.0, "beta_hml": 0.0,
+                "beta_rmw": 0.0, "beta_cma": 0.0, "beta_umd": 0.0, "r_squared": 0.9},
+    }
+    out = q1_agent._make_factor_table(fe)   # must not raise
+    assert "TLT" in out and "SPY" in out
+    assert "0.00" in out                    # NULLs render as 0.00, not a crash

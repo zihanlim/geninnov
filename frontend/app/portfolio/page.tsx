@@ -9,6 +9,7 @@ import { CumulativeReturn } from "@/components/portfolio/CumulativeReturn";
 import { StatusBadge } from "@/components/status/StatusBadge";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
 import { UncertaintyBand } from "@/components/status/UncertaintyBand";
+import { EmptyState } from "@/components/status/EmptyState";
 import type { NumericDerivation } from "@/lib/derivations/numeric";
 
 interface Position {
@@ -200,7 +201,16 @@ function PortfolioPageInner() {
     unit: NumericDerivation["unit"],
     method_id: string,
   ): NumericDerivation => {
-    const persisted = riskNumericDerivation?.[field_id];
+    // `numeric_derivations` is keyed by the SHORT name that
+    // risk_engine.compute_risk() returns ("var_95", "cvar_95", "sharpe",
+    // "beta", "hhi"), not by the fully-qualified field_id ("risk.var_95").
+    // Looking up only the long form always missed, so every card silently fell
+    // through to the synthesized "estimated" derivation and the real L4
+    // provenance — method, uncertainty, source records — was never rendered
+    // even when it was present. Try both.
+    const shortKey = field_id.replace(/^risk\./, "");
+    const persisted =
+      riskNumericDerivation?.[field_id] ?? riskNumericDerivation?.[shortKey];
     if (persisted) return persisted;
     const present = typeof rawValue === "number" && !Number.isNaN(rawValue);
     const computedAt = (risk?.updated_at as string | undefined) ?? new Date().toISOString();
@@ -230,8 +240,11 @@ function PortfolioPageInner() {
 
   return (
     <main className="max-w-[1320px] mx-auto px-8 pt-7 pb-20">
-      <div className="flex justify-between items-end mb-7">
-        <div>
+      {/* Three siblings in one flex row previously collided: the header block,
+          the lens selector and the capital summary had no wrapping or min-width,
+          so the summary overlapped the subtitle at common widths. */}
+      <div className="flex justify-between items-end gap-6 flex-wrap mb-7">
+        <div className="min-w-[280px]">
           <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">$100M Portfolio</h1>
           <p className="m-0 text-text-secondary text-[13px]">
             Long-short book from top candidates · risk-weighted to HypeScore confidence.
@@ -240,7 +253,7 @@ function PortfolioPageInner() {
         <div className="flex items-center gap-4">
           <LensSelector value={lens} onChange={setLens} />
         </div>
-        <div className="text-right text-text-secondary text-[12px]">
+        <div className="text-right text-text-secondary text-[12px] shrink-0">
           <div>
             <span className="text-text-tertiary mr-1.5">CAPITAL DEPLOYED</span>
             <span className="num text-text-primary">{fmtUSD(gross)}</span>{" "}
@@ -281,7 +294,24 @@ function PortfolioPageInner() {
             <CumulativeReturn />
           </div>
 
-          {/* Risk grid — bound to NumericDerivation */}
+          {/* Risk grid — bound to NumericDerivation.
+              Rendered UNCONDITIONALLY. This was previously gated on `risk`
+              being truthy, so with an empty portfolio_risk table the entire
+              VaR/CVaR/Sharpe/Beta/HHI block silently vanished from the page
+              rather than declaring itself unavailable. A risk grid that
+              disappears is worse than one that says it has no data. */}
+          {!risk && (
+            <div className="card mb-6">
+              <EmptyState
+                title="No risk metrics for the latest run"
+                cause="portfolio_risk returned no rows. VaR, CVaR, Sharpe, beta and HHI are all computed from the sized book and the portfolio return history, and neither exists yet."
+                remedy="Run scripts/daily_refresh.py once candidates clear the HypeScore threshold; compute_and_persist_risk writes this table."
+                source="portfolio_risk"
+                severity="warning"
+                compact
+              />
+            </div>
+          )}
           {risk && (
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
               <RiskCard
@@ -325,9 +355,13 @@ function PortfolioPageInner() {
             </div>
             <div className="card-body">
               {positions.length === 0 ? (
-                <div className="text-text-tertiary text-[13px] py-3 text-center">
-                  No positions. Run the daily pipeline to construct the book.
-                </div>
+                <EmptyState
+                  title="No positions in the book"
+                  cause="portfolio_positions returned no rows for any run. The pipeline builds a book only from themes that clear the HypeScore threshold; the most recent run produced no qualifying candidates, so nothing was sized."
+                  remedy="Check the screening funnel on /book to see which filter removed everything, then either wait for attention to build or adjust scoring_config.hype_score_threshold."
+                  source="portfolio_positions"
+                  compact
+                />
               ) : (
                 <>
                   <div className="flex h-9 rounded-lg overflow-hidden bg-bg-elevated mb-3">

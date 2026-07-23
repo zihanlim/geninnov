@@ -215,6 +215,8 @@ def compute_risk(
     as_of: Optional[datetime] = None,
     portfolio_value: float = 100_000_000.0,
     risk_free_annual: float = 0.0,
+    history_dates: Optional[list[str]] = None,
+    spx_dates: Optional[list[str]] = None,
 ) -> dict[str, NumericDerivation]:
     """Bundle all risk metrics as NumericDerivation objects.
 
@@ -225,15 +227,37 @@ def compute_risk(
         as_of:           the "as of" timestamp for these inputs (defaults to now UTC).
         portfolio_value: total capital to scale VaR/CVaR (default $100M).
         risk_free_annual: risk-free rate for Sharpe (decimal).
+        history_dates:   ISO dates parallel to ``history``. When given together
+                         with ``spx_dates``, beta is computed on the date-aligned
+                         overlap of the two series rather than by list position.
+                         VaR/CVaR/Sharpe are order-independent and always use the
+                         full ``history``.
+        spx_dates:       ISO dates parallel to ``spx_returns``.
 
     Returns:
         dict keyed by "var_95", "cvar_95", "sharpe", "beta", "hhi" — each a NumericDerivation.
+
+    Beta alignment: VaR/CVaR/Sharpe are std/mean statistics and do not care about
+    ordering, but beta is cov(p, m) / var(m) and is only meaningful when the two
+    series are matched by DATE. Passing the two return lists positionally
+    (element 0 of a handful of portfolio rows against element 0 of ~252 SPX rows)
+    produced a meaningless beta whenever the series differed in length — which is
+    always. Supply the parallel date lists and beta aligns on their intersection.
     """
     as_of = as_of or datetime.now(timezone.utc)
     src = [SourceRecord(table="portfolio_returns", id="rollup", as_of=as_of)]
 
     rets = pd.Series(history, dtype="float64")
-    spx = pd.Series(spx_returns, dtype="float64") if spx_returns is not None else pd.Series([], dtype="float64")
+
+    # For beta, prefer date-indexed series so _beta_to_spx's concat aligns on
+    # the dates rather than on a positional RangeIndex. Fall back to positional
+    # (equal-length) series when no dates are supplied — the shape unit tests use.
+    if history_dates is not None and spx_dates is not None:
+        rets_for_beta = pd.Series(history, index=pd.to_datetime(history_dates), dtype="float64")
+        spx = pd.Series(spx_returns, index=pd.to_datetime(spx_dates), dtype="float64")
+    else:
+        rets_for_beta = rets
+        spx = pd.Series(spx_returns, dtype="float64") if spx_returns is not None else pd.Series([], dtype="float64")
 
     # Per T9 brief: compute_risk always produces an "estimated" derivation for
     # VaR/CVaR/Sharpe/Beta using whatever history is available. Parametric
@@ -252,7 +276,9 @@ def compute_risk(
         _parametric_cvar(rets, 0.95) * portfolio_value if len(rets) >= 2 else None
     )
     sharpe_v: Optional[float] = _annualized_sharpe(rets, risk_free_annual) if len(rets) >= 2 else None
-    beta_v: Optional[float] = _beta_to_spx(rets, spx) if len(rets) >= 2 and len(spx) >= 2 else None
+    beta_v: Optional[float] = (
+        _beta_to_spx(rets_for_beta, spx) if len(rets_for_beta) >= 2 and len(spx) >= 2 else None
+    )
     weights = [abs(p.get("weight", 0.0)) for p in book]
     hhi_v = concentration_hhi(weights)
 

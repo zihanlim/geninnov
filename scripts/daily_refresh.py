@@ -24,6 +24,15 @@ from supabase import create_client
 # would create two distinct ScoringConfig classes.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Windows consoles default to cp1252, which can't encode the arrows/box glyphs
+# used in status prints (→, ═). Force UTF-8 so a purely cosmetic print can never
+# crash the pipeline — a stray "→" print killed a full run right before L5.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 from backend.tools.sentiment import batch_sentiment
 from backend.data.brave_client import fetch_news_for_theme
 from backend.data.reddit_client import fetch_posts_for_theme
@@ -36,6 +45,8 @@ from backend.services.hype_calculator import (
     ScoringConfig,
     rescale_vader,
     minmax_norm,
+    crowding_label,
+    robust_momentum,
 )
 from backend.services.trade_generator import trade_score
 from backend.services.trade_ranker import (
@@ -43,6 +54,7 @@ from backend.services.trade_ranker import (
     allocate_portfolio,
     TradeCandidate,
     classify,
+    is_classified,
     SECTOR_MAP,
     GEO_MAP,
 )
@@ -74,6 +86,34 @@ def load_themes():
     return supabase.table("themes").select("*").execute().data
 
 
+def _classify_data_source(headlines: list[dict]) -> str:
+    """Provenance of a theme's collected text.
+
+    'real'  — every item came from a live feed (source not prefixed 'mock_'),
+    'mock'  — every item came from the fallback,
+    'mixed' — some of each,
+    'none'  — nothing collected.
+
+    Surfaced so a HypeScore computed off mock data is never mistaken for a
+    genuine one (RESIDUAL R0b).
+    """
+    if not headlines:
+        return "none"
+    real = sum(1 for h in headlines if not str(h.get("source", "")).startswith("mock"))
+    mock = len(headlines) - real
+    if mock == 0:
+        return "real"
+    if real == 0:
+        return "mock"
+    return "mixed"
+
+
+# Attention window for the theme↔price CORRELATION. A 7-day mention series on
+# sparse data is near-constant → degenerate (all-zero) corr (ADR-0028). 30 days
+# gives the series enough spread to correlate. Momentum still uses the trailing 7.
+CORR_WINDOW_DAYS = 30
+
+
 # ─── Step 3: Build mention counts + sentiment per theme ────────────────────────
 def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
     """
@@ -89,9 +129,22 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
     for theme in themes:
         theme_name = theme["name"]
 
-        # Fetch news + Reddit
-        news = fetch_news_for_theme(theme_name, lookback_days=7)
-        posts = fetch_posts_for_theme(theme_name, lookback_days=7)
+        # Fetch news + Reddit over the correlation window (momentum uses the
+        # trailing 7 days of it; the price correlation uses the full window).
+        news = fetch_news_for_theme(theme_name, lookback_days=CORR_WINDOW_DAYS)
+        posts = fetch_posts_for_theme(theme_name, lookback_days=CORR_WINDOW_DAYS)
+
+        # Keep the raw items so the L5 agent can reason over the actual news
+        # (persisted to theme_news by persist_theme_news → read by
+        # q1_agent.aggregate_context). Each item is source-tagged; a "mock_"
+        # prefix marks fallback data (see reddit_client / brave_client).
+        headlines = [
+            {"source": n.get("source", "brave"), "text": n["headline"], "date": n.get("date", "")}
+            for n in news
+        ] + [
+            {"source": p.get("source", "reddit"), "text": p["title"], "date": p.get("date", "")}
+            for p in posts
+        ]
 
         # Combine all text
         all_texts = [n["headline"] for n in news] + [p["title"] for p in posts]
@@ -107,17 +160,25 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
         todays_posts = [p for p in posts if p.get("date", "")[:10] == today_str]
         mention_count_1d = len(todays_news) + len(todays_posts)
 
-        # 7-day mention counts for momentum
-        daily_counts = []
-        for i in range(7):
+        # Per-day mention counts over the full correlation window. Momentum reads
+        # the trailing 7; the price correlation reads all CORR_WINDOW_DAYS so the
+        # series has enough spread to correlate (ADR-0028 root cause).
+        daily_counts_full = []
+        for i in range(CORR_WINDOW_DAYS):
             d = (run_date - timedelta(days=i)).isoformat()[:10]
             cnt = sum(1 for n in news if n.get("date", "")[:10] == d)
             cnt += sum(1 for p in posts if p.get("date", "")[:10] == d)
-            daily_counts.append(cnt)
+            daily_counts_full.append(cnt)
+        daily_counts = daily_counts_full[:7]   # trailing 7 → momentum
 
         mention_count_7d_avg = float(pd.Series(daily_counts).mean())
         mention_count_7d_std = float(pd.Series(daily_counts).std()) if len(daily_counts) > 1 else 0.0
-        momentum_raw = (mention_count_1d - mention_count_7d_avg) / mention_count_7d_std if mention_count_7d_std > 0 else 0.0
+        # Robust median/MAD z-score instead of a raw mean/std z-score: a single
+        # viral or quiet day shouldn't swing the momentum term (see ADR-0021).
+        momentum_raw, momentum_degenerate = robust_momentum(mention_count_1d, daily_counts)
+        if momentum_degenerate:
+            print(f"[build_theme_signals] {theme_name}: flat 7-day mention window "
+                  f"(no spread); momentum defaults to 0.")
 
         # Price correlation per mapped asset.
         # Prefer assets for today's run_date; fall back to the most recent
@@ -126,10 +187,13 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
         if not assets:
             assets = supabase.table("theme_assets").select("ticker").eq("theme_id", theme["id"]).order("run_date", desc=True).limit(20).execute().data
         tickers = [a["ticker"] for a in assets]
-        price_df = fetch_price_data(tickers, lookback_days=30)
+        price_df = fetch_price_data(tickers, lookback_days=CORR_WINDOW_DAYS + 10)
 
-        # Build mention series
-        mention_series = pd.Series({(run_date - timedelta(days=i)).isoformat()[:10]: daily_counts[i] for i in range(7)})
+        # Build the mention series over the full correlation window (30d), not 7.
+        mention_series = pd.Series({
+            (run_date - timedelta(days=i)).isoformat()[:10]: daily_counts_full[i]
+            for i in range(CORR_WINDOW_DAYS)
+        })
 
         price_corr = 0.0
         if not price_df.empty and not mention_series.empty:
@@ -148,6 +212,8 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
             "avg_sentiment": avg_sentiment,
             "price_corr": price_corr,
             "momentum_raw": momentum_raw,
+            "headlines": headlines,
+            "data_source": _classify_data_source(headlines),
         })
 
     return results
@@ -244,13 +310,26 @@ def persist(run_date: date, scored: list[dict]):
 
     for r in scored:
         theme_id = r["theme_id"]
+        vol_norm = minmax_norm(r["mention_count_1d"], [s["mention_count_1d"] for s in scored])
 
-        # Update themes table
+        # Update themes table. The SIGN of correlation is preserved on the
+        # history row below as signed_corr + crowding for the trade/risk layer.
+        #
+        # corr_score MUST equal the value hype_score() was computed from, or the
+        # four persisted sub-scores can't reproduce the persisted score and the
+        # derivation drawer silently disagrees with itself. As of ADR-0028,
+        # hype_score consumes min-max'd |corr| (consistent with volume/momentum),
+        # so the display persists the SAME min-max value — not the bare abs()
+        # used before. (When all |corr| are identical — e.g. every theme at 0.0
+        # on sparse data — min-max returns its 0.5 neutral fallback for BOTH the
+        # score and the display, so they still agree; the neutral is a documented
+        # placeholder until correlation carries real signal, not a phantom.)
+        corr_score = minmax_norm(abs(r["price_corr"]), [abs(s["price_corr"]) for s in scored])
         supabase.table("themes").update({
             "hype_score": r["hype_score"],
-            "volume_score": minmax_norm(r["mention_count_1d"], [s["mention_count_1d"] for s in scored]),
+            "volume_score": vol_norm,
             "sentiment_score": rescale_vader(r["avg_sentiment"]),
-            "corr_score": minmax_norm(abs(r["price_corr"]), [abs(s["price_corr"]) for s in scored]),
+            "corr_score": corr_score,
             "momentum_score": minmax_norm(r["momentum_raw"], [s["momentum_raw"] for s in scored]),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", theme_id).execute()
@@ -264,7 +343,7 @@ def persist(run_date: date, scored: list[dict]):
         # 0.55-weighted momentum term of TradeScore was permanently zero.
         # TradeScore had silently collapsed to `trade_sentiment_weight *
         # sentiment` in production.
-        supabase.table("theme_signals_history").upsert({
+        base_history = {
             "theme_id": theme_id,
             "run_date": today_str,
             "mention_count_1d": r["mention_count_1d"],
@@ -275,9 +354,148 @@ def persist(run_date: date, scored: list[dict]):
             "momentum_raw": r["momentum_raw"],
             "hype_score": r["hype_score"],
             "trade_score": r.get("trade_score"),
-        }, on_conflict="theme_id,run_date").execute()
+        }
+        # signed_corr + crowding (migration 019) preserve the correlation sign
+        # HypeScore folds. Fall back to the base row if the columns aren't
+        # deployed yet, so an un-applied migration never breaks the pipeline.
+        enriched_history = {
+            **base_history,
+            "signed_corr": r["price_corr"],
+            "crowding": crowding_label(r["price_corr"], volume_norm=vol_norm),
+            "data_source": r.get("data_source"),
+        }
+        try:
+            supabase.table("theme_signals_history").upsert(
+                enriched_history, on_conflict="theme_id,run_date"
+            ).execute()
+        except Exception as exc:
+            print(f"[{today_str}] WARN: crowding columns unavailable "
+                  f"({exc.__class__.__name__}); apply migration 019. "
+                  f"Writing base signals row.")
+            supabase.table("theme_signals_history").upsert(
+                base_history, on_conflict="theme_id,run_date"
+            ).execute()
 
     print(f"[{today_str}] Refresh complete. {len(scored)} themes updated.")
+
+
+def _safe_iso_date(s: str | None) -> str | None:
+    """Coerce a value to an ISO date string, or None. Guards theme_news writes
+    against non-ISO dates (e.g. Brave's occasional relative "2 days ago")
+    poisoning the whole batch upsert."""
+    try:
+        return date.fromisoformat((s or "")[:10]).isoformat()
+    except (ValueError, TypeError):
+        return None
+
+
+def persist_theme_news(run_date: date, scored: list[dict]) -> int:
+    """Upsert the raw collected headlines/posts into `theme_news` so the L5 agent
+    can reason over actual news (see q1_agent._load_recent_headlines).
+
+    Best-effort: if migration 018 has not been applied (table missing), log and
+    continue — the rest of the pipeline, and the L5 agent's macro-only fallback,
+    are unaffected. Returns the number of rows written.
+    """
+    today_str = run_date.isoformat()
+    rows: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for r in scored:
+        theme_id = r["theme_id"]
+        for h in r.get("headlines", []) or []:
+            text = (h.get("text") or "").strip()
+            if not text:
+                continue
+            key = (str(theme_id), text[:1000])
+            if key in seen:
+                continue   # dedupe within the batch to respect the unique key
+            seen.add(key)
+            rows.append({
+                "theme_id": theme_id,
+                "run_date": today_str,
+                "source": h.get("source", "unknown"),
+                "headline": text[:1000],
+                "published_date": _safe_iso_date(h.get("date")),
+            })
+
+    if not rows:
+        return 0
+
+    try:
+        supabase.table("theme_news").upsert(
+            rows, on_conflict="theme_id,run_date,headline"
+        ).execute()
+    except Exception as exc:
+        print(f"[{today_str}] WARN: theme_news upsert failed ({exc.__class__.__name__}); "
+              f"L5 will fall back to macro-only context. Apply migration 018.")
+        return 0
+
+    print(f"[{today_str}] {len(rows)} headlines persisted to theme_news.")
+    return len(rows)
+
+
+# ─── Step 6b (L2): Refresh factor exposures for the tradable universe ────────
+def refresh_factor_exposures(run_date: date, lookback_days: int = 252) -> int:
+    """Recompute FF5+UMD betas for every ticker the book can hold.
+
+    L2 was never part of this pipeline: `daily_refresh` orchestrated L0, L1, L3,
+    L4 and L5 and never imported `factor_fetcher`, so `factor_exposures` was only
+    ever populated by ad-hoc invocation. Nothing guaranteed the betas L5 reasons
+    over were computed against the same run as everything else, and
+    `pipeline_runs` had no L2 row to audit.
+
+    Downstream consumers of a stale/absent beta all degrade silently:
+    `screen_candidates` skips its R^2 gate, `compute_book_metrics` returns
+    all-zero tilts, and `scenario_analysis` falls through to hand-written
+    DEFAULT_TICKER_BETAS. Running it here makes the whole chain honest.
+
+    Returns the number of exposures upserted.
+    """
+    from backend.data.factor_fetcher import FactorFetcher
+
+    today_str = run_date.isoformat()
+    universe = sorted(set(SECTOR_MAP.keys()))
+
+    fetcher = FactorFetcher(
+        SUPABASE_URL, SUPABASE_KEY,
+        data_dir=str(Path(__file__).parent.parent / "backend" / "data"),
+    )
+
+    # One download for the whole universe; regressions need ~1.5y to fill a
+    # 252-day window after non-trading days are dropped.
+    price_df = fetch_price_data(universe, lookback_days=lookback_days * 2)
+    if price_df.empty:
+        print(f"[{today_str}] [L2] No price data for the universe; skipping factor refresh.")
+        return 0
+
+    exposures: list[dict] = []
+    skipped: list[str] = []
+    for ticker in universe:
+        sub = price_df[price_df["ticker"] == ticker].sort_values("date")
+        if len(sub) < lookback_days + 1:
+            skipped.append(ticker)
+            continue
+        returns = pd.Series(
+            sub["close"].pct_change().dropna().values,
+            index=pd.to_datetime(sub["date"].iloc[1:].values),
+        )
+        try:
+            row = fetcher.compute_exposures(ticker, returns, run_date, lookback_days)
+        except Exception as exc:
+            print(f"[{today_str}] [L2] {ticker}: regression failed ({exc.__class__.__name__}).")
+            continue
+        if row:
+            exposures.append(row)
+        else:
+            skipped.append(ticker)
+
+    written = fetcher.upsert_exposures(exposures)
+    print(
+        f"[{today_str}] [L2] {written} factor exposures upserted "
+        f"({len(skipped)} skipped for insufficient history: {skipped[:8]}"
+        f"{'...' if len(skipped) > 8 else ''})."
+    )
+    return written
 
 
 # ─── Step 7 (Phase 3): Load theme_assets map for ranked themes ───────────────
@@ -316,15 +534,44 @@ def rank_and_persist_trade_candidates(
         scored, theme_assets_map, cfg.hype_score_threshold, top_n=5
     )
 
+    # Drop any candidate whose ticker isn't in all three taxonomy maps before it
+    # reaches allocate_portfolio / compute_book_metrics, which hard-index the
+    # maps. theme_discovery can surface a ticker nobody has mapped yet; letting
+    # it through aborts the whole run, so we drop that one position and log it
+    # loudly instead. The maps are kept co-extensive and enforced by a test, so
+    # this only fires for a genuinely new ticker.
+    def _keep_classified(cands: list[TradeCandidate]) -> list[TradeCandidate]:
+        kept, dropped = [], []
+        for c in cands:
+            (kept if is_classified(c.asset) else dropped).append(c)
+        if dropped:
+            print(f"[{run_date.isoformat()}] WARNING dropped {len(dropped)} "
+                  f"unclassified candidate(s): {sorted(c.asset for c in dropped)}. "
+                  f"Add them to SECTOR_MAP/GEO_MAP/_ASSET_CLASS_MAP.")
+        return kept
+
+    longs = _keep_classified(longs)
+    shorts = _keep_classified(shorts)
+
     today_str = run_date.isoformat()
     for c in longs + shorts:
         # Stamp run_date so readers can tell today's candidates from a previous
-        # run's. A run that yields no qualifying candidates writes nothing, and
-        # without this the prior run's rows keep being served as current.
+        # run's.
         supabase.table("trade_candidates").upsert(
             {**c.to_trade_candidate_row(today_str), "run_date": today_str},
             on_conflict="theme_id,asset,direction",
         ).execute()
+
+    # Delete any candidate left over from an earlier run. The upsert keys on
+    # (theme_id, asset, direction) and never deletes, so a position that drops
+    # out of the book would otherwise persist forever and be served as current.
+    # Today's rows were written above, so deleting run_date < today is safe; a
+    # zero-candidate day correctly empties the table.
+    try:
+        supabase.table("trade_candidates").delete().lt("run_date", today_str).execute()
+    except Exception as exc:
+        print(f"[{today_str}] WARNING failed to prune stale trade_candidates "
+              f"({exc.__class__.__name__}): {exc}")
 
     print(f"[{today_str}] {len(longs)} long + {len(shorts)} short trade candidates persisted.")
     return longs, shorts
@@ -349,6 +596,14 @@ def allocate_and_persist_portfolio(
             {**c.to_portfolio_position_row(notional, weight), "run_date": today_str},
             on_conflict="theme_id,asset,direction",
         ).execute()
+
+    # Prune positions left over from an earlier run (see the same note in
+    # rank_and_persist_trade_candidates). A zero-position day empties the table.
+    try:
+        supabase.table("portfolio_positions").delete().lt("run_date", today_str).execute()
+    except Exception as exc:
+        print(f"[{today_str}] WARNING failed to prune stale portfolio_positions "
+              f"({exc.__class__.__name__}): {exc}")
 
     print(f"[{today_str}] {len(positioned)} portfolio positions persisted (total capital ${cfg.total_capital:,.0f}).")
     return positioned
@@ -427,9 +682,17 @@ def compute_and_persist_daily_return(
 
 # ─── Step 11 (Phase 3): Compute + persist risk derivations ─────────────────────────
 def _derivation_to_dict(d) -> dict:
-    """Serialize a NumericDerivation dataclass to a JSON-safe dict."""
+    """Serialize a NumericDerivation dataclass to a JSON-safe dict.
+
+    asdict() leaves datetime fields (computed_at, as_of, freshness timestamps) as
+    datetime objects, which the PostgREST client cannot json-encode — the
+    numeric_derivations JSONB write raised TypeError and silently degraded to
+    scalar-only. Round-tripping through json with default=str coerces datetimes
+    (and any other exotic type) to strings so the bundle actually persists.
+    """
     from dataclasses import asdict
-    return asdict(d)
+    import json
+    return json.loads(json.dumps(asdict(d), default=str))
 
 
 def compute_and_persist_risk(
@@ -465,9 +728,18 @@ def compute_and_persist_risk(
 
     history_series = _load_historical_portfolio_returns(252)
     history = [float(x) for x in history_series.tolist()] if len(history_series) else []
+    # Keep the dates so compute_risk can align beta by date, not list position.
+    history_dates = (
+        [pd.Timestamp(d).strftime("%Y-%m-%d") for d in history_series.index]
+        if len(history_series) else None
+    )
 
     spx_series = _load_spx_returns(252)
     spx_returns = [float(x) for x in spx_series.tolist()] if spx_series is not None else []
+    spx_dates = (
+        [pd.Timestamp(d).strftime("%Y-%m-%d") for d in spx_series.index]
+        if spx_series is not None else None
+    )
 
     # Run date at UTC midnight - the "as_of" the snapshot was taken.
     as_of = datetime(run_date.year, run_date.month, run_date.day, tzinfo=timezone.utc)
@@ -479,6 +751,8 @@ def compute_and_persist_risk(
         as_of=as_of,
         portfolio_value=total_capital,
         risk_free_annual=cfg.risk_free_annual,
+        history_dates=history_dates,
+        spx_dates=spx_dates,
     )
 
     # Pull scalar values for legacy columns and build the JSONB bundle.
@@ -505,14 +779,16 @@ def compute_and_persist_risk(
     try:
         supabase.table("portfolio_risk").upsert(row, on_conflict="run_date").execute()
     except Exception as exc:
-        # Migration 015 not yet applied (column missing) - fall back to
-        # scalar-only so the legacy contract still works.
+        # numeric_derivations column missing, or a serialization issue - fall
+        # back to scalar-only so the legacy contract still works. Must stay an
+        # UPSERT: a plain insert violates the run_date unique key (migration 016)
+        # on any same-day re-run and would abort the pipeline before L5.
         print(
             f"[{today_str}] WARN: numeric_derivations upsert failed ({exc.__class__.__name__}): "
-            f"falling back to scalar-only insert."
+            f"falling back to scalar-only upsert."
         )
         row.pop("numeric_derivations", None)
-        supabase.table("portfolio_risk").insert(row).execute()
+        supabase.table("portfolio_risk").upsert(row, on_conflict="run_date").execute()
 
     hhi = scalar["hhi"] or 0.0
     var_str = f"${scalar['var_95']:,.0f}" if scalar["var_95"] is not None else "n/a"
@@ -555,7 +831,10 @@ def compute_and_persist_cumulative_return(run_date: date) -> None:
         supabase.table("portfolio_cumulative_return").upsert({
             "as_of": today_str,
             "inception_date": today_str,
-            "cumulative_value": 0,
+            # Growth factor, not a return (ADR-0017). A fresh book has grown by
+            # a factor of 1.0, i.e. 0%. Writing 0 here meant the reader rendered
+            # a total loss of capital on day one.
+            "cumulative_value": 1.0,
             "compounded": True,
             "daily_returns_count": 0,
             "source_first_run_id": None,
@@ -573,7 +852,8 @@ def compute_and_persist_cumulative_return(run_date: date) -> None:
     supabase.table("portfolio_cumulative_return").upsert({
         "as_of": result["as_of"].isoformat(),
         "inception_date": result["inception"].isoformat(),
-        "cumulative_value": result["value"],
+        # Growth factor per ADR-0017, NOT result["value"] (which is a return).
+        "cumulative_value": result["growth_factor"],
         "compounded": result["compounded"],
         "daily_returns_count": len(daily_returns),
         "source_first_run_id": rows[0].get("run_date"),
@@ -671,6 +951,39 @@ def main():
         # production with nothing to show why.
         print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
 
+    # ── Phase 5: L2 — Factor exposures ──────────────────────────────────────
+    # Must run before L5: screen_candidates gates on R^2 and compute_book_metrics
+    # weights by these betas. Previously absent from the pipeline entirely.
+    print(f"[{run_date}] [L2] Refreshing FF5+UMD factor exposures...")
+    l2_started = datetime.now(timezone.utc)
+    l2_id = run_id_for(run_date, stage="L2")
+    try:
+        record_pipeline_run(supabase, l2_id, "started", run_date=run_date, stage="L2")
+    except Exception as exc:
+        print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
+    try:
+        n_exposures = refresh_factor_exposures(run_date)
+        try:
+            record_pipeline_run(
+                supabase, l2_id, "success" if n_exposures else "partial",
+                run_date=run_date, stage="L2",
+                duration_s=(datetime.now(timezone.utc) - l2_started).total_seconds(),
+            )
+        except Exception as exc:
+            print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
+    except Exception as exc:
+        # A failed factor refresh degrades L5 (zero tilts, default betas) but
+        # must not stop the book being built. Recorded so it is visible.
+        print(f"[{run_date}] [L2] Factor refresh failed ({exc.__class__.__name__}): {exc}")
+        try:
+            record_pipeline_run(
+                supabase, l2_id, "failure", run_date=run_date, stage="L2",
+                duration_s=(datetime.now(timezone.utc) - l2_started).total_seconds(),
+                error=str(exc),
+            )
+        except Exception as exc2:
+            print(f"[pipeline_runs] record failed ({exc2.__class__.__name__}): {exc2}")
+
     # ── Phase 5: L3 — Regime classification ─────────────────────────────────
     print(f"[{run_date}] [L3] Classifying macro regime...")
     l3_started = datetime.now(timezone.utc)
@@ -710,6 +1023,7 @@ def main():
     hyped = compute_hype_scores(raw, cfg)
     scored = compute_trade_scores(hyped, run_date)
     persist(run_date, scored)
+    persist_theme_news(run_date, scored)
 
     # ── Phase 3: trade ranking + portfolio construction ─────────────────────
     longs, shorts = rank_and_persist_trade_candidates(scored, run_date, cfg)

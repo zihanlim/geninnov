@@ -38,13 +38,11 @@ interface ResearchRecommendation {
   book_view: string;
   book_risks: string[];
   agent_run_id?: string;
-  book_metrics_summary?: string;
-  scenario_table?: string;
   /** T18: persisted AdvisoryDerivation JSONB from q1_agent. */
   advisory_derivation?: AdvisoryDerivation | null;
 }
 
-interface Regime { cycle: string; sentiment: string; narrative?: string }
+interface Regime { cycle: string; sentiment: string }
 
 const TOTAL_NOTIONAL = 100_000_000;
 
@@ -108,8 +106,11 @@ function PickCard({
           {pick.trade_score !== undefined
             ? `${pick.trade_score >= 0 ? "+" : ""}${pick.trade_score.toFixed(2)}`
             : "—"}
-        </span>{" "}
-        · Conviction: <span className="text-long">HIGH</span>
+        </span>
+        {/* "Conviction: HIGH" was hardcoded here for every pick in every book.
+            The system computes no conviction measure, so nothing is shown in
+            its place — HypeScore and TradeScore above are the actual ranking
+            signals. */}
         {hasCitations && (
           <span className="text-accent text-[11px] ml-1.5">· {citations!.length} citations</span>
         )}
@@ -229,19 +230,29 @@ function ResearchPageInner() {
   const [regime, setRegime] = useState<Regime | null>(null);
   const [openPick, setOpenPick] = useState<Pick | null>(null);
   const [citations, setCitations] = useState<Citation[] | undefined>(undefined);
+  const [promptVersion, setPromptVersion] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       const [recRes, regimeRes] = await Promise.all([
         supabase
           .from("research_recommendations")
-          .select("run_date, picks, book_view, book_risks, agent_run_id, book_metrics_summary, scenario_table, advisory_derivation")
+          // `book_metrics_summary` and `scenario_table` were selected here but
+          // are not columns on research_recommendations. PostgREST rejects an
+          // unknown column with 400/42703 and drops the WHOLE select, so this
+          // page rendered "No Q1 recommendations yet" unconditionally — even
+          // with a valid row present. The structured equivalents added in
+          // migration 021 (book_metrics, scenario_results) are rendered on
+          // /book and /risk.
+          .select("run_date, picks, book_view, book_risks, agent_run_id, advisory_derivation")
           .order("run_date", { ascending: false })
           .limit(1)
           .maybeSingle(),
         supabase
           .from("regime_classifications")
-          .select("cycle, sentiment, narrative")
+          // `narrative` is not a column on regime_classifications — selecting
+          // it 400s the query and blanks the regime badge.
+          .select("cycle, sentiment")
           .order("run_date", { ascending: false })
           .limit(1)
           .maybeSingle(),
@@ -265,12 +276,16 @@ function ResearchPageInner() {
         if (recData.agent_run_id) {
           const { data: runData } = await supabase
             .from("research_agent_runs")
-            .select("citations")
+            .select("citations, prompt_version")
             .eq("id", recData.agent_run_id)
             .maybeSingle();
           if (runData) {
-            const c = (runData as { citations?: Citation[] }).citations;
-            setCitations(Array.isArray(c) ? c : undefined);
+            const r = runData as {
+              citations?: Citation[];
+              prompt_version?: string;
+            };
+            setCitations(Array.isArray(r.citations) ? r.citations : undefined);
+            setPromptVersion(r.prompt_version ?? null);
           }
         }
       } else {
@@ -309,9 +324,12 @@ function ResearchPageInner() {
               <span className="num">{rec.run_date}</span>
             </div>
           )}
+          {/* Read from the agent run, not hardcoded. The literal
+              "q1-agent-v2.0.0" here disagreed with the persisted
+              prompt_version ("v2.1.0") and would never have tracked a change. */}
           <div className="mt-1">
             <span className="text-text-tertiary mr-1.5">PROMPT v</span>
-            <span className="num">q1-agent-v2.0.0</span>
+            <span className="num">{promptVersion ?? "—"}</span>
           </div>
           {regime && (
             <div className="mt-2">

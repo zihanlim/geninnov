@@ -308,3 +308,79 @@ def test_scenario_result_fields():
     assert r.estimated_dollar_pnl == -0.5
     assert "SPY" in r.contribution_breakdown[0]
     assert r.severity == "high"
+
+
+# ─── Factor path uses PER-ASSET betas, not the book tilt (2026-07-24) ─────────
+
+def _bm_for(picks, fe):
+    from backend.services.book_metrics import compute_book_metrics
+    return compute_book_metrics(picks, fe, 100_000_000.0)
+
+
+def _vix():
+    from backend.services.scenario_analysis import SCENARIOS
+    return next(s for s in SCENARIOS if s.name == "S1_vix_spike")
+
+
+def test_factor_path_scales_with_gross_not_net_exposure():
+    """estimate_scenario_pnl substituted book_metrics' BOOK-LEVEL factor tilt for
+    every pick's beta, and took abs() of it.
+
+    Pushing a book-level tilt inside the per-pick loop computes
+    beta_book × Σ(±wᵢ) × shock — that is beta_book × NET exposure — when the exposure
+    a shock acts on is GROSS. Live on 2026-07-24 the book ran 48.7% gross against
+    0.6% net, so every scenario collapsed by ~80x and the worst case (a VIX spike the
+    row itself calls "historically associated with -15 to -25% SPX drawdown") printed
+    -0.02%: twenty-one thousand dollars on a $100M book. A stress test that says the
+    book cannot lose money is worse than none, because it is reassuring.
+
+    XLF/XLV are used because neither carries a DIRECT shock in S1, so this isolates
+    the factor path.
+    """
+    from backend.services.scenario_analysis import estimate_scenario_pnl
+
+    picks = [
+        {"asset": "XLF", "direction": "long", "weight": 0.20},
+        {"asset": "XLV", "direction": "short", "weight": 0.20},
+    ]
+    # Identical betas on opposite sides: net exposure zero, gross 40%, genuinely
+    # hedged against a market shock. A book-tilt proxy cannot represent this.
+    same = {"XLF": {"beta_mkt": 1.0, "r_squared": 0.9},
+            "XLV": {"beta_mkt": 1.0, "r_squared": 0.9}}
+    hedged = estimate_scenario_pnl(_vix(), picks, _bm_for(picks, same), 1e8, same)
+    assert abs(hedged.estimated_book_return) < 0.01
+
+    # Same weights, but the short is now low-beta: the book is net long beta and the
+    # SAME shock must produce a real loss, sized by gross rather than net.
+    directional = {"XLF": {"beta_mkt": 1.0, "r_squared": 0.9},
+                   "XLV": {"beta_mkt": 0.0, "r_squared": 0.9}}
+    exposed = estimate_scenario_pnl(
+        _vix(), picks, _bm_for(picks, directional), 1e8, directional
+    )
+    assert exposed.estimated_book_return < -0.02
+    assert exposed.estimated_book_return < hedged.estimated_book_return
+
+
+def test_factor_path_respects_the_sign_of_a_beta():
+    """abs() on the tilt destroyed direction, so a negative-beta book could not gain
+    in a selloff. The live confirmation of the fix was that the scenario finally
+    agreed with the per-position beta attribution already on /risk: Σβ = -0.09 into a
+    -18% shock gave +1.63%."""
+    from backend.services.scenario_analysis import estimate_scenario_pnl
+
+    picks = [{"asset": "XLV", "direction": "long", "weight": 0.30}]
+    fe = {"XLV": {"beta_mkt": -0.8, "r_squared": 0.9}}
+    out = estimate_scenario_pnl(_vix(), picks, _bm_for(picks, fe), 1e8, fe)
+    assert out.estimated_book_return > 0
+
+
+def test_missing_beta_for_an_asset_contributes_nothing_rather_than_zero_beta():
+    """An asset with no factor row must be skipped, not scored as beta 0 — the
+    difference between "we cannot measure this exposure" and "this has no exposure"."""
+    from backend.services.scenario_analysis import estimate_scenario_pnl
+
+    picks = [{"asset": "XLF", "direction": "long", "weight": 0.20}]
+    with_beta = {"XLF": {"beta_mkt": 1.0, "r_squared": 0.9}}
+    a = estimate_scenario_pnl(_vix(), picks, _bm_for(picks, with_beta), 1e8, with_beta)
+    b = estimate_scenario_pnl(_vix(), picks, _bm_for(picks, with_beta), 1e8, {})
+    assert a.estimated_book_return < b.estimated_book_return

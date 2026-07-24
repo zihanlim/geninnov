@@ -772,6 +772,7 @@ def run_scenario_analysis_node(state: Q1State) -> Q1State:
         picks=enriched_picks,
         book_metrics=bm,
         total_capital=total_capital,
+        factor_exposures=state.get("factor_exposures") or {},
     )
 
     state["scenario_table"] = format_scenario_table(results)
@@ -1632,6 +1633,7 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
         picks=picks,
         book_metrics=bm,
         total_capital=total_capital,
+        factor_exposures=factor_exp,
     )
 
     state["book_metrics_final"] = book_metrics_to_dict(bm)

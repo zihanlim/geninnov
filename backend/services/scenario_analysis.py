@@ -186,6 +186,7 @@ def estimate_scenario_pnl(
     picks: list[dict],
     book_metrics,          # BookMetrics from book_metrics.py
     total_capital: float = 100_000_000.0,
+    factor_exposures: dict[str, dict] | None = None,
 ) -> ScenarioResult:
     """
     Estimate book P&L under a stress scenario.
@@ -208,26 +209,37 @@ def estimate_scenario_pnl(
             severity="low",
         )
 
-    # Factor-based PnL: signed sum of each pick's weight × factor beta × shock.
-    # Direction is applied per-pick (short positions flip the P&L sign).
-    # This uses book_metrics' unsigned factor tilts as the per-factor weight proxy,
-    # which is the best available signal from the pre-computed book state.
-    factor_weights: dict[str, float] = {}  # {factor: unsigned_book_weight}
-    for attr in ["book_beta_mkt", "book_beta_smb", "book_beta_hml",
-                 "book_beta_rmw", "book_beta_cma", "book_beta_umd"]:
-        key = attr.replace("book_beta_", "")
-        factor_weights[key] = abs(getattr(book_metrics, attr, 0.0))
+    # Factor-based PnL: Σ signed_weight_i × THIS ASSET'S beta × shock.
+    #
+    # It used to substitute book_metrics' BOOK-LEVEL tilt for every pick's beta,
+    # and take abs() of it. Both are wrong, and together they made the stress test
+    # useless: pushing the book tilt inside the per-pick loop computes
+    #     beta_book × Σ(±wᵢ) × shock  =  beta_book × NET exposure × shock
+    # when the exposure that matters is GROSS. On 2026-07-24 the book ran 48.7%
+    # gross against 0.6% net, so every scenario collapsed by ~80x: the worst case,
+    # a VIX spike the row itself describes as "historically associated with -15 to
+    # -25% SPX drawdown", came out at -0.02% — twenty-one thousand dollars on a
+    # $100M book. A stress test that says the book cannot lose money is worse than
+    # no stress test, because it is reassuring.
+    #
+    # The docstring above always specified per-asset betas; only the code disagreed.
+    # factor_exposures is the same table /risk already renders per-position betas
+    # from, and its market betas reconcile against known benchmarks (SPY 0.99 at
+    # R^2 1.00) — so there is no reason to proxy them.
+    fe = factor_exposures or {}
 
-    # Signed factor PnL: apply per-pick direction
     factor_pnl = 0.0
     for p in picks:
         w = p.get("weight", 0.0)
         if w <= 0:
             continue
         sign = 1.0 if p.get("direction") == "long" else -1.0
+        betas = fe.get(p.get("asset", ""), {})
         for factor, shock in scenario.factor_shocks.items():
-            beta = factor_weights.get(factor, 0.0)
-            factor_pnl += sign * w * beta * shock
+            beta = betas.get(f"beta_{factor}")
+            if beta is None:
+                continue
+            factor_pnl += sign * w * float(beta) * shock
 
     # Fallback: if book_metrics has near-zero factor weights (no live FF5 data),
     # use DEFAULT_TICKER_BETAS for known tickers. Direction applied per-pick.
@@ -316,6 +328,7 @@ def run_scenario_analysis(
     picks: list[dict],
     book_metrics,       # BookMetrics
     total_capital: float = 100_000_000.0,
+    factor_exposures: dict[str, dict] | None = None,
 ) -> list[ScenarioResult]:
     """
     Run all four stress scenarios against the portfolio.
@@ -324,7 +337,7 @@ def run_scenario_analysis(
     results: list[ScenarioResult] = []
     for scenario in SCENARIOS:
         result = estimate_scenario_pnl(
-            scenario, picks, book_metrics, total_capital
+            scenario, picks, book_metrics, total_capital, factor_exposures
         )
         results.append(result)
 

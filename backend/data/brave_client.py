@@ -42,6 +42,14 @@ def fetch_news_for_theme(theme: str, lookback_days: int = 7) -> list[dict]:
             ["node", "scripts/call_brave_mcp.js", query, date_from],
             capture_output=True,
             text=True,
+            # Decode the node process's stdout as UTF-8 explicitly. Without this,
+            # text mode uses the locale codec (cp1252 on Windows), which cannot
+            # decode the non-ASCII in real news headlines (em-dashes, curly quotes,
+            # accented names) — byte 0x9d crashes the stdout reader thread, and the
+            # dead thread hangs subprocess.run indefinitely, defeating even the
+            # timeout. errors="replace" is a belt-and-suspenders guard.
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
         if result.returncode == 0:

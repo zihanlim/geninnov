@@ -232,7 +232,7 @@ def run_backtest(sb, horizons=(1, 5, 20), persist: bool = False) -> dict:
     """Full harness: read history → fetch prices → IC per horizon → report."""
     history = _load_signal_history(sb)
     if len(history) < 10:
-        print(f"[backtest] Only {len(history)} scored rows in history — need more "
+        print(f"[backtest] Only {len(history)} scored rows in history - need more "
               f"daily runs before IC is meaningful. Reporting what exists.")
     theme_ids = sorted({r["theme_id"] for r in history})
     asset_map = _theme_asset_map(sb, theme_ids)
@@ -273,8 +273,13 @@ def _print_report(report: dict) -> None:
               f"{(f'{ir:+.2f}' if ir is not None else '  n/a'):>7} | "
               f"{(f'{hr:.0%}' if hr is not None else '  n/a'):>8} | "
               f"{(f'{pooled:+.3f}' if pooled is not None else '   n/a'):>9}")
-    print("Reading: IC>0 → higher HypeScore preceded higher forward returns. "
-          "IC≈0 or <0 → not (currently) predictive.\n")
+    # ASCII only: this line printed to a cp1252 stdout (Windows) raised
+    # UnicodeEncodeError and aborted the whole harness — and it runs BEFORE
+    # _persist_report, so a crash here means the IC never got written. That is how
+    # the panel came to show stale all-null rows while the harness could in fact
+    # compute a real IC.
+    print("Reading: IC>0 -> higher HypeScore preceded higher forward returns. "
+          "IC~0 or <0 -> not (currently) predictive.\n")
 
 
 def _persist_report(sb, report: dict, start: date, end: date) -> None:
@@ -293,6 +298,11 @@ def _persist_report(sb, report: dict, start: date, end: date) -> None:
                                  "pooled_ic": res["pooled_ic"]}),
         })
     try:
+        # Idempotent: replace this end_date's rows rather than stacking a new set on
+        # every re-run, so the panel reads one clean set per date.
+        sb.table("backtest_results").delete().eq("test_name", "hype_ic").eq(
+            "end_date", end.isoformat()
+        ).execute()
         sb.table("backtest_results").insert(rows).execute()
         print(f"[backtest] Persisted {len(rows)} IC rows to backtest_results.")
     except Exception as exc:

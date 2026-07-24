@@ -1,6 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  horizonStatus,
+  isValidated,
+  isMeasuredThin,
+} from "@/lib/method/hypeValidation";
 
 // Honest signal-validation status. HypeScore measures ATTENTION; whether attention
 // predicts returns is an empirical question the IC backtest (scripts/backtest_hype.py)
@@ -20,6 +25,7 @@ interface HorizonStat {
   h: number;
   ic: number | null;
   nObs: number | null;
+  nDates: number | null;
   icIr: number | null;
   hitRate: number | null;
 }
@@ -65,6 +71,7 @@ export default function SignalValidation() {
             h,
             ic: r?.realized_value ?? null,
             nObs: (notes.n_obs as number) ?? null,
+            nDates: (notes.n_dates as number) ?? null,
             icIr: (notes.ic_ir as number) ?? null,
             hitRate: (notes.hit_rate as number) ?? null,
           };
@@ -74,7 +81,11 @@ export default function SignalValidation() {
   }, []);
 
   const anyObs = (stats ?? []).some((s) => (s.nObs ?? 0) > 0);
-  const validated = (stats ?? []).some((s) => s.ic !== null);
+  // validated / measuredThin live in lib/method/hypeValidation.ts and are unit-tested:
+  // the failure mode they guard (a single-date IC read as validation) is exactly the
+  // kind of confident-but-wrong number this codebase keeps removing.
+  const validated = isValidated(stats ?? []);
+  const measuredThin = isMeasuredThin(stats ?? []);
 
   return (
     <section className="mb-10 scroll-mt-20" id="signal-validation">
@@ -150,11 +161,18 @@ export default function SignalValidation() {
                       {s.nObs ?? "—"}
                     </td>
                     <td className="px-[14px] py-2.5 border-b border-border text-text-secondary text-[11.5px]">
-                      {s.ic !== null
-                        ? "measured"
-                        : (s.nObs ?? 0) > 0
-                          ? "too few names to rank"
-                          : "no forward window yet"}
+                      {(() => {
+                        switch (horizonStatus(s)) {
+                          case "validated":
+                            return "measured";
+                          case "measured-thin":
+                            return `measured · ${s.nDates ?? 1} date${(s.nDates ?? 1) === 1 ? "" : "s"} — not yet stable`;
+                          case "too-few-names":
+                            return "too few names to rank";
+                          default:
+                            return "no forward window yet";
+                        }
+                      })()}
                     </td>
                   </tr>
                 ))
@@ -174,10 +192,24 @@ export default function SignalValidation() {
               <span className="text-warning font-semibold">
                 Not yet validated — and we say so.
               </span>{" "}
-              HypeScore is built on news-mention history the daily pipeline has only
-              just begun accruing, so there is not yet a run-date with a forward price
-              window to correlate against{anyObs ? "" : " (0 usable observations)"}.
-              Until this table shows a measured IC, HypeScore is an{" "}
+              {measuredThin ? (
+                <>
+                  The IC above is a <strong>single-date point estimate</strong> — one
+                  rank correlation across the day&rsquo;s themes, not a stable signal.
+                  The IC information ratio (mean/σ across dates) is undefined until
+                  there are at least two independent cross-sections, and that
+                  cross-date stability is the whole bar for calling HypeScore a signal.
+                  So the number is shown for what it is and no more.{" "}
+                </>
+              ) : (
+                <>
+                  HypeScore is built on news-mention history the daily pipeline has
+                  only just begun accruing, so there is not yet a run-date with a
+                  forward price window to correlate against
+                  {anyObs ? "" : " (0 usable observations)"}.{" "}
+                </>
+              )}
+              Until this table shows a stable IC across dates, HypeScore is an{" "}
               <em>attention heuristic</em>, used for idea generation and{" "}
               <strong>not</strong> as a return forecast — direction and sizing come
               from EdgeScore, whose components <em>are</em> IC-tested (carry rank IC{" "}

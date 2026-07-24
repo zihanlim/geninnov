@@ -116,8 +116,15 @@ deploys. Until it resets:
 - **Committed, tested, built, NOT deployed:**
   [ADR-0064](adrs/0064-the-audit-page-blamed-the-pipeline-for-its-own-arithmetic.md)'s
   EdgeScore renormalisation fix (commit `e8d5b27f`). The live `/method` still shows
-  **RECONCILIATION FAILURE**, `null → 0` and *"does NOT reconcile"* — verified still
-  present at 21:07 UTC. **Deploy it first next iteration**, then verify.
+  **RECONCILIATION FAILURE**, `null → 0` and *"does NOT reconcile"* — re-checked at
+  21:08 UTC, still present. **Deploy it first next iteration**, then verify.
+- **Retried twice more and still refused**, so this is not a transient. A deploy *did*
+  succeed for the other session at 21:03 and did **not** contain `e8d5b27f`, so the
+  quota is shared and whoever spends it last wins.
+- **Backend work is NOT blocked by this.** The daily pipeline and its guard run on
+  GitHub Actions, and can be executed and verified against production directly. When the
+  quota is out, **prefer backend or measurement work that can actually be verified** over
+  frontend work that has to be claimed rather than shown.
 - **Deploy from a clean archive**, never the working tree, because a second agent's
   uncommitted WIP is usually present:
   `git archive HEAD | tar -x -C <tmp> && cd <tmp> && npx vercel --prod --yes`
@@ -167,6 +174,49 @@ Live at https://andromeda-analytics.vercel.app · 518 backend + 111 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 47 (2026-07-25)
+
+**Proved the claim the previous iteration made from one data point, and turned it into a
+standing check. Deploy still blocked, so the work went where it could be verified.**
+
+The deploy quota is still exhausted — retried twice, refused both times, and a deploy
+that *did* succeed for the other session at 21:03 did not contain `e8d5b27f`. So the
+frontend fix stays unverifiable, and the honest response is not to keep producing
+frontend work that has to be claimed rather than shown. **Backend and measurement work
+is not blocked**: the pipeline and its guard run on GitHub Actions and can be executed
+against production directly.
+
+[ADR-0064](adrs/0064-the-audit-page-blamed-the-pipeline-for-its-own-arithmetic.md)
+asserted *"the pipeline was right and the page was wrong"* — **on the strength of a
+single theme.** Checked across the whole live run:
+
+| recomputation | mismatches |
+|---|---|
+| **renormalised** (what the pipeline does, ADR-0036) | **0 / 8** |
+| naive sum (what the page did) | **3 / 8** |
+
+The three failures are exactly the themes with no carry or value proxy — China Growth,
+Energy Prices, US Election — diverging by **0.11 to 0.18**. That settles the claim, and
+it also sizes the blast radius: `/book`'s `EdgeBars` fires the same false alarm on **4 of
+the 9 published positions** (XLE, UNH, BABA, PDD), inside their own expanded derivations.
+
+**The part worth keeping is not the number, it is that nothing was checking.** The
+pipeline was right, the page was wrong, and the only reason anyone looked is that a
+surface happened to render the disagreement. `check_edge_score_reconciles` makes the
+invariant explicit — **a stored score must be reproducible from the stored components by
+the documented formula** — and runs in the daily guard that already executes after every
+pipeline run. A future change to the weights, the components or the formula now reports
+itself instead of waiting for a page to notice.
+
+Scoped to the **latest run only**: a row written under different weights is history, not
+a live defect. Silent on an unscored theme, on missing weights, and on no rows — absence
+of data is not a mismatch.
+
+**Verified against production, not asserted:** `✓ edge_score reconciles from components
+for all 8 themes on 2026-07-25`, exit 0. 524 backend tests. UI pass at 1440px and 375px
+confirms no regression — `/book` reads 5/4 on run 2026-07-25, no horizontal scroll, no
+`NaN`, zero console errors.
 
 ### Loop iteration 46 (2026-07-25)
 

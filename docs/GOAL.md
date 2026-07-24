@@ -180,6 +180,74 @@ Live at https://andromeda-analytics.vercel.app · 533 backend + 120 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 51 (2026-07-25)
+
+**ADR-0066 verified on the book of record, the half-finished run resolved itself, and a
+column that called a subset "the book" was fixed.**
+
+**First, a correction to my own last entry.** I wrote that iteration 50's pipeline run
+had left the system in the provisional window. It had not — the run was *still going*,
+~25 minutes in on L5's retries. It has since completed: *"Book of record reconciled to
+L5: 9 positions (was 40 from L1)"*. The provisional window is the expected mid-run state
+and `/risk`'s warning was doing exactly its job. **Check whether a process is alive
+before calling its output a broken state.**
+
+**ADR-0066 verified where it matters.** Not just on the provisional rows checked last
+iteration, but on the **published book**: 9 positions, **0/9 reconcile mismatches**,
+`carry_signal` NULL on the 7 positions where it is genuinely not computable and a real
+number on the 2 where it is. The per-position decomposition on `/book` is now
+reconcilable by construction.
+
+**Then the deferred item from [ADR-0060](adrs/0060-a-share-cannot-exceed-the-whole.md).**
+`/risk` headed a column **"Avg |ρ| to book"**, promising a mean correlation against the
+whole book, while averaging only the pairs flagged at **ρ ≥ 0.70**. The two differ in a
+way that *inverts* the reading: a position correlated **0.65 with every other holding**
+has no flagged pair, renders `—`, and reads as *uncorrelated* when it is nearly the
+opposite. On a well-diversified book **no** pair crosses the flag, so the whole column is
+empty — **the good case, rendered as an absence**, indistinguishable from missing data.
+
+The header now names its subset (`Avg |ρ| · flagged ≥ 0.70`), the empty cell explains
+itself, and when every row is empty a note says so once, ending with the sentence that is
+the whole point: *"a book where every pair sat at ρ 0.65 would look identical."* The
+threshold is **imported**, not re-typed — the same 0.70 `/risk` flags on, `ClearedNotTaken`
+calls *"largely already held"*, and `PoolDepth` clusters ideas at.
+
+**The stronger column is deliberately not built:** a genuine book-wide mean needs a full
+correlation matrix the page does not have, and faking it from the flagged subset is the
+proxy ADR-0045 refused for turnover.
+
+**The pattern across three ADRs in two days is now explicit.** ADR-0060: do not print a
+share that exceeds the whole. ADR-0066: do not store absence as a value. ADR-0067: do not
+label a subset as the whole. One discipline — **the label and the number must agree about
+what was measured** — and all three found by reading the rendered page, not by a test.
+
+[ADR-0067](adrs/0067-a-column-must-name-the-subset-it-measures.md).
+
+#### Recorded next step — a cap message whose own numbers contradict it
+
+The completed run reports **1 cap violation**, and it is this:
+
+```
+cap violations: ['US (35.0% > 35%)']
+  BREACHED geo: US  weight = 0.3500  cap = 0.3500
+```
+
+**35.0% is not greater than 35%.** The values are *exactly equal* and the message asserts
+a strict inequality, so the one number on the page a reader would poke first does not
+survive the poke. Iteration 21 noticed the same boundary (*"headroom −0.0% — a
+floating-point artefact worth tidying if that row is ever touched"*) and left it; it is
+now producing a false sentence rather than only an ugly one.
+
+Two honest options, and they are different decisions: treat exact equality as **at** the
+cap rather than **over** it (a tolerance, and the wording follows), or keep flagging it
+conservatively and **word it as "at the cap"**. The second is safer — a position sitting
+exactly on a limit is worth surfacing — and needs no threshold. Either way the fix is in
+`cap_utilisation`, is backend, and is verifiable without a deploy.
+
+**Deploy blocked again** (`api-deployments-free-per-day`), so ADR-0067's column fix is
+committed and tested (120 frontend tests) but **not live**. Last iteration's success was
+a brief window, not a reset.
+
 ### Loop iteration 50 (2026-07-25)
 
 **The concentration metric was diluted by cash, so it read below the "fully

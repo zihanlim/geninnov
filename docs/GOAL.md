@@ -114,6 +114,49 @@ Live at https://andromeda-analytics.vercel.app · 449 backend + 52 frontend test
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 35 (2026-07-25)
+
+**Built the measurement this file has been asking for since ADR-0041: agent churn is
+not market churn.**
+
+The instruction was already written here — *"run the pipeline twice on frozen inputs
+and diff the positions"*, and *"do that before claiming the book is stable"* — and
+nothing had done it. The turnover panel measures day-over-day change, and that number
+mixes **the market moved** (working as intended) with **the agent changed its mind**
+(a credibility problem). No amount of staring at day-over-day turnover separates them.
+
+`scripts/replication_test.py` does. It builds the L5 state **once** through the
+deterministic nodes, then calls `reason_picks` N times on independent deep copies:
+same candidates, macro, regime, book metrics, scenarios, prompt, temperature.
+Everything upstream of the LLM is frozen by construction, so whatever differs is the
+model. The pool is read back from `trade_candidates` rather than re-ranked — running
+L1 again would refetch prices and quietly reintroduce the confound.
+
+Reported **per side, each beside its independent-idea count**, plus the names that
+survived every sample. Persisted to `backtest_results(test_name='book_replication')`
+and rendered on `/book` under the turnover panel with **no verdict attached**, per
+ADR-0045: a side where ten ideas compete for five slots can reasonably return
+different names each run; a side where the pool exactly fills the book should not.
+The panel shows which case you are in rather than averaging them.
+
+**What prompted it — and why it was not evidence.** Four runs stamped `run_date`
+2026-07-25 inside one hour showed consecutive turnover of **50% / 77% / 50%**. Code
+and prompt changed between several of them, so none of it is admissible; that is
+precisely why a controlled version was needed instead of more incidental numbers. One
+detail shaped the design: between the last two the **short side was identical** (SLV,
+BABA, PDD, NOC) while the **long side kept one name of five** — pool depth was 4 short
+ideas and 10 long. Where the pool exactly fills the book the agent has no choice;
+where it over-fills, it chooses.
+
+**Also verified live this iteration:** iteration 34's guardrail held. The new thesis
+does **not** restate the pool-depth count, `check_idea_count_claims` reports clean
+against it, and the wrong *"only four independent ideas"* sentence is gone from the
+deployed page. Pool depth now reads **10 long ideas / 5 held** and **4 short ideas /
+4 held** — both sides at the pool's limit, with the short side no longer "short by
+choice".
+
+[ADR-0050](adrs/0050-separate-agent-churn-from-market-churn.md).
+
 ### Loop iteration 34 (2026-07-25)
 
 **The recorded next step was wrong, and finding out why was the iteration.**
@@ -1803,6 +1846,13 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   What is left — genuine price/news movement, and L5 re-picking — has not been
   quantified. Do that before claiming the book is stable; run the pipeline twice on
   frozen inputs and diff the positions.
+  **Harness DONE, iteration 35** ([ADR-0050](adrs/0050-separate-agent-churn-from-market-churn.md)):
+  `scripts/replication_test.py` freezes everything upstream of the LLM and re-runs
+  `reason_picks` N times, so the residual is attributable to the model rather than to
+  price/news movement. Persists to `backtest_results(test_name='book_replication')`
+  and renders on `/book`. **The number itself is still open** — each sample is a full
+  reasoning call of several minutes, so the run is deliberate rather than daily, and
+  the panel renders nothing until one completes.
 - **The anchors in ADR-0042 are judgement calls, not fitted values** (3 mentions/day,
   |corr| 0.50, momentum scale 2.0). They are stated constants — the same status
   min-max's implicit choices had, but now visible. This is exactly what the HypeScore

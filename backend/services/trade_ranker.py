@@ -128,6 +128,11 @@ class TradeCandidate:
     sentiment_signal: float = 0.0  # EdgeScore component: contrarian sentiment tilt (Stage 5)
     vol: float = 0.0          # daily-return vol of the theme basket (ADR-0032 sizing)
     conviction: float = 0.0   # |edge_score| / vol — Stage-4 conviction × inverse-vol weight
+    # True when this candidate's THEME sits below the attention gate and was let in
+    # only because one of its assets carries a decisive edge (ADR-0046). Surfaced so
+    # a reader can see which names arrived by attention and which by conviction —
+    # they are different claims and should not read identically.
+    via_conviction: bool = False
 
     def _edge_row(self) -> dict:
         """The EdgeScore decision block persisted on both candidate + position rows,
@@ -164,6 +169,7 @@ class TradeCandidate:
             "entry_thesis": thesis,
             "risk_factors": risk,
             "timeframe": timeframe,
+            "via_conviction": self.via_conviction,
             **self._edge_row(),
         }
 
@@ -189,6 +195,7 @@ def rank_trade_candidates(
     score_key: str = "trade_score",
     abstain_threshold: float = 0.0,
     asset_edges: dict | None = None,
+    conviction_override: float | None = None,
 ) -> tuple[list[TradeCandidate], list[TradeCandidate]]:
     """Select up to N longs and N shorts from scored themes (ADR-0029).
 
@@ -211,6 +218,11 @@ def rank_trade_candidates(
                            only if |score_key| >= this. A weak/flat signal produces NO
                            position rather than a forced one; a side (or the whole book)
                            can legitimately be empty when conviction is absent.
+        conviction_override: |asset edge| at which a BELOW-attention theme is pulled
+                           into scope anyway (ADR-0046). Requires ``asset_edges``.
+                           Must be higher than ``abstain_threshold`` to mean anything
+                           — it is a stricter second door, not a relaxed first one.
+                           None disables it, which is the pre-ADR-0046 behaviour.
 
     Returns:
         (longs, shorts) as lists of TradeCandidate.
@@ -276,8 +288,46 @@ def rank_trade_candidates(
             rest = sorted((r for r in below if r["theme_id"] not in seen_t),
                           key=lambda r: -(r.get("hype_score") or 0))
             themes_in_scope += rest[: min_side - len(themes_in_scope)]
+
+        # Conviction override (ADR-0046). Attention decides what we LOOK at, and on
+        # 2026-07-24 that quietly decided what we could TRADE: four themes cleared
+        # hype >= 50 and the other four were never expanded, including China Growth
+        # — theme edge -0.264, the most negative signal on the board and the only
+        # decisively short THEME in the system. Its shorts never existed as
+        # candidates; the book's three shorts were taken out of themes whose own
+        # edge is POSITIVE. China Growth missed the gate by 3.3 HypeScore points,
+        # and that gate measures how loud the news is, not whether the trade is
+        # good. Energy Prices (+0.332, the strongest edge of the day either way)
+        # was excluded the same way at 36.4.
+        #
+        # So a sub-attention theme is admitted when ONE OF ITS ASSETS carries a
+        # decisive edge. Asset-level, not theme-level, on purpose: the comment above
+        # is right that theme edge is a summary statistic and is smallest exactly
+        # when its assets disagree, so admitting on |theme edge| would let in the
+        # themes whose names agree and keep out the cross-sectionally richest ones.
+        #
+        # This is NOT a relaxed abstention band. The bar here is strictly HIGHER
+        # than abstain_threshold — a name has to be decisive, not merely non-flat,
+        # to earn a look its theme's attention did not. Every admitted candidate
+        # still clears |its own edge| >= abstain_threshold in _expand afterwards.
+        overridden: set[str] = set()
+        if conviction_override is not None and asset_edges:
+            floor = max(conviction_override, abstain_threshold)
+            seen_t = {r["theme_id"] for r in themes_in_scope}
+            for r in sorted(below, key=lambda x: -(x.get("hype_score") or 0)):
+                tid = r["theme_id"]
+                if tid in seen_t:
+                    continue
+                if any(
+                    abs((asset_edges.get((tid, a)) or {}).get("edge_score") or 0.0) >= floor
+                    for a in theme_assets_map.get(tid, [])
+                ):
+                    themes_in_scope.append(r)
+                    overridden.add(tid)
+
         expanded = _expand(themes_in_scope, theme_assets_map, direction="long",
-                           asset_edges=asset_edges, abstain_threshold=abstain_threshold)
+                           asset_edges=asset_edges, abstain_threshold=abstain_threshold,
+                           via_conviction_themes=overridden)
         # The same ticker can express several themes; keep its strongest conviction.
         best: dict[str, TradeCandidate] = {}
         for c in expanded:
@@ -303,6 +353,7 @@ def _expand(
     direction: str,
     asset_edges: dict | None = None,
     abstain_threshold: float = 0.0,
+    via_conviction_themes: set[str] | None = None,
 ) -> list[TradeCandidate]:
     """Expand selected themes into per-asset candidates.
 
@@ -340,6 +391,7 @@ def _expand(
                     sentiment_signal=comp.get("sentiment_signal", 0.0),
                     vol=comp.get("vol", 0.0),
                     conviction=comp.get("conviction", 0.0),
+                    via_conviction=theme_id in (via_conviction_themes or set()),
                 )
             )
     return out

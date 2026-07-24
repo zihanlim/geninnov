@@ -28,6 +28,11 @@ class ScoringConfig:
     edge_value_weight: float = 0.18
     edge_sentiment_weight: float = 0.05   # small CONTRARIAN tilt (Stage 5)
     edge_abstain_threshold: float = 0.15
+    # Conviction override (ADR-0046). |asset edge| at which a theme BELOW the
+    # attention gate is pulled into scope anyway. Strictly above the abstention
+    # band by design: a name has to be decisive to earn a look its theme's
+    # attention did not. 0 disables the override.
+    edge_conviction_override: float = 0.25
 
     @classmethod
     def from_db_rows(cls, rows: list[dict]) -> "ScoringConfig":
@@ -48,6 +53,7 @@ class ScoringConfig:
             edge_value_weight=vals.get("edge_value_weight", 0.18),
             edge_sentiment_weight=vals.get("edge_sentiment_weight", 0.05),
             edge_abstain_threshold=vals.get("edge_abstain_threshold", 0.15),
+            edge_conviction_override=vals.get("edge_conviction_override", 0.25),
         )
 
 # ─── Absolute sub-score scales (ADR-0042) ────────────────────────────────────

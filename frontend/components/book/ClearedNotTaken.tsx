@@ -70,6 +70,9 @@ export interface CandidateRow {
   direction: "long" | "short";
   edge_score: number | null;
   theme_id: string | null;
+  /** ADR-0046: this name's theme sits below the attention gate and was expanded
+   *  only because the name's own EdgeScore is decisive. */
+  via_conviction?: boolean | null;
 }
 
 /** {asset: {closest, corr}} from research_recommendations.candidate_correlations. */
@@ -189,6 +192,19 @@ export default function ClearedNotTaken({
                   </td>
                   <td className="px-3 py-2.5 text-text-secondary">
                     {(c.theme_id && themeNames[c.theme_id]) || "—"}
+                    {/* ADR-0046: which door this name came through. A candidate
+                        whose theme cleared the attention gate and one admitted on
+                        its own edge alone are different claims about why it is
+                        here, and they should not read identically. */}
+                    {c.via_conviction && (
+                      <span
+                        className="ml-1.5 text-[10px] uppercase tracking-[0.08em]"
+                        style={{ color: "var(--warning)" }}
+                        title="Theme is below the attention gate — admitted on this name's own EdgeScore (ADR-0046)"
+                      >
+                        on edge
+                      </span>
+                    )}
                   </td>
 
                   <td className="px-3 py-2.5">

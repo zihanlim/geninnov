@@ -595,6 +595,7 @@ def screen_candidates(state: Q1State) -> Q1State:
             "hype_score": c.get("hype_score", 0.0),
             "trade_score": c.get("trade_score", 0.0),
             "avg_sentiment": c.get("avg_sentiment", 0.0),
+            "via_conviction": bool(c.get("via_conviction")),
         })
 
     # Deduplicate: keep highest-hype entry per (asset, direction)
@@ -616,6 +617,7 @@ def screen_candidates(state: Q1State) -> Q1State:
     state["candidates"] = candidate_pool[:30]   # cap at 30 for LLM context
 
     deduped = len(eligible) - len(candidate_pool)
+    via_conviction_n = sum(1 for c in l1_pool if c.get("via_conviction"))
     state["screening_funnel"] = [
         {
             "stage": "L1 ranked candidates",
@@ -624,6 +626,23 @@ def screen_candidates(state: Q1State) -> Q1State:
             "reason": (
                 "From rank_trade_candidates: HypeScore >= threshold, direction = "
                 "sign(TradeScore), two-sided via backfill (ADR-0029/0030)."
+            ),
+        },
+        {
+            # Not an attrition stage — the only one that ADDS. Shown because a
+            # funnel that only ever subtracts implies the pool started complete,
+            # and until ADR-0046 it did not: the attention gate was silently
+            # deciding tradability, not just priority.
+            "stage": "conviction override (ADR-0046)",
+            "remaining": l1_total,
+            "removed": 0,
+            "reason": (
+                f"{via_conviction_n} of these {l1_total} candidates come from themes "
+                "BELOW the attention gate, admitted because the name's own |EdgeScore| "
+                "is decisive. Attention chooses what we look at; it does not decide "
+                "what is tradable."
+                if via_conviction_n
+                else "No sub-attention theme held a decisive enough name to be admitted."
             ),
         },
         {
@@ -2073,6 +2092,10 @@ def run_q1_agent(
             "hype_score": c.hype_score,
             "trade_score": c.trade_score,
             "avg_sentiment": c.avg_sentiment,
+            # ADR-0046: this name's theme is below the attention gate and was
+            # expanded only because the name's own edge is decisive. Carried so the
+            # funnel can count it and /book can say which door a candidate used.
+            "via_conviction": getattr(c, "via_conviction", False),
         }
         for c, _, _ in candidates
     ]

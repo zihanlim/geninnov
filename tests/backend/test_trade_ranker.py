@@ -522,3 +522,119 @@ def test_per_asset_abstention_still_applies_inside_a_scoped_theme():
         score_key="edge_score", abstain_threshold=0.15, asset_edges=asset_edges)
     assert [c.asset for c in shorts] == ["GLD"]
     assert longs == []                               # TIP held out on its own |edge|
+
+
+# ─── Conviction override (ADR-0046) ──────────────────────────────────────────
+
+def test_conviction_override_admits_a_quiet_theme_holding_a_decisive_name():
+    """ADR-0046 — the attention gate was deciding TRADABILITY, not just priority.
+
+    Live on 2026-07-24: four of eight themes cleared hype >= 50 and the other four
+    were never expanded. China Growth sat at theme edge -0.264 — the most negative
+    signal on the board and the only decisively short THEME in the system — and was
+    excluded for being 3.3 HypeScore points quiet, while the book's three shorts
+    were all taken out of themes whose own edge is POSITIVE.
+    """
+    scored = [
+        _theme_row("loud", edge=+0.20, hype=68.0),
+        _theme_row("quiet", edge=-0.26, hype=46.7),   # China Growth's actual numbers
+    ]
+    asset_edges = {
+        ("loud", "SPY"): _ae(+0.22),
+        ("quiet", "FXI"): _ae(-0.35),                 # decisive
+    }
+    longs, shorts = rank_trade_candidates(
+        scored, {"loud": ["SPY"], "quiet": ["FXI"]}, hype_threshold=50.0,
+        score_key="edge_score", abstain_threshold=0.15, asset_edges=asset_edges,
+        conviction_override=0.25)
+    assert [c.asset for c in longs] == ["SPY"]
+    assert [c.asset for c in shorts] == ["FXI"]
+
+
+def test_conviction_override_is_a_stricter_door_not_a_looser_one():
+    """A name that merely clears abstention does NOT drag its quiet theme in.
+
+    This is the difference between widening the universe and lowering a threshold —
+    the distinction GOAL.md's operating principles turn on.
+    """
+    scored = [
+        _theme_row("loud", edge=+0.20, hype=68.0),
+        _theme_row("quiet", edge=-0.10, hype=30.0),
+    ]
+    asset_edges = {
+        ("loud", "SPY"): _ae(+0.22),
+        ("quiet", "FXI"): _ae(-0.18),   # above abstain (0.15), below override (0.25)
+    }
+    longs, shorts = rank_trade_candidates(
+        scored, {"loud": ["SPY"], "quiet": ["FXI"]}, hype_threshold=50.0,
+        score_key="edge_score", abstain_threshold=0.15, asset_edges=asset_edges,
+        conviction_override=0.25)
+    assert shorts == []
+    assert [c.asset for c in longs] == ["SPY"]
+
+
+def test_conviction_override_admits_the_theme_not_just_the_decisive_name():
+    """One decisive name earns the THEME a look, so its siblings are scored too —
+    each still on its own edge. Admitting only the trigger would re-introduce the
+    single-asset view ADR-0038 removed."""
+    scored = [
+        _theme_row("loud", edge=+0.20, hype=68.0),
+        _theme_row("quiet", edge=-0.26, hype=46.7),
+    ]
+    asset_edges = {
+        ("loud", "SPY"): _ae(+0.22),
+        ("quiet", "FXI"): _ae(-0.35),   # the trigger
+        ("quiet", "KWEB"): _ae(-0.19),  # sibling: clears abstention, not the override
+        ("quiet", "BABA"): _ae(+0.02),  # sibling: flat, still abstains
+    }
+    longs, shorts = rank_trade_candidates(
+        scored, {"loud": ["SPY"], "quiet": ["FXI", "KWEB", "BABA"]},
+        hype_threshold=50.0, score_key="edge_score", abstain_threshold=0.15,
+        asset_edges=asset_edges, conviction_override=0.25)
+    assert {c.asset for c in shorts} == {"FXI", "KWEB"}
+    assert "BABA" not in {c.asset for c in longs + shorts}
+
+
+def test_conviction_override_marks_which_door_a_candidate_used():
+    """'Arrived on attention' and 'arrived on conviction' are different claims and
+    must not render identically on /book."""
+    scored = [
+        _theme_row("loud", edge=+0.20, hype=68.0),
+        _theme_row("quiet", edge=-0.26, hype=46.7),
+    ]
+    asset_edges = {("loud", "SPY"): _ae(+0.22), ("quiet", "FXI"): _ae(-0.35)}
+    longs, shorts = rank_trade_candidates(
+        scored, {"loud": ["SPY"], "quiet": ["FXI"]}, hype_threshold=50.0,
+        score_key="edge_score", abstain_threshold=0.15, asset_edges=asset_edges,
+        conviction_override=0.25)
+    assert longs[0].via_conviction is False
+    assert shorts[0].via_conviction is True
+    assert shorts[0].to_trade_candidate_row("2026-07-24")["via_conviction"] is True
+
+
+def test_conviction_override_off_by_default_leaves_scope_untouched():
+    """Callers that do not opt in keep pre-ADR-0046 behaviour exactly."""
+    scored = [
+        _theme_row("loud", edge=+0.20, hype=68.0),
+        _theme_row("quiet", edge=-0.26, hype=46.7),
+    ]
+    asset_edges = {("loud", "SPY"): _ae(+0.22), ("quiet", "FXI"): _ae(-0.90)}
+    longs, shorts = rank_trade_candidates(
+        scored, {"loud": ["SPY"], "quiet": ["FXI"]}, hype_threshold=50.0,
+        score_key="edge_score", abstain_threshold=0.15, asset_edges=asset_edges)
+    assert shorts == []
+
+
+def test_conviction_override_never_admits_below_the_abstention_band():
+    """A misconfigured override lower than the abstention band must not become a
+    back door around abstention — the floor is the stricter of the two."""
+    scored = [
+        _theme_row("loud", edge=+0.20, hype=68.0),
+        _theme_row("quiet", edge=-0.10, hype=30.0),
+    ]
+    asset_edges = {("loud", "SPY"): _ae(+0.22), ("quiet", "FXI"): _ae(-0.08)}
+    longs, shorts = rank_trade_candidates(
+        scored, {"loud": ["SPY"], "quiet": ["FXI"]}, hype_threshold=50.0,
+        score_key="edge_score", abstain_threshold=0.15, asset_edges=asset_edges,
+        conviction_override=0.01)
+    assert shorts == []

@@ -227,7 +227,7 @@ function BookPageInner() {
         // not taken — the "why isn't X in the book?" question had no answer here.
         supabase
           .from("trade_candidates")
-          .select("asset, direction, edge_score, theme_id, run_date")
+          .select("asset, direction, edge_score, theme_id, run_date, via_conviction")
           .order("run_date", { ascending: false })
           .limit(200),
       ]);

@@ -411,6 +411,9 @@ export default function MethodPage() {
   const wEdgeValue = cfgNum("edge_value_weight");
   const wEdgeSentiment = cfgNum("edge_sentiment_weight");
   const edgeAbstain = cfgNum("edge_abstain_threshold");
+  // ADR-0046. Read live like every other parameter; a missing row means the
+  // override is off, which is a real state and is described as such below.
+  const convictionOverride = cfgNum("edge_conviction_override");
   const lookback7 = cfgNum("lookback_momentum_7d");
   const hypeWeightsOk =
     wVol !== null && wSent !== null && wCorr !== null && wMom !== null;
@@ -1284,8 +1287,27 @@ export default function MethodPage() {
                   label={`Threshold gate · hype_score_threshold = ${dec(hypeThreshold, 2)}`}
                 >
                   Only themes with <span className="num">HypeScore ≥ {dec(hypeThreshold, 2)}</span>{" "}
-                  are expanded into trade candidates; everything below it is dropped before the
-                  long/short split. Right now{" "}
+                  are expanded into trade candidates
+                  {convictionOverride !== null && convictionOverride > 0 ? (
+                    <>
+                      {" "}
+                      — unless one of the theme&apos;s assets carries{" "}
+                      <span className="num">
+                        |EdgeScore| ≥ {dec(convictionOverride, 2)}
+                      </span>{" "}
+                      (<Code>edge_conviction_override</Code>), which admits it anyway.
+                      Attention chooses what we look at; it does not decide what is
+                      tradable, and until ADR-0046 it silently did — the most negative
+                      theme on the board sat 3.3 points under this gate and never became
+                      a candidate
+                    </>
+                  ) : (
+                    <>
+                      ; everything below is dropped before the long/short split, because{" "}
+                      <Code>edge_conviction_override</Code> is unset or zero
+                    </>
+                  )}
+                  . Right now{" "}
                   <span className="num">
                     {clearing} of {scoredThemes.length}
                   </span>{" "}

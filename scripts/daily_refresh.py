@@ -825,11 +825,15 @@ def rank_and_persist_trade_candidates(
     # takes the side its OWN EdgeScore implies. Without it every asset inherited the
     # theme's direction, which is how GLD came to be held long inside four separate
     # themes while its own trend and regime scored it -0.44.
+    # conviction_override (ADR-0046): a theme below the attention gate is still
+    # expanded when one of its assets carries a decisive edge. Attention decides
+    # what we look at; it should not silently decide what is tradable.
     longs, shorts = rank_trade_candidates(
         scored, theme_assets_map, cfg.hype_score_threshold,
         top_n=5, min_side=1, score_key="edge_score",
         abstain_threshold=cfg.edge_abstain_threshold,
         asset_edges=asset_edges,
+        conviction_override=(cfg.edge_conviction_override or None),
     )
 
     # Drop any candidate whose ticker isn't in all three taxonomy maps before it

@@ -3,6 +3,12 @@
 **Date:** 2026-07-25
 **Status:** Accepted
 **Corrects:** [0051](0051-llm-timeout-bounded-silence-not-the-call.md)
+**Evidence strength: an inference from n=1.** The `3 x 900s = 2700s` arithmetic
+matches the single 45-minute observation exactly, which is what identified the
+retry loop — but an exact match on one sample is still one sample. The retry
+loop's existence and its `except Exception` are read directly from the code and
+pinned by tests; the claim that it *caused* the observed duration is not
+replicated.
 **Relates to:** [0012](0012-citation-guardrail-llm-defense.md), [0050](0050-separate-agent-churn-from-market-churn.md)
 
 ## Context

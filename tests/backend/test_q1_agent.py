@@ -1427,3 +1427,65 @@ def test_a_decode_failure_is_still_retried():
         qa._llm_complete = orig
 
     assert calls["n"] == 3, f"decode failure should use all attempts, used {calls['n']}"
+
+
+# ─── The published book is sized by conviction (ADR-0053) ────────────────────
+
+# Ten names spread across sectors and geographies so neither the 20% single-name cap
+# nor the 30%/35% sector/geo caps bind — with two positions the single-name cap clamps
+# both to 20% and every ratio collapses to 1.0, which says nothing about the sizer.
+_SPREAD = ["SPY", "EEM", "EWJ", "EFA", "GLD", "FXI", "EWZ", "UUP", "FXE", "CL"]
+
+
+def _spread_picks(convictions=None, hypes=None):
+    out = []
+    for i, a in enumerate(_SPREAD):
+        p = {
+            "asset": a, "direction": "long", "theme_id": f"t{i}",
+            "hype_score": (hypes[i] if hypes else 40.0),
+            "trade_score": 0.2, "avg_sentiment": 0.0,
+        }
+        if convictions:
+            p.update({"edge_score": 0.2, "vol": 0.01, "conviction": convictions[i]})
+        out.append(p)
+    return out
+
+
+def test_size_positions_weights_by_conviction_not_hype():
+    """The published book was sized by HypeScore while every surface said conviction.
+
+    size_positions built TradeCandidates without conviction/vol — the dataclass
+    defaults them to 0.0 — and called allocate_portfolio without size_by, taking the
+    "hype" default. Measured on the live 2026-07-25 book, |weight|/hype was EXACTLY
+    0.00198 for six positions and 0.00353 for three: two constants, i.e. weight
+    proportional to HypeScore within cap group. Meanwhile /book says "sized by
+    conviction", /method renders "sizing weight is proportional to conviction", and
+    ADR-0032 specifies it. Highest-conviction XLE (31.1) held 6.4% while
+    lowest-conviction EEM (15.8) held 9.3% — close to inverted.
+    """
+    from backend.services.q1_agent import size_positions
+
+    # Equal hype throughout, so any weight difference can only come from conviction.
+    convs = [20.0] + [10.0] * 9
+    out = size_positions({"picks": _spread_picks(convictions=convs), "cfg": MOCK_CFG})
+    by = {p["asset"]: p["weight"] for p in out["picks"]}
+
+    assert by["SPY"] / by["EEM"] == pytest.approx(2.0, rel=0.05), (
+        f"equal hype, double conviction — got {by['SPY'] / by['EEM']:.2f}x"
+    )
+    # And the nine equal-conviction names must tie.
+    rest = [by[a] for a in _SPREAD[1:]]
+    assert max(rest) - min(rest) < 1e-9
+
+
+def test_size_positions_still_degrades_to_hype_with_no_conviction():
+    """A run with no edge data must still produce a book rather than divide by
+    nothing — allocate_portfolio's own fallback has to survive the change."""
+    from backend.services.q1_agent import size_positions
+
+    hypes = [60.0] + [30.0] * 9
+    out = size_positions({"picks": _spread_picks(hypes=hypes), "cfg": MOCK_CFG})
+    by = {p["asset"]: p["weight"] for p in out["picks"]}
+
+    assert all(w > 0 for w in by.values())
+    assert by["SPY"] / by["EEM"] == pytest.approx(2.0, rel=0.05)

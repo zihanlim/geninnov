@@ -1,7 +1,12 @@
 # ADR-0051 — `LLM_TIMEOUT_SECONDS` bounded silence between bytes, not the call
 
 **Date:** 2026-07-25
-**Status:** Accepted
+**Status:** Accepted — **cause corrected by [0052](0052-a-stall-cost-three-attempts-not-one.md)**
+**Evidence strength: n=1, twice.** The 23-minute and 45-minute figures below are
+each a SINGLE observation, and the 45-minute call was killed by hand rather than
+allowed to terminate — so even its duration is a lower bound, not a measurement.
+Neither was replicated. That is thin evidence for an ADR and it is why the cause
+named here turned out to be wrong.
 **Relates to:** [0012](0012-citation-guardrail-llm-defense.md), [0050](0050-separate-agent-churn-from-market-churn.md)
 
 ## Context

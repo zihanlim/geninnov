@@ -153,18 +153,38 @@ def main() -> int:
           f"{(pool.get('short') or {}).get('count')} short ideas")
 
     books: list[set[str]] = []
+    fell_back = 0
     for i in range(args.samples):
         s = copy.deepcopy(state)
         s = reason_picks(s)
         picks = s.get("picks") or []
         names = _pick_set(picks)
+        # A sample that fell back is NOT a sample of the model.
+        #
+        # reason_picks sets state["error"] and returns fallback_picks() on a timeout,
+        # a decode failure or a provider error, and the fallback is DETERMINISTIC —
+        # so two fallbacks agree perfectly and the harness would report 0% turnover.
+        # That is not stability, it is the same template twice, and publishing it as
+        # "the agent reproduces its book exactly" would be a correct number meaning
+        # something entirely different from what it appears to mean. It nearly
+        # happened: the 2026-07-25 run timed out on both samples at a 300s deadline
+        # and printed a flawless 0%.
+        err = s.get("error")
+        if err:
+            fell_back += 1
+            print(f"[replication] sample {i + 1}/{args.samples}: FELL BACK — {err}")
+            print("[replication]   discarded: the fallback is deterministic, so "
+                  "including it would manufacture agreement.")
+            continue
         books.append(names)
         print(f"[replication] sample {i + 1}/{args.samples}: {len(names)} picks — "
               f"{', '.join(sorted(names)) or '(none)'}")
 
     usable = [b for b in books if b]
     if len(usable) < 2:
-        print("[replication] fewer than two usable samples — nothing to compare.")
+        print(f"[replication] {len(usable)} model sample(s) usable "
+              f"({fell_back} fell back) — nothing to compare, and nothing persisted. "
+              f"Raise LLM_TIMEOUT_SECONDS or retry when the provider is quicker.")
         return 1
 
     pairs = list(itertools.combinations(range(len(usable)), 2))
@@ -199,6 +219,7 @@ def main() -> int:
             "notes": json.dumps(
                 {
                     "samples": len(usable),
+                    "fell_back_discarded": fell_back,
                     "stable_names": sorted(every),
                     "unstable_names": sorted(any_ - every),
                     "long_ideas": (pool.get("long") or {}).get("count"),
@@ -218,9 +239,13 @@ def main() -> int:
         )
     ]
     try:
-        sb.table("backtest_results").upsert(
-            rows, on_conflict="test_name,metric_name,end_date"
-        ).execute()
+        # backtest_results has no unique constraint on (test_name, metric_name,
+        # end_date), so upsert(on_conflict=...) fails with 42P10. Clear the day's
+        # rows and insert, the same shape persist_theme_news uses.
+        sb.table("backtest_results").delete().eq(
+            "test_name", "book_replication"
+        ).eq("end_date", run_date.isoformat()).execute()
+        sb.table("backtest_results").insert(rows).execute()
         print("[replication] persisted to backtest_results(test_name='book_replication')")
     except Exception as exc:   # pragma: no cover - network
         print(f"[replication] persist failed ({exc.__class__.__name__}): {exc}")

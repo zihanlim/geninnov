@@ -642,6 +642,9 @@ def screen_candidates(state: Q1State) -> Q1State:
             # Carried so the cap-30 truncation can order by conviction. Without it
             # the sort falls back to hype and re-imposes the attention gate.
             "edge_score": c.get("edge_score", 0.0),
+            # Carried so size_positions can weight by conviction (ADR-0053).
+            "conviction": c.get("conviction", 0.0),
+            "vol": c.get("vol", 0.0),
         })
 
     # Deduplicate: keep highest-hype entry per (asset, direction)
@@ -1798,6 +1801,12 @@ def size_positions(state: Q1State) -> Q1State:
             trade_score=float(p.get("trade_score") or 0.0),
             hype_score=float(p.get("hype_score") or 0.0),
             avg_sentiment=float(p.get("avg_sentiment") or 0.0),
+            # Without these the dataclass defaults them to 0.0, allocate_portfolio
+            # sees no conviction anywhere, and it falls back to HypeScore weighting —
+            # which is what the published book was actually sized by. ADR-0053.
+            edge_score=float(p.get("edge_score") or 0.0),
+            vol=float(p.get("vol") or 0.0),
+            conviction=float(p.get("conviction") or 0.0),
         ))
         kept.append(p)
 
@@ -1808,11 +1817,17 @@ def size_positions(state: Q1State) -> Q1State:
         state["error"] = "No sizable picks after taxonomy check — using fallback"
         return fallback_picks(state)
 
+    # size_by="conviction" — the documented Stage-4 model (ADR-0032), which /book,
+    # /method and SizingChainView have all been describing while this call used the
+    # default "hype". allocate_portfolio still falls back to HypeScore on its own when
+    # no candidate carries any conviction, so a run with no edge data degrades instead
+    # of dividing by nothing.
     positioned = allocate_portfolio(
         sizable,
         total_capital,
         sector_map=SECTOR_MAP,
         geo_map=GEO_MAP,
+        size_by="conviction",
     )
 
     for pick, (_cand, notional, weight) in zip(kept, positioned):
@@ -2317,6 +2332,11 @@ def run_q1_agent(
             # funnel can count it and /book can say which door a candidate used.
             "via_conviction": getattr(c, "via_conviction", False),
             "edge_score": getattr(c, "edge_score", 0.0),
+            # conviction + vol are what size_positions is SUPPOSED to weight by
+            # (ADR-0032). They were never carried this far, so the sizer saw zeros
+            # and silently fell back to HypeScore — ADR-0053.
+            "conviction": getattr(c, "conviction", 0.0),
+            "vol": getattr(c, "vol", 0.0),
         }
         for c, _, _ in candidates
     ]

@@ -142,6 +142,82 @@ Live at https://andromeda-analytics.vercel.app · 502 backend + 87 frontend test
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 40 (2026-07-25)
+
+**The one panel built to expose the shortfall was pointing at a thesis that does not
+explain it — and the same false pointer was on the page twice.**
+
+Re-derived against the live book rather than the backlog. `/book` reads **5 long / 4
+short**, and Pool depth stated the situation exactly right:
+
+> Shorts — 11 candidates → 5 independent ideas → **4 held**. The pool held 5
+> independent ideas and the book took 4. This side is short of 5 by choice, not by
+> constraint — *the agent's reasoning is in the thesis above.*
+
+**That last clause was false.** The published thesis names SLV, BABA, PDD and NOC and
+then says only *"Net directional bias is long given 5 long picks vs 4 short picks"* —
+which **restates** the shortfall. It never mentions **ARKK**, the one independent short
+idea it declined. So the panel sent the reader to prose that does not answer the
+question, in warning colour, which makes a dead end read as a deliberate disclosure.
+
+**The instruction already existed and was ignored.** Since ADR-0048 the prompt has said
+returning fewer than five per side when five ideas exist *"is a choice, not a
+constraint"* and *"needs a reason stated in book_view"*. **An instruction with no check
+is not a guarantee** — ADR-0049's lesson generalised from a *number* to a piece of
+*reasoning*, and the more consequential instance, because the shortfall is the first
+thing a reviewer asks of a book that answers five-and-five with four.
+
+`shortfall_accounting` measures it: per side under `min(ideas, 5)`, which independent
+ideas were declined and whether the thesis names them. Three choices carry it — a
+complex counts as declined only when **nothing** in it is held (holding the
+second-strongest still expresses the bet, so keying on `strongest` would report phantom
+omissions); the target is `min(ideas, 5)` so a thin pool stays a *constraint*; ticker
+matching is word-bounded, because `BILL` contains `BIL`.
+
+**It deliberately does not block the run.** The retry path's terminal state is the
+deterministic template book, which contains *no* reasoning at all — trading a real book
+with one unexplained omission for that would make the deliverable worse in the name of
+rigour. Computed at persist rather than in `verify_citations`, which returns early on
+failure: **a book that failed verification is exactly the one whose reasoning gap
+matters most.**
+
+The panel now branches three ways — *unexplained* (names them, says the thesis is
+silent), *explained* (names them, credits it, neutral colour), *not measured* for rows
+written before this. **Live and verified:** *"and the thesis does not say why: it never
+names ARKK."*
+
+**Then the UI pass found the same false pointer a second time.** `ClearedNotTaken` ends
+its lede with the identical claim, for every row it labels *"independent — passed
+over"* — **eight of them on this book**, and the thesis names none. Arguably worse
+there, since that panel exists to list names a reader will ask about, so it makes the
+promise once per row. It now points at Pool depth, which states the measured answer,
+instead of asserting one. **One panel makes the claim, and only because something
+checked it.**
+
+**Backfilled rather than waited.** `shortfall_accounting` is a pure function of three
+values already persisted on the row — `picks`, `independent_ideas`, `book_view` — so
+today's book was recomputed in place rather than left rendering "not measured" until
+tomorrow's run. No LLM call, no refetch, no new numbers; the additive JSONB shape needed
+no migration.
+
+**Verified live** — `/`, `/book`, `/risk`, `/method` at 1440px and 375px: no horizontal
+scroll on any, zero console errors, no `NaN`/`undefined` anywhere. 509 backend + 87
+frontend tests.
+
+**Open, and named rather than smuggled:** the check verifies a declined idea is
+*mentioned*, not that the reason is *sound*. "ARKK was declined because it is Tuesday"
+passes. Judging a reason's quality is a different problem from detecting its absence,
+and conflating them would put an unfalsifiable verdict on the page — exactly what
+ADR-0045 refused to do for turnover.
+
+**Also checked and NOT a defect:** the status bar read *"L5 incomplete · Held tickers
+40"* against a 9-position book earlier in the session. That is the provisional
+mid-run window, and it cleared on its own — it now reads *"All stages complete · 6/6
+succeeded · Held tickers 9"*. Recorded because it looked like an ADR-0040 violation and
+was not, and the next agent should not spend an iteration chasing it.
+
+[ADR-0056](adrs/0056-an-instruction-is-not-a-guardrail.md).
+
 ### Loop iteration 39 (2026-07-25)
 
 > Iteration numbers below are per-session and **collide**: two agents worked this repo

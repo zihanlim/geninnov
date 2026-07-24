@@ -1694,6 +1694,22 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   `globals.css` and `tailwind.config.ts` — Tailwind compiles literals.
 - ~~**Three routes unreachable at 375px**~~ — **not a defect.** They are the retired
   `/trades`, `/portfolio`, `/research` redirects; hiding them on mobile is right.
+- **Conviction is not comparable across assets, and it is a sizing weight** — found
+  2026-07-25 by reading the book's own Conv. column. `conviction = |EdgeScore| / vol`,
+  and BIL's daily vol is **0.000123**, so it prints **2375.2×** beside UNH at 15.7×
+  and NUE at 21.7× — **109× the next highest**, in a column whose whole point is
+  comparison. It is arithmetically correct and it does not mean BIL is 109× the
+  better idea; it means BIL barely moves.
+  This is not only a display problem: L1 sizes by it (`allocate_portfolio(size_by=
+  "conviction")`), so a near-zero-vol name absorbs the book until the single-name cap
+  stops it. Inverse-vol sizing taken to the point where it stops scaling risk and
+  starts seeking the least volatile thing available.
+  **The standard fix is a vol floor** — `|edge| / max(vol, floor)` — which puts every
+  name in a comparable band. It is deliberately NOT shipped in iteration 31: the
+  floor's value is a judgement call that changes every position's size, and picking
+  the constant in the dark is exactly what this file's principles forbid. It needs
+  its own ADR, a stated basis for the number, and a pipeline run to see the resulting
+  book. **This is the next iteration's step.**
 - **`/risk` publishes a provisional book for the minutes L5 takes** — found
   2026-07-25 by reading the abstention roster against the positions table above it.
   L1 writes its **full candidate set** to `portfolio_positions` (39 rows today) and

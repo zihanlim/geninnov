@@ -85,8 +85,9 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
-- **Q1 book** — **3 long / 2 short**, gross 75.0%, net +11.7%, VERIFIED with **51
-  citations**, $25M held in cash. **One portfolio everywhere** since iteration 10
+- **Q1 book** — **4 long / 2 short**, gross 69.2%, net +17.7%, VERIFIED, $30.8M in
+  cash, 0 cap violations, and **three of the six positions are single companies**
+  (JPM, UNH long; NOC short) as `task.md` asks for. **One portfolio everywhere** since iteration 10
   (ADR-0040) — `/book` and `/risk` describe the same names and every risk number is
   computed on them — and direction no longer inverts on a regime label flip since
   iteration 11 (ADR-0041).
@@ -103,6 +104,55 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
   agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 13 (2026-07-24)
+
+**Single companies are in the universe, and NOC/RTX immediately disagreed**
+([ADR-0043](../docs/adrs/0043-single-company-universe.md), migration `032`).
+
+`task.md` asks for trades *"across any asset class and/or **single companies**"* and
+there were none — 37 ETFs and futures proxies. This was deferred twice for the right
+reason: until ADR-0038 direction was a THEME property, so a company added to a rising
+theme would have inherited long regardless of its own signal — exactly like the ETFs
+added in iteration 4, which produced no shorts either.
+
+The need was measurable and specifically on the short side:
+
+```
+L1 pool:   18 candidates  (14 long, 4 SHORT)
+L5 picked:  7             ( 5 long, 2 short)   <- long side AT its cap of 5
+```
+
+15 names added, **37 → 52 tickers**: JPM/GS (Fed Policy), XOM/CVX/SLB (Energy),
+UNH (US Election), LMT/NOC/RTX (Geopolitical Risk), F (Corporate Credit), JD/PDD
+(China Growth), FCX/NEM/NUE (Inflation). Three checks first — ~251 daily closes each
+(an unpriced ticker scores Trend 0 and enters on a *silent zero*, which is how DXY
+got in), presence in all three taxonomy maps (`is_classified` drops an unmapped
+ticker without a word), and theme coherence.
+
+**Names were chosen for what they express, not to manufacture shorts.** The first run
+answered it in the best possible way: **NOC came out SHORT at −0.297 while RTX came
+out LONG at +0.194 — two defence primes, same theme, opposite sides.** Under
+theme-level direction both would have carried the same side. That single pair is the
+whole argument for per-asset direction and for single names, in one line of output.
+
+**Live book: 4 long / 2 short, 6 positions, three of them single names** — JPM and
+UNH long, NOC short — verified, gross 69.2%, net +17.7%, $30.8M cash, 0 cap
+violations. The thesis reasons about each individually: *"JPM (bank curve
+steepener)"*, *"UNH adds sector diversification (Healthcare, 0% baseline)"*,
+*"Shorts target extreme gold (GLD) and crowded defense (NOC)"*.
+
+**Also finished migration 031's cleanup.** DXY was removed from `theme_assets` back
+then but left in `SECTOR_MAP`/`GEO_MAP`/`_ASSET_CLASS_MAP` — and L2 builds its
+universe from `SECTOR_MAP.keys()`, so **every run since has fetched a delisted ticker
+and logged "possibly delisted"**. Removed from all three and from the fx lens
+fallback. The Brave/Reddit keyword lists keep "DXY" because people genuinely say it.
+
+**Open calibration question, recorded rather than assumed:** the 20% single-name cap
+was set when every "name" was a diversified fund. Single equities carry earnings and
+litigation risk that neither HypeScore (which counts *theme* mentions, so JPM's
+attention score is Fed Policy's) nor the regime model can see. A single-name book
+plausibly deserves a tighter limit — that is a decision, not an oversight.
 
 ### Loop iteration 12 (2026-07-24)
 
@@ -727,7 +777,10 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
 - ~~**L5 falls back because `reason_picks` never parses a response**~~ — **CLOSED,
   iteration 6.** It was a hardcoded 120s read timeout against a ~205s generation.
   `LLM_TIMEOUT_SECONDS` (default 420). Verified live: `verified=True`, 28 citations.
-- **SINGLE NAMES — now correctly motivated, and the next step.** Iteration 8 found
+- ~~**SINGLE NAMES**~~ — **DONE, iteration 13** (ADR-0043, migration 032). 15 names,
+  37 → 52 tickers; NOC short vs RTX long inside the same theme on the first run.
+  Remaining Q1 depth gap is the short side reaching five, not the universe.
+- **[historic] SINGLE NAMES — now correctly motivated, and the next step.** Iteration 8 found
   that shorts were blocked by theme-level direction, not by the universe, and fixed
   it (ADR-0038): the book is now **7 long / 2 short**. Single names are still the
   right next move — an asset's own trend can now oppose its theme, which is the
@@ -748,7 +801,9 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   cross-sectional dispersion, so some fall while their theme rises. Needs
   `SECTOR_MAP`/`GEO_MAP`/`_ASSET_CLASS_MAP` entries or `is_classified` drops them
   silently, and each needs ~252 daily closes or the guard aborts the run.
-- **Q1 breadth** — universe is 8 themes → 24 tickers, all ETFs/futures proxies, zero
+- **[CLOSED] Q1 breadth** — was 8 themes → 24 tickers, all ETFs, zero single names.
+  Now 52 tickers including 15 single companies (ADR-0043). Historic text follows.
+- **[historic] Q1 breadth** — universe is 8 themes → 24 tickers, all ETFs/futures proxies, zero
   single names; only 3 themes clear conviction. Diagnosed in iteration 2; the
   one-line backfill change was rejected as dishonest (see above). Legitimate route:
   more expressions per theme (`004_bootstrap_live.sql` + `_theme_default_assets`),

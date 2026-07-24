@@ -66,6 +66,33 @@ Tests use **ten names spread across sectors and geographies**. With two names th
 single-name cap clamps both to 20% and every ratio collapses to 1.0 — a test that
 would have passed against the broken code.
 
+## The first fix did not work, and its test said it did
+
+Threading `conviction` and `vol` into `state["candidates"]` was necessary and
+insufficient. `size_positions` read them off the **pick**, and `state["picks"]` are the
+model's own dicts — asset, direction, thesis, catalysts — enriched downstream only
+with `theme_id` and citations. They have never carried conviction. So the sizer still
+saw `None -> 0.0` and `allocate_portfolio` still fell back to HypeScore.
+
+The pipeline run that was supposed to confirm the fix showed the same two-constant
+signature as before: `|weight| / hype` = **0.00158** for six positions and **0.00326**
+for three.
+
+**The unit test passed the whole time, because the test hand-supplied conviction on
+the picks.** It pinned this function's contract rather than its caller's reality,
+which is exactly how a non-fix ships looking verified. The replacement test builds
+picks the way `reason_picks` really does — *without* conviction — and puts it only on
+the candidates.
+
+`size_positions` now looks conviction, vol and edge up from `state["candidates"]` by
+asset, falling back to the pick. The candidate is authoritative: L1 computed
+conviction there from per-asset edge and vol, and the LLM is constrained to that
+candidate set.
+
+The general lesson, which is why this section exists rather than a silent amendment:
+**a test that supplies the input the caller never supplies proves nothing about the
+caller.** The seam under test has to be the seam that failed.
+
 ## Consequences
 
 - The published book's weights change on the next run. Conviction-weighted, the

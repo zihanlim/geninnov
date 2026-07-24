@@ -248,6 +248,49 @@ audit, not by a test, which is now true of every defect this project has found.
 `/research`) is marked "legacy links (redirects)" in its own comment and shows a reader
 this project's migration state at ≥xl for no benefit. ADR-0040's consolidation is done.
 
+### Loop iteration 38 (2026-07-25)
+
+**Verified last iteration's sizing fix live. It had not worked — and its test said it
+had.**
+
+The deployed book was still hype-sized: `|weight| / hype` constant at **0.00158** for
+six positions and **0.00326** for three, the same two-constant signature that
+identified the bug in the first place.
+
+`state["picks"]` are the *model's* dicts — asset, direction, thesis, catalysts —
+enriched downstream only with `theme_id` and citations. **They have never carried
+conviction or vol.** Threading those fields into `state["candidates"]` was necessary
+and insufficient, because `size_positions` read them off the **pick**. The unit test
+passed throughout because *the test hand-supplied conviction on the picks*: it pinned
+the function's contract rather than its caller's reality, which is exactly how a
+non-fix ships looking verified. `size_positions` now sources conviction, vol and edge
+from the candidates by asset.
+
+**A test that supplies the input the caller never supplies proves nothing about the
+caller.** Only running the pipeline revealed it; a green suite never would have.
+
+**Second: the sizing chain was rendering an impossible step, and had been all along.**
+XLE's panel read *"Normalised weight (÷ Σ conviction) **19.0%** → Single-name cap
+(20%) → Final weight **6.4%**"*. A 19.0% weight under a 20% cap cannot become 6.4%.
+The chain recomputes the conviction step from persisted edge/vol and then shows the
+weight the sizer actually produced — two different models joined as one derivation, in
+the panel whose whole job is to make sizing auditable. The existing guard keys off a
+*missing* conviction; conviction was present and unused, so it never fired.
+`buildSizingChain` now checks its own arithmetic and says so when the steps do not
+compose.
+
+**Also delivered: the replication number, finally measured.** On frozen inputs, two
+genuine model samples (none fell back): **22% turnover overall, 33% long, 0% short.**
+That is exactly the asymmetry ADR-0050 was designed to expose — the short side had 4
+independent ideas for 5 slots, so the pool binds and the answer is reproducible; the
+long side had 10 for 5, so the agent chooses, and chooses differently. OIH and UNH
+were the coin flips. An earlier run of the same harness reported a flawless 0% that
+was **meaningless** — both samples had timed out into the *deterministic* fallback —
+so the harness now discards errored samples and refuses to report on fewer than two
+genuine ones.
+
+[ADR-0053](adrs/0053-the-published-book-was-sized-by-hype.md).
+
 ### Loop iteration 37 (2026-07-25)
 
 **The published book was sized by HypeScore. Every surface said conviction.**

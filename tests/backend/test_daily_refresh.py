@@ -989,3 +989,71 @@ def test_build_theme_signals_flags_mock_provenance():
         result = build_theme_signals([{"id": "t1", "name": "Fed Policy"}], date.today())
 
     assert result[0]["data_source"] == "mock"
+
+
+def test_reconcile_positions_to_published_book_replaces_the_l1_book():
+    """ADR-0040 — the app was publishing two different portfolios.
+
+    /book showed L5's picks while /risk attribution, the daily return and every risk
+    statistic came from L1's provisional book, which L5 re-picks a subset of. Live on
+    2026-07-24 that meant EFA, IWM, QQQ, SLV, SPY and XLV were attributed risk on a
+    page while appearing nowhere in the book — and VaR/Sharpe/HHI described a
+    portfolio nobody holds.
+    """
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+    from daily_refresh import reconcile_positions_to_published_book
+    from services.trade_ranker import TradeCandidate
+
+    cfg = _phase3_cfg(total_capital=100_000_000.0)
+    provisional = [
+        (TradeCandidate("t1", "EEM", "long", 0.3, 60.0, 0.1), 20_000_000.0, 0.20),
+        (TradeCandidate("t1", "GLD", "short", -0.3, 60.0, 0.1), 20_000_000.0, -0.20),
+        (TradeCandidate("t2", "QQQ", "long", 0.3, 60.0, 0.1), 20_000_000.0, 0.20),
+    ]
+    agent_result = {"picks": [
+        {"asset": "EEM", "direction": "long", "weight": 0.30,
+         "signed_weight": 0.30, "notional": 30_000_000.0},
+        {"asset": "GLD", "direction": "short", "weight": 0.25,
+         "signed_weight": -0.25, "notional": 25_000_000.0},
+    ]}
+
+    with patch("daily_refresh.supabase"):
+        final = reconcile_positions_to_published_book(
+            agent_result, provisional, date(2026, 7, 24), cfg)
+
+    assert final is not None
+    assert [c.asset for c, _, _ in final] == ["EEM", "GLD"]   # QQQ is gone
+    weights = {c.asset: w for c, _, w in final}
+    assert weights["EEM"] == pytest.approx(0.30)              # L5's weight, not L1's
+    assert weights["GLD"] == pytest.approx(-0.25)             # short stays signed
+
+
+def test_reconcile_keeps_the_l1_book_when_l5_produced_nothing():
+    """A fallback day still needs a real, coherent portfolio."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+    from daily_refresh import reconcile_positions_to_published_book
+    from services.trade_ranker import TradeCandidate
+
+    cfg = _phase3_cfg(total_capital=100_000_000.0)
+    provisional = [(TradeCandidate("t1", "EEM", "long", 0.3, 60.0, 0.1), 20_000_000.0, 0.20)]
+    with patch("daily_refresh.supabase"):
+        assert reconcile_positions_to_published_book(None, provisional, date(2026, 7, 24), cfg) is None
+        assert reconcile_positions_to_published_book({"picks": []}, provisional, date(2026, 7, 24), cfg) is None
+
+
+def test_reconcile_refuses_a_pick_outside_the_candidate_set():
+    """ADR-0014 hard-filters L5's picks, so this should be impossible — and if it
+    ever happens we must not publish a book that disagrees with its own risk."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+    from daily_refresh import reconcile_positions_to_published_book
+    from services.trade_ranker import TradeCandidate
+
+    cfg = _phase3_cfg(total_capital=100_000_000.0)
+    provisional = [(TradeCandidate("t1", "EEM", "long", 0.3, 60.0, 0.1), 20_000_000.0, 0.20)]
+    agent_result = {"picks": [{"asset": "NVDA", "direction": "long", "weight": 0.2}]}
+    with patch("daily_refresh.supabase"):
+        assert reconcile_positions_to_published_book(
+            agent_result, provisional, date(2026, 7, 24), cfg) is None

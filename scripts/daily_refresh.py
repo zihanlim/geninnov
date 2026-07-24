@@ -1152,6 +1152,86 @@ def compute_and_persist_risk(
     }
 
 
+# ─── Step 11b: Reconcile the book of record to what L5 actually published ────
+def reconcile_positions_to_published_book(
+    agent_result: dict | None,
+    positioned: list[tuple[TradeCandidate, float, float]],
+    run_date: date,
+    cfg: ScoringConfig,
+) -> list[tuple[TradeCandidate, float, float]] | None:
+    """Rewrite `portfolio_positions` to the book L5 published, and return it.
+
+    The app was publishing TWO different portfolios. `/book` shows L5's picks; the
+    per-position attribution on `/risk`, the daily return and every risk statistic
+    were computed from L1's provisional book, which L5 then re-picks a subset of.
+    Observed 2026-07-24: `portfolio_positions` carried 12 names at 92.2% gross while
+    the published book was 6 names at 98.9%, so **EFA, IWM, QQQ, SLV, SPY and XLV
+    were being attributed risk on a page while appearing nowhere in the book**. A
+    reviewer asking "do I own QQQ?" got yes on one page and no on the other.
+
+    Worse than a display inconsistency: VaR, CVaR, Sharpe, Beta and HHI all described
+    a portfolio nobody holds.
+
+    L5 cannot invent tickers (ADR-0014 hard-filters its picks to the candidate set),
+    so every published pick maps back to a candidate we already sized. We match on
+    (asset, direction) and adopt L5's weights, which are already cap-respecting —
+    `size_positions` delegates to the same `allocate_portfolio` (ADR-0037).
+
+    This extends the ADR-0024 principle ("recompute analytics on the FINAL sized
+    book") from tilts/scenarios/correlation to the positions, returns and risk. If
+    L5 produced nothing usable, the L1 book stands and is returned unchanged — a
+    fallback day still has a real, coherent portfolio.
+    """
+    picks = (agent_result or {}).get("picks") or []
+    if not picks:
+        return None
+
+    by_key = {(c.asset, c.direction): c for c, _, _ in positioned}
+    final: list[tuple[TradeCandidate, float, float]] = []
+    unmatched: list[str] = []
+    for p in picks:
+        asset = p.get("asset")
+        direction = p.get("direction")
+        cand = by_key.get((asset, direction))
+        if cand is None:
+            unmatched.append(f"{direction} {asset}")
+            continue
+        weight = p.get("signed_weight")
+        if weight is None:
+            w = float(p.get("weight") or 0.0)
+            weight = -w if direction == "short" else w
+        notional = p.get("notional")
+        if notional is None:
+            notional = abs(float(weight)) * cfg.total_capital
+        final.append((cand, float(notional), float(weight)))
+
+    if unmatched:
+        # Should be impossible under ADR-0014. Say so loudly rather than silently
+        # publishing a book that disagrees with its own risk.
+        print(f"[{run_date}] WARNING L5 published picks not in the candidate set: "
+              f"{unmatched}. Book of record left as the L1 book.")
+        return None
+    if not final:
+        return None
+
+    today_str = run_date.isoformat()
+    try:
+        supabase.table("portfolio_positions").delete().eq("run_date", today_str).execute()
+        for c, notional, weight in final:
+            supabase.table("portfolio_positions").upsert(
+                {**c.to_portfolio_position_row(notional, weight), "run_date": today_str},
+                on_conflict="theme_id,asset,direction",
+            ).execute()
+    except Exception as exc:
+        print(f"[{run_date}] WARNING failed to reconcile portfolio_positions to the "
+              f"published book ({exc.__class__.__name__}): {exc}")
+        return None
+
+    print(f"[{run_date}] Book of record reconciled to L5: {len(final)} positions "
+          f"(was {len(positioned)} from L1).")
+    return final
+
+
 # ─── Step 12 (Phase 3): Compute + persist cumulative return ─────────────────
 def compute_and_persist_cumulative_return(run_date: date) -> None:
     """Upsert a single `portfolio_cumulative_return` row for `as_of=run_date`.
@@ -1425,6 +1505,20 @@ def main():
             print(f"[{run_date}] [L5] Q1 recommendations persisted.")
         else:
             print(f"[{run_date}] [L5] Q1 agent declined to produce output (fallback active).")
+
+        # The published book becomes the book of record, and the return and risk
+        # statistics are recomputed on it. Until now they were computed on L1's
+        # provisional book, which L5 re-picks a subset of — so /risk attributed risk
+        # to names that appear nowhere in /book, and VaR/Sharpe/HHI described a
+        # portfolio nobody holds. L5 still READS the provisional risk (it is an
+        # input to its reasoning), so the recompute has to happen here, after.
+        final_book = reconcile_positions_to_published_book(
+            agent_result, positioned, run_date, cfg
+        )
+        if final_book:
+            compute_and_persist_daily_return(final_book, run_date, cfg.total_capital)
+            compute_and_persist_risk(final_book, run_date, cfg)
+            compute_and_persist_cumulative_return(run_date)
         try:
             record_pipeline_run(supabase, l5_id, "success", run_date=run_date, stage="L5", duration_s=(datetime.now(timezone.utc)-l5_started).total_seconds())
         except Exception as exc:

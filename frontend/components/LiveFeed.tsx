@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { assessStaleness } from "@/lib/freshness";
 
 /**
  * Always-visible pipeline status bar.
@@ -133,6 +134,7 @@ export default function LiveFeed() {
       : assess(runs);
   const latest = runs?.[0];
   const lastFinish = runs?.find((r) => r.finished_at)?.finished_at ?? null;
+  const staleness = assessStaleness(latest?.run_date);
 
   return (
     <div className="fixed bottom-0 inset-x-0 bg-bg-surface border-t border-border px-5 py-1.5 flex items-center gap-4 text-[11px] text-text-secondary z-40 overflow-x-auto scrollbar-none whitespace-nowrap">
@@ -154,9 +156,23 @@ export default function LiveFeed() {
       )}
       <span className="text-text-tertiary">|</span>
       <span>
-        Last run <span className="num">{latest?.run_date ?? "—"}</span>
+        Last run{" "}
+        {/* An age rendered in the same grey as "5 min ago" is not a warning. Once
+            weekday runs have actually been missed, the date has to look wrong. */}
+        <span
+          className="num"
+          style={staleness.stale ? { color: "var(--warning)", fontWeight: 600 } : undefined}
+          title={staleness.message ?? undefined}
+        >
+          {latest?.run_date ?? "—"}
+        </span>
         {lastFinish && (
           <span className="text-text-tertiary"> ({fmtAgo(lastFinish)})</span>
+        )}
+        {staleness.stale && (
+          <span style={{ color: "var(--warning)" }}>
+            {" "}· {staleness.businessDays} weekday runs missed
+          </span>
         )}
       </span>
       <span className="text-text-tertiary">|</span>

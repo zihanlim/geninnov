@@ -24,6 +24,7 @@ import SizingChainView from "@/components/book/SizingChainView";
 import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import AbstentionRoster from "@/components/book/AbstentionRoster";
 import { ScrollArea } from "@/components/ScrollArea";
+import { assessStaleness } from "@/lib/freshness";
 import {
   buildSizingChain,
   edgeWeightsFromConfig,
@@ -367,6 +368,9 @@ function BookPageInner() {
         : "";
     return `Today's book holds ${sides}, sized by conviction across $100M.${tilt}${cashNote}`;
   }, [rec, longs, shorts, bm]);
+  // Judged from the book's own run_date against business days, so a Friday book
+  // read on Sunday is not falsely flagged.
+  const staleness = useMemo(() => assessStaleness(rec?.run_date), [rec?.run_date]);
   const advisory = rec?.advisory_derivation ?? null;
   const isFallback = advisory?.fallback_used === true;
   const worstScenario = useMemo(() => {
@@ -430,7 +434,12 @@ function BookPageInner() {
         <div className="text-right text-text-secondary text-[12px] shrink-0">
           <div>
             <span className="text-text-tertiary mr-1.5">RUN DATE</span>
-            <span className="num">{rec?.run_date ?? "—"}</span>
+            <span
+              className="num"
+              style={staleness.stale ? { color: "var(--warning)" } : undefined}
+            >
+              {rec?.run_date ?? "—"}
+            </span>
           </div>
           <div className="mt-1">
             <span className="text-text-tertiary mr-1.5">LENS</span>
@@ -438,6 +447,26 @@ function BookPageInner() {
           </div>
         </div>
       </div>
+
+      {/* A dead run is invisible otherwise: the page keeps rendering the last book
+          it has, with a date nobody reads as a warning. On 2026-07-24 the pipeline
+          aborted on a single dropped quote and the site went on presenting the
+          previous day's positions as the current $100M book. */}
+      {staleness.stale && staleness.message && (
+        <div
+          role="alert"
+          className="mb-6 rounded-[10px] border px-4 py-3 text-[13px] leading-[1.6]"
+          style={{
+            borderColor: "var(--warning)",
+            background: "rgba(194, 65, 12, 0.08)",
+          }}
+        >
+          <span className="font-semibold" style={{ color: "var(--warning)" }}>
+            Stale book —{" "}
+          </span>
+          <span className="text-text-secondary">{staleness.message}</span>
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-4">

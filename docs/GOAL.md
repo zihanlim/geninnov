@@ -81,7 +81,7 @@ find, not just what you changed:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
+Live at https://andromeda-analytics.vercel.app · 428 backend + 40 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -109,6 +109,60 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
   agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 31 (2026-07-25)
+
+**The attention gate was deciding what is *tradable*, not just what is loud.**
+
+The five-and-three gap has been chased through L5's selection, through what the
+agent is handed at reasoning time, and through candidate redundancy. Measured one
+layer earlier — at the point the candidate pool is built — it is none of those.
+
+Scope came from `hype_score >= 50` alone. On 2026-07-24 four of eight themes cleared
+it; the other four were scored per-asset and then discarded unread. **China Growth,
+theme edge −0.264 — the most negative signal on the board and the only decisively
+short THEME in the system — missed by 3.3 HypeScore points and produced no
+candidates**, while all three of the book's shorts were taken out of themes whose own
+edge is *positive*. Energy Prices (+0.332, the largest magnitude of the day either
+way) went the same way at 36.4. The four themes that did clear had edges clustered in
++0.20…+0.29: **the gate was systematically removing the tails**, because attention
+and conviction are unrelated quantities.
+
+`edge_conviction_override` (0.25, `scoring_config`) admits a sub-attention theme when
+**one of its assets** carries a decisive edge. This is the honest fix GOAL.md names —
+widen the universe — and not the forbidden one: **the bar is above the abstention
+band, not below it**, the code floors it at `max(override, abstain)` so a
+misconfiguration cannot become a back door around abstention, and every admitted name
+still clears abstention on its own edge. Asset-level on purpose — ADR-0039 established
+that theme edge is smallest exactly when a theme's assets disagree, so gating on
+|theme edge| would admit the themes whose names agree and exclude the
+cross-sectionally richest ones.
+
+**Measured on the first run under the rule (2026-07-25): pool 23 → 39, shorts 5 → 12,
+seven themes instead of four; 33 of 39 admitted on edge, and 11 of the 12 shorts.**
+That day attention collapsed and **exactly one theme of eight cleared the gate**, so
+the old rule would have built the $100M book from six names of one theme with one
+short — not because the market offered nothing, but because the news was quiet. That
+is the structural argument made concrete: the number of tradable themes was a
+function of the news cycle, not of the signal.
+
+**The count overstates the gain, and the ADR says so.** China's five shorts are one
+bet; the five precious-metals shorts are another. As *independent ideas* the short
+side went three → four. Twelve short candidates is not twelve short ideas.
+
+**Then the same mistake turned up one layer down.** Running the pipeline to check the
+result showed the override admitting the right names and a downstream cap throwing
+them straight back out. `screen_candidates` truncates the pool to 30 for the LLM
+context window and sorted it **by HypeScore** — the cap was ranked by exactly the
+quantity this iteration had just decided must not decide tradability. It cut **SLV
+−0.430, the single most decisive name of the day**, plus GDX, NEM, IAU, NUE, CVX, OIH
+and SLB: four of the twelve new shorts gone before the agent saw the list. Nothing
+failed — the pool was still 30 names and the funnel still balanced. The pool is now
+ordered by |EdgeScore|. **A scope decision is only as good as every ordering
+downstream of it.**
+
+[ADR-0046](adrs/0046-attention-chooses-what-we-look-at-not-what-is-tradable.md) ·
+migration 034 applied to prod.
 
 ### Loop iteration 30 (2026-07-24)
 

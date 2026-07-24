@@ -114,3 +114,27 @@ Four properties make this a widening rather than a loosening:
   changing it is a database edit, not a code change. Setting it to 0 restores the
   pre-ADR-0046 behaviour exactly, and the default in `rank_trade_candidates` is
   `None` so existing callers and tests are unaffected.
+
+### The same mistake was waiting one layer down
+
+Running the pipeline to see what the override admitted showed it admitting the right
+names — and a downstream cap throwing them straight back out.
+
+`screen_candidates` truncates the pool to 30 for the LLM context window, and sorted
+it **by `hype_score`**. The cap was therefore ranked by exactly the quantity this ADR
+had just decided must not determine tradability, so it re-imposed the attention gate
+one layer below the gate itself. On the 2026-07-25 run it cut **SLV −0.430**, the
+single most decisive name of the day either way, along with GDX −0.368, NEM −0.337,
+IAU −0.288, NUE +0.421, CVX +0.402, OIH +0.378 and SLB +0.314 — every one dropped for
+belonging to a quiet theme, and four of the twelve new shorts gone before the agent
+saw the list.
+
+**The pool is now ordered by `|EdgeScore|`**, ties broken by hype so the ordering
+stays total. If names must be dropped for context, drop the least decisive, not the
+least loud. The prompt header no longer claims the list is sorted by HypeScore,
+because it is not, and the funnel stage states which ordering the cap uses.
+
+The general lesson, which is the reason this section exists rather than a one-line
+patch: **a scope decision is only as good as every ordering downstream of it.** The
+override widened the door and an unrelated `sort()` forty lines later quietly closed
+most of it. Nothing failed; the pool was still 30 names and the funnel still balanced.

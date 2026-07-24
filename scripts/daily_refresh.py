@@ -902,12 +902,22 @@ def rank_and_persist_trade_candidates(
         print(f"[{today_str}] WARNING failed to clear trade_candidates for this run "
               f"({exc.__class__.__name__}): {exc}")
 
-    for c in longs + shorts:
-        # Stamp run_date so readers can tell today's candidates from a previous
-        # run's.
+    # ONE request for the whole pool, the same shape persist_theme_news already
+    # uses. This was a per-candidate loop: 39 sequential round-trips, none wrapped,
+    # so any single transient failure aborted the entire daily pipeline. It did —
+    # on 2026-07-25 a Supabase HTTP/2 ConnectionTerminated on one of the 39 killed
+    # the run after L0-L1 had completed, with no book produced. Thirty-eight of
+    # those requests bought nothing but thirty-eight more chances to fail.
+    #
+    # run_date is stamped on every row so readers can tell today's candidates from
+    # a previous run's.
+    rows = [
+        {**c.to_trade_candidate_row(today_str), "run_date": today_str}
+        for c in longs + shorts
+    ]
+    if rows:
         supabase.table("trade_candidates").upsert(
-            {**c.to_trade_candidate_row(today_str), "run_date": today_str},
-            on_conflict="theme_id,asset,direction",
+            rows, on_conflict="theme_id,asset,direction"
         ).execute()
 
     # Delete any candidate left over from an EARLIER DAY. A zero-candidate day
@@ -951,12 +961,16 @@ def allocate_and_persist_portfolio(
         print(f"[{today_str}] WARNING failed to clear portfolio_positions for this run "
               f"({exc.__class__.__name__}): {exc}")
 
-    for c, notional, weight in positioned:
-        # See the note in rank_and_persist_trade_candidates: without run_date a
-        # stale book is indistinguishable from the current one.
+    # One request, same reason as the candidate write above: a per-row loop is N
+    # sequential chances for a transient connection drop to abort the daily run.
+    # Without run_date a stale book is indistinguishable from the current one.
+    rows = [
+        {**c.to_portfolio_position_row(notional, weight), "run_date": today_str}
+        for c, notional, weight in positioned
+    ]
+    if rows:
         supabase.table("portfolio_positions").upsert(
-            {**c.to_portfolio_position_row(notional, weight), "run_date": today_str},
-            on_conflict="theme_id,asset,direction",
+            rows, on_conflict="theme_id,asset,direction"
         ).execute()
 
     # Prune positions left over from an EARLIER DAY. A zero-position day empties
@@ -1294,11 +1308,16 @@ def reconcile_positions_to_published_book(
     today_str = run_date.isoformat()
     try:
         supabase.table("portfolio_positions").delete().eq("run_date", today_str).execute()
-        for c, notional, weight in final:
-            supabase.table("portfolio_positions").upsert(
-                {**c.to_portfolio_position_row(notional, weight), "run_date": today_str},
-                on_conflict="theme_id,asset,direction",
-            ).execute()
+        # One request. Per-row here is worse than elsewhere: a drop midway leaves
+        # the table holding PART of the published book with the rest deleted — a
+        # portfolio that has never existed, presented as the book of record.
+        supabase.table("portfolio_positions").upsert(
+            [
+                {**c.to_portfolio_position_row(notional, weight), "run_date": today_str}
+                for c, notional, weight in final
+            ],
+            on_conflict="theme_id,asset,direction",
+        ).execute()
     except Exception as exc:
         print(f"[{run_date}] WARNING failed to reconcile portfolio_positions to the "
               f"published book ({exc.__class__.__name__}): {exc}")

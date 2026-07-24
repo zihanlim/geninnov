@@ -85,8 +85,9 @@ Live at https://andromeda-analytics.vercel.app · 380 backend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
-- **Q1 book** — VERIFIED thesis w/ 18 citations, conviction-sized, cap-aware.
-  **Gap: 1–2 energy longs, 0 shorts, vs the five-and-five the brief asks for.**
+- **Q1 book** — VERIFIED thesis w/ citations, conviction-sized, cap-aware. After
+  the 2026-07-24 fixes the engine produced **shorts for the first time**
+  (2 long + 3 short candidates, 5 positions, $100M). Still short of five-and-five.
 - **Direction** EdgeScore = trend/regime/carry/value/sentiment, IC-weighted, with
   abstention + conviction sizing (ADR-0031/32/33).
 - **Q2 hype** HypeScore (volume/sentiment/|ρ|/momentum) + theme discovery
@@ -94,13 +95,33 @@ Live at https://andromeda-analytics.vercel.app · 380 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Fixed 2026-07-24 (loop iteration 1)
+
+- **Double-booked portfolio** — `portfolio_positions`/`trade_candidates` unioned
+  same-day re-runs (prune was `.lt(run_date, today)`), leaving 200% gross / $200M
+  on $100M. Every `/risk` figure — gross, HHI, factor tilts, attribution, a
+  "500% single-name cap" breach — was measured against a book that never existed,
+  and it made `/book` and `/risk` describe different portfolios.
+- **Value z-score truncated to ~50 obs** — PostgREST caps at 1000 rows and the
+  query was unpartitioned, so the budget split across 22 series. Now per-series
+  over 252 obs, enumerated from `macro_indicators`. This *moved trade direction*.
+- **Cap limits transposed** on the risk board (single-name/geo swapped vs
+  `book_metrics`), and `/method` published a 4-term EdgeScore formula summing to
+  0.95 beside a caption claiming 1.00.
+
 ## Live candidate gaps (re-verify before trusting)
 
 - **Q1 breadth** — the candidate pool is ~8 anchor themes → ~20 ETFs, which is why
   so few names clear the bar. Widening the universe is the legitimate route to a
-  real five-and-five. *Highest value.*
-- **Value z-scores** — `macro_daily_history` depth is unverified and feeds the
-  Value component (0.18 of EdgeScore, i.e. it moves direction).
+  real five-and-five. *Highest value.* (The Q1-breadth diagnosis agent died on a
+  connection error before reporting — re-run it.)
+- **UI audit backlog** — a full Playwright audit ran 2026-07-24 and found no
+  horizontal scroll and no console errors at either viewport, but a long list of
+  real defects beyond the ones fixed: `verified=true` with 0 citations still
+  presents as VERIFIED on `/book`; Sharpe's delta chip shows ▼-red for an
+  improvement; the limit board stamps OK on statistics whose own tiles say the
+  sample is too small; three routes are unreachable at 375px; tertiary text and
+  the orange accent sit at 2.8:1 contrast; two `/method` callouts at 2.09:1.
 - **L2 factor betas** — 88 rows, never reconciled against a known benchmark.
 - **Q2 narrative** — data gathering → processing → quantification exists in code
   and on `/method`, but is not consolidated as one readable answer.

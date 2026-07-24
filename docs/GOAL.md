@@ -110,6 +110,64 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 16 (2026-07-24)
+
+**The factor model had never been reconciled. It checks out — and that was a
+credibility asset sitting invisible.**
+
+L2 regresses every asset's daily excess return on Fama-French 5 + UMD over 252 days,
+and those betas are what the book's factor tilts and all four scenario shocks are
+computed from. Nothing had ever checked them, and `/method` had **no L2 section at
+all** — so the layer beneath every tilt on the site was both unexplained and
+unverified. A factor model whose numbers nobody has reconciled is an assertion.
+
+Checked against assets whose market beta is known before you run anything:
+
+| asset | b mkt | R2 | expected |
+|---|---|---|---|
+| **SPY** | **+0.99** | **1.00** | *is* the market factor — definitional |
+| IWM | +1.02 | 0.97 | small-cap |
+| QQQ | +1.17 | 0.94 | tech-heavy |
+| ARKK | +1.49 | 0.77 | high-beta growth |
+| XLF | +0.94 | 0.59 | — |
+| HYG | +0.23 | 0.63 | credit |
+| GLD | +0.27 | 0.10 | gold |
+| TLT | +0.11 | 0.06 | duration |
+| SHY | +0.01 | 0.07 | — |
+| **BIL** | **-0.00** | 0.01 | T-bills — no equity risk |
+
+SPY at 0.99 / R2 1.00 is the load-bearing one: it fails loudly if the regression, the
+date alignment or the excess-return convention is wrong. BIL and ARKK bracket the
+range correctly. **The gap was that nobody had looked, not that it was broken.**
+
+New `/method` section 05 renders the check live from `factor_exposures`, with the
+expected band beside each beta and why each is known in advance. Bands are
+deliberately generous — this asserts *not broken*, not *matches a vendor to two
+decimals*, since anything tighter fails on ordinary sample variation and teaches the
+reader to ignore the panel. The footnote states outright that R2 is low for the
+non-equity names by construction: the market factor is not what moves them, which is
+the point of holding them. Sections renumbered (sources 05->06, guardrails 06->07).
+
+Five new tests pin the mechanics on synthetic series so a break is caught without a
+network call: the definitional b=1 case, cash reading 0.00 rather than "small" (a
+non-zero beta there means RF is leaking into the excess return), a 1.5x series
+recovering 1.5, market and momentum loadings separating without contaminating each
+other, and 40 observations returning `{}` rather than a beta labelled as a 252-day
+exposure. 412 backend tests green.
+
+**NOT VERIFIED LIVE — the panel had not deployed when this was written.** The commit
+is pushed (`10cbf573`), `npm run build` succeeds locally and `/method` grew to
+23.3 kB so the section compiles in, but ~8 minutes after the push the deployed page
+still showed seven sections without `#factors`. Everything else on the site verified
+fine in the same window, so this looks like a Vercel queue/build issue rather than a
+code one. **First job next iteration: load `/method#factors` and confirm it renders;
+if it still does not, check the Vercel build log** (needs `vercel login` — the CLI is
+not authenticated in this environment).
+
+Verified live in this iteration: contrast holds at **0 failing of 470 checked on
+`/method` (1440px)** and **0 of 357 on `/risk` (375px)**, zero console errors, no
+horizontal scroll, status bar 6/6.
+
 ### Loop iteration 15 (2026-07-24)
 
 **Three colour tokens failed WCAG AA, and the fix took two commits because Tailwind
@@ -928,7 +986,10 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   improvement; the limit board stamps OK on statistics whose own tiles say the
   sample is too small; three routes are unreachable at 375px; tertiary text and
   the orange accent sit at 2.8:1 contrast; two `/method` callouts at 2.09:1.
-- **L2 factor betas** — 88 rows, never reconciled against a known benchmark.
+- ~~**L2 factor betas never reconciled**~~ — **DONE, iteration 16.** SPY +0.99 at
+  R2 1.00, BIL -0.00, ARKK +1.49 — the model is sound; the gap was that nobody had
+  checked. Rendered live on `/method` section 05 and pinned by 5 synthetic-series
+  tests. **Caveat: the panel itself was not confirmed rendering live — verify first.**
 - ~~**Q2 narrative not consolidated**~~ — **re-derived as already done, iteration
   14.** `/method` opens with the process statement and §01 walks L0→L5 with each
   stage's inputs, destination table, live status and duration — that is Q2's "data

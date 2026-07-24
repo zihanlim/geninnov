@@ -1267,6 +1267,15 @@ function PositionRow({
           <span
             className="text-text-secondary text-[11.5px] break-words"
             title={rationaleDetail}
+            // TEMPORARY (ADR-0057 debug): the stability marker renders zero times
+            // although the page's own backtest_results fetch returns correct data and
+            // every path reads correctly. Static inspection is exhausted; this exposes
+            // the computed value so the DOM can say which input is missing. Remove
+            // once the cause is identified.
+            data-stability={stability}
+            data-repl-samples={repl?.samples ?? "none"}
+            data-repl-date={repl?.endDate ?? "none"}
+            data-book-date={bookRunDate ?? "none"}
           >
             {rationale ?? "EdgeScore not persisted for this position"}
           </span>

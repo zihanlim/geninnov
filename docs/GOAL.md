@@ -110,6 +110,47 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 27 (2026-07-24)
+
+**Replaced last iteration's hedge with the measurement it was standing in for.**
+
+Iteration 25 shipped the "cleared the screen — not taken" panel justified by theme
+overlap. Iteration 26 demoted that to *"a hint, not a verdict"* because the data did
+not support it. This iteration computes the thing that does.
+
+`candidate_book_correlation` (migration **033**, applied to prod) scores each unheld
+candidate against its **closest held position over 252 days**:
+
+| candidate | closest held | ρ |
+|---|---|---|
+| **GDX** | **SLV** | **+0.82** |
+| **GLD** | **SLV** | **+0.84** |
+| AGG | TLT | +0.91 |
+| IEF | TLT | +0.91 |
+| EWJ | EFA | +0.89 |
+| EEM | EFA | +0.82 |
+| RTX | NOC | +0.65 |
+| GS | JPM | +0.63 |
+| **BIL** | TLT | **−0.18** |
+
+**GDX and GLD are demonstrably the same precious-metals bet the book already holds
+through SLV — which is exactly why the short side is three independent ideas and not
+the five Q1 asks for.** That was reasoning two iterations ago; it is evidence now.
+
+**BIL at −0.18 is the control.** It proves the measure discriminates rather than
+flagging everything, and it means BIL's absence needs a different explanation — which
+the table no longer pretends to supply.
+
+A candidate with no usable return history renders `—`, never `0.00`: an unmeasurable
+correlation is not an absent one, and silent zeros are this codebase's recurring bug.
+A test pins the omission. The computation is wrapped so an explanatory panel can
+never fail the book.
+
+**The arc across three iterations is worth keeping:** ship a plausible proxy → notice
+it does not survive its own data → replace it with the measurement. The middle step
+is the one that mattered, and it came from reading the rendered table rather than
+from a test.
+
 ### Loop iteration 26 (2026-07-24)
 
 **The panel I shipped last iteration asserted something it could not know, and I

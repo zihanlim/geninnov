@@ -56,6 +56,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0048](0048-count-independent-ideas-not-candidates.md) | Count independent ideas, not candidates — the pool holds 13 long and 5 short, so five-and-five is no longer a universe problem | accepted | 2026-07-25 |
 | [0049](0049-the-guardrail-does-not-read-the-prose.md) | The citation guardrail never inspects the thesis prose, and grounding cannot verify a count — every integer 0-9 grounds | accepted | 2026-07-25 |
 | [0050](0050-separate-agent-churn-from-market-churn.md) | Measure agent churn separately from market churn — replicate reason_picks on frozen inputs | accepted | 2026-07-25 |
+| [0051](0051-llm-timeout-bounded-silence-not-the-call.md) | LLM_TIMEOUT_SECONDS bounded the gap between bytes, not the call — a stalled provider hung the daily job | accepted | 2026-07-25 |
 | [0051](0051-a-daily-publication-not-a-scanner.md) | The interface is a daily research publication, not a scanner — no streaming, no alerts, no filters; but the scannable layer must differentiate | accepted | 2026-07-25 |
 
 ## When to write an ADR

@@ -106,7 +106,7 @@ find, not just what you changed:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 511 backend + 106 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 518 backend + 111 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -148,6 +148,38 @@ Live at https://andromeda-analytics.vercel.app · 511 backend + 106 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 45 (2026-07-25)
+
+**Two freshness labels on the showcase page were dating live data wrong. One I had
+already committed but never got live; the second the first one led me to.**
+
+Iteration 43 fixed the landing header (RUN DATE sourced from a write timestamp
+instead of `run_date`, ADR-0062) and committed it — but it was never deployed. The
+last production deploy predated the commit by five minutes, and these are CLI
+(`vercel --prod`) deploys with no git metadata, so pushing to `main` does not
+trigger one. The site still read **RUN DATE 2026-07-24** while its own status bar
+read **Last run 2026-07-25**. Deployed HEAD cleanly (`git archive` of the commit, so
+none of the other session's uncommitted WIP shipped); verified live — RUN DATE, LAST
+PIPELINE RUN and the status bar now all read **2026-07-25**, freshness "Updated 42m
+ago" measured from `finished_at`, zero console errors at 1440 and 375.
+
+**Then the desktop screenshot showed the next instance of the same defect.** The
+market tape read **"Updated 2d ago"** over **S&P 7,407.40 · -0.01%** — but those are
+the genuine 07-24-vs-07-23 closes, and `macro_indicators.^SPX` was fetched 42 minutes
+earlier. The values were current; the timestamp lied. `market_assets.updated_at`
+defaults to `NOW()` only on INSERT, and `fetch_market_assets`' upsert
+(`on_conflict=ticker`) refreshed the value columns every run without ever writing
+`updated_at`, with no `ON UPDATE` trigger — so the row's timestamp had been frozen at
+its first insert (07-22) for two days while the prices moved under it. **The same
+wrong-field class as ADR-0062: a real value carrying a timestamp that doesn't track
+when it changed.** Fixed the writer to stamp `updated_at` on every upsert, ran the
+fixed fetcher against prod to correct the live row (no fabrication — it recomputes
+from real `macro_daily_history`), and the bar now reads **"Updated 1m ago"** over the
+same closes. This one was **not** found by a unit test — it was found by cross-reading
+two numbers on one screenshot, the freshness label against the quote it labelled, the
+same way every real defect this project has caught was found. 518 backend + 111
+frontend tests. Follows ADR-0062; no new ADR — it is that rule applied a second time.
 
 ### Loop iteration 44 (2026-07-25)
 

@@ -23,6 +23,7 @@ import EdgeBars from "@/components/book/EdgeBars";
 import SizingChainView from "@/components/book/SizingChainView";
 import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import AbstentionRoster from "@/components/book/AbstentionRoster";
+import ClearedNotTaken, { type CandidateRow } from "@/components/book/ClearedNotTaken";
 import { ScrollArea } from "@/components/ScrollArea";
 import { assessStaleness } from "@/lib/freshness";
 import {
@@ -174,6 +175,7 @@ function BookPageInner() {
   const [weightsResolved, setWeightsResolved] = useState<
     Record<keyof EdgeWeights, boolean>
   >({ trend: false, regime: false, carry: false, value: false, sentiment: false, abstainThreshold: false });
+  const [candidates, setCandidates] = useState<CandidateRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [openAsset, setOpenAsset] = useState<string | null>(null);
 
@@ -181,7 +183,7 @@ function BookPageInner() {
     async function load() {
       // The book row, the live scoring weights, the per-position edge columns,
       // and the full theme roster are independent reads — fire them together.
-      const [recRes, cfgRes, posRes, themesRes] = await Promise.all([
+      const [recRes, cfgRes, posRes, themesRes, candRes] = await Promise.all([
         supabase
           .from("research_recommendations")
           .select(
@@ -197,6 +199,13 @@ function BookPageInner() {
             "asset, theme_id, edge_score, trend_signal, regime_bias, carry_signal, value_signal, sentiment_signal, conviction, vol"
           ),
         supabase.from("themes").select("id, name"),
+        // The L1 pool, so the page can show what cleared the screen and was still
+        // not taken — the "why isn't X in the book?" question had no answer here.
+        supabase
+          .from("trade_candidates")
+          .select("asset, direction, edge_score, theme_id, run_date")
+          .order("run_date", { ascending: false })
+          .limit(200),
       ]);
 
       // Live EdgeScore weights + abstain threshold. Missing rows fall back to the
@@ -214,6 +223,12 @@ function BookPageInner() {
         if (row.asset) posMap[row.asset] = row;
       }
       setPosEdgeByAsset(posMap);
+
+      // Latest run_date only — an older vintage would list names that were never
+      // candidates for today's book.
+      const candRows = (candRes.data as (CandidateRow & { run_date: string })[] | null) ?? [];
+      const latestCandDate = candRows[0]?.run_date ?? null;
+      setCandidates(candRows.filter((c) => c.run_date === latestCandDate));
 
       // Theme id → name, for the abstention roster and position links.
       const names: Record<string, string> = {};
@@ -703,6 +718,19 @@ function BookPageInner() {
           )}
 
           {/* ── Abstention roster ───────────────────────────────────────── */}
+          <ClearedNotTaken
+            candidates={candidates}
+            heldAssets={new Set((rec?.picks ?? []).map((p) => p.asset))}
+            heldThemeIds={
+              new Set(
+                (rec?.picks ?? [])
+                  .map((p) => p.theme_id)
+                  .filter((t): t is string => Boolean(t))
+              )
+            }
+            themeNames={themeNames}
+          />
+
           <AbstentionRoster
             edgeByTheme={allEdgeByTheme}
             themeNames={themeNames}

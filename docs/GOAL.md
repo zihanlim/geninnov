@@ -141,11 +141,23 @@ reason in place: *"Not shown: 2 sessions of history, needs 60. A Sharpe from thi
 sample is noise, so we do not publish one."* The computed value stays in
 `portfolio_risk` for anyone who queries it; the page stops asserting it.
 
+**Verified live.** All four under-sampled tiles now read identically — `—`, badge
+**Unavailable**, no delta chip, reason in place: *"Not shown: 2 sessions of history,
+needs 30. A VaR from this sample is noise, so we do not publish one."* **HHI stands
+at 362 badged Exact**, because it is computed from weights and needs no return
+history — which is the point: the page now distinguishes "we do not know" from "we
+know, and it is 362".
+
 **Note the shape of this one — it is the recurring failure in this codebase.** Not a
 wrong calculation: a correct calculation presented as if it meant something. The
 cumulative-return bug, the HHI scale, the min-max HypeScore, the carry IC measured on
 a superseded formula, and now this. Each was found by cross-checking a number against
 something else on the same page, never by a unit test.
+
+Also verified this iteration: `/risk` at 375px — **0 contrast failures of 357
+checked**, zero console errors, no horizontal scroll; risk-limit board all-OK; the
+per-position attribution showing the **same 8 positions as the book** (ADR-0040
+holding).
 
 ### Loop iteration 19 (2026-07-24)
 

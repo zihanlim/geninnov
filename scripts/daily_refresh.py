@@ -317,35 +317,80 @@ def compute_trade_scores(hyped: list[dict], run_date: date) -> list[dict]:
     return scored
 
 
+# Trailing window for the Value z-score, in observations. Must match
+# scripts/backtest_edge.py::Z_WINDOW — that backtest is what set
+# edge_value_weight (ADR-0033), so a production window of a different length
+# means the weight was fitted on a signal the pipeline does not compute.
+VALUE_Z_WINDOW = 252
+# Below this the level is not z-scored at all (Value stays absent → 0) rather
+# than scored against a window too short to define "normal".
+VALUE_Z_MIN_OBS = 60
+
+
 def _macro_zscores() -> dict[str, float]:
-    """z-score of each FRED series' latest level vs its trailing history
+    """z-score of each macro series' latest level vs its trailing history
     (macro_daily_history, migration 005). Feeds the EdgeScore Value component.
-    Series with < 20 observations are skipped (z stays absent → Value 0)."""
+
+    Queried PER SERIES. The previous single unpartitioned query
+    (`.order(trading_date, desc).limit(5000)`) had two compounding defects:
+    PostgREST silently caps a response at 1000 rows, so `.limit(5000)` returned
+    1000; and because the ordering was global rather than per series, that budget
+    was split across all 22 series at once. Each series therefore got
+    1000/22 ≈ 50 observations instead of its full ~252 — a 2.5-month window
+    masquerading as a one-year valuation anchor. The only guard (`>= 20`) passed
+    trivially at 50, so it degraded silently: the live 2026-07-24
+    `value_signal = -0.8085` matches the 54-observation z, not the 265-observation
+    one. Value is 0.18 of EdgeScore and EdgeScore's sign picks the side, so the
+    truncation moved real trade direction.
+    """
     z: dict[str, float] = {}
     try:
-        rows = (
+        ids = (
             supabase.table("macro_daily_history")
-            .select("series_id, value, trading_date")
-            .order("trading_date", desc=True)
-            .limit(5000)
+            .select("series_id")
             .execute()
             .data
-        )
+        ) or []
     except Exception as exc:
         print(f"[_macro_zscores] macro_daily_history unavailable "
               f"({exc.__class__.__name__}): {exc}. EdgeScore Value component = 0.")
         return z
-    series: dict[str, list[float]] = {}
-    for r in rows:                      # rows are newest-first
-        v = r.get("value")
-        if v is not None:
-            series.setdefault(r["series_id"], []).append(float(v))
-    for sid, vals in series.items():
-        if len(vals) >= 20:
-            latest = vals[0]            # newest-first, so [0] is today's level
-            sd = pstdev(vals)
-            if sd > 0:
-                z[sid] = (latest - fmean(vals)) / sd
+
+    series_ids = sorted({r["series_id"] for r in ids if r.get("series_id")})
+    short: list[str] = []
+    for sid in series_ids:
+        try:
+            rows = (
+                supabase.table("macro_daily_history")
+                .select("value, trading_date")
+                .eq("series_id", sid)
+                .order("trading_date", desc=True)
+                .limit(VALUE_Z_WINDOW)
+                .execute()
+                .data
+            ) or []
+        except Exception as exc:
+            print(f"[_macro_zscores] {sid}: read failed "
+                  f"({exc.__class__.__name__}); skipped.")
+            continue
+
+        vals = [float(r["value"]) for r in rows if r.get("value") is not None]
+        if len(vals) < VALUE_Z_MIN_OBS:
+            short.append(f"{sid}({len(vals)})")
+            continue
+        latest = vals[0]                 # newest-first, so [0] is today's level
+        # Population stdev over the window INCLUDING the latest point is fine at
+        # n≈252; it would bias materially at n≈50, which is the window we just
+        # stopped silently using.
+        sd = pstdev(vals)
+        if sd > 0:
+            z[sid] = (latest - fmean(vals)) / sd
+
+    if short:
+        print(f"[_macro_zscores] skipped (< {VALUE_Z_MIN_OBS} obs): {', '.join(short)}")
+    scored_n = len(z)
+    print(f"[_macro_zscores] z-scored {scored_n}/{len(series_ids)} series "
+          f"over a {VALUE_Z_WINDOW}-observation window.")
     return z
 
 
@@ -724,6 +769,19 @@ def rank_and_persist_trade_candidates(
     shorts = _keep_classified(shorts)
 
     today_str = run_date.isoformat()
+
+    # Clear THIS run_date before writing, so a re-run REPLACES the day's candidate
+    # set instead of unioning with it. The upsert keys on (theme_id, asset,
+    # direction), so a second run that picks different names simply adds rows and
+    # leaves the first run's behind: two runs on 2026-07-24 (Energy XLE/OIH/CL/UNG,
+    # then Credit HYG/LQD) left all six live at once. Same prune-before-write shape
+    # persist_theme_news already uses.
+    try:
+        supabase.table("trade_candidates").delete().eq("run_date", today_str).execute()
+    except Exception as exc:
+        print(f"[{today_str}] WARNING failed to clear trade_candidates for this run "
+              f"({exc.__class__.__name__}): {exc}")
+
     for c in longs + shorts:
         # Stamp run_date so readers can tell today's candidates from a previous
         # run's.
@@ -732,11 +790,8 @@ def rank_and_persist_trade_candidates(
             on_conflict="theme_id,asset,direction",
         ).execute()
 
-    # Delete any candidate left over from an earlier run. The upsert keys on
-    # (theme_id, asset, direction) and never deletes, so a position that drops
-    # out of the book would otherwise persist forever and be served as current.
-    # Today's rows were written above, so deleting run_date < today is safe; a
-    # zero-candidate day correctly empties the table.
+    # Delete any candidate left over from an EARLIER DAY. A zero-candidate day
+    # correctly empties the table.
     try:
         supabase.table("trade_candidates").delete().lt("run_date", today_str).execute()
     except Exception as exc:
@@ -763,6 +818,19 @@ def allocate_and_persist_portfolio(
     )
 
     today_str = run_date.isoformat()
+
+    # Clear THIS run_date first — a re-run must REPLACE the day's book, not union
+    # with it. Two runs on 2026-07-24 left six positions live (Energy at 25% each
+    # PLUS Credit at 50% each), so the book read as 200% gross / $200M on $100M of
+    # capital, and every /risk figure computed off it — gross, HHI, factor tilts,
+    # per-position attribution, and a phantom "500% of the single-name cap" breach —
+    # was measured against a portfolio that never existed.
+    try:
+        supabase.table("portfolio_positions").delete().eq("run_date", today_str).execute()
+    except Exception as exc:
+        print(f"[{today_str}] WARNING failed to clear portfolio_positions for this run "
+              f"({exc.__class__.__name__}): {exc}")
+
     for c, notional, weight in positioned:
         # See the note in rank_and_persist_trade_candidates: without run_date a
         # stale book is indistinguishable from the current one.
@@ -771,8 +839,8 @@ def allocate_and_persist_portfolio(
             on_conflict="theme_id,asset,direction",
         ).execute()
 
-    # Prune positions left over from an earlier run (see the same note in
-    # rank_and_persist_trade_candidates). A zero-position day empties the table.
+    # Prune positions left over from an EARLIER DAY. A zero-position day empties
+    # the table.
     try:
         supabase.table("portfolio_positions").delete().lt("run_date", today_str).execute()
     except Exception as exc:

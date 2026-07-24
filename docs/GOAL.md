@@ -110,6 +110,43 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 21 (2026-07-24)
+
+**My own last fix made a contradiction sharper instead of resolving it.** Iteration
+20 suppressed the under-sampled metric *tiles*. The risk-limit board on the same page
+kept scoring the same statistics:
+
+```
+board:  VaR (95%)   1.7%  /  6.0% limit  /  28%  /  OK
+tile:   VAR (95%)   Unavailable — "Not shown: 2 sessions of history, needs 30.
+                                   A VaR from this sample is noise, so we do
+                                   not publish one."
+```
+
+Same number, same page, opposite claims. **The OK is the more dangerous of the two**
+— a green stamp against a governing limit reads as a risk check that *passed*, not as
+an estimate nobody should trust. And Beta already rendered NO DATA on that board, so
+it was making the identical mistake the tiles had: two under-sampled statistics,
+two treatments.
+
+`buildLimitBoard` now takes `returnSessions` and withholds any statistic below its
+declared minimum, mirroring `MIN_DAYS_FOR_*` in `risk_engine.py` and `minSessions` in
+`RiskMetricsGrid` **so the tile and the board cannot disagree**. The row still
+renders as `unknown` — a limit a PM cannot see is a limit they cannot manage.
+
+Scoped deliberately to statistical **estimates** (VaR, CVaR, beta). Max drawdown is a
+realised fact — *"no drawdown has occurred yet"* is true on two sessions, merely
+uninformative — and HHI, caps and exposures come from today's weights and need no
+history. Gating those would replace a real number with a blank. An unknown session
+count also does not withhold: not knowing the sample size is not evidence it is
+short. Five tests pin all of it, including both boundaries.
+
+**This is the third consecutive iteration on the same theme, and the theme is the
+point:** a correct calculation presented as if it meant something. Each fix exposed
+the next surface making the same claim — tile, then board. Worth checking whether
+anything else asserts a risk number: the what-if shock estimator and the scenario
+table both consume the same statistics.
+
 ### Loop iteration 20 (2026-07-24)
 
 **The risk page published three statistics it simultaneously called unreadable.**

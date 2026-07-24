@@ -965,6 +965,37 @@ def compute_and_persist_daily_return(
                 float(sub.iloc[-2]["close"]),
             )
 
+    # A batch yfinance download silently drops tickers now and then. Retry just the
+    # missing ones, individually, before treating the gap as real.
+    #
+    # On 2026-07-24 the whole run died on `missing prices for ['EMB']` — one of
+    # eighteen positions, and a liquid ETF that fetched fine seconds later. The guard
+    # below is right to refuse to invent a return, but aborting the pipeline over a
+    # transient batch hiccup threw away L4 risk and the entire L5 book and thesis for
+    # the day. For something billed as a DAILY process, losing a day to a dropped
+    # quote is the more serious failure.
+    #
+    # This does not weaken the contract: a ticker that is still missing after its own
+    # dedicated fetch aborts exactly as before. It only stops a batch artefact from
+    # masquerading as absent data.
+    stragglers = [t for t, (px, _) in price_lookup.items() if px is None]
+    if stragglers:
+        print(f"[{today_str}] price gap for {stragglers}; retrying individually...")
+        for ticker in stragglers:
+            try:
+                retry = fetch_price_data([ticker], lookback_days=5)
+            except Exception as exc:
+                print(f"[{today_str}]   {ticker} retry failed "
+                      f"({exc.__class__.__name__}): {exc}")
+                continue
+            sub = retry[retry["ticker"] == ticker].sort_values("date")
+            if len(sub) >= 2:
+                price_lookup[ticker] = (
+                    float(sub.iloc[-1]["close"]),
+                    float(sub.iloc[-2]["close"]),
+                )
+                print(f"[{today_str}]   {ticker} recovered on retry.")
+
     # Signed weight: shorts flip sign so short P&L is the negative of the
     # asset's return. `weight` (3rd tuple element) is always a positive fraction
     # of capital.

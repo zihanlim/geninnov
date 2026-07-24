@@ -613,6 +613,7 @@ def test_compute_and_persist_daily_return_sign_flips_shorts():
     import pandas as pd
     from daily_refresh import compute_and_persist_daily_return
     from services.trade_ranker import TradeCandidate
+    import pandas as pd
 
     positioned = [
         (TradeCandidate("t1", "TLT", "long", 0.5, 80.0, 0.3), 50_000_000.0, 0.5),
@@ -654,6 +655,7 @@ def test_daily_return_persists_compounded_cumulative_not_todays_return():
     import pandas as pd
     from daily_refresh import compute_and_persist_daily_return
     from services.trade_ranker import TradeCandidate
+    import pandas as pd
 
     positioned = [
         (TradeCandidate("t1", "TLT", "long", 0.5, 80.0, 0.3), 100_000_000.0, 1.0),
@@ -762,6 +764,7 @@ def test_compute_and_persist_daily_return_aborts_on_missing_price():
     import pandas as pd
     from daily_refresh import compute_and_persist_daily_return
     from services.trade_ranker import TradeCandidate
+    import pandas as pd
 
     positioned = [
         (TradeCandidate("t1", "TLT", "long", 0.5, 80.0, 0.3), 50_000_000.0, 0.5),
@@ -1057,3 +1060,70 @@ def test_reconcile_refuses_a_pick_outside_the_candidate_set():
     with patch("daily_refresh.supabase"):
         assert reconcile_positions_to_published_book(
             agent_result, provisional, date(2026, 7, 24), cfg) is None
+
+
+def test_daily_return_retries_a_dropped_ticker_before_aborting():
+    """A batch yfinance download silently drops tickers now and then.
+
+    On 2026-07-24 the entire run died on "missing prices for ['EMB']" — one of
+    eighteen positions, and a liquid ETF that fetched fine seconds later. The guard
+    is right to refuse to invent a return, but aborting over a transient batch hiccup
+    threw away L4 risk and the whole L5 book and thesis for the day. For something
+    billed as a DAILY process, losing a day to a dropped quote is the worse failure.
+    """
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+    from daily_refresh import compute_and_persist_daily_return
+    from services.trade_ranker import TradeCandidate
+    import pandas as pd
+
+    positioned = [
+        (TradeCandidate("t1", "TLT", "long", 0.5, 60.0, 0.1), 50_000_000.0, 0.5),
+        (TradeCandidate("t2", "EMB", "long", 0.4, 55.0, 0.1), 50_000_000.0, 0.5),
+    ]
+    batch = pd.DataFrame([  # EMB missing, exactly as the live failure
+        {"date": date(2026, 7, 20), "ticker": "TLT", "close": 100.0, "return": None},
+        {"date": date(2026, 7, 21), "ticker": "TLT", "close": 101.0, "return": 0.01},
+    ])
+    retry = pd.DataFrame([
+        {"date": date(2026, 7, 20), "ticker": "EMB", "close": 200.0, "return": None},
+        {"date": date(2026, 7, 21), "ticker": "EMB", "close": 202.0, "return": 0.01},
+    ])
+
+    calls = {"n": 0}
+
+    def fake_fetch(tickers, lookback_days=5):
+        calls["n"] += 1
+        return batch if calls["n"] == 1 else retry
+
+    with patch("daily_refresh.supabase"), \
+         patch("daily_refresh.fetch_price_data", side_effect=fake_fetch):
+        result = compute_and_persist_daily_return(positioned, date(2026, 7, 21), 100_000_000.0)
+
+    # Both +1%, half each → +1%. The run survives instead of raising.
+    assert abs(result - 0.01) < 1e-9
+    assert calls["n"] == 2, "the dropped ticker should get its own fetch"
+
+
+def test_daily_return_still_aborts_when_a_ticker_is_genuinely_absent():
+    """The retry must not weaken the contract: a price that is really missing after
+    its own dedicated fetch still aborts rather than inventing a zero return."""
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+    from daily_refresh import compute_and_persist_daily_return
+    from services.trade_ranker import TradeCandidate
+    import pandas as pd
+
+    positioned = [
+        (TradeCandidate("t1", "TLT", "long", 0.5, 60.0, 0.1), 50_000_000.0, 0.5),
+        (TradeCandidate("t2", "ZZZZ", "long", 0.4, 55.0, 0.1), 50_000_000.0, 0.5),
+    ]
+    only_tlt = pd.DataFrame([
+        {"date": date(2026, 7, 20), "ticker": "TLT", "close": 100.0, "return": None},
+        {"date": date(2026, 7, 21), "ticker": "TLT", "close": 101.0, "return": 0.01},
+    ])
+
+    with patch("daily_refresh.supabase"), \
+         patch("daily_refresh.fetch_price_data", return_value=only_tlt), \
+         pytest.raises(RuntimeError, match="missing prices"):
+        compute_and_persist_daily_return(positioned, date(2026, 7, 21), 100_000_000.0)

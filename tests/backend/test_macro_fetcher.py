@@ -183,3 +183,29 @@ class TestMarketAssetsUpsertPayload:
 
         results = f.fetch_market_assets(tickers=[ticker])
         assert results[0]["pct_change"] == pytest.approx(10.0)
+
+    def test_upsert_stamps_a_fresh_updated_at(self):
+        """The homepage freshness label reads market_assets.updated_at. The table
+        defaults it to NOW() only on INSERT, so an upsert that omits the column
+        left it frozen at first insert — the tape showed today's closes under an
+        "Updated 2d ago" label. Every write must carry a real, current timestamp.
+        """
+        from datetime import datetime, timezone
+        from macro_fetcher import EQUITY_INDICES
+
+        ticker = EQUITY_INDICES[0]
+        rows = [
+            {"series_id": ticker, "trading_date": "2026-07-23", "value": 110.0},
+            {"series_id": ticker, "trading_date": "2026-07-22", "value": 100.0},
+        ]
+        f, captured = self._fetcher_with_history(rows)
+
+        before = datetime.now(timezone.utc)
+        results = f.fetch_market_assets(tickers=[ticker])
+        after = datetime.now(timezone.utc)
+
+        assert results, "expected one computed market asset"
+        for row in captured["payload"]:
+            assert "updated_at" in row, "upsert payload must set updated_at"
+            ts = datetime.fromisoformat(row["updated_at"])
+            assert before <= ts <= after, "updated_at must be the write time, not stale"

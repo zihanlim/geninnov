@@ -40,7 +40,7 @@ Usage:
 from __future__ import annotations
 
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import pandas as pd
@@ -294,8 +294,16 @@ class MacroFetcher:
         """
         Returns latest two closes for equity indices from macro_daily_history,
         with pct_change computed. Stores result in market_assets table.
-        Returns [{ticker, name, current, prev_close, pct_change}].
+        Returns [{ticker, name, current, prev_close, pct_change, updated_at}].
         """
+        # A real write timestamp on every upsert. market_assets.updated_at defaults
+        # to NOW() only on INSERT; the upsert below (on_conflict=ticker) UPDATEs the
+        # value columns but, without updated_at in the payload and with no ON UPDATE
+        # trigger, left updated_at frozen at the row's first insert. So the values
+        # refreshed daily while the timestamp did not — the homepage tape showed
+        # today's closes under an "Updated 2d ago" label (a false freshness claim,
+        # the same wrong-field defect as ADR-0062). Stamp it explicitly here.
+        now_iso = datetime.now(timezone.utc).isoformat()
         tickers = tickers or EQUITY_INDICES
         today = date.today()
         # Last 5 trading days should cover any weekend gap
@@ -338,6 +346,7 @@ class MacroFetcher:
                 "current": round(curr, 2),
                 "prev_close": round(prev, 2),
                 "pct_change": round(pct, 2),
+                "updated_at": now_iso,
             })
 
         # Persist to market_assets table.

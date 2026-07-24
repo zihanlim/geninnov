@@ -144,9 +144,25 @@ changed. The pipeline_runs telemetry added in iteration 14 records stage failure
 but nothing surfaces "yesterday's book is still today's book", which is what a
 silently-dead run actually looks like to a reader.
 
-**Still to verify:** iteration 22's corrected stress scenarios have not persisted yet
-(the run that would have written them is the one that died). Confirm on the next run
-that `/risk` shows the recomputed figures — VIX ≈ +1.63% rather than −0.02%.
+**Iteration 22's scenario fix is now persisted and live.** The re-run completed and
+`/risk` reads **"WORST CASE — Credit Widening (+150bps OAS) at −0.51% (−$0.5M)"**,
+against −$0.0M before:
+
+| scenario | before | after |
+|---|---|---|
+| Credit Widening | −0.012% | **−0.507%** |
+| USD Strength | −0.005% | **−0.339%** |
+| VIX Spike | −0.021% | **−0.272%** |
+| Rate Shock | −0.003% | **+0.234%** |
+
+~25–40× larger, and the ORDERING changed — credit is the worst case, not VIX. The
+VIX sign differs from the +1.63% projected last iteration because this is a different
+book: net **+10.9%** long beta rather than the earlier net-short one, so a selloff now
+correctly costs money. Sign follows exposure, which is the property that was missing.
+
+**Honest caveat on the retry:** the live run did not exercise it — no "price gap" line
+appeared, so the batch simply succeeded this time. The recovery path is proven by unit
+test, not by a live failure.
 
 ### Loop iteration 22 (2026-07-24)
 

@@ -330,103 +330,91 @@ def allocate_portfolio(
     weights = list(base_weights)
 
     # ── Single-name cap ──────────────────────────────────────────────────────────
-    # Strategy: cap all dominated names to max_single, redistribute their excess
-    # to non-dominated names PROPORTIONALLY BY THEIR ORIGINAL WEIGHTS (not scaled).
-    # This preserves the relative proportions of uncapped names.
-    dominated = [i for i, w in enumerate(weights) if w > max_single]
-    non_dom = [i for i, w in enumerate(weights) if w <= max_single]
-    dominated_sum = sum(weights[i] for i in dominated)
-    non_dom_sum = sum(weights[i] for i in non_dom)
-    excess = dominated_sum - len(dominated) * max_single  # total freed capacity
-
-    if dominated and non_dom and non_dom_sum > 0:
-        # Cap dominated, redistribute excess proportionally to non-dom by original weights
-        for i in dominated:
+    # Cap every over-weight name to max_single and redistribute the freed capacity
+    # across the names still under the cap, in proportion to their current weights so
+    # relative conviction is preserved. Then DO IT AGAIN, because redistribution can
+    # push a recipient over the cap itself.
+    #
+    # That re-check was missing: the pass ran exactly once, so a two-name book with
+    # an 88/12 split capped the first to 20% and handed the whole 68% excess to the
+    # second, leaving it at 80% — four times its own 20% limit. A test asserted that
+    # $80M as correct.
+    #
+    # Iterating to a fixed point means the excess stops somewhere real: it lands on
+    # names that can still take it, and once nobody can, it stays undeployed as cash
+    # rather than being forced into a name whose conviction never earned it.
+    for _ in range(50):
+        over = [i for i, w in enumerate(weights) if w > max_single + 1e-12]
+        if not over:
+            break
+        under = [i for i, w in enumerate(weights) if w < max_single - 1e-12]
+        freed = sum(weights[i] - max_single for i in over)
+        for i in over:
             weights[i] = max_single
-        for i in non_dom:
-            # Non-dom_i_new = Non-dom_i / non_dom_sum × (non_dom_sum + excess)
-            #                 = Non-dom_i + Non-dom_i / non_dom_sum × excess
-            weights[i] = weights[i] / non_dom_sum * (non_dom_sum + excess)
-    elif dominated:
-        for i in dominated:
-            weights[i] = max_single
+        under_sum = sum(weights[i] for i in under)
+        if not under or under_sum <= 0:
+            break          # nowhere left to put it → it becomes cash
+        # Give each under-cap name a share of the freed capacity proportional to its
+        # current weight. Any resulting over-shoot is caught on the next iteration.
+        for i in under:
+            weights[i] += freed * weights[i] / under_sum
 
-    # ── Sector cap ──────────────────────────────────────────────────────────────
-    # Only apply sector cap when there are at least 3 members in the sector
-    # and the sector genuinely exceeds max_sector. With ≤2 members the
-    # single-name cap is sufficient.
-    for _ in range(10):
-        sec_weights: dict[str, float] = {}
-        sec_members: dict[str, list[int]] = {}
+    # ── Group caps: sector, then geography ──────────────────────────────────────
+    # A group cap binds on the GROUP TOTAL, so when it is exceeded every member is
+    # scaled down by the same factor. That keeps their relative sizes intact and
+    # lets the freed capital fall to cash rather than pushing it into other names,
+    # which would just relocate the concentration.
+    #
+    # The previous implementation missed the ordinary case entirely. It only acted
+    # on members whose OWN weight exceeded the GROUP cap — so two credit names at
+    # 20% each put the Credit sector at 40% against a 30% limit while neither member
+    # individually exceeded 30%, and nothing was capped. It then skipped any group
+    # with fewer than three members outright ("the single-name cap is sufficient"),
+    # which it is not: 2 x 20% = 40% > 30%. Verified live — a HYG/LQD/GLD book sat
+    # at Credit 40% with the cap reported as satisfied.
+    def _apply_group_cap(group_of: dict[str, str], cap: float) -> None:
+        if cap <= 0:
+            return
+        totals: dict[str, float] = {}
+        members: dict[str, list[int]] = {}
         for i, c in enumerate(candidates):
             # Unmapped tickers must raise — no silent fallback.
-            sec = sector_map[c.asset]
-            sec_weights[sec] = sec_weights.get(sec, 0.0) + weights[i]
-            sec_members.setdefault(sec, []).append(i)
+            g = group_of[c.asset]
+            totals[g] = totals.get(g, 0.0) + weights[i]
+            members.setdefault(g, []).append(i)
 
-        violating = {
-            sec for sec, sw in sec_weights.items()
-            if sw > max_sector and len(sec_members[sec]) >= 3
-        }
-        if not violating:
-            break
+        for g, total in totals.items():
+            if total > cap + 1e-12:
+                scale = cap / total
+                for i in members[g]:
+                    weights[i] *= scale
 
-        for sec in violating:
-            members = sec_members[sec]
-            dominated_m = [i for i in members if weights[i] > max_sector]
-            non_dom_m = [i for i in members if weights[i] <= max_sector]
-            dom_sum = sum(weights[i] for i in dominated_m)
-            non_sum = sum(weights[i] for i in non_dom_m)
-            excess_s = dom_sum - len(dominated_m) * max_sector
+    _apply_group_cap(sector_map, max_sector)
+    _apply_group_cap(geo_map, max_geo)
 
-            if dominated_m and non_dom_m and non_sum > 0:
-                for i in dominated_m:
-                    weights[i] = max_sector
-                for i in non_dom_m:
-                    weights[i] = weights[i] / non_sum * (non_sum + excess_s)
-            elif dominated_m:
-                for i in dominated_m:
-                    weights[i] = max_sector
-
-    # ── Geography cap ───────────────────────────────────────────────────────────
-    # Same guard: ≥3 members in the geography group before applying.
-    for _ in range(10):
-        geo_weights: dict[str, float] = {}
-        geo_members: dict[str, list[int]] = {}
-        for i, c in enumerate(candidates):
-            # Unmapped tickers must raise — no silent fallback.
-            geo = geo_map[c.asset]
-            geo_weights[geo] = geo_weights.get(geo, 0.0) + weights[i]
-            geo_members.setdefault(geo, []).append(i)
-
-        violating = {
-            geo for geo, gw in geo_weights.items()
-            if gw > max_geo and len(geo_members[geo]) >= 3
-        }
-        if not violating:
-            break
-
-        for geo in violating:
-            members = geo_members[geo]
-            dominated_m = [i for i in members if weights[i] > max_geo]
-            non_dom_m = [i for i in members if weights[i] <= max_geo]
-            dom_sum = sum(weights[i] for i in dominated_m)
-            non_sum = sum(weights[i] for i in non_dom_m)
-            excess_g = dom_sum - len(dominated_m) * max_geo
-
-            if dominated_m and non_dom_m and non_sum > 0:
-                for i in dominated_m:
-                    weights[i] = max_geo
-                for i in non_dom_m:
-                    weights[i] = weights[i] / non_sum * (non_sum + excess_g)
-            elif dominated_m:
-                for i in dominated_m:
-                    weights[i] = max_geo
-
-    # Final normalisation so weights sum exactly to 1.0
-    total_w = sum(weights)
-    if total_w > 0:
-        weights = [w / total_w for w in weights]
+    # NO final renormalisation. If the caps bind, we deploy less than the full
+    # capital and hold the remainder in cash.
+    #
+    # There used to be a "normalise so weights sum exactly to 1.0" step here, and it
+    # erased every cap above it. Capping three names at 20% leaves the weights
+    # summing to 0.60 — that IS the cap working — and dividing through by 0.60 put
+    # all three straight back to 33.3%. Observed live on 2026-07-24: a three-name
+    # book reported six violations (each name 33.3% against a 20% limit, each sector
+    # 33.3% against 30%) while ARCHITECTURE.md claimed the caps were "actually
+    # enforced". They were computed, reported, and then undone one line later.
+    #
+    # Forcing full notional into whatever names happen to clear is precisely what a
+    # position limit exists to prevent: the fewer the names, the harder the book
+    # breaks its own published limit, which is exactly backwards. A book that cannot
+    # be filled inside its risk limits should be smaller, not more concentrated.
+    #
+    # When no cap binds this is a no-op — the weights already sum to 1.0 — so only
+    # genuinely constrained books change.
+    deployed = sum(weights)
+    if deployed > 1.0 + 1e-9:
+        # Caps can only ever reduce weight, so this means the base weights did not
+        # normalise. Guard rather than silently lever the book above its capital.
+        weights = [w / deployed for w in weights]
 
     return [
         (c, w * total_capital, w)

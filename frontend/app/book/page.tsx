@@ -354,7 +354,18 @@ function BookPageInner() {
         : Math.abs(net) < 0.05
           ? " It is close to market-neutral."
           : ` It leans net ${net > 0 ? "long" : "short"} at ${fmtPct(Math.abs(net), 0)} of capital.`;
-    return `Today's book holds ${sides}, sized by conviction across $100M.${tilt}`;
+    // Cash is a POSITION, not a rounding error. Once the caps genuinely bind, a
+    // book that cannot be filled inside its own limits deploys less than $100M —
+    // and a reader who is told "sized across $100M" while the notionals add to
+    // $60M is owed the difference and the reason for it.
+    const deployed = (rec.picks ?? []).reduce((s, p) => s + (p.notional ?? 0), 0);
+    const cash = 100_000_000 - deployed;
+    const cashNote =
+      cash > 500_000
+        ? ` ${fmtUSD(cash)} is held in cash: at ${n} name${n === 1 ? "" : "s"} the` +
+          ` book cannot take more without breaching its own position limits.`
+        : "";
+    return `Today's book holds ${sides}, sized by conviction across $100M.${tilt}${cashNote}`;
   }, [rec, longs, shorts, bm]);
   const advisory = rec?.advisory_derivation ?? null;
   const isFallback = advisory?.fallback_used === true;
@@ -569,7 +580,13 @@ function BookPageInner() {
               value={fmtUSD(
                 rec.picks.reduce((s, p) => s + (p.notional ?? 0), 0)
               )}
-              hint="Capital allocated of $100M"
+              hint={(() => {
+                const dep = rec.picks.reduce((s, p) => s + (p.notional ?? 0), 0);
+                const cash = 100_000_000 - dep;
+                return cash > 500_000
+                  ? `of $100M — ${fmtUSD(cash)} in cash, held back by position limits`
+                  : "Capital allocated of $100M";
+              })()}
             />
             <Stat
               label="Worst scenario"

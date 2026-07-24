@@ -209,23 +209,30 @@ def test_allocate_conviction_falls_back_to_hype_when_no_conviction():
     assert by_conv == by_hype
 
 
-def test_allocate_proportional_to_hype_score():
-    """Capital split proportional to each candidate's hype_score.
+def test_allocate_redistribution_cannot_push_a_name_past_its_own_cap():
+    """An 80:20 hype split, both names capped at 20%.
 
-    80:20 hype ratio → 80:20 notional ratio ($80M : $20M) when cap is disabled.
-    With max_single=0.20, A's 80% share exceeds the cap → capped to 20%,
-    excess redistributed to B → B absorbs → B=80%/$80M, A=20%/$20M.
+    This test used to assert TLT $20M / HYG $80M — "A is capped, B absorbs the
+    excess" — which put HYG at FOUR TIMES its own 20% limit. The single-name pass
+    ran once, so a redistribution recipient was never re-checked. The excess has to
+    stop somewhere: it goes to names that can still take it, and when none can, it
+    stays in cash rather than being forced into a name whose conviction never
+    earned it.
+
+    Sector/geo caps are disabled so this isolates the single-name rule; both names
+    are US, so a live 35% geography cap would otherwise bind first.
     """
     c1 = TradeCandidate("t1", "TLT", "long", 0.5, 80.0, 0.3)
     c2 = TradeCandidate("t2", "HYG", "long", 0.3, 20.0, 0.1)
     out = allocate_portfolio([c1, c2], total_capital=100_000_000,
-                             max_single=0.20)
+                             max_single=0.20, max_sector=1.0, max_geo=1.0)
     by_cand = {c.asset: (n, w) for c, n, w in out}
-    # A dominated (80% > 20% cap) → capped to 20%, B absorbs excess → B=80%
-    assert abs(by_cand["TLT"][0] - 20_000_000) < 1e-6
-    assert abs(by_cand["HYG"][0] - 80_000_000) < 1e-6
-    assert abs(by_cand["TLT"][1] - 0.2) < 1e-6
-    assert abs(by_cand["HYG"][1] - 0.8) < 1e-6
+    assert by_cand["TLT"][1] == pytest.approx(0.20)
+    assert by_cand["HYG"][1] == pytest.approx(0.20)
+    assert by_cand["TLT"][0] == pytest.approx(20_000_000)
+    assert by_cand["HYG"][0] == pytest.approx(20_000_000)
+    # 60% of the capital has nowhere it can legally go, so it is not deployed.
+    assert sum(w for _, _, w in out) == pytest.approx(0.40)
 
 
 def test_allocate_equal_weight_when_all_hype_zero():
@@ -320,3 +327,75 @@ def test_is_classified_matches_classify():
 
     assert is_classified("HYG") is True
     assert is_classified("ZZZZ") is False
+
+
+def test_allocate_caps_bind_and_leave_the_rest_in_cash():
+    """A book too small to fill inside its caps must be SMALLER, not concentrated.
+
+    Regression for the live 2026-07-24 book: three names, one sector each, sized to
+    33.3% apiece against a published 20% single-name limit — six cap violations on a
+    page that also rendered the limits as enforced. The caps were computed and then
+    undone by a final "normalise so weights sum to 1.0" step, which divided the
+    capped 0.60 total straight back up to 1.0.
+
+    Forcing full notional into whatever names happen to clear is exactly what a
+    position limit exists to prevent: the fewer the names, the harder the book breaks
+    its own limit.
+    """
+    cands = [
+        TradeCandidate(theme_id="geo", asset=a, direction="long", trade_score=0.0,
+                       hype_score=59.0, avg_sentiment=0.0, edge_score=0.219,
+                       vol=0.023, conviction=9.6)
+        for a in ("TLT", "GLD", "EFA")
+    ]
+    out = allocate_portfolio(cands, 100_000_000.0, size_by="conviction",
+                             max_single=0.20)
+
+    weights = [w for _, _, w in out]
+    assert all(w <= 0.20 + 1e-9 for w in weights), "single-name cap must bind"
+    assert sum(weights) == pytest.approx(0.60)          # deployed, not 1.0
+    assert sum(n for _, n, _ in out) == pytest.approx(60_000_000.0)
+    # The undeployed 40% is cash. It must NOT be redistributed into the three names.
+    assert all(w == pytest.approx(0.20) for w in weights)
+
+
+def test_allocate_deploys_nearly_everything_when_the_book_is_diversified():
+    """The counterpart: enforcing the caps must not strangle a sensible book.
+
+    Eight names spread across sectors and geographies deploy ~98% — the geography
+    cap grazes 35% on US and nothing else binds. Concentrated books SHOULD shrink;
+    diversified ones should not, and that asymmetry is the whole point of a limit.
+    """
+    cands = [
+        TradeCandidate(theme_id="t", asset=a, direction="long", trade_score=0.0,
+                       hype_score=50.0, avg_sentiment=0.0, edge_score=0.2,
+                       vol=0.02, conviction=5.0)
+        for a in ("TLT", "GLD", "EFA", "FXI", "UUP", "SPY", "EMB", "UNG")
+    ]
+    out = allocate_portfolio(cands, 100_000_000.0, size_by="conviction",
+                             max_single=0.20)
+    assert sum(w for _, _, w in out) > 0.95
+    assert max(w for _, _, w in out) <= 0.20 + 1e-9
+
+
+def test_allocate_group_cap_binds_on_the_GROUP_total_not_the_member():
+    """Two credit names at 20% each put the sector at 40% against a 30% cap.
+
+    Neither member individually exceeds 30%, and the old implementation only acted
+    on members whose own weight exceeded the group cap — so it capped nothing and
+    reported the limit as satisfied. It also skipped any group with fewer than three
+    members outright, on the stated reasoning that "the single-name cap is
+    sufficient", which 2 x 20% = 40% disproves.
+    """
+    cands = [
+        TradeCandidate(theme_id="t", asset=a, direction="long", trade_score=0.0,
+                       hype_score=50.0, avg_sentiment=0.0, edge_score=0.2,
+                       vol=0.02, conviction=5.0)
+        for a in ("HYG", "LQD", "GLD")
+    ]
+    out = allocate_portfolio(cands, 100_000_000.0, size_by="conviction",
+                             max_single=0.20, max_sector=0.30)
+    by = {c.asset: w for c, _, w in out}
+    assert by["HYG"] + by["LQD"] == pytest.approx(0.30)   # Credit capped at 30%
+    assert by["HYG"] == pytest.approx(by["LQD"])          # relative sizes preserved
+    assert by["GLD"] == pytest.approx(0.20)               # untouched, its own sector

@@ -42,6 +42,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0034](0034-scoring-config-anon-read-policy.md) | Public read policy on scoring_config (frontend sees live weights) | accepted | 2026-07-24 |
 | [0035](0035-volume-subscore-7day-average.md) | HypeScore Volume = 7-day average mentions, not the 1-day count | accepted | 2026-07-24 |
 | [0036](0036-carry-as-excess-yield-over-funding.md) | Carry = excess yield over funding (two-sided); a missing component renormalises rather than scoring 0 | accepted | 2026-07-24 |
+| [0037](0037-position-limits-bind-and-the-rest-is-cash.md) | Position limits actually bind; what they refuse is held in cash, not renormalised away | accepted | 2026-07-24 |
 
 ## When to write an ADR
 

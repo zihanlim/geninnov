@@ -768,10 +768,19 @@ function BookPageInner() {
             themeNames={themeNames}
             abstainThreshold={edgeWeights.abstainThreshold}
             thresholdIsLive={weightsResolved.abstainThreshold}
+            // Themes that traded, taken from the PUBLISHED BOOK — the same source
+            // the positions table above renders (ADR-0040). It used to come from
+            // portfolio_positions, which disagrees with the book for the several
+            // minutes L5 takes: L1 writes its full candidate set there first and it
+            // is only reconciled down after the agent picks. During that window
+            // every theme looked traded, so this panel printed "Every scored theme
+            // cleared the |Edge| >= 0.15 conviction bar" while /method showed
+            // Inflation at +0.117 — a confidently wrong sentence, on a page whose
+            // own positions table listed seven names from four themes.
             tradedThemeIds={
               new Set(
-                Object.values(posEdgeByAsset)
-                  .map((p) => p.theme_id)
+                (rec?.picks ?? [])
+                  .map((p) => p.theme_id || posEdgeByAsset[p.asset]?.theme_id)
                   .filter((t): t is string => Boolean(t))
               )
             }

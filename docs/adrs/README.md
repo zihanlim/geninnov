@@ -41,6 +41,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0033](0033-edge-stage5-sentiment-ic-weights.md) | EdgeScore Stage 5: sentiment demotion + IC-fit weights | accepted | 2026-07-24 |
 | [0034](0034-scoring-config-anon-read-policy.md) | Public read policy on scoring_config (frontend sees live weights) | accepted | 2026-07-24 |
 | [0035](0035-volume-subscore-7day-average.md) | HypeScore Volume = 7-day average mentions, not the 1-day count | accepted | 2026-07-24 |
+| [0036](0036-carry-as-excess-yield-over-funding.md) | Carry = excess yield over funding (two-sided); a missing component renormalises rather than scoring 0 | accepted | 2026-07-24 |
 
 ## When to write an ADR
 

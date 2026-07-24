@@ -91,24 +91,42 @@ def test_regime_missing_inputs_neutral():
 
 # ─── Stage 3: Carry ───────────────────────────────────────────────────────────
 
-def test_carry_credit_rates_fx_positive_on_high_levels():
-    macro = {"BAMLH0A0HYM2": {"value": 2.69}, "DFII10": {"value": 2.37}, "DFF": {"value": 4.3}}
-    assert carry_signal("credit", macro) > 0     # spread income
-    assert carry_signal("rates", macro) > 0       # positive real yield
-    assert carry_signal("fx", macro) > 0          # positive USD carry vs neutral
+def test_carry_is_excess_yield_over_funding_and_positive_when_paid():
+    # 10y 4.67, funding 3.63 -> duration earns +104bp; credit adds 268bp of spread.
+    macro = {"BAMLH0A0HYM2": {"value": 2.68}, "DGS10": {"value": 4.67}, "DFF": {"value": 3.63}}
+    assert carry_signal("credit", macro) > 0
+    assert carry_signal("rates", macro) > 0
+    # Credit earns the same term premium PLUS the spread, so it must rank higher.
+    assert carry_signal("credit", macro) > carry_signal("rates", macro)
 
 
-def test_carry_equity_commodity_and_missing_are_zero():
-    macro = {"BAMLH0A0HYM2": {"value": 2.69}}
-    assert carry_signal("equity", macro) == 0.0
-    assert carry_signal("commodity", macro) == 0.0
-    assert carry_signal("credit", {}) == 0.0          # series missing -> 0
-    assert carry_signal("rates", None) == 0.0
+def test_carry_is_two_sided_when_funding_exceeds_yield():
+    """The whole point of the rewrite: carry must be able to say 'you PAY to hold
+    this'. The old level-based form (tanh(real_yield / 2.0), tanh(OAS / 4.0)) was
+    non-negative by construction, which pinned ~34% of EdgeScore to a standing long
+    offset and made a short book unreachable."""
+    inverted = {"DGS10": {"value": 3.20}, "DFF": {"value": 5.33}}
+    assert carry_signal("rates", inverted) < 0
+    # Even credit turns negative once the spread no longer covers the inversion.
+    assert carry_signal("credit", {**inverted, "BAMLH0A0HYM2": {"value": 0.50}}) < 0
+
+
+def test_carry_is_none_where_l0_cannot_support_it():
+    """None, NOT 0.0. FX carry needs a foreign policy rate, equity an earnings
+    yield, commodity a roll yield — L0 has none of them. Scoring these as 0.0
+    silently diluted those themes toward abstention; compute_edge_score
+    renormalises over what is actually present instead."""
+    macro = {"BAMLH0A0HYM2": {"value": 2.68}, "DGS10": {"value": 4.67}, "DFF": {"value": 3.63}}
+    assert carry_signal("fx", macro) is None
+    assert carry_signal("equity", macro) is None
+    assert carry_signal("commodity", macro) is None
+    assert carry_signal("credit", {}) is None         # series missing -> not computable
+    assert carry_signal("rates", None) is None
 
 
 def test_carry_accepts_flat_macro_values():
     # tolerate {series: value} as well as {series: {value: ...}}
-    assert carry_signal("rates", {"DFII10": 2.0}) > 0
+    assert carry_signal("rates", {"DGS10": 4.67, "DFF": 3.63}) > 0
 
 
 # ─── Stage 4: Value ───────────────────────────────────────────────────────────
@@ -122,11 +140,12 @@ def test_value_rates_high_real_yield_is_long():
     assert value_signal("rates", {"DFII10": 1.2}) > 0
 
 
-def test_value_equity_fx_commodity_and_empty_are_zero():
-    assert value_signal("equity", {"BAMLH0A0HYM2": 2.0}) == 0.0
-    assert value_signal("fx", {"DFF": 2.0}) == 0.0
-    assert value_signal("credit", {}) == 0.0
-    assert value_signal("rates", None) == 0.0
+def test_value_is_none_where_l0_carries_no_valuation():
+    """Same contract as carry: not-computable is None, never a neutral-looking 0.0."""
+    assert value_signal("equity", {"BAMLH0A0HYM2": 2.0}) is None
+    assert value_signal("fx", {"DFF": 2.0}) is None
+    assert value_signal("credit", {}) is None
+    assert value_signal("rates", None) is None
 
 
 # ─── Composite + direction ────────────────────────────────────────────────────
@@ -157,10 +176,33 @@ def test_compute_edge_score_five_component():
     assert compute_edge_score(1.0, 1.0, 1.0, 1.0, 1.0,
                               w_trend=0.20, w_regime=0.23, w_carry=0.34,
                               w_value=0.18, w_sentiment=0.05) == pytest.approx(1.0)
-    # sentiment defaults to 0 contribution -> back-compat with 4-component callers
+    # An explicit 0.0 is a COMPUTED neutral: it takes part and keeps the divisor at 1.0.
+    assert compute_edge_score(1.0, 0.0, 0.0, 0.0, 0.0,
+                              w_trend=0.20, w_regime=0.23, w_carry=0.34,
+                              w_value=0.18, w_sentiment=0.05) == pytest.approx(0.20)
+    # An OMITTED component is not computable, so its weight leaves the denominator
+    # rather than dragging the score toward the abstention band: 0.20 / 0.95.
     assert compute_edge_score(1.0, 0.0, 0.0, 0.0,
                               w_trend=0.20, w_regime=0.23, w_carry=0.34,
-                              w_value=0.18) == pytest.approx(0.20)
+                              w_value=0.18, w_sentiment=0.05) == pytest.approx(0.20 / 0.95)
+
+
+def test_compute_edge_score_renormalises_over_computable_components():
+    """An equity theme has no carry and no value proxy in L0. Before renormalising
+    it could not exceed |0.48| however strong its trend and regime were, while a
+    credit theme reached 1.0 — and both were then judged against the same 0.15
+    abstention band, as if commensurate."""
+    W = dict(w_trend=0.20, w_regime=0.23, w_carry=0.34, w_value=0.18, w_sentiment=0.05)
+    # Trend and regime maxed, carry/value unavailable: the score reflects the
+    # evidence that exists rather than being diluted by the evidence that does not.
+    equity_like = compute_edge_score(1.0, 1.0, None, None, 0.0, **W)
+    assert equity_like == pytest.approx((0.20 + 0.23) / (0.20 + 0.23 + 0.05))
+    assert equity_like > 0.48          # the old ceiling for a no-carry, no-value theme
+    # A fully-scored theme with identical component values lands in the same place,
+    # which is the comparability the renormalisation exists to restore.
+    assert compute_edge_score(1.0, 1.0, 1.0, 1.0, 1.0, **W) == pytest.approx(1.0)
+    # No evidence at all -> 0.0, which abstains. The right answer, not a crash.
+    assert compute_edge_score(None, None, None, None, None, **W) == 0.0
 
 
 def test_compute_edge_score_four_component():

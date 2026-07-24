@@ -85,11 +85,13 @@ def theme_regime_bias(
     return fmean(regime_direction_bias(ac, cycle, sentiment) for ac in asset_classes)
 
 
-# Reference levels for the Stage-3 carry mapping (percent). Documented magic
-# numbers — Stage 5 replaces them with historical / cross-sectional normalization.
-_CARRY_CREDIT_REF = 4.0   # HY OAS scale (~4% "normal" spread)
-_CARRY_RATES_REF = 2.0    # 10y real-yield scale
-_CARRY_FX_NEUTRAL = 1.0   # neutral USD funding rate
+# Squash scale for the carry mapping, in percent of excess yield over funding.
+# 3.0 means "+300bp of carry over funding maps to tanh(1) = +0.76" — i.e. a very
+# well-paid position, without saturating so early that a 100bp and a 400bp carry
+# look alike. It is a scale, NOT a centre: carry is centred on zero excess yield,
+# which is the economically meaningful neutral point (you are paid exactly your
+# funding cost, so holding the position earns nothing).
+_CARRY_SCALE_PCT = 3.0
 
 
 def _macro_value(macro: dict | None, series_id: str) -> float | None:
@@ -100,42 +102,79 @@ def _macro_value(macro: dict | None, series_id: str) -> float | None:
     return d
 
 
-def carry_signal(asset_class: str, macro: dict | None) -> float:
-    """Stage 3 — 'am I paid to hold this?' from L0 macro LEVELS, in [-1, 1].
+def carry_signal(asset_class: str, macro: dict | None) -> float | None:
+    """Stage 3 — 'am I paid to hold this?', in [-1, 1]. ``None`` = not computable.
 
-    High yield / spread → positive carry → long bias.
-      credit: HY OAS (spread income);  rates: 10y real yield;  fx: USD short rate.
-      equity / commodity: 0 (no clean carry in the L0 snapshot).
+    Carry is EXCESS YIELD OVER FUNDING — what the position earns per unit time if
+    nothing moves, net of what the cash costs. That is the textbook definition and,
+    critically, it is TWO-SIDED: you can be paid to hold something, or you can pay
+    for the privilege.
+
+    The previous version scored the raw LEVEL against a fixed scale:
+    ``tanh(HY_OAS / 4.0)``. A credit spread is a positive number by construction, so
+    that term could never be negative — nor could the rates or FX terms at any
+    plausible level. With the largest weight of the five (0.34), carry was not a
+    signal at all but a standing long offset of roughly +0.20 to +0.28 on every
+    credit/rates/FX theme, which is a large part of why the book could not produce
+    a single short. It also gave the wrong answer on its own terms: with HY OAS at
+    268bp, near the tights of its available history, it read +0.585 "well paid" when
+    the honest reading is that credit risk is thinly compensated.
+
+    Per asset class, all from the L0 snapshot:
+      credit — HY yield (10y UST + OAS) less overnight funding.
+      rates  — 10y nominal yield less overnight funding, i.e. the term premium a
+               duration position earns. Negative whenever the curve is inverted,
+               which is exactly when duration carry IS negative.
+      fx / equity / commodity — ``None``. USD carry needs a foreign policy rate,
+               equity carry an earnings yield, commodity carry a roll yield, and
+               L0 carries none of the three. Returning None rather than 0.0 is the
+               point: a missing component is NOT a neutral one, and
+               ``compute_edge_score`` renormalises over what is actually present so
+               these themes are not silently diluted toward abstention.
     """
+    funding = _macro_value(macro, "DFF")
+    ust10 = _macro_value(macro, "DGS10")
+
     if asset_class == "credit":
         oas = _macro_value(macro, "BAMLH0A0HYM2")
-        return math.tanh(oas / _CARRY_CREDIT_REF) if oas is not None else 0.0
+        if oas is None or ust10 is None or funding is None:
+            return None
+        return math.tanh((ust10 + oas - funding) / _CARRY_SCALE_PCT)
+
     if asset_class == "rates":
-        rr = _macro_value(macro, "DFII10")
-        return math.tanh(rr / _CARRY_RATES_REF) if rr is not None else 0.0
-    if asset_class == "fx":
-        dff = _macro_value(macro, "DFF")
-        return math.tanh((dff - _CARRY_FX_NEUTRAL) / 3.0) if dff is not None else 0.0
-    return 0.0
+        if ust10 is None or funding is None:
+            return None
+        return math.tanh((ust10 - funding) / _CARRY_SCALE_PCT)
+
+    return None
 
 
-def value_signal(asset_class: str, macro_z: dict | None) -> float:
+def value_signal(asset_class: str, macro_z: dict | None) -> float | None:
     """Stage 4 — cheap vs its OWN history = long, via z-scores of L0 levels, [-1, 1].
 
     ``macro_z`` maps series_id → z-score of the current level vs trailing history.
       credit: +z(HY OAS)   — wide vs history = cheap = long (mean-reversion)
       rates:  +z(real yield) — high real yield = bonds cheap = long
-      equity / fx / commodity: 0 (valuation not in the L0 snapshot).
+      equity / fx / commodity: ``None`` — valuation is not in the L0 snapshot.
 
     Value can disagree with Trend (a cheap asset still falling) — that tension is
     intentional; Stage-4 abstention drops the position when signals conflict.
+
+    Distinct from carry, and deliberately so: carry is a LEVEL (excess yield over
+    funding, "what does this pay me"), value is a Z-SCORE against trailing history
+    ("is this cheap relative to where it has been"). Credit can pay well in absolute
+    terms while being historically expensive — today it does both, and the two
+    components correctly disagree.
+
+    Returns None where the series is absent, for the same reason as ``carry_signal``:
+    a component we cannot compute must not be scored as if it were neutral.
     """
     z = macro_z or {}
     if asset_class == "credit":
-        return math.tanh(z.get("BAMLH0A0HYM2", 0.0))
+        return math.tanh(z["BAMLH0A0HYM2"]) if "BAMLH0A0HYM2" in z else None
     if asset_class == "rates":
-        return math.tanh(z.get("DFII10", 0.0))
-    return 0.0
+        return math.tanh(z["DFII10"]) if "DFII10" in z else None
+    return None
 
 
 def sentiment_signal(avg_sentiment: float | None, scale: float = 0.4) -> float:
@@ -152,11 +191,11 @@ def sentiment_signal(avg_sentiment: float | None, scale: float = 0.4) -> float:
 
 
 def compute_edge_score(
-    trend: float,
-    regime_bias: float,
-    carry: float = 0.0,
-    value: float = 0.0,
-    sentiment_tilt: float = 0.0,
+    trend: float | None,
+    regime_bias: float | None,
+    carry: float | None = None,
+    value: float | None = None,
+    sentiment_tilt: float | None = None,
     w_trend: float = 0.35,
     w_regime: float = 0.25,
     w_carry: float = 0.20,
@@ -164,14 +203,33 @@ def compute_edge_score(
     w_sentiment: float = 0.0,
 ) -> float:
     """Composite EdgeScore (Stages 1–5). Every component is already in [-1, 1].
-    ``sentiment_tilt`` is the CONTRARIAN sentiment component (from sentiment_signal)."""
-    return (
-        w_trend * trend
-        + w_regime * regime_bias
-        + w_carry * carry
-        + w_value * value
-        + w_sentiment * sentiment_tilt
+    ``sentiment_tilt`` is the CONTRARIAN sentiment component (from sentiment_signal).
+
+    A component passed as ``None`` is NOT COMPUTABLE for this theme, and the weights
+    are renormalised over the components that are. Scoring a missing component as
+    0.0 is not neutral — it silently shrinks |EdgeScore| toward the abstention band,
+    so a theme whose asset classes happen to lack a carry or value proxy was being
+    penalised for a gap in our data rather than judged on the market's signal. An
+    equity theme had 0.34 of its weight (carry) and 0.18 (value) pinned at zero,
+    capping |EdgeScore| at 0.48 while a credit theme could reach 1.0 — the two were
+    then compared against the same 0.15 abstention band as if commensurate.
+
+    Renormalising states the honest thing: score each theme on the evidence that
+    exists for it, on a common scale. If NOTHING is computable the result is 0.0,
+    which abstains — the correct answer when there is no evidence at all.
+    """
+    terms = (
+        (trend, w_trend),
+        (regime_bias, w_regime),
+        (carry, w_carry),
+        (value, w_value),
+        (sentiment_tilt, w_sentiment),
     )
+    present = [(v, w) for v, w in terms if v is not None]
+    total_w = sum(w for _, w in present)
+    if total_w <= 0:
+        return 0.0
+    return sum(w * v for v, w in present) / total_w
 
 
 def edge_direction(edge_score: float, threshold: float = 0.0) -> str | None:

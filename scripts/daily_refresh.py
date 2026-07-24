@@ -456,8 +456,16 @@ def compute_edge_scores(
         trend = theme_trend(returns)
         acs = [classify(a)["asset_class"] for a in assets if is_classified(a)]
         rbias = theme_regime_bias(acs, cycle, sentiment)
-        carry = fmean([carry_signal(ac, macro_snapshot) for ac in acs]) if acs else 0.0
-        value = fmean([value_signal(ac, macro_z) for ac in acs]) if acs else 0.0
+        # Average over the asset classes where the component is COMPUTABLE, and
+        # stay None when it is computable for none of them. A theme spanning rates
+        # and commodities (Inflation holds TIPS alongside GLD/SLV) gets its carry
+        # from the rates leg only — averaging a real number against a placeholder
+        # 0.0 for the commodity leg would halve a signal that is not actually
+        # weaker, and then compare it to the same abstention band.
+        carry_vals = [c for ac in acs if (c := carry_signal(ac, macro_snapshot)) is not None]
+        value_vals = [v for ac in acs if (v := value_signal(ac, macro_z)) is not None]
+        carry = fmean(carry_vals) if carry_vals else None
+        value = fmean(value_vals) if value_vals else None
         sentiment_tilt = sentiment_signal(r.get("avg_sentiment"))
         edge = compute_edge_score(
             trend, rbias, carry, value, sentiment_tilt,

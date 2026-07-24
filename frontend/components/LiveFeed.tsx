@@ -129,7 +129,7 @@ export default function LiveFeed() {
   const lastFinish = runs?.find((r) => r.finished_at)?.finished_at ?? null;
 
   return (
-    <div className="fixed bottom-0 inset-x-0 bg-bg-surface border-t border-border px-5 py-1.5 flex items-center gap-4 text-[11px] text-text-secondary z-40 overflow-x-auto whitespace-nowrap">
+    <div className="fixed bottom-0 inset-x-0 bg-bg-surface border-t border-border px-5 py-1.5 flex items-center gap-4 text-[11px] text-text-secondary z-40 overflow-x-auto scrollbar-none whitespace-nowrap">
       <span className="inline-flex items-center gap-1.5" title={state.detail}>
         <span
           className="w-1.5 h-1.5 rounded-full shrink-0"

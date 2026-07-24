@@ -51,6 +51,29 @@
 @layer components {
   .num { @apply font-mono tabular-nums; }
 
+  /*
+   * Scroll, but don't draw a scrollbar.
+   *
+   * Windows/Linux Chrome uses classic (space-taking) scrollbars, so an
+   * overflow-x-auto strip reserves a ~16px gutter inside its own box. On the
+   * fixed status bar that painted a full-width grey track across the bottom of
+   * the viewport on EVERY page — offsetHeight 45 against clientHeight 29 — which
+   * reads as an unstyled element rather than as a control. It is a status strip,
+   * not a data table: it should still pan on a phone (its content is ~745px
+   * against a 360px screen) but has no business advertising a scrollbar.
+   *
+   * Only for chrome like this. Real tables keep their scrollbar and get the
+   * <ScrollArea> fade instead, because there a reader must know content
+   * continues.
+   */
+  .scrollbar-none {
+    scrollbar-width: none;          /* Firefox */
+    -ms-overflow-style: none;       /* legacy Edge */
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;                  /* Chrome / Safari */
+  }
+
   .card {
     @apply bg-bg-surface border border-border rounded-[10px] overflow-hidden;
   }

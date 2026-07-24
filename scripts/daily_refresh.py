@@ -47,6 +47,7 @@ from backend.services.hype_calculator import (
     minmax_norm,
     crowding_label,
     robust_momentum,
+    volume_base,
 )
 from backend.services.trade_generator import trade_score
 from backend.services.trade_ranker import (
@@ -431,7 +432,10 @@ def persist(run_date: date, scored: list[dict]):
 
     for r in scored:
         theme_id = r["theme_id"]
-        vol_norm = minmax_norm(r["mention_count_1d"], [s["mention_count_1d"] for s in scored])
+        # Volume = min-max of the 7-day average mentions (ADR-0035), NOT the
+        # 1-day count. Must match compute_hype_scores' `volume` exactly or the
+        # persisted sub-scores can't reproduce hype_score — both call volume_base.
+        vol_norm = minmax_norm(volume_base(r), [volume_base(s) for s in scored])
 
         # Update themes table. The SIGN of correlation is preserved on the
         # history row below as signed_corr + crowding for the trade/risk layer.

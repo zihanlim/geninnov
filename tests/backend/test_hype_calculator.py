@@ -10,6 +10,7 @@ from hype_calculator import (
     crowding_score,
     crowding_label,
     robust_momentum,
+    volume_base,
 )
 
 
@@ -139,6 +140,41 @@ class TestHypeScoreIdenticalSignals:
             # 0.5 → 50. (The old raw-abs corr gave 0 here, so the test name
             # "score_50" disagreed with its own 37.5 assertion.)
             assert 49.9 < s["hype_score"] < 50.1
+
+
+class TestVolumeBase:
+    """ADR-0035: Volume magnitude = the trailing 7-day average mentions, not the
+    frequently-zero 1-day count."""
+
+    def test_prefers_7d_average_when_present(self):
+        r = {"mention_count_1d": 0, "mention_count_7d_avg": 5.57}
+        assert volume_base(r) == pytest.approx(5.57)
+
+    def test_falls_back_to_1d_when_average_missing(self):
+        r = {"mention_count_1d": 7}
+        assert volume_base(r) == 7.0
+
+    def test_falls_back_to_1d_when_average_is_none(self):
+        r = {"mention_count_1d": 3, "mention_count_7d_avg": None}
+        assert volume_base(r) == 3.0
+
+    def test_all_zero_1d_counts_still_spread_by_7d_average(self):
+        """The exact production degeneracy: every theme's 1-day count is 0 on a
+        run that collected no same-day article, but their 7-day averages differ.
+        Volume must carry real cross-theme spread, not collapse to a flat 0.5."""
+        cfg = ScoringConfig(1.0, 0.0, 0.0, 0.0, 0.0, 0.0)  # 100% volume weight
+        raw = [
+            {"mention_count_1d": 0, "mention_count_7d_avg": 0.4, "avg_sentiment": 0.0, "price_corr": 0.0, "momentum_raw": 0.0},
+            {"mention_count_1d": 0, "mention_count_7d_avg": 5.6, "avg_sentiment": 0.0, "price_corr": 0.0, "momentum_raw": 0.0},
+            {"mention_count_1d": 0, "mention_count_7d_avg": 1.0, "avg_sentiment": 0.0, "price_corr": 0.0, "momentum_raw": 0.0},
+        ]
+        scored = compute_hype_scores(raw, cfg)
+        vols = [s["hype_score"] for s in scored]
+        # loudest theme (5.6/day) claims the full volume weight (100), quietest (0.4) the floor (0)
+        assert vols[1] == pytest.approx(100.0)
+        assert vols[0] == pytest.approx(0.0)
+        # and they are NOT all the flat 50 the old 1-day path produced
+        assert len(set(round(v, 2) for v in vols)) == 3
 
 
 class TestHypeScoreHighestVolume:

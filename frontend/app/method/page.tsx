@@ -945,9 +945,13 @@ export default function MethodPage() {
                       <Td mono>Volume</Td>
                       <Td mono align="right">{dec(wVol, 2)}</Td>
                       <Td>
-                        Min-max normalised 1-day mention count across all themes on the run date.
-                        Cross-sectional: it answers &ldquo;loudest relative to the rest of the
-                        board today&rdquo;, not &ldquo;loud in absolute terms&rdquo;.
+                        Min-max normalised <strong>7-day average</strong> daily mention count
+                        across all themes on the run date. The 7-day window (not the 1-day count,
+                        which is often 0 on a run that collected no same-day article) is the
+                        theme&rsquo;s sustained attention <em>level</em>; today&rsquo;s deviation
+                        from it is captured separately by Momentum. Cross-sectional: it answers
+                        &ldquo;loudest relative to the rest of the board&rdquo;, not &ldquo;loud in
+                        absolute terms&rdquo;.
                       </Td>
                       <Td mono>[0, 1]</Td>
                     </tr>

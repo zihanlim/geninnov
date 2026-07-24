@@ -157,6 +157,33 @@ def crowding_label(
     return "neutral"
 
 
+def volume_base(r: dict) -> float:
+    """
+    The attention-volume magnitude for a theme = its trailing 7-day average
+    daily mentions (``mention_count_7d_avg``), falling back to the 1-day count
+    only when the average is missing.
+
+    Why the 7-day average and not the 1-day count (ADR-0035): a daily run
+    frequently collects ZERO articles dated that exact calendar day (news is
+    fetched with prior-day timestamps), so ``mention_count_1d`` was 0 for *every*
+    theme on many runs. min-max over an all-equal list returns its 0.5 neutral
+    fallback, so the Volume sub-score collapsed to a flat 50 across the whole
+    board — informative signal destroyed. The 7-day average carries genuine
+    cross-theme spread (a theme mentioned ~6×/day vs ~0.4×/day), and today's
+    deviation *from* that level is already captured separately by Momentum
+    (``robust_momentum`` of the 1-day count vs its 7-day window). Volume = level,
+    Momentum = change — a cleaner separation than the old volume=today's-count,
+    which conflated the two and was usually zero.
+
+    Both the score computation (here) and the persisted display (``persist`` in
+    daily_refresh) call this so the four sub-scores always reproduce hype_score.
+    """
+    avg = r.get("mention_count_7d_avg")
+    if avg is None:
+        return float(r.get("mention_count_1d", 0) or 0)
+    return float(avg)
+
+
 def compute_hype_scores(raw_signals: list[dict], cfg: ScoringConfig) -> list[dict]:
     """
     Cross-theme helper: min-max normalize each sub-score across all themes,
@@ -167,13 +194,13 @@ def compute_hype_scores(raw_signals: list[dict], cfg: ScoringConfig) -> list[dic
     """
     if not raw_signals:
         return []
-    all_counts = [r["mention_count_1d"] for r in raw_signals]
+    all_counts = [volume_base(r) for r in raw_signals]
     all_momenta = [r["momentum_raw"] for r in raw_signals]
     all_abscorr = [abs(r["price_corr"]) for r in raw_signals]
 
     scored = []
     for r in raw_signals:
-        volume = minmax_norm(float(r["mention_count_1d"]), all_counts)
+        volume = minmax_norm(volume_base(r), all_counts)
         momentum = minmax_norm(r["momentum_raw"], all_momenta)
         # ADR-0028: min-max |corr| across themes, consistent with volume/momentum.
         # T22 fed a RAW abs(corr) (~0.1–0.4 on a noisy short window), so the 30%

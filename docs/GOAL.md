@@ -132,7 +132,7 @@ deploys. Until it resets:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 518 backend + 111 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 528 backend + 120 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -174,6 +174,40 @@ Live at https://andromeda-analytics.vercel.app · 518 backend + 111 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 49 (2026-07-25)
+
+**The regime headline on the showcase page said the yield curve was flat at 0bps. It
+is +36bps. A unit, not a value, was wrong — and it was wrong in the primary cycle
+signal.**
+
+Re-deriving from live truth per the mandate: the thesis's cited macro numbers all
+check out against fresh L0 (gold $4,057.50 = GC=F, Fed Funds 3.63% = DFF, 2y 4.31% =
+DGS2 — the citation guardrail holds). But cross-checking DGS10 − DGS2 (4.67 − 4.31 =
+**+36bps**) against the home regime headline exposed **"10y−2y at 0bps."**
+
+`regime_classifications.yield_curve_slope` is persisted in **percentage points** —
+the same unit as the FRED yields it subtracts (0.36), not basis points. The display
+rendered it raw: `slope.toFixed(0)}bps` → `(0.36).toFixed(0)` = **"0bps"**, a
+flat/inverted curve printed over a normally-sloped one, and the curve is the primary
+input to the late-cycle call. The same bug sat in the "6 inputs" drawer, which
+labelled both slope **and** HY OAS `"bp"` against basis-point thresholds ("steep
+>200 → early"; ">350 → caution") while showing the percentage-point values — so
+**"0.36 bp"** and **"2.77 bp"**, each 100× below its own threshold.
+
+Fixed via a shared `formatSlopeBps`/`slopeToBps` helper used at all three sites, so
+the curve is scaled once (0.36pp → 36bps) and no view re-derives it. HY OAS stays in
+percent with its unit stated and the panel thresholds rescaled to percent
+(>5%/>3.5%/<3%) — 2.77% being <3% is exactly why sentiment is **risk-on**, so the
+thresholds were right and the values were mis-scaled. **Verified live** at 1440 and
+375: headline reads "10y−2y at 36bps, HY OAS 2.77%", the drawer "36bp" and "2.77%"
+against matching thresholds; `/`, `/book`, `/risk`, `/method` all clean — no
+horizontal scroll, zero console errors. Regression test locks 0.36pp → "36bps", never
+"0bps". Same wrong-unit class as ADR-0062; no new ADR. 528 backend + 120 frontend.
+
+**Deploy footnote:** my direct `vercel --prod` was refused — the free tier's cap of
+100 deploys/day was exhausted by the day's cadence — but a deploy built from the
+shared HEAD landed while I watched, carrying the commit, so the fix is live regardless.
 
 ### Loop iteration 48 (2026-07-25)
 

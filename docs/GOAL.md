@@ -81,7 +81,7 @@ find, not just what you changed:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 442 backend + 52 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 449 backend + 52 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -113,6 +113,50 @@ Live at https://andromeda-analytics.vercel.app · 442 backend + 52 frontend test
   agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 34 (2026-07-25)
+
+**The recorded next step was wrong, and finding out why was the iteration.**
+
+Iteration 33 logged: the thesis misquoted the pool-depth count, so *expose the count
+as a citable source and `verify_citations` will catch it*. Re-deriving before building
+it — as this file instructs — showed that fix would not have worked, for two reasons
+that matter more than the bug.
+
+**1. `verify_citations` never inspects the prose.** It iterates
+`state["citations"]`. The claim lived in `book_view`, and on the live run **no
+citation mentioned "independent" at all** — 30 citations, zero matches. So any number
+the model asserts in narrative without also listing it as a citation is unverified.
+`/book` renders that paragraph with a **VERIFIED** badge and an evidence count beside
+it. The badge covers the citation list; the page applies it to the prose.
+
+**2. Grounding is structurally blind to small integers.** ADR-0027 accepts a value
+matching anything the model was shown within `max(0.02, 0.01·|v|)`. Measured against
+the live inputs — 106 values — **every integer from 0 to 9 grounds**; 10 is the first
+that does not. "Four independent ideas" and "five" are indistinguishable to the rule.
+A citable source only helps if the model picks that key, and nothing backstops it when
+it doesn't. The miscount was also **spelled out in words**, so a digit scan over the
+prose would have missed it too.
+
+So the fix is the one already applied to sizes: **don't ask the model to restate a
+computed number, and check that it didn't.** The prompt has long said *"a later
+deterministic step decides HOW MUCH"* for sizes, weights and exposure; pool-depth
+counts join it. `check_idea_count_claims` compares any *"‹n› independent idea(s)"*
+claim — digits or words, side inferred — against the measurement. **Exact, and
+outside the 80%-grounded tolerance**, because a count restated against a number we
+computed ourselves has no excuse. Silent when there is no measurement or no claim.
+
+**The general hole is deliberately left open and named.** `verify_citations` still
+reads only the citation list; the badge still spans the whole thesis. Closing it means
+either verifying every number in the prose — which the same small-integer blindness
+makes weak — or narrowing what the badge claims. Both are bigger than this, and
+neither should be smuggled in unmeasured.
+
+The rule underneath: **a number the system computes should never be re-typed by the
+model.** Already true of sizes and exposures; now of pool depth; and it should travel
+with any computed quantity handed to the agent in future.
+
+[ADR-0049](adrs/0049-the-guardrail-does-not-read-the-prose.md).
 
 ### Loop iteration 33 (2026-07-25)
 
@@ -1831,13 +1875,14 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   China, PDD, NOC, ARKK); the agent forgot ARKK. The Pool depth panel immediately
   below says 5, so the page contradicts itself, which is at least self-correcting for
   a reader who scrolls.
-  **The citation guardrail cannot catch it**: `verify_citations` checks numbers
-  against source keys, and "four independent ideas" is tied to no source. The fix is
-  to expose the count as a citable source (`independent_ideas.short.count`) so a
-  wrong restatement is rejected the way a wrong HY OAS would be. Not shipped this
-  iteration — it needs a guardrail change plus a pipeline run to verify, and shipping
-  it unverified is what this file's principles forbid. **This is the next iteration's
-  step.**
+  **DONE, iteration 34** ([ADR-0049](adrs/0049-the-guardrail-does-not-read-the-prose.md))
+  — **and the fix recorded here was wrong.** Exposing the count as a citable source
+  would not have caught it: `verify_citations` never inspects prose (the claim was in
+  `book_view`, and no citation mentioned "independent"), and grounding cannot tell 4
+  from 5 because **every integer 0–9 grounds** against the live inputs. Fixed instead
+  by forbidding the restatement in the prompt and checking it exactly — the same
+  treatment sizes and exposures already get. Re-deriving before building is what
+  caught it.
 - **`/risk` publishes a provisional book for the minutes L5 takes** — **the silence
   is fixed, the window is not.** Since iteration 32 `/risk` compares its positions
   against `research_recommendations.picks` and, when they disagree, leads with a

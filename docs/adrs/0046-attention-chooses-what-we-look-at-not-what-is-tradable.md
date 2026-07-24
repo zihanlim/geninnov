@@ -50,6 +50,13 @@ A third problem is structural rather than about one day. HypeScore is now absolu
 a loud day all eight pass. **The number of tradable themes is a function of the news
 cycle, not of the signal.**
 
+The very next run made that concrete. On **2026-07-25** attention fell across the
+board and **exactly one theme of eight cleared the gate** (US Election, 58.2). Under
+the old rule the entire $100M book would have been built from **six names of one
+theme, containing one short** — not because the market offered nothing, but because
+the news was quiet. Every other theme still carried decisive names: SLV −0.43,
+BABA −0.372, GDX −0.368, KWEB −0.360, XLE +0.438, XOM +0.422.
+
 The constraint `GOAL.md` imposes on any fix is explicit: *"Do not lower a threshold to
 manufacture a fuller-looking book — widen the candidate universe instead, which is the
 honest fix."* Lowering `hype_score_threshold` is exactly the forbidden move; it would
@@ -92,11 +99,17 @@ Four properties make this a widening rather than a loosening:
 - Q2 is unaffected. HypeScore's job — *identify what is trending and quantify the
   attention* — is untouched. What changes is that a third, unargued job (deciding
   tradability) has been taken away from it.
-- **This does not promise a five-and-five book.** China Growth's assets are largely
-  one bet (FXI, KWEB, BABA, JD, PDD, MCHI all express China), so admitting the theme
-  adds roughly *one* independent short idea, not five. The measured result of the
-  first run under this rule is recorded in `PROGRESS.md`; if the override admits
-  nothing, that is reported as such rather than tuned until it does.
+- **Measured on the first run under the rule (2026-07-25):** the candidate pool went
+  **23 → 39** and the short side **5 → 12**, spanning seven themes instead of four.
+  **33 of the 39 came in on edge**, and **11 of the 12 shorts** — the only
+  attention-admitted short was ARKK.
+- **This does not promise a five-and-five book, and the count overstates the gain.**
+  China Growth's five shorts (BABA, KWEB, PDD, MCHI, FXI) are one bet, and the five
+  precious-metals shorts (SLV, GDX, NEM, IAU, GLD) are another. Counted as
+  *independent ideas* the short side went from three to **four** — China is genuinely
+  new, and metals and defence were already reachable. Twelve short candidates is not
+  twelve short ideas, and the not-taken table's correlation column is what keeps that
+  honest.
 - The parameter lives in `scoring_config` like every other weight and lookback, so
   changing it is a database edit, not a code change. Setting it to 0 restores the
   pre-ADR-0046 behaviour exactly, and the default in `rank_trade_candidates` is

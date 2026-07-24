@@ -1150,3 +1150,62 @@ def test_make_factor_table_tolerates_null_betas():
     out = q1_agent._make_factor_table(fe)   # must not raise
     assert "TLT" in out and "SPY" in out
     assert "0.00" in out                    # NULLs render as 0.00, not a crash
+
+
+def test_candidate_cap_drops_the_least_decisive_not_the_least_loud():
+    """ADR-0046 — the cap-30 truncation was re-imposing the attention gate.
+
+    The pool is truncated for the LLM context window, so whatever it is sorted by
+    decides what is thrown away. It was sorted by hype_score, which meant every name
+    the conviction override had just admitted went straight back out again for
+    belonging to a quiet theme. Measured on 2026-07-25, the first run after the
+    override landed: SLV -0.430 — the single most decisive name of the day either
+    way — was cut, along with GDX -0.368, NEM -0.337, IAU -0.288 and CVX +0.402.
+    """
+    from backend.services.q1_agent import screen_candidates
+
+    # 31 candidates: one decisive short in a quiet theme, 30 mild names in loud ones.
+    pool = [
+        {"asset": "SLV", "direction": "short", "theme_id": "infl",
+         "hype_score": 29.1, "trade_score": 0.0, "avg_sentiment": 0.0,
+         "edge_score": -0.430, "via_conviction": True},
+    ] + [
+        {"asset": f"L{i:02d}", "direction": "long", "theme_id": "loud",
+         "hype_score": 58.0, "trade_score": 0.0, "avg_sentiment": 0.0,
+         "edge_score": 0.20, "via_conviction": False}
+        for i in range(30)
+    ]
+    state = {
+        "candidates": pool, "lens": "multi_asset", "factor_exposures": {},
+        "theme_scores": [], "run_date": "2026-07-25", "cfg": MOCK_CFG,
+    }
+    out = screen_candidates(state)
+    kept = {c["asset"] for c in out["candidates"]}
+    assert len(out["candidates"]) == 30
+    assert "SLV" in kept, "the most decisive name must survive the context-window cap"
+    # It is first, not merely present — the ordering is by conviction.
+    assert out["candidates"][0]["asset"] == "SLV"
+
+
+def test_screening_funnel_reports_the_conviction_override():
+    """A funnel that only ever subtracts implies the pool started complete. It did
+    not, so the one stage that ADDS has to be visible."""
+    from backend.services.q1_agent import screen_candidates
+
+    pool = [
+        {"asset": "FXI", "direction": "short", "theme_id": "china",
+         "hype_score": 37.2, "trade_score": 0.0, "avg_sentiment": 0.0,
+         "edge_score": -0.35, "via_conviction": True},
+        {"asset": "SPY", "direction": "long", "theme_id": "elec",
+         "hype_score": 58.2, "trade_score": 0.0, "avg_sentiment": 0.0,
+         "edge_score": 0.21, "via_conviction": False},
+    ]
+    state = {
+        "candidates": pool, "lens": "multi_asset", "factor_exposures": {},
+        "theme_scores": [], "run_date": "2026-07-25", "cfg": MOCK_CFG,
+    }
+    out = screen_candidates(state)
+    stage = next(s for s in out["screening_funnel"] if "conviction override" in s["stage"])
+    assert "1 of these 2" in stage["reason"]
+    # It adds rather than removes, so it must not claim attrition.
+    assert stage["removed"] == 0

@@ -596,6 +596,9 @@ def screen_candidates(state: Q1State) -> Q1State:
             "trade_score": c.get("trade_score", 0.0),
             "avg_sentiment": c.get("avg_sentiment", 0.0),
             "via_conviction": bool(c.get("via_conviction")),
+            # Carried so the cap-30 truncation can order by conviction. Without it
+            # the sort falls back to hype and re-imposes the attention gate.
+            "edge_score": c.get("edge_score", 0.0),
         })
 
     # Deduplicate: keep highest-hype entry per (asset, direction)
@@ -606,7 +609,21 @@ def screen_candidates(state: Q1State) -> Q1State:
             seen[key] = c
 
     candidate_pool = list(seen.values())
-    candidate_pool.sort(key=lambda x: x["hype_score"], reverse=True)
+    # Order by CONVICTION, not attention (ADR-0046). This list is truncated to 30 for
+    # the LLM context window, so whatever it is sorted by decides what gets thrown
+    # away — and sorting by hype_score meant the cap re-imposed the attention gate one
+    # layer below the gate itself. Measured on 2026-07-25, the first run after the
+    # conviction override landed: the override admitted SLV -0.430, the single most
+    # decisive name of the day either way, and the cap-30 truncation cut it straight
+    # back out along with GDX -0.368, NEM -0.337, IAU -0.288, NUE +0.421 and CVX
+    # +0.402 — every one of them dropped for belonging to a quiet theme.
+    #
+    # If names must be dropped, drop the least decisive, not the least loud. Ties and
+    # missing edges fall back to hype so the ordering is still total.
+    candidate_pool.sort(
+        key=lambda x: (abs(x.get("edge_score") or 0.0), x.get("hype_score") or 0.0),
+        reverse=True,
+    )
 
     if len(candidate_pool) < 10 and lens != "multi_asset":
         # Lens filter too aggressive — fall back to multi-asset pool
@@ -670,7 +687,12 @@ def screen_candidates(state: Q1State) -> Q1State:
             "stage": "candidate pool (cap 30)",
             "remaining": len(state["candidates"]),
             "removed": max(0, len(candidate_pool) - 30),
-            "reason": "Truncated to fit the LLM context window.",
+            "reason": (
+                "Truncated to fit the LLM context window, keeping the highest "
+                "|EdgeScore|. Ordered by conviction and NOT by attention: this cap "
+                "decides what is discarded, and ranking it by HypeScore re-imposed "
+                "the attention gate one layer below the gate itself (ADR-0046)."
+            ),
         },
     ]
 
@@ -1017,7 +1039,7 @@ Sharpe ratio: {sharpe}
 Beta to SPX: {beta}
 Concentration HHI: {hhi}
 
-=== TRADABLE ASSETS (candidates, sorted by HypeScore) ===
+=== TRADABLE ASSETS (candidates, sorted by |EdgeScore| — most decisive first) ===
 {candidate_table}
 
 === RECENT NEWS (if any) ===
@@ -2096,6 +2118,7 @@ def run_q1_agent(
             # expanded only because the name's own edge is decisive. Carried so the
             # funnel can count it and /book can say which door a candidate used.
             "via_conviction": getattr(c, "via_conviction", False),
+            "edge_score": getattr(c, "edge_score", 0.0),
         }
         for c, _, _ in candidates
     ]

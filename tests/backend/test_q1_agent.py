@@ -40,6 +40,7 @@ from backend.services.q1_agent import (
     verify_citations,
     reason_picks,
     size_positions,
+    _backfill_pick_theme_ids,
 )
 from backend.services.hype_calculator import ScoringConfig
 from backend.derivations.advisory import AdvisoryDerivation, validate_advisory
@@ -506,6 +507,42 @@ def test_fallback_picks_preserves_two_sided_l1_pool():
     state = q1_agent.fallback_picks(state)
     dirs = {p["direction"] for p in state["picks"]}
     assert dirs == {"long", "short"}
+
+
+def test_backfill_resolves_theme_id_from_llm_theme_name():
+    """The LLM emits picks by theme NAME only; the backfill resolves the id
+    (case-insensitively) so a stable theme_id travels with each pick."""
+    picks = [
+        {"asset": "TLT", "theme": "Fed Policy"},        # exact
+        {"asset": "GLD", "theme": "inflation"},          # case-insensitive
+        {"asset": "SPY", "theme": "other"},              # LLM's non-theme bucket
+    ]
+    _backfill_pick_theme_ids(picks, MOCK_THEME_SCORES)
+    assert picks[0]["theme_id"] == "tid-fed"
+    assert picks[0]["theme_name"] == "Fed Policy"
+    assert picks[1]["theme_id"] == "tid-inf"
+    # 'other' matches no scored theme — left without an id rather than guessed.
+    assert picks[2].get("theme_id") is None
+
+
+def test_backfill_keeps_existing_theme_id():
+    """A pick that already carries a valid theme_id is not overwritten."""
+    picks = [{"asset": "HYG", "theme": "Corporate Credit", "theme_id": "tid-crd"}]
+    _backfill_pick_theme_ids(picks, MOCK_THEME_SCORES)
+    assert picks[0]["theme_id"] == "tid-crd"
+
+
+def test_fallback_picks_populate_theme_id():
+    """ADR follow-up: the deterministic fallback now carries theme_id on every
+    pick (it always had the candidate's id — it just used to drop it)."""
+    state = _make_state(candidates=[
+        {"asset": "HYG", "direction": "long", "theme_id": "tid-crd",
+         "theme_name": "Corporate Credit", "hype_score": 60.0, "trade_score": 0.1, "avg_sentiment": 0.1},
+    ])
+    state = q1_agent.fallback_picks(state)
+    assert state["picks"], "fallback should produce a pick"
+    assert state["picks"][0]["theme_id"] == "tid-crd"
+    assert state["picks"][0]["theme_name"] == "Corporate Credit"
 
 
 def test_fallback_picks_empty_pool_emits_no_picks_no_fabrication():

@@ -1034,6 +1034,37 @@ def _make_candidate_table(candidates: list[dict]) -> str:
     return header + "\n" + "\n".join(rows)
 
 
+def _backfill_pick_theme_ids(picks: list[dict], theme_scores: list[dict]) -> None:
+    """
+    Populate ``theme_id`` (and ``theme_name``) on each pick, in place.
+
+    The LLM emits picks by theme NAME only (``theme``), and the deterministic
+    fallback historically dropped the id it already had — so persisted picks
+    carried ``theme_id: null``. That broke every downstream per-theme join: the
+    /book focus deep-link had to fall back to matching on the display name, and
+    any future theme→position analytics had no stable key. Resolve each pick's
+    theme name against the scored roster so a stable id travels with the pick.
+    Names that don't match a scored theme (e.g. the LLM's literal 'other') are
+    left without an id rather than guessed.
+    """
+    id_by_name: dict[str, str] = {}
+    name_by_id: dict[str, str] = {}
+    for t in theme_scores:
+        tid, nm = t.get("theme_id"), t.get("name")
+        if tid and nm:
+            id_by_name[nm.strip().lower()] = tid
+            name_by_id[tid] = nm
+    for p in picks:
+        tid = p.get("theme_id")
+        nm = p.get("theme") or p.get("theme_name")
+        if not tid and nm:
+            tid = id_by_name.get(str(nm).strip().lower())
+        if tid:
+            p["theme_id"] = tid
+            if not p.get("theme_name"):
+                p["theme_name"] = name_by_id.get(tid, nm)
+
+
 def reason_picks(state: Q1State) -> Q1State:
     """
     Main LLM call. Produces structured picks with thesis, catalysts, risk,
@@ -1088,6 +1119,9 @@ def reason_picks(state: Q1State) -> Q1State:
             parsed = json.loads(raw)
 
             state["picks"] = parsed.get("picks", [])
+            # The LLM names themes but doesn't know their ids — resolve them so a
+            # stable theme_id travels with every pick (downstream joins, deep links).
+            _backfill_pick_theme_ids(state["picks"], themes)
             state["book_view"] = parsed.get("book_view", "")
             state["book_risks"] = parsed.get("book_risks", [])
             citations = parsed.get("citations", []) or []
@@ -1534,6 +1568,8 @@ def fallback_picks(state: Q1State) -> Q1State:
             "direction": c["direction"],
             "asset": c["asset"],
             "theme": theme_name,
+            "theme_id": c.get("theme_id"),
+            "theme_name": theme_name,
             "hype_score": c["hype_score"],
             "trade_score": c["trade_score"],
             "thesis": f"{'Long' if c['direction'] == 'long' else 'Short'} {c['asset']} "

@@ -266,9 +266,43 @@ net-share note correctly did **not** show on that 40-position provisional book, 
 its net exposure is large and the share is genuinely meaningful there. The suppression is
 per-book, not a blanket.
 
-**Still open, narrowed rather than closed:** a reason that is merely weak, or false in a
-way we cannot mechanically test (a misdescribed correlation), still passes. What changed
-is that the one falsifiable excuse class the model actually reached for is now closed.
+**The re-run under the guardrail passed on the first attempt** — no rejection, so the
+prompt's honest-escape wording did the work rather than the blocking. Published book
+**5 long / 4 short** (XLE, SVXY, UNH, JPM, NUE / SLV, BABA, PDD, NOC), and the reason is
+now substantive:
+
+> *"I declined ARKK as the fifth independent short because its high-beta/AI-thematic
+> profile would compound existing market-beta exposure from JPM, UNH, and NUE rather than
+> diversify the short book, and its trade conviction is weaker than the four chosen
+> shorts."*
+
+**Verified live:** `/book`'s panel has left the warning branch and reads *"short of 5 by
+choice, not by constraint, and the thesis accounts for what it declined — ARKK"*;
+`/risk` shows 9 positions with *"Net share is withheld for this book. Net exposure is
++1.3% against a largest single position of 10%…"*, no four-figure percentages anywhere,
+no horizontal scroll at 1440px or 375px, zero console errors.
+
+#### Recorded next step — the open limitation, now with a concrete instance
+
+**Half that reason is verifiably true and half states its mechanism backwards, and
+nothing catches it.** Checked against the same run's data:
+
+| claim | verdict |
+|---|---|
+| *"conviction is weaker than the four chosen shorts"* | **TRUE** — ARKK −0.2605 against SLV −0.4299, BABA −0.3704, PDD −0.3435, NOC −0.2873 |
+| *"would compound existing market-beta exposure from JPM, UNH, NUE"* | **backwards** — ARKK β 1.49; those three are held **long** at β 1.22 / 0.62 / 1.11, so a *short* in a high-β name **offsets** long beta rather than compounding it |
+
+ADR-0061 closed the one falsifiable excuse class the model actually reached for. This is
+the next one, and unlike "is the reason good?" it **is** mechanically checkable: the sign
+of a claimed beta contribution can be computed from `factor_exposures` and the signed
+weights already on the row. A claim that adding a position *increases* an exposure, when
+`signed_weight × β` moves it the other way, is a factual contradiction of the same kind
+as a restated count.
+
+**Do not generalise it into "score the reasoning".** That is the unfalsifiable verdict
+ADR-0045 refused for turnover. The rule that has worked three times now is narrower:
+**find the specific claim class the model actually makes, and check that class exactly.**
+
 **No claim is made that theses are now truthful.**
 
 ### Loop iteration 41 (2026-07-25)

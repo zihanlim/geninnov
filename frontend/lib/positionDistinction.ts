@@ -11,7 +11,7 @@
  *
  * `plainRationale` is not wrong; it does exactly what its docstring says. It is the
  * recurring shape in this codebase — a correct calculation presented as if it meant
- * something (ADR-0051).
+ * something (ADR-0054).
  *
  * The fix is NOT more phrases. A second templated string is the same bug with more
  * words. It has to be a fact that genuinely differs per position, and one already

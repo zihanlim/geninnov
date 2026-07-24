@@ -1,4 +1,4 @@
-# ADR-0051 — The interface is a daily research publication, not a scanner
+# ADR-0054 — The interface is a daily research publication, not a scanner
 
 **Date:** 2026-07-25
 **Status:** Accepted

@@ -52,13 +52,13 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0044](0044-carry-ic-was-measured-on-a-superseded-signal.md) | The carry IC justifying its 0.34 weight was measured on a superseded signal — corrects 0033 | accepted | 2026-07-24 |
 | [0045](0045-turnover-on-names-without-a-verdict.md) | Turnover is measured on names without a verdict; candidate overlap is signed by both directions before thresholding | accepted | 2026-07-24 |
 | [0046](0046-attention-chooses-what-we-look-at-not-what-is-tradable.md) | Attention chooses what we look at; a sub-attention theme holding a decisive name is admitted anyway | accepted | 2026-07-24 |
-| [0047](0047-conviction-needs-a-vol-floor.md) | Conviction needs a vol floor, and the floor must be absolute rather than a percentile of the day | accepted | 2026-07-25 |
+| [0047](0047-conviction-needs-a-vol-floor.md) | Conviction needs a vol floor, absolute rather than a percentile | accepted (**scope corrected by [0053](0053-the-published-book-was-sized-by-hype.md)**) | 2026-07-25 |
 | [0048](0048-count-independent-ideas-not-candidates.md) | Count independent ideas, not candidates — the pool holds 13 long and 5 short, so five-and-five is no longer a universe problem | accepted | 2026-07-25 |
 | [0049](0049-the-guardrail-does-not-read-the-prose.md) | The citation guardrail never inspects the thesis prose, and grounding cannot verify a count — every integer 0-9 grounds | accepted | 2026-07-25 |
 | [0050](0050-separate-agent-churn-from-market-churn.md) | Measure agent churn separately from market churn — replicate reason_picks on frozen inputs | accepted | 2026-07-25 |
 | [0051](0051-llm-timeout-bounded-silence-not-the-call.md) | LLM_TIMEOUT_SECONDS bounded the gap between bytes, not the call | accepted (**cause corrected by [0052](0052-a-stall-cost-three-attempts-not-one.md)**) | 2026-07-25 |
 | [0052](0052-a-stall-cost-three-attempts-not-one.md) | A stall cost three attempts, not one — reason_picks retried timeouts; corrects 0051 | accepted | 2026-07-25 |
-| [0051](0051-a-daily-publication-not-a-scanner.md) | The interface is a daily research publication, not a scanner — no streaming, no alerts, no filters; but the scannable layer must differentiate | accepted | 2026-07-25 |
+| [0054](0054-a-daily-publication-not-a-scanner.md) | The interface is a daily research publication, not a scanner — no streaming, no alerts, no filters; but the scannable layer must differentiate | accepted | 2026-07-25 |
 
 ## When to write an ADR
 

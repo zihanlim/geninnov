@@ -1099,7 +1099,7 @@ function PositionRow({
   // magnitudes and wins on nearly every name, so the live book rendered two strings
   // across nine rows. It is joined to what the name was taken instead of — its
   // independent-idea complex, the same rho 0.70 measurement PoolDepth renders — which
-  // is the sharpest available answer to "why this ticker". ADR-0051.
+  // is the sharpest available answer to "why this ticker". ADR-0054.
   const plain = hasEdge && edge ? plainRationale(edge, edgeWeights) : null;
   const rationale = positionRationale(
     plain,
@@ -1202,7 +1202,18 @@ function PositionRow({
           </span>
           {/* Always-visible PLAIN rationale — the "why this side". Numeric
               component breakdown is the hover title + the expanded bars. */}
-          <span className="text-text-secondary text-[11.5px] truncate" title={rationaleDetail}>
+          {/* WRAPS, never truncates. The grid is min-w-[640px] inside a horizontal
+              ScrollArea, so this cell is ~150px wide at EVERY viewport below desktop
+              — measured live at 375px, an ellipsis left exactly 18 characters, which
+              is "Long · a strong p…" on all five longs. No ordering of the clauses
+              fixes a cell that narrow; the truncation is the defect. Wrapping costs
+              row height on mobile and shows the whole line, which is the trade this
+              page should always make. At 1440px the cell is wide enough that nothing
+              wraps at all (verified: zero wrapped rows). */}
+          <span
+            className="text-text-secondary text-[11.5px] break-words"
+            title={rationaleDetail}
+          >
             {rationale ?? "EdgeScore not persisted for this position"}
           </span>
         </span>

@@ -175,6 +175,59 @@ Live at https://andromeda-analytics.vercel.app · 518 backend + 111 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 48 (2026-07-25)
+
+**A guardrail only ran at generation time, so a wrong claim could sit on the live page
+indefinitely. That is not hypothetical — it is what happened.**
+
+Deploy still refused (`api-deployments-free-per-day`, fourth attempt), so the work went
+where it can be verified. Re-deriving found the pool-depth measurement has **N = 1** —
+`independent_ideas` was only added on 2026-07-25, and `trade_candidates` holds **only the
+latest run**, so it cannot be backfilled. It *will* accumulate going forward, since it is
+snapshotted per `run_date`, so no change was needed there — but **every claim that the
+short side "has 5 independent ideas" currently rests on one observation**, and that is
+worth saying out loud.
+
+The real gap was elsewhere. The thesis guardrails — the restated idea count (ADR-0049)
+and the availability excuse (ADR-0061) — run inside `verify_citations`, **during
+generation**. Two paths get an unchecked thesis onto the page anyway:
+
+1. **The fallback is terminal.** Once retries are spent, `reason_picks` returns
+   `fallback_picks(state)`, and that templated thesis is persisted without going back
+   through `verify_citations`.
+2. **A row published by older code stays live.** This is the ARKK incident exactly. The
+   book carried *"ARKK … is not present in the tradable candidate pool"* — false — and
+   ADR-0061 added the check that rejects it **only on the next generation**. The wrong
+   sentence stayed on the live page until a human happened to read it.
+
+Both are the shape [ADR-0040](adrs/0040-published-book-is-the-book-of-record.md) exists
+to prevent: **check the published book; do not infer its correctness from the process
+meant to produce it.** `/risk` learned this in iteration 32, when it started comparing
+its positions against the published picks rather than trusting a pipeline status flag.
+
+`check_published_book_claims` now re-runs both exact-match prose checks against the
+persisted `book_view`, inside the daily guard that already executes after every pipeline
+run. **The window between "a guardrail is written" and "the page stops lying" closes to
+one daily run.** It **reuses** `q1_agent`'s functions rather than reimplementing them — a
+second copy of a guardrail is a second thing to drift, which is precisely what
+[ADR-0064](adrs/0064-the-audit-page-blamed-the-pipeline-for-its-own-arithmetic.md) was.
+
+**Verified against production, not asserted:** *"Published thesis for 2026-07-25 makes no
+contradicted claim (checked against 40 screened candidates)"*, exit 0, alongside the
+edge-score reconciliation from the previous iteration. The negative control is a unit
+test carrying **the exact false sentence that was live**, which the check flags. 528
+backend tests.
+
+**Honest gap in this iteration's UI pass.** `/book` was verified at 1440px and 375px
+early on — no horizontal scroll, no `NaN`, zero console errors — but the Playwright
+browser then became unstable, dying immediately after every navigation across repeated
+profile resets and lock clears, and `/risk` could not be re-checked. Recorded rather than
+glossed. Nothing shipped this iteration touches the frontend, and the deploy is frozen,
+so there is no frontend change that *could* have regressed — but that is an argument
+about blast radius, not a substitute for the check.
+
+[ADR-0065](adrs/0065-check-the-published-book-not-only-the-generation.md).
+
 ### Loop iteration 47 (2026-07-25)
 
 **Proved the claim the previous iteration made from one data point, and turned it into a

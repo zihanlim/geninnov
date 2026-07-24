@@ -202,9 +202,15 @@ def _strip_reasoning_and_fences(text: str) -> str:
     """Clean an LLM completion for json.loads: drop MiniMax <think> blocks and
     markdown ```json fences. Handles an UNCLOSED opening fence (a truncated
     response) by stripping just the leading fence rather than failing to match
-    and leaving a leading ``` that breaks json.loads."""
+    and leaving a leading ``` that breaks json.loads.
+
+    An UNCLOSED <think> is stripped too. It means the model was still reasoning when
+    it hit the token ceiling, so there is no answer anywhere in the response — and
+    leaving the fragment in produced a parse error that described the JSON rather
+    than the budget."""
     import re
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<think>.*\Z", "", text, flags=re.DOTALL)
     m = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
     if m:
         return m.group(1).strip()
@@ -244,7 +250,19 @@ def _llm_complete(prompt: str, system: str = "", temperature: float = 0.0,
             # budget, so 8192 was consumed before any JSON `content` was emitted
             # (empty content → parse fail → fallback). Give generous headroom so
             # reasoning AND the full 10-pick book fit.
-            "max_tokens": int(os.environ.get("MINIMAX_MAX_TOKENS", "24000")),
+            # MiniMax-M2/M3 emit a <think> block BEFORE the answer and both come out
+            # of the same budget, so reasoning that runs long leaves nothing for the
+            # answer. That is not a hypothetical: on 2026-07-24 reason_picks logged
+            #   JSON DECODE FAILED: Expecting value: line 1 column 1 | raw=0 chars
+            # on consecutive attempts, and a direct probe reproduced it exactly —
+            # HTTP 200, base_resp status 0 (success), content consisting of an
+            # unterminated <think> block and no answer at all. Stripping the block
+            # leaves the empty string, which then reads as a parse failure rather
+            # than as "the model spent its budget thinking".
+            #
+            # 24000 was enough for most books and not for the largest, which is the
+            # worst kind of limit: it fails intermittently and only on the hard runs.
+            "max_tokens": int(os.environ.get("MINIMAX_MAX_TOKENS", "64000")),
             "temperature": temperature,
         }
         if response_schema is not None:

@@ -638,3 +638,43 @@ def test_conviction_override_never_admits_below_the_abstention_band():
         score_key="edge_score", abstain_threshold=0.15, asset_edges=asset_edges,
         conviction_override=0.01)
     assert shorts == []
+
+
+def test_not_computable_components_survive_to_the_persisted_row():
+    """None must reach the row as None, not as 0.0 (ADR-0066).
+
+    `compute_edge_score` renormalises over the components that EXIST, so a row whose
+    carry column reads 0.0 when carry was not computable contradicts the score sitting
+    beside it. Measured on the live 2026-07-25 book, eight of nine positions satisfied
+    `persisted_edge == naive_sum / 0.48` — the score renormalised over
+    trend+regime+sentiment while carry and value were written as 0 — which made
+    /book's per-position decomposition unreconcilable by construction.
+    """
+    from backend.services.trade_ranker import TradeCandidate
+
+    c = TradeCandidate(
+        theme_id="t", asset="XLE", direction="long",
+        trade_score=1.0, hype_score=50.0, avg_sentiment=0.0,
+        edge_score=0.4305, trend_signal=0.94, regime_bias=0.06,
+        carry_signal=None, value_signal=None, sentiment_signal=0.06,
+    )
+    d = c._edge_row()
+    assert d["carry_signal"] is None
+    assert d["value_signal"] is None
+    # The computable ones are untouched.
+    assert d["trend_signal"] == 0.94
+    assert d["edge_score"] == 0.4305
+
+
+def test_a_fully_computable_candidate_still_carries_numbers():
+    from backend.services.trade_ranker import TradeCandidate
+
+    c = TradeCandidate(
+        theme_id="t", asset="JPM", direction="long",
+        trade_score=1.0, hype_score=50.0, avg_sentiment=0.0,
+        edge_score=0.31, trend_signal=0.74, regime_bias=0.06,
+        carry_signal=0.12, value_signal=-0.03, sentiment_signal=-0.23,
+    )
+    d = c._edge_row()
+    assert d["carry_signal"] == 0.12
+    assert d["value_signal"] == -0.03

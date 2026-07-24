@@ -575,12 +575,28 @@ def compute_edge_scores(
                 w_sentiment=cfg.edge_sentiment_weight,
             )
             a_vol = vol_by_asset.get(a, 0.0)
+            # Persist None as None. `compute_edge_score` above is handed the real
+            # values and renormalises over the ones that exist (ADR-0036) — but these
+            # columns used to coerce None to 0.0, so the row said "zero tilt" where the
+            # truth was "not computable". ADR-0036's own docstring calls that out:
+            # scoring a missing component as 0 is not neutral.
+            #
+            # Measured on the live 2026-07-25 book, the damage is exact: eight of nine
+            # positions satisfy persisted_edge == naive_sum / 0.48, because the score
+            # was renormalised over trend+regime+sentiment while carry and value were
+            # written as 0. The score is right and the components contradict it, so
+            # /book's per-position decomposition cannot reconcile by construction and
+            # EdgeBars reports "differs from the sum of shown components by +0.224" —
+            # true that they differ, wrong about why (ADR-0066).
+            #
+            # Only display and reconciliation read these columns; the score itself is
+            # computed from the values above, so nothing downstream changes sign or size.
             asset_edges[(r["theme_id"], a)] = {
                 "edge_score": a_edge,
-                "trend_signal": a_trend if a_trend is not None else 0.0,
+                "trend_signal": a_trend,
                 "regime_bias": regime_direction_bias(ac, cycle, sentiment, appetite),
-                "carry_signal": a_carry if a_carry is not None else 0.0,
-                "value_signal": a_value if a_value is not None else 0.0,
+                "carry_signal": a_carry,
+                "value_signal": a_value,
                 "sentiment_signal": sentiment_tilt,
                 "vol": a_vol,
                 "conviction": _conviction(a_edge, a_vol, cfg.conviction_vol_floor),

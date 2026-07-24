@@ -121,10 +121,15 @@ class TradeCandidate:
     hype_score: float
     avg_sentiment: float
     edge_score: float = 0.0   # direction basis (ADR-0031); sign(edge_score) == direction
-    trend_signal: float = 0.0   # EdgeScore component: 6m price trend
-    regime_bias: float = 0.0    # EdgeScore component: regime fit
-    carry_signal: float = 0.0   # EdgeScore component: yield/spread carry
-    value_signal: float = 0.0   # EdgeScore component: value (z-score vs history)
+    # None = NOT COMPUTABLE for this asset, and it must survive to the persisted row.
+    # compute_edge_score renormalises over the components that exist (ADR-0036), so a
+    # column that says 0.0 where the truth is "no carry proxy" contradicts the score it
+    # sits beside and makes the per-position decomposition unreconcilable (ADR-0066).
+    # Nothing does arithmetic on these — they are carried and persisted for display.
+    trend_signal: float | None = 0.0   # EdgeScore component: 6m price trend
+    regime_bias: float | None = 0.0    # EdgeScore component: regime fit
+    carry_signal: float | None = 0.0   # EdgeScore component: yield/spread carry
+    value_signal: float | None = 0.0   # EdgeScore component: value (z-score vs history)
     sentiment_signal: float = 0.0  # EdgeScore component: contrarian sentiment tilt (Stage 5)
     vol: float = 0.0          # daily-return vol of the theme basket (ADR-0032 sizing)
     conviction: float = 0.0   # |edge_score| / vol — Stage-4 conviction × inverse-vol weight
@@ -384,10 +389,13 @@ def _expand(
                     hype_score=r["hype_score"],
                     avg_sentiment=r.get("avg_sentiment", 0.0),
                     edge_score=comp.get("edge_score", 0.0),
-                    trend_signal=comp.get("trend_signal", 0.0),
-                    regime_bias=comp.get("regime_bias", 0.0),
-                    carry_signal=comp.get("carry_signal", 0.0),
-                    value_signal=comp.get("value_signal", 0.0),
+                    # No 0.0 default: the key is present with a None value when the
+                    # component was not computable, and .get's default only fires on
+                    # an ABSENT key. Coercing here would reintroduce ADR-0066.
+                    trend_signal=comp.get("trend_signal"),
+                    regime_bias=comp.get("regime_bias"),
+                    carry_signal=comp.get("carry_signal"),
+                    value_signal=comp.get("value_signal"),
                     sentiment_signal=comp.get("sentiment_signal", 0.0),
                     vol=comp.get("vol", 0.0),
                     conviction=comp.get("conviction", 0.0),

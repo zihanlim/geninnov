@@ -15,6 +15,7 @@
 import type { ResolvedEdge } from "@/lib/book/positionEdge";
 import {
   edgeContributions,
+  recomputeEdgeScore,
   type EdgeWeights,
   type ThemeEdge,
 } from "@/lib/themeSignals";
@@ -74,7 +75,12 @@ export default function EdgeBars({
   // contribution (|raw|=1) fills the half-track — magnitudes stay comparable.
   const maxAbs = Math.max(weights.trend, weights.regime, weights.carry, weights.value);
 
-  const sumContribution = contribs.reduce((s, c) => s + c.contribution, 0);
+  // Reconcile the way the pipeline computes, not by summing raw contributions.
+  // `compute_edge_score` drops a null component and renormalises the weights over
+  // what is present (ADR-0036), so a plain Σ understates |EdgeScore| whenever any
+  // component is missing and fired a false "differs from the sum" warning on every
+  // such position. Same root cause as /method's RECONCILIATION FAILURE (ADR-0064).
+  const sumContribution = recomputeEdgeScore(edge, weights).edgeScore;
   const anyPresent = contribs.some((c) => c.raw !== null);
 
   return (

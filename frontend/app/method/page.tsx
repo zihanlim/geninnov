@@ -560,8 +560,31 @@ export default function MethodPage() {
           { sym: "w_sent   × Sentiment", w: wEdgeSentiment!, x: edgeExample.sentiment_signal },
         ] as const)
       : null;
-  const edgeRecomputed = edgeTerms
-    ? edgeTerms.reduce((acc, t) => acc + t.w * (t.x ?? 0), 0)
+  // RENORMALISED over the components that exist, exactly as `compute_edge_score`
+  // does (ADR-0036). This block previously summed `w × (x ?? 0)` and printed
+  // "(null → 0)", which is the behaviour ADR-0036 removed from the backend and never
+  // removed from the page. On the live 2026-07-25 example the two disagreed 2×:
+  //
+  //   Σ w·x over present = 0.169999      persisted edge_score = 0.354165
+  //   Σ w over present   = 0.20+0.23+0.05 = 0.48
+  //   0.169999 / 0.48    = 0.354165      ← the persisted value, exactly
+  //
+  // Scoring a missing component as 0 is not neutral: it shrinks |EdgeScore| toward
+  // the abstention band, penalising a theme for a gap in our data. The worked example
+  // exists to prove the published number is reproducible from the published formula,
+  // so a recomputation that cannot reproduce it is worse than no worked example.
+  const edgeParts = edgeTerms
+    ? {
+        weightedSum: edgeTerms.reduce((a, t) => a + (t.x === null ? 0 : t.w * t.x), 0),
+        weightPresent: edgeTerms.reduce((a, t) => a + (t.x === null ? 0 : t.w), 0),
+      }
+    : null;
+  const edgeWeightedSum = edgeParts ? edgeParts.weightedSum : null;
+  const edgeWeightPresent = edgeParts ? edgeParts.weightPresent : null;
+  const edgeRecomputed = edgeParts
+    ? edgeParts.weightPresent > 0
+      ? edgeParts.weightedSum / edgeParts.weightPresent
+      : 0
     : null;
   const edgeDelta =
     edgeRecomputed !== null && typeof edgeExample?.edge_score === "number"
@@ -1692,8 +1715,12 @@ export default function MethodPage() {
                   <Note tone="info" label="Reading the block">
                     Each component is the value <Code>compute_edge_scores</Code> persisted for this
                     theme, multiplied by its live weight. A component shown as{" "}
-                    <span className="num">null</span> was not computable and contributes exactly 0 —
-                    it is an honest absence, not a zero tilt.
+                    <span className="num">null</span> was <strong>not computable</strong>, so it is{" "}
+                    <strong>dropped and its weight redistributed</strong> over the components that
+                    do exist — the weighted sum is divided by the weight actually present, not by
+                    1.00. Scoring a missing component as 0 is not neutral: it would shrink
+                    |EdgeScore| toward the abstention band and penalise a theme for a gap in our
+                    data rather than judge it on the market&apos;s signal.
                   </Note>
 
                   <Formula label="substituting the persisted components">
@@ -1702,10 +1729,16 @@ export default function MethodPage() {
                         (t) =>
                           `  ${pad(t.sym, 20)} = ${dec(t.w, 2)} × ${
                             t.x === null ? pad("null", 8) : lpad(dec(t.x, 4), 8)
-                          } = ${lpad(dec(t.w * (t.x ?? 0), 6), 10)}${t.x === null ? "   (null → 0)" : ""}`,
+                          } = ${
+                            t.x === null
+                              ? `${lpad("—", 10)}   (dropped, weight redistributed)`
+                              : lpad(dec(t.w * t.x, 6), 10)
+                          }`,
                       ),
                       `  ${" ".repeat(20)}   ${" ".repeat(13)}${"─".repeat(10)}`,
-                      `  ${pad("EdgeScore (recomputed)", 20)} = ${" ".repeat(13)}${lpad(dec(edgeRecomputed ?? 0, 6), 10)}`,
+                      `  ${pad("Σ weighted (present)", 20)} = ${" ".repeat(13)}${lpad(dec(edgeWeightedSum ?? 0, 6), 10)}`,
+                      `  ${pad("Σ weight  (present)", 20)} = ${" ".repeat(13)}${lpad(dec(edgeWeightPresent ?? 0, 6), 10)}`,
+                      `  ${pad("EdgeScore (recomputed)", 20)} = ${" ".repeat(13)}${lpad(dec(edgeRecomputed ?? 0, 6), 10)}   (Σ weighted / Σ weight)`,
                       `  ${pad("EdgeScore (persisted)", 20)} = ${" ".repeat(13)}${lpad(dec(edgeExample.edge_score ?? 0, 6), 10)}`,
                       ``,
                       `  |EdgeScore| = ${lpad(dec(Math.abs(edgeExample.edge_score ?? 0), 4), 8)}   vs abstain ${dec(edgeAbstain ?? 0, 2)}`,
@@ -1731,7 +1764,7 @@ export default function MethodPage() {
                     <Stat
                       label="EdgeScore recomputed"
                       value={edgeRecomputed === null ? "—" : fmtSigned(edgeRecomputed, 4)}
-                      sub="Σ of the five weighted components above"
+                      sub="Σ weighted ÷ Σ weight present (ADR-0036)"
                     />
                     <Stat
                       label="Persisted edge_score"

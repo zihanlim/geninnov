@@ -256,6 +256,48 @@ export function edgeContributions(edge: ThemeEdge, w: EdgeWeights) {
   ];
 }
 
+/**
+ * Recompute EdgeScore from its persisted components **the way the pipeline does**.
+ *
+ * `compute_edge_score` (backend/services/edge_signals.py) drops a component that is
+ * `null` — not computable for this theme — and **renormalises the weights over what is
+ * present**: `Σ(w·v over present) / Σ(w over present)`. [ADR-0036]
+ *
+ * Both display surfaces got this wrong in the same way, by summing `w × (v ?? 0)` with
+ * no renormalisation:
+ *
+ * - `/method`'s worked example printed `Σ = 0.169999` against a persisted `0.354165` and
+ *   then rendered a red **RECONCILIATION FAILURE** blaming the *pipeline* — *"either the
+ *   weights changed after this row was written, or a component column and the score
+ *   column were not written from the same inputs."* Both causes are false. The pipeline
+ *   was right; the page's arithmetic was wrong; and 0.169999 / (0.20 + 0.23 + 0.05) is
+ *   0.354165 exactly.
+ * - `/book`'s `EdgeBars` warns when the shown components differ from the persisted score
+ *   by more than 0.01, so the same false alarm fires per position.
+ *
+ * Scoring a missing component as 0 is not neutral: it shrinks |EdgeScore| toward the
+ * abstention band, penalising a theme for a gap in our data rather than judging it on
+ * the market's signal.
+ *
+ * Returns the parts, not just the total, because the surfaces need to *show* the
+ * division — a worked example that prints only the answer proves nothing.
+ */
+export function recomputeEdgeScore(
+  edge: ThemeEdge,
+  w: EdgeWeights = DEFAULT_EDGE_WEIGHTS,
+): { weightedSum: number; weightPresent: number; edgeScore: number } {
+  const present = edgeContributions(edge, w).filter((c) => c.raw !== null);
+  const weightedSum = present.reduce((s, c) => s + c.contribution, 0);
+  const weightPresent = present.reduce((s, c) => s + c.weight, 0);
+  // Nothing computable → 0.0, which abstains. That is the correct answer when there
+  // is no evidence at all, and it matches edge_signals.py's `if total_w <= 0`.
+  return {
+    weightedSum,
+    weightPresent,
+    edgeScore: weightPresent > 0 ? weightedSum / weightPresent : 0,
+  };
+}
+
 /** A PLAIN-ENGLISH rationale that names the dominant driver, e.g.
  * "Long · riding a strong price uptrend" or
  * "Short · a price downtrend outweighs a supportive regime".

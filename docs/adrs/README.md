@@ -68,6 +68,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0061](0061-a-false-excuse-is-worse-than-none.md) | A false excuse is worse than none — reject an availability claim about a name that was in the pool; ADR-0049's rule extended from numbers to facts | accepted | 2026-07-25 |
 | [0062](0062-run-date-is-not-a-write-timestamp.md) | A run's date is its run_date, not a write timestamp — the landing page dated the 07-25 run 07-24 by reading themes.updated_at | accepted | 2026-07-25 |
 | [0063](0063-one-beta-bar-across-every-surface.md) | One sample bar for beta across every surface — and the recorded beta-direction guardrail is NOT built, because the claim is ambiguous rather than false | accepted | 2026-07-25 |
+| [0064](0064-the-audit-page-blamed-the-pipeline-for-its-own-arithmetic.md) | The audit page blamed the pipeline for its own arithmetic — /method recomputed EdgeScore without ADR-0036's renormalisation and published a RECONCILIATION FAILURE against a correct pipeline | accepted | 2026-07-25 |
 
 ## When to write an ADR
 

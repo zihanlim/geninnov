@@ -302,3 +302,84 @@ def test_published_book_check_imports_cleanly_from_a_bare_process():
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "ARKK" in proc.stdout, proc.stdout
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# check_book_arithmetic — the headline must describe the positions beneath it
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _book(**over):
+    picks = [
+        {"asset": "XLE", "direction": "long", "weight": 0.10,
+         "signed_weight": 0.10, "notional": 10_000_000.0},
+        {"asset": "SLV", "direction": "short", "weight": 0.06,
+         "signed_weight": -0.06, "notional": 6_000_000.0},
+    ]
+    bm = {
+        "gross_exposure": 0.16, "net_exposure": 0.04,
+        "long_weight": 0.10, "short_weight": 0.06,
+    }
+    row = {"run_date": "2026-07-25", "picks": picks, "book_metrics": bm}
+    row.update(over)
+    return row
+
+
+def test_a_consistent_book_raises_nothing():
+    from scripts.check_data_integrity import check_book_arithmetic
+    assert check_book_arithmetic(_book()) == []
+
+
+def test_catches_a_gross_that_does_not_match_the_picks():
+    """The 40-name provisional book behind a 9-name headline was this shape."""
+    from scripts.check_data_integrity import check_book_arithmetic
+    row = _book()
+    row["book_metrics"]["gross_exposure"] = 0.92
+    flags = check_book_arithmetic(row)
+    assert any("gross_exposure" in f for f in flags)
+
+
+def test_catches_a_net_that_does_not_match_the_picks():
+    from scripts.check_data_integrity import check_book_arithmetic
+    row = _book()
+    row["book_metrics"]["net_exposure"] = -0.30
+    assert any("net_exposure" in f for f in check_book_arithmetic(row))
+
+
+def test_catches_a_long_short_split_that_does_not_add_up():
+    from scripts.check_data_integrity import check_book_arithmetic
+    row = _book()
+    row["book_metrics"]["short_weight"] = 0.20   # 0.10+0.20 != 0.16
+    flags = check_book_arithmetic(row)
+    assert any("long_weight" in f for f in flags)
+
+
+def test_catches_a_notional_that_is_not_weight_times_capital():
+    from scripts.check_data_integrity import check_book_arithmetic
+    row = _book()
+    row["picks"][0]["notional"] = 4_200_000.0
+    assert any("notional" in f for f in check_book_arithmetic(row))
+
+
+def test_catches_a_short_carrying_a_positive_signed_weight():
+    """ADR-0016: the sign IS the direction."""
+    from scripts.check_data_integrity import check_book_arithmetic
+    row = _book()
+    row["picks"][1]["signed_weight"] = 0.06
+    flags = check_book_arithmetic(row)
+    assert any("sign is the direction" in f for f in flags)
+
+
+def test_accepts_picks_delivered_as_a_json_string():
+    from scripts.check_data_integrity import check_book_arithmetic
+    import json as _json
+    row = _book()
+    row["picks"] = _json.dumps(row["picks"])
+    assert check_book_arithmetic(row) == []
+
+
+def test_is_silent_without_a_row_picks_or_book_metrics():
+    from scripts.check_data_integrity import check_book_arithmetic
+    assert check_book_arithmetic(None) == []
+    assert check_book_arithmetic(_book(picks=[])) == []
+    assert check_book_arithmetic(_book(book_metrics={})) == []
+    assert check_book_arithmetic(_book(picks="not json")) == []

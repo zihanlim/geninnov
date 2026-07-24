@@ -17,6 +17,7 @@ Run:  python -m scripts.check_data_integrity      # exits 1 if fabricated
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -242,6 +243,115 @@ def check_published_book_claims(
     return failures
 
 
+def check_book_arithmetic(
+    rec_row: dict | None,
+    total_capital: float = 100_000_000.0,
+    tol: float = 1e-6,
+) -> list[str]:
+    """Do `/book`'s headline figures describe the positions printed beneath them?
+
+    The six tiles at the top of `/book` — POSITIONS, LONGS / SHORTS, GROSS, NET,
+    DEPLOYED, WORST SCENARIO — are read before anything else, and they come from
+    `book_metrics`, while the table below comes from `picks`. Nothing checked that the
+    two agree. That is the [ADR-0040] family exactly: a headline is a claim about the
+    book, and a claim about the book must be checked against the book.
+
+    Six invariants, all of them arithmetic rather than judgement:
+
+    * ``Σ|weight| == gross_exposure``
+    * ``Σ signed_weight == net_exposure``
+    * ``long_weight + short_weight == gross`` and ``long_weight − short_weight == net``
+    * ``notional == weight × total_capital`` per pick
+    * ``|signed_weight| == weight`` per pick
+    * ``sign(signed_weight)`` agrees with ``direction``
+
+    All six hold on the live 2026-07-25 book, and this exists so that stays true rather
+    than being rediscovered. The failures this repo has actually shipped were of exactly
+    this shape — a computed number presented beside positions it did not describe: the
+    provisional 40-name book behind a 9-name headline (iteration 32), HHI diluted by
+    cash, net share divided by a near-zero denominator (ADR-0060).
+
+    Silent when there is nothing to check — no row, no picks, or no `book_metrics`.
+    Tolerance is `1e-6`, a float-accumulation guard on sums of ~10 terms, not an
+    economic tolerance; the same distinction ADR-0068 draws.
+
+    Returns failure strings; empty means the headline describes the book.
+    """
+    if not rec_row:
+        return []
+    picks = rec_row.get("picks")
+    if isinstance(picks, str):
+        try:
+            picks = json.loads(picks)
+        except (ValueError, TypeError):
+            return []
+    if not picks:
+        return []
+    bm = rec_row.get("book_metrics") or {}
+    if not bm:
+        return []
+
+    run = rec_row.get("run_date", "?")
+    out: list[str] = []
+
+    def _num(v) -> float | None:
+        return float(v) if isinstance(v, (int, float)) else None
+
+    gross_actual = sum(abs(_num(p.get("weight")) or 0.0) for p in picks)
+    net_actual = sum(_num(p.get("signed_weight")) or 0.0 for p in picks)
+
+    gross_stated = _num(bm.get("gross_exposure"))
+    net_stated = _num(bm.get("net_exposure"))
+    lw = _num(bm.get("long_weight"))
+    sw = _num(bm.get("short_weight"))
+
+    if gross_stated is not None and abs(gross_actual - gross_stated) > tol:
+        out.append(
+            f"book {run}: gross_exposure {gross_stated:.6f} but the picks sum to "
+            f"{gross_actual:.6f}"
+        )
+    if net_stated is not None and abs(net_actual - net_stated) > tol:
+        out.append(
+            f"book {run}: net_exposure {net_stated:.6f} but the picks sum to "
+            f"{net_actual:.6f}"
+        )
+    if lw is not None and sw is not None:
+        if gross_stated is not None and abs((lw + sw) - gross_stated) > tol:
+            out.append(
+                f"book {run}: long_weight + short_weight = {lw + sw:.6f} but "
+                f"gross_exposure is {gross_stated:.6f}"
+            )
+        if net_stated is not None and abs((lw - sw) - net_stated) > tol:
+            out.append(
+                f"book {run}: long_weight − short_weight = {lw - sw:.6f} but "
+                f"net_exposure is {net_stated:.6f}"
+            )
+
+    for p in picks:
+        asset = p.get("asset", "?")
+        w = _num(p.get("weight"))
+        s = _num(p.get("signed_weight"))
+        n = _num(p.get("notional"))
+        if w is not None and n is not None and abs(n - w * total_capital) > 1.0:
+            out.append(
+                f"book {run}: {asset} notional {n:,.0f} but weight {w:.6f} × capital "
+                f"is {w * total_capital:,.0f}"
+            )
+        if w is not None and s is not None:
+            if abs(abs(s) - abs(w)) > tol:
+                out.append(
+                    f"book {run}: {asset} |signed_weight| {abs(s):.6f} != weight "
+                    f"{abs(w):.6f}"
+                )
+            d = p.get("direction")
+            if (d == "long" and s < 0) or (d == "short" and s > 0):
+                out.append(
+                    f"book {run}: {asset} is {d} but signed_weight is {s:+.6f} — the "
+                    "sign is the direction (ADR-0016)"
+                )
+    return out
+
+
 def main() -> int:
     try:
         from dotenv import load_dotenv
@@ -354,6 +464,25 @@ def main() -> int:
             return 1
         print(f"✓ Published thesis for {rec['run_date']} makes no contradicted claim "
               f"(checked against {len(cands or [])} screened candidates).")
+
+        # The headline tiles must describe the positions printed beneath them.
+        book_row = (
+            sb.table("research_recommendations")
+            .select("run_date, picks, book_metrics")
+            .eq("run_date", rec["run_date"])
+            .limit(1)
+            .execute()
+            .data
+        )
+        arith = check_book_arithmetic(book_row[0] if book_row else None)
+        if arith:
+            print("✗ DATA INTEGRITY CHECK FAILED — /book's headline does not describe "
+                  "its own positions:")
+            for f in arith:
+                print(f"  - {f}")
+            return 1
+        print(f"✓ Book arithmetic reconciles for {rec['run_date']} "
+              f"(gross, net, long/short split, notional and signed weights).")
 
     print("✓ Data integrity check passed — no seed fingerprint detected.")
     return 0

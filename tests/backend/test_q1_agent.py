@@ -674,6 +674,35 @@ def test_fallback_picks_does_not_invent_citations():
 
 # ─── Test 4 (T18): stub LLM that returns fallback-shaped body is NOT verified ─
 
+def test_retry_feeds_the_rejection_back_into_the_prompt(monkeypatch):
+    """ADR-0012 says a failed guardrail re-invokes reason_picks "with explicit
+    error feedback". It didn't: the retry loop re-called the node with a
+    byte-identical prompt, and _llm_complete runs at temperature=0 — so a
+    deterministic model returned the same rejected answer every time. The
+    2026-07-24 run failed "No citations provided" on all three attempts, then fell
+    back. Without this, the retries are theatre.
+    """
+    stub = _StubLLM(_make_5l_5s_payload())
+    monkeypatch.setattr(q1_agent, "_llm_complete", stub)
+
+    state = _make_state()
+    # First pass: no prior rejection, so the prompt must NOT carry feedback.
+    q1_agent.reason_picks(state)
+    first_prompt = stub.calls[-1][0]
+    assert "YOUR PREVIOUS ANSWER WAS REJECTED" not in first_prompt
+
+    # Simulate the guardrail rejecting it, exactly as verify_citations would.
+    state["error"] = "No citations provided — rejecting output"
+    q1_agent.reason_picks(state)
+    retry_prompt = stub.calls[-1][0]
+
+    assert "YOUR PREVIOUS ANSWER WAS REJECTED" in retry_prompt
+    assert "No citations provided" in retry_prompt, "the actual reason must be quoted"
+    assert retry_prompt != first_prompt, (
+        "a retry prompt identical to the first is a no-op at temperature=0"
+    )
+
+
 def test_advisory_cannot_be_verified_with_zero_citations():
     """An empty citations array is itself a failure — silence is not compliance.
 

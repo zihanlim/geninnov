@@ -1109,6 +1109,35 @@ def reason_picks(state: Q1State) -> Q1State:
     }
 
     prompt = REASON_PICKS_PROMPT_TEMPLATE.format(**prompt_vars)
+
+    # Feed the previous rejection back into the prompt.
+    #
+    # ADR-0012 specifies that a failed guardrail check "re-invokes reason_picks
+    # with explicit error feedback" — but run_q1_agent's retry loop simply called
+    # this node again with a byte-identical prompt, and _llm_complete runs at
+    # temperature=0. Asking a deterministic model the same question three times
+    # returns the same rejected answer three times, which is precisely what the
+    # 2026-07-24 run shows: "No citations provided — rejecting output" on all
+    # three attempts, then the deterministic fallback. The retries were theatre;
+    # this is the feedback they were documented to carry.
+    prior_error = state.get("error")
+    if prior_error:
+        prompt += (
+            "\n\n=== YOUR PREVIOUS ANSWER WAS REJECTED ===\n"
+            f"Reason: {prior_error}\n\n"
+            "Return the WHOLE JSON object again, with that defect fixed.\n"
+            "Hard requirements:\n"
+            "  • Every pick MUST carry a non-empty \"citations\" array.\n"
+            "  • Every numeric claim you make in a thesis MUST appear as a citation.\n"
+            "  • Each citation's \"source\" MUST be a key that appears verbatim in the\n"
+            "    snapshot above — a FRED series id (e.g. BAMLH0A0HYM2, DGS10), a\n"
+            "    ticker (e.g. CL=F, ^VIX), or theme:<uuid>:<field>.\n"
+            "  • Each citation's \"value\" MUST equal the snapshot value, in the same\n"
+            "    units the snapshot uses.\n"
+            "  • A pick with no citation is invalid — drop the pick or cite it.\n"
+            "Do not explain the fix; return only the JSON object.\n"
+        )
+
     retries = 0
     max_retries = 2
 
@@ -1141,6 +1170,9 @@ def reason_picks(state: Q1State) -> Q1State:
             state["retries"] = retries
             # T18: LLM succeeded — the body is NOT a fallback synthesis.
             state["fallback_used"] = False
+            # Clear the rejection we just fed back in, so a stale reason cannot
+            # be persisted next to a run that went on to verify.
+            state["error"] = None
             return state
 
         except json.JSONDecodeError:

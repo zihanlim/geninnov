@@ -142,6 +142,80 @@ Live at https://andromeda-analytics.vercel.app · 502 backend + 87 frontend test
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 41 (2026-07-25)
+
+**Measured the lever iteration 40 shipped. It works — and the same run disproved the
+check shipped alongside it.**
+
+Iteration 40 shipped two things: a prompt instruction requiring the agent to name each
+independent idea it declined, and `shortfall_accounting` to verify it did. ADR-0056
+closed by admitting the check *"tells you the model failed but does not help it
+succeed"* — the prompt is what was supposed to help, and **nothing had measured whether
+it does.** The published book predated the change, so the live page was showing a
+failure caused by a prompt that no longer existed. *Verify live* applies to a prompt as
+much as to a page.
+
+`scripts/replication_test.py` was already the right instrument — it freezes the L5 state
+through the deterministic nodes and calls `reason_picks` N times on deep copies — and
+extending it to run `shortfall_accounting` per sample **costs nothing**, because the
+draws are already being taken. The explanation rate is measured over the same draws as
+the turnover, against one identical pool.
+
+**Three samples, frozen pool of 30 candidates / 10 long ideas / 5 short ideas:**
+
+| sample | picks | short side |
+|---|---|---|
+| 1 | 7 (3L / 4S) | declined ARKK — **named ARKK** |
+| 2 | 9 (5L / 4S) | declined ARKK — **named ARKK** |
+| 3 | 9 (5L / 4S) | declined ARKK — **named ARKK** |
+
+**The prompt works: ARKK named 3/3**, against a published thesis that never mentioned
+it.
+
+**And the same run disproved the check's calibration.** Sample 1 held **3 longs against
+ten independent long ideas**, so the all-or-nothing rule demanded explanations for
+**seven** names, while the short side holding 4 against 5 was asked for **one**. Both
+books were short by a comparable amount and the burden differed sevenfold.
+
+The reason is arithmetic. Where ideas **exceed** the five slots Q1 asks for, most
+declines are forced — a side with ten ideas must decline five however good the book is —
+and those carry no information. The rule conflated *"I had more ideas than slots"* with
+*"I left slots empty"*. On the short side the two coincide, which is why the defect was
+invisible there **and why the live ARKK warning was nevertheless correct**.
+
+Explanations are now owed **per empty slot** (`available − held`). `satisfied` is the
+verdict and the panel branches on it. On a side where ideas exactly fill the book this
+reduces to the old rule. `passed_over`/`unexplained` survive as information, not as a
+score. Pre-ADR rows carry no `satisfied` and fall back to the old reading — retroactively
+clearing warnings that were correct when written would rewrite the record.
+
+**Turnover from the same run, worth recording: 27% overall, 44% LONG, 0% SHORT.** The
+short side (5 ideas, 5 slots) returned an identical book every time; the long side (10
+for 5) did not. Same arithmetic, and exactly what ADR-0050 predicted and declined to
+score.
+
+**Second thread — four header items that all land on the same page.** `/trades`,
+`/portfolio` and `/research` sat beside the primary nav, commented *"legacy links
+(redirects)"* and justified as reachable *"while the consolidation beds in"*. The
+consolidation finished at ADR-0040 and **all three page components are now nothing but
+`redirect("/book")`** — so the header showed a reader this project's migration history
+for no benefit. Removed (ADR-0054 named it as in scope); the routes stay, so bookmarks
+still resolve.
+
+Chasing that turned up a **doc-sync defect of exactly the kind `CLAUDE.md` warns about**:
+`CLAUDE.md` described L6 as *"per-trade thesis writeup rendered on `/research`"* in two
+places, and `ARCHITECTURE.md` gave the L6 source as `frontend/pages/research.tsx` — **a
+path that has never existed in this app-router layout**. The mermaid diagram in the same
+file was already right (*"/research — retired, server redirect() → /book"*). **The prose
+drifted and the diagram did not**, which is the argument for the diagram being canonical.
+
+**Open, unchanged, and not to be conflated with the above:** the check verifies a
+declined idea is *mentioned*, not that the reason is *sound*. Loosening the count owed
+does not touch that.
+
+[ADR-0058](adrs/0058-explanations-are-owed-per-empty-slot.md) corrects
+[ADR-0056](adrs/0056-an-instruction-is-not-a-guardrail.md).
+
 ### Loop iteration 40 (2026-07-25)
 
 **The one panel built to expose the shortfall was pointing at a thesis that does not

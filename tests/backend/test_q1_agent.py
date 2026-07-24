@@ -1711,3 +1711,86 @@ def test_where_ideas_exactly_fill_the_book_the_rule_is_unchanged():
     picks = [{"direction": "short", "asset": a} for a in ("SLV", "BABA", "PDD", "NOC")]
     assert shortfall_accounting(picks, _LIVE_IDEAS, "no mention")["short"]["satisfied"] is False
     assert shortfall_accounting(picks, _LIVE_IDEAS, "ARKK passed")["short"]["satisfied"] is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# check_availability_claims — a false excuse is worse than none (ADR-0061)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# The twelve short candidates actually screened on 2026-07-25, ARKK among them.
+_LIVE_CANDIDATES = [
+    {"asset": a, "direction": "short"}
+    for a in ("SLV", "BABA", "GDX", "KWEB", "PDD", "NEM", "GLD", "IAU", "NOC",
+              "MCHI", "ARKK", "FXI")
+] + [{"asset": a, "direction": "long"} for a in ("XLE", "SVXY", "JPM", "NUE", "OIH")]
+
+# The sentence actually published by the first book run under the ADR-0056 prompt.
+_LIVE_FALSE_EXCUSE = (
+    "Net direction is long, with factor tilts positive on Mkt and HML. The fifth "
+    "independent short idea per POOL DEPTH, ARKK, is not present in the tradable "
+    "candidate pool, so this book deploys four short picks rather than five."
+)
+
+
+def test_rejects_the_exact_false_excuse_that_was_published():
+    from backend.services.q1_agent import check_availability_claims
+
+    fails = check_availability_claims(_LIVE_FALSE_EXCUSE, _LIVE_CANDIDATES)
+    assert len(fails) == 1
+    assert "ARKK" in fails[0]
+    assert "but it is" in fails[0]
+
+
+def test_accepts_a_reason_that_is_not_about_availability():
+    """Correlation, cap and conviction reasons are the model's to make.
+
+    Judging whether a reason is GOOD is out of reach; only a claim contradicted by
+    our own pool is checkable. Rejecting these would be inventing a verdict on
+    reasoning quality, which ADR-0045 refused to do for turnover.
+    """
+    from backend.services.q1_agent import check_availability_claims
+
+    for reason in (
+        "ARKK was declined because short ARKK would net against the long SVXY position.",
+        "ARKK is passed over: its edge of -0.27 sits closest to the abstention band.",
+        "We declined ARKK to avoid a fifth position in the same high-beta complex.",
+    ):
+        assert check_availability_claims(reason, _LIVE_CANDIDATES) == []
+
+
+def test_says_nothing_about_a_name_that_genuinely_was_not_screened():
+    """The excuse is only false if the name IS in the pool."""
+    from backend.services.q1_agent import check_availability_claims
+
+    prose = "TSLA is not present in the tradable candidate pool, so it was not considered."
+    assert check_availability_claims(prose, _LIVE_CANDIDATES) == []
+
+
+def test_a_negation_in_the_previous_clause_is_not_attributed_to_the_ticker():
+    """Reading backwards from a mention produced false positives on this shape."""
+    from backend.services.q1_agent import check_availability_claims
+
+    prose = (
+        "Several names were not present in the candidate pool. ARKK, by contrast, "
+        "cleared every screen and was declined on correlation grounds."
+    )
+    assert check_availability_claims(prose, _LIVE_CANDIDATES) == []
+
+
+def test_is_silent_without_prose_or_candidates():
+    from backend.services.q1_agent import check_availability_claims
+
+    assert check_availability_claims("", _LIVE_CANDIDATES) == []
+    assert check_availability_claims(_LIVE_FALSE_EXCUSE, []) == []
+
+
+def test_catches_the_other_phrasings_of_the_same_excuse():
+    from backend.services.q1_agent import check_availability_claims
+
+    for prose in (
+        "ARKK is absent from the candidate list this run.",
+        "ARKK was unavailable in the screened universe.",
+        "ARKK is no longer in the candidate pool.",
+        "ARKK is not in the tradable universe.",
+    ):
+        assert check_availability_claims(prose, _LIVE_CANDIDATES), prose

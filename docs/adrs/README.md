@@ -64,6 +64,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0057](0057-stability-is-a-per-trade-fact-not-a-percentage.md) | Stability is a per-trade fact, not a book-level percentage — mark which positions survived every rerun | accepted | 2026-07-25 |
 | [0058](0058-explanations-are-owed-per-empty-slot.md) | Explanations are owed per EMPTY SLOT, not per declined idea — corrects 0056; the frozen-input harness also confirmed the prompt works (ARKK named 3/3) | accepted | 2026-07-25 |
 | [0060](0060-a-share-cannot-exceed-the-whole.md) | A share cannot exceed the whole — net share is withheld on a market-neutral book instead of rendering ±1000% | accepted | 2026-07-25 |
+| [0061](0061-a-false-excuse-is-worse-than-none.md) | A false excuse is worse than none — reject an availability claim about a name that was in the pool; ADR-0049's rule extended from numbers to facts | accepted | 2026-07-25 |
 | [0059](0059-a-single-date-ic-is-not-validation.md) | A single-date IC is measured, not validated — the IC harness crashed before persist, and the panel would have flipped green on one day | accepted | 2026-07-25 |
 
 ## When to write an ADR

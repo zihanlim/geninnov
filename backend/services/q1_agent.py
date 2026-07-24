@@ -1124,6 +1124,10 @@ declined — by its ticker, the one shown in POOL DEPTH — and say why in a cla
 it. A reason is specific: it would net against a position already on, its edge is too
 close to the abstention band, it would breach a sector cap. This is checked against the
 measurement after you answer, and an unnamed declined idea is reported on the page.
+NEVER say a declined name was unavailable, absent, or not in the candidate pool. Every
+name in POOL DEPTH came FROM that pool, so the claim is always false and is rejected
+outright. If you have no better reason than "I chose not to", say exactly that — an
+honest "no further conviction" is accepted; a fabricated availability excuse is not.
 Check the correlation warnings — do not add picks that compound existing high-correlation exposures.
 Check the cap violations — avoid picks that worsen sector/geo concentration.
 Reference the scenario analysis in your book_risks.
@@ -1537,6 +1541,73 @@ def check_idea_count_claims(prose: str, idea_counts: dict) -> list[str]:
     return failures
 
 
+_UNAVAILABLE_NEAR_POOL = re.compile(
+    r"(?:\b(?:not\s+(?:present|available|included|tradable|in)|absent|unavailable|"
+    r"missing|excluded|no\s+longer)\b[^.]{0,100}?"
+    r"\b(?:pool|candidate|candidates|universe|screen|shortlist|list)\b)",
+    re.IGNORECASE,
+)
+
+
+def check_availability_claims(prose: str, candidates: list[dict]) -> list[str]:
+    """Reject a thesis that excuses a decline by saying the name was not available.
+
+    ADR-0056 required the agent to name the independent ideas it declined, and
+    [ADR-0058] confirmed the prompt achieves that. The very first book published under
+    it named ARKK — and gave this reason:
+
+        "The fifth independent short idea per POOL DEPTH, ARKK, is not present in the
+         tradable candidate pool, so this book deploys four short picks rather than
+         five."
+
+    **ARKK was in the pool**: `trade_candidates` for that run holds it at
+    ``edge_score -0.2658``, the eleventh of twelve short candidates, and POOL DEPTH
+    counted it as an independent idea *because* it was there. The sentence is
+    contradicted by the data the model was shown.
+
+    That is the limitation ADR-0056 named — *the check proves a declined idea is
+    mentioned, not that the reason is sound* — arriving immediately, and it is worse
+    than the silence it replaced: naming ARKK set ``satisfied=True``, which flips
+    `/book`'s panel from a true warning to crediting the thesis. **A false explanation
+    that clears the check is more damaging than no explanation at all.**
+
+    Judging whether a reason is *good* is out of reach. Judging whether it is
+    *factually contradicted by our own pool* is not, and this is that check: an
+    availability excuse about a name we screened is rejected exactly, with no
+    grounding tolerance, for the same reason ADR-0049 rejects a restated count — the
+    model is contradicting a fact the system computed and handed it.
+
+    Deliberately narrow. It fires only on the availability CLASS of excuse
+    ("not present in the pool", "absent from the candidates", "no longer in the
+    universe"). *"ARKK would net against long SVXY"* is a claim about correlation, not
+    about membership, and is left to the reader — inventing a verdict on reasoning
+    quality is what ADR-0045 refused to do for turnover.
+
+    Returns a list of failure strings; empty means nothing to reject.
+    """
+    if not prose or not candidates:
+        return []
+
+    pool = {c.get("asset") for c in candidates if c.get("asset")}
+    failures: list[str] = []
+    for ticker in sorted(pool):
+        for m in re.finditer(rf"\b{re.escape(ticker)}\b", prose):
+            # Look forward from the mention only. A negation BEFORE the ticker
+            # usually belongs to the previous clause ("...not in the pool. ARKK is
+            # held.") and reading backwards produced false positives on exactly that
+            # shape.
+            window = prose[m.end(): m.end() + 200]
+            window = window.split(".")[0] + "." if "." in window else window
+            if _UNAVAILABLE_NEAR_POOL.search(window):
+                failures.append(
+                    f"thesis says {ticker} was not in the candidate pool, but it is "
+                    f"— {ticker} is one of the {len(pool)} screened candidates. "
+                    "Give the real reason it was declined, or take the position."
+                )
+                break
+    return failures
+
+
 def shortfall_accounting(
     picks: list[dict],
     idea_counts: dict,
@@ -1882,6 +1953,21 @@ def verify_citations(state: Q1State) -> Q1State:
     if count_failures:
         state["verified"] = False
         state["error"] = "Pool-depth claim wrong: " + "; ".join(count_failures[:3])
+        return state
+
+    # An availability excuse about a name we screened is checked EXACTLY, alongside
+    # the count claim and for the same reason: the model is contradicting a fact the
+    # system computed and handed it. Blocking is right here where it is not right for
+    # a merely-missing explanation (ADR-0056) — an omission leaves the reader to ask,
+    # a false reason answers them wrongly and clears the guardrail while doing it.
+    availability_failures = check_availability_claims(
+        state.get("book_view") or "", state.get("candidates") or []
+    )
+    if availability_failures:
+        state["verified"] = False
+        state["error"] = "Availability claim wrong: " + "; ".join(
+            availability_failures[:3]
+        )
         return state
 
     grounded_ratio = ((checked - len(failures)) / checked) if checked else 1.0

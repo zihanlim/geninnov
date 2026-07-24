@@ -139,6 +139,30 @@ grew 23.3 → **24.7 kB**, so the panel compiles in, but Vercel had not publishe
 after ~5 minutes — the same lag seen in iterations 16–17, where it eventually
 appeared. Verify `/method` shows "EdgeScore component IC" first thing next iteration.
 
+**Three more contrast failures, all hex literals the token sweep could not see.**
+Auditing `/` at 375px — a page iteration 15 never checked, having covered only
+`/method` and `/book` — found four failing elements from three hardcoded colours:
+
+| where | hex | ratio | what it labels |
+|---|---|---|---|
+| PredictionMarkets | `#f7931a` | **2.20** | Bitcoin brand orange, 9.5px uppercase |
+| ThesisBlock | `#f0883e` | **2.53** | the "Partial" badge on a thesis |
+| ConvictionCard | `#e11048` | **4.34** | the **pre-AA accent, copied by value** |
+
+The ConvictionCard one is the instructive failure: a copy of the old accent, so when
+the token moved to `#d40e43` it silently kept the old crimson *and* its old
+sub-threshold ratio. It now reads `var(--accent)`/`var(--long)`/`var(--short)` and
+cannot drift again. ThesisBlock's badge labels a thesis as only PARTIAL — a caveat
+nobody can read is not a caveat — so it takes the AA warning token. Bitcoin orange
+goes to `#a85c08` (4.80:1), still unmistakably Bitcoin orange.
+
+Left alone deliberately: Sparkline's stroke (a graphic, not text) and StatusBadge's
+`#f0883e`, which sits on a dark chip at 5.65:1 and already passes.
+
+**Lesson for the next contrast pass: sweep the PAGES, not the tokens.** Moving
+`globals.css` + `tailwind.config.ts` fixes everything that uses them and nothing that
+does not, and a hex literal is exactly what it cannot reach.
+
 Verified live meanwhile: `/book` at 1440px — **0 contrast failures of 188 checked**,
 zero console errors, no horizontal scroll, book reading 5 long / 3 short.
 

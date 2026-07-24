@@ -179,3 +179,43 @@ class TestPersistDiscovered:
 
         agreement = {"tier2": [{"label": "x", "terms": ["x"], "methods": ["lda", "embedding"]}], "tier3": []}
         assert td.persist_discovered_themes(_SB(), date(2026, 7, 23), agreement, 60) == 0
+
+
+class TestCorpusFromThemeNews:
+    """corpus_from_theme_news reads the persisted headlines instead of re-fetching."""
+
+    @staticmethod
+    def _sb_returning(rows):
+        class _Q:
+            def select(self, *a, **k): return self
+            def gte(self, *a, **k): return self
+            def limit(self, *a, **k): return self
+            def execute(self):
+                return type("R", (), {"data": rows})()
+
+        class _SB:
+            def table(self, name):
+                assert name == "theme_news"
+                return _Q()
+        return _SB()
+
+    def test_dedupes_and_drops_mock(self):
+        import scripts.theme_discovery as td
+        sb = self._sb_returning([
+            {"headline": "Fed holds rates", "source": "brave", "run_date": "2026-07-24", "published_date": "2026-07-24"},
+            {"headline": "Fed holds rates", "source": "brave", "run_date": "2026-07-23", "published_date": "2026-07-23"},  # dup
+            {"headline": "MOCK story", "source": "mock_brave", "run_date": "2026-07-24", "published_date": None},          # mock
+            {"headline": "Oil spikes on OPEC cut", "source": "reddit", "run_date": "2026-07-24", "published_date": None},
+            {"headline": "  ", "source": "brave", "run_date": "2026-07-24", "published_date": None},                        # blank
+        ])
+        corpus = td.corpus_from_theme_news(sb, lookback_days=180)
+        texts = [c["text"] for c in corpus]
+        assert texts == ["Fed holds rates", "Oil spikes on OPEC cut"]  # deduped, mock+blank dropped
+
+    def test_read_failure_returns_empty(self):
+        import scripts.theme_discovery as td
+
+        class _SB:
+            def table(self, name):
+                raise Exception("network down")
+        assert td.corpus_from_theme_news(_SB(), lookback_days=180) == []

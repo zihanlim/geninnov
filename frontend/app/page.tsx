@@ -7,6 +7,7 @@ import ConvictionCard, { ConvictionTheme } from "@/components/ConvictionCard";
 import Watchlist from "@/components/Watchlist";
 import ThemeDerivationDrawer from "@/components/ThemeDerivationDrawer";
 import ThemeHeatmap from "@/components/ThemeHeatmap";
+import DiscoveredThemes from "@/components/DiscoveredThemes";
 import MarketBar from "@/components/MarketBar";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
 import { StatusBadge } from "@/components/status/StatusBadge";
@@ -637,6 +638,22 @@ function ConvictionPageInner() {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* ── Discovered themes — the Q2 discovery step made visible ────── */}
+          <div className="mt-8">
+            <div className="flex items-baseline justify-between mb-3.5">
+              <h2 className="text-[16px] font-semibold m-0">
+                What the engine is discovering
+              </h2>
+              <Link
+                href="/method"
+                className="text-text-secondary text-[12px] hover:text-text-primary"
+              >
+                How discovery works →
+              </Link>
+            </div>
+            <DiscoveredThemes />
           </div>
         </>
       )}

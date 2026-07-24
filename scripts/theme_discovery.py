@@ -173,34 +173,101 @@ def _make_supabase():
     return create_client(url, key)
 
 
+def corpus_from_theme_news(sb, lookback_days: int) -> list[dict]:
+    """
+    Assemble the discovery corpus from the ``theme_news`` table — the headlines
+    the daily pipeline already collected and persisted — instead of re-fetching
+    from Brave.
+
+    Why: the original path made one Brave call per Tier-1 theme every run, which
+    is slow, can stall (network/subprocess), and re-pays for headlines the daily
+    job already stored. Reading the accumulated corpus is fast, deterministic, and
+    unit-testable. Real (non-mock) rows only; deduped by headline text so a story
+    that appeared under several themes / on several run dates counts once.
+
+    Caveat (honest): today's ``theme_news`` is news collected *for the Tier-1
+    anchor themes*, so discovery over it surfaces sub-themes and cross-cutting
+    terms within that universe rather than wholly unseen themes. Broadening the
+    upstream collection with general market-news seed queries is the next step to
+    make discovery fully non-circular; the agreement/clustering machinery here is
+    unchanged by where the corpus comes from.
+    """
+    from datetime import timedelta
+    cutoff = (date.today() - timedelta(days=lookback_days)).isoformat()
+    try:
+        rows = (
+            sb.table("theme_news")
+            .select("headline, published_date, run_date, source")
+            .gte("run_date", cutoff)
+            .limit(5000)
+            .execute()
+            .data
+        )
+    except Exception as exc:
+        print(f"[theme_discovery] theme_news read failed ({exc.__class__.__name__}); "
+              f"falling back to a live fetch.")
+        return []
+
+    seen: set[str] = set()
+    corpus: list[dict] = []
+    for r in rows or []:
+        headline = (r.get("headline") or "").strip()
+        src = str(r.get("source") or "brave")
+        if not headline or src.startswith("mock_"):
+            continue
+        key = headline.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        corpus.append({
+            "text": headline,
+            "date": r.get("published_date") or r.get("run_date") or "",
+            "source": src,
+            "theme": "",
+        })
+    return corpus
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Orchestration
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_discovery(sb=None, run_date: date | None = None) -> dict | None:
+def run_discovery(sb=None, run_date: date | None = None,
+                  prefer_theme_news: bool = True) -> dict | None:
     """
     5-step discovery:
-    1. Assemble corpus from Brave News + Reddit (6 months)
+    1. Assemble corpus — from the persisted ``theme_news`` table (preferred), else
+       a live Brave News + Reddit fetch for the Tier-1 themes (6 months)
     2. Preprocess: tokenize, remove stopwords
     3. LDA: topics with word distributions
     4. Embedding clustering: SBERT + UMAP + HDBSCAN
     5. Agreement: both methods → Tier 2; one method → Tier 3 → persist (shadow)
     """
     run_date = run_date or date.today()
+    sb = sb or _make_supabase()
 
-    # Step 1: Collect documents — for each Tier 1 theme, 6 months of news + posts.
-    corpus = []
-    themes_to_scan = [
-        "Fed Policy", "Inflation", "China Growth", "US Dollar",
-        "Geopolitical Risk", "Corporate Credit", "Energy Prices", "US Election"
-    ]
-    for theme in themes_to_scan:
-        news = fetch_news_for_theme(theme, lookback_days=LOOKBACK_MONTHS * 30)
-        posts = fetch_posts_for_theme(theme, lookback_days=LOOKBACK_MONTHS * 30)
-        for n in news:
-            corpus.append({"text": n["headline"], "date": n.get("date", ""), "source": "brave", "theme": theme})
-        for p in posts:
-            corpus.append({"text": p["title"], "date": p.get("date", ""), "source": "reddit", "theme": theme})
+    # Step 1: Assemble the corpus. Prefer the headlines the daily pipeline already
+    # stored (fast, deterministic, no redundant Brave calls); fall back to a live
+    # fetch when no persisted corpus is available (bootstrap, or a test with the
+    # fetchers stubbed).
+    corpus: list[dict] = []
+    if prefer_theme_news and sb is not None:
+        corpus = corpus_from_theme_news(sb, lookback_days=LOOKBACK_MONTHS * 30)
+        if corpus:
+            print(f"[theme_discovery] Corpus from theme_news: {len(corpus)} unique headlines.")
+
+    if not corpus:
+        themes_to_scan = [
+            "Fed Policy", "Inflation", "China Growth", "US Dollar",
+            "Geopolitical Risk", "Corporate Credit", "Energy Prices", "US Election"
+        ]
+        for theme in themes_to_scan:
+            news = fetch_news_for_theme(theme, lookback_days=LOOKBACK_MONTHS * 30)
+            posts = fetch_posts_for_theme(theme, lookback_days=LOOKBACK_MONTHS * 30)
+            for n in news:
+                corpus.append({"text": n["headline"], "date": n.get("date", ""), "source": "brave", "theme": theme})
+            for p in posts:
+                corpus.append({"text": p["title"], "date": p.get("date", ""), "source": "reddit", "theme": theme})
 
     if len(corpus) < MIN_DOCS_PER_THEME:
         print(f"Warning: corpus has only {len(corpus)} docs, expected >= {MIN_DOCS_PER_THEME}")
@@ -212,7 +279,13 @@ def run_discovery(sb=None, run_date: date | None = None) -> dict | None:
     processed = [preprocess(t) for t in texts]
     dictionary = corpora.Dictionary(processed)
     corpus_bow = [dictionary.doc2bow(p) for p in processed]
-    lda_model = models.LdaModel(corpus_bow, num_topics=10, passes=5, random_state=42)
+    # id2word=dictionary is REQUIRED: without it LdaModel keys topics by integer
+    # token-id, so show_topics() returns id strings ("16", "54") instead of words —
+    # the topic term-sets are then all-numeric, can never overlap the (word-based)
+    # embedding clusters, and Tier-2 agreement is structurally impossible.
+    lda_model = models.LdaModel(
+        corpus_bow, id2word=dictionary, num_topics=10, passes=5, random_state=42
+    )
     lda_sets = lda_topic_sets(lda_model, topn=6)
 
     # Step 4: Embedding clustering
@@ -227,8 +300,7 @@ def run_discovery(sb=None, run_date: date | None = None) -> dict | None:
     print(f"Theme discovery: {len(agreement['tier2'])} Tier 2 (agreement), "
           f"{len(agreement['tier3'])} Tier 3 (single-method), corpus={len(corpus)}")
 
-    sb = sb or _make_supabase()
-    if sb is not None:
+    if sb is not None:   # created at the top of the function
         persist_discovered_themes(sb, run_date, agreement, corpus_size=len(corpus))
 
     return agreement

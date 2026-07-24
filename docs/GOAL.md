@@ -216,6 +216,67 @@ the next open slot; a data-layer patch of the persisted weight would be redundan
 `snapHeadroom` and overwritten on the next run, so it was not the right lever. 546
 backend + 129 frontend.
 
+### Loop iteration 57 (2026-07-25)
+
+**Positions and the published book were on different DAYS, and every local run this
+session caused it.**
+
+Tenth deploy refusal, so this re-derived against the live DB instead — and found the
+tables disagreeing about which day it is:
+
+| table | run_date | rows |
+|---|---|---|
+| `research_recommendations` | **2026-07-25** | 9 picks |
+| `portfolio_positions` | **2026-07-24** | 38 |
+| `portfolio_positions` | 2026-07-25 | **0** |
+
+`/risk` was computing VaR, beta, HHI, attribution and cap utilisation on **38 positions
+dated 07-24**, beneath a header reading **RUN DATE 2026-07-25**.
+
+**The cause is mine.** `main()` stamped `run_date = date.today()` — the *local* calendar
+date. The scheduled job runs on a **UTC** runner at 21:30, and a local run from this
+**UTC+8** machine at 06:00 is the *same instant* as 22:00 UTC the day before, so
+`date.today()` returns **tomorrow's** date relative to it:
+
+```
+utc_run_date() = 2026-07-24      ← what the scheduled job stamps
+date.today()   = 2026-07-25      ← what every local run this session stamped
+utc now        = 2026-07-24T22:47
+```
+
+**Caught by an existing check, not by a test** — and the distinction matters. Iteration
+32's ADR-0040 reconciliation said *"THESE ARE PROVISIONAL POSITIONS, NOT THE PUBLISHED
+BOOK — 38 held · 9 published."* That warning was right and was the only reason anyone
+looked. **But it describes the symptom**: a count mismatch, which reads identically when
+the pipeline is simply mid-run — the ordinary case it was built for. The *date*
+disagreement underneath it was invisible.
+
+`utc_run_date()` fixes it. **Nothing about the scheduled run changes** — it already
+effectively used UTC — and UTC is the right trading date rather than merely a convenient
+one: 21:30 UTC is 17:30 ET, the same calendar day in both zones, so
+[ADR-0062](adrs/0062-run-date-is-not-a-write-timestamp.md)'s forward-dating stays intact
+while the writer's own timezone stops being part of the identifier. Scoped to the run
+*identifier*; the other `date.today()` uses are durations (news look-back, backtest
+range, discovery cutoff), where a one-day shift is not a correctness problem.
+
+**The regression test asserts the source, not the value.** Comparing `utc_run_date()`
+against `date.today()` passes on any UTC runner — which is where CI runs — so it could
+never catch a reversion. It reads the function body, stripping the docstring first,
+because the docstring *mentions* `date.today()` to explain the bug.
+
+549 backend tests. [ADR-0069](adrs/0069-run-date-is-utc-not-the-local-clock.md).
+
+**A correction I nearly published.** Before finding the real cause I read `/risk`, saw no
+provisional warning, and was one step from reporting the ADR-0040 check as broken. It was
+firing correctly — **my regex required a `.` within 200 characters and the sentence did
+not have one.** Assert on the DOM, and when a check appears to have failed, suspect the
+assertion before the code. That is the iteration-19 lesson, met for the third time.
+
+**Left open and named:** existing rows are not rewritten. Positions stay at 07-24 and the
+book at 07-25 until the next run reconciles them, with the ADR-0040 warning correctly
+covering the page meanwhile. Backfilling a run identifier would be rewriting history to
+match a convention adopted after it.
+
 ### Loop iteration 56 (2026-07-25)
 
 **The cap-breach fix is live and verified. Fixing the badge invalidated a deferral, and

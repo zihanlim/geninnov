@@ -110,6 +110,44 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 26 (2026-07-24)
+
+**The panel I shipped last iteration asserted something it could not know, and I
+caught it by reading my own output.**
+
+`ClearedNotTaken` labelled every theme overlap *"yes — would largely duplicate a held
+bet"*. The data does not support that. The **Geopolitical Risk** theme alone holds
+four of today's positions, in four sectors, on both sides:
+
+| held | side | sector |
+|---|---|---|
+| TLT | long | Rates |
+| EFA | long | Developed Equities |
+| SLV | short | Metals |
+| NOC | short | Defense |
+
+So theme overlap says almost nothing about duplication. Two rows were plainly wrong:
+**GDX** was called a duplicate of a theme whose holdings are mostly *long*, and
+**QQQ long** a duplicate of US Election — held via UNH long and ARKK **short**. The
+verdict happened to be right for GDX and GLD **for a reason that was wrong**, which
+is the worst kind of correct: it survives spot-checking and fails under questioning.
+
+Redundancy is properly a question of **correlation**, and `correlation_pairs` is
+computed for the **book** only — there is no candidate-vs-held figure to render.
+Rather than proxy it with something that reads stronger than it is, the column now
+states the bare fact (*"Theme also held? yes/no"*) and the lede says outright what it
+does not prove.
+
+**Showing a weak signal honestly beats dressing it as a strong one.** This is the
+same failure mode the whole session has been about — a plausible inference presented
+as fact — and this time it was mine, one iteration old. Worth noting how it was
+found: not by a test, but by reading the rendered table and asking whether each row
+was true. That has now caught more defects here than any other method.
+
+**If a candidate-vs-held correlation is ever wanted**, `compute_correlation_matrix`
+already exists and would need extending to score unheld candidates against the book.
+That is the honest version of the column, not a better proxy.
+
 ### Loop iteration 25 (2026-07-24)
 
 **"Why isn't X in the book?" finally has an answer — and it is the answer to Q1's

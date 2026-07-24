@@ -222,6 +222,53 @@ DFII10 2.43, a fetch-timing artifact that the next full run reconciles. No code 
 this iteration; docs brought back into lockstep with the live book. 538 backend + 120
 frontend.
 
+### Loop iteration 53 (2026-07-25)
+
+**The cap fix did not fix the page, because the same rule is implemented twice and the
+board never read the fixed one.**
+
+The deploy window opened briefly, so
+[ADR-0067](adrs/0067-a-column-must-name-the-subset-it-measures.md) went live and is
+**verified**: `/risk`'s column now reads `Avg |ρ| · flagged ≥ 0.70`, the misleading
+*"to book"* is gone, and the empty-column note renders.
+
+**But `/risk` still read "1 breached"** — and checking rather than assuming showed why.
+The limit board **does not read the backend's persisted `cap_utilisation` at all.** It
+recomputes each row's status client-side, through its own comparison:
+
+```ts
+if (util > 1) return "breached";
+```
+
+For the live geo cap that is `0.35000000000000003 / 0.35 = 1.0000000000000002`, so the
+phantom breach kept rendering **regardless of** the ADR-0068 backend fix shipped an hour
+earlier.
+
+**Two implementations of one rule is exactly the drift
+[ADR-0058](adrs/0058-explanations-are-owed-per-empty-slot.md) and
+[ADR-0064](adrs/0064-the-audit-page-blamed-the-pipeline-for-its-own-arithmetic.md) were
+both about** — a verdict re-derived at a second site, diverging from the one computed
+upstream. I had written that lesson down twice and still shipped a fix to one site and
+called the defect closed. **Checking the page rather than the diff is what caught it.**
+
+`CAP_UTIL_EPSILON` mirrors `book_metrics.CAP_EPSILON` with the same reasoning: the
+allocator **clamps** a group to its cap (ADR-0037), so a fully-utilised book sits exactly
+on the limit by design. A representation-error guard, not an economic tolerance — 1e-9 of
+utilisation against a 0.35 cap is ~3.5e-10 of weight, five orders below the ~3e-4 that
+one basis point of real overshoot produces.
+
+**Mirrored rather than shared, deliberately:** the frontend cannot import a Python
+constant, so the two are kept adjacent by name and comment — the same treatment
+`HIGH_CORR_THRESHOLD` already gets. **If a third site appears, that is the signal to
+persist the verdict rather than recompute it.**
+
+125 frontend tests, pinned with the exact live value that produced "1 breached", plus
+equality-at-cap, a real 1bp overshoot, and the near/ok bands.
+
+**Not live.** The deploy window closed again between committing and deploying, so `/risk`
+still shows "1 breached" until the quota resets. Committed, tested, built — and said
+plainly rather than implied.
+
 ### Loop iteration 52 (2026-07-25)
 
 **The book reported a cap violation it had not committed, and the message said so in

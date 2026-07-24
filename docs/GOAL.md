@@ -220,6 +220,17 @@ exactly"* (the iteration-48/49 EdgeScore fix is live). Found the way every real 
 here is found: cross-reading the value against a baseline printed beside it. No new
 ADR — it satisfies `concentration_hhi`'s existing contract. 533 backend + 120 frontend.
 
+**Addendum — the fix got a second, independent confirmation minutes later.** A
+concurrent L0–L4 pipeline run (21:43 UTC) refreshed the book and re-persisted
+`portfolio_risk` for 07-25, superseding my manual value. It wrote **HHI 350.6** on the
+refreshed book — and 350.6 is exactly the **gross-normalised** result for that book
+(the raw, cash-diluted formula would have written 135). So the code on `main` is what
+the pipeline now runs: the fix is live end-to-end, not just in my hand-persisted row.
+That run also left `portfolio_positions` (40 candidate names) ahead of
+`research_recommendations.picks` (the 9-name book) because it skipped L5 — a transient
+book-of-record divergence that belongs to the other session's in-flight run, and that
+its next full run (L5 included) resolves; not caused by and not part of this HHI fix.
+
 ### Loop iteration 49 (2026-07-25)
 
 **The regime headline on the showcase page said the yield curve was flat at 0bps. It

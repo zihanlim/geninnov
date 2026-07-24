@@ -81,7 +81,7 @@ find, not just what you changed:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 428 backend + 40 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 436 backend + 45 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -1704,12 +1704,15 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   "conviction")`), so a near-zero-vol name absorbs the book until the single-name cap
   stops it. Inverse-vol sizing taken to the point where it stops scaling risk and
   starts seeking the least volatile thing available.
-  **The standard fix is a vol floor** — `|edge| / max(vol, floor)` — which puts every
-  name in a comparable band. It is deliberately NOT shipped in iteration 31: the
-  floor's value is a judgement call that changes every position's size, and picking
-  the constant in the dark is exactly what this file's principles forbid. It needs
-  its own ADR, a stated basis for the number, and a pipeline run to see the resulting
-  book. **This is the next iteration's step.**
+  **DONE, iteration 32** ([ADR-0047](adrs/0047-conviction-needs-a-vol-floor.md),
+  migration 035). `conviction = |EdgeScore| / max(vol, 0.00315)` — ~5% annualised, on
+  the stated economic basis that this is the conventional line between a cash-like
+  instrument and a risk position, and **absolute rather than a percentile of the
+  day's names** (a relative floor would make a *sizing weight* a statement about
+  whatever was scored alongside it, the defect ADR-0042 removed from HypeScore).
+  Verified on a live run: **BIL 2375.2× → 92.8×**, SHY 292.1 → 87.7, AGG 99.2 → 82.8,
+  IEF unchanged at 79.6, every above-floor name untouched — a floor, not a rescaling.
+  Book-wide max/median **148× → under 6×**.
 - **`/risk` publishes a provisional book for the minutes L5 takes** — found
   2026-07-25 by reading the abstention roster against the positions table above it.
   L1 writes its **full candidate set** to `portfolio_positions` (39 rows today) and

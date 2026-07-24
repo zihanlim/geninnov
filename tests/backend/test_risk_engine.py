@@ -228,6 +228,29 @@ def test_compute_risk_hhi_exact_with_short_book():
     assert out["hhi"].display_status == "exact"
 
 
+def test_compute_risk_hhi_is_invariant_to_cash_level():
+    """HHI measures how concentrated the book's BETS are, not how much is in cash.
+
+    Two positions each at 25% of capital (50% held in cash) are exactly as
+    concentrated as the same two at 50% each (fully invested) — both HHI 5000.
+    Weighting by raw share of capital instead diluted it to 1250, which on the live
+    book put HHI (425) below its own "10 000/N fully diversified" baseline and let
+    the 2 000 concentration limit under-fire because cash was lowering the index.
+    """
+    fully_invested = compute_risk(
+        book=[{"weight": 0.5}, {"weight": -0.5}],
+        history=[0.001] * 5, spx_returns=[0.001] * 5,
+    )
+    half_in_cash = compute_risk(
+        book=[{"weight": 0.25}, {"weight": -0.25}],
+        history=[0.001] * 5, spx_returns=[0.001] * 5,
+    )
+    assert half_in_cash["hhi"].value == fully_invested["hhi"].value == 5000.0
+    # Raw (un-normalised) share-of-capital weighting would have read 0.25²·2·10000 =
+    # 1250 — diluted by the cash, and below equal-weight-2's own 5000 floor.
+    assert half_in_cash["hhi"].value != 1250.0
+
+
 def test_compute_risk_emits_estimated_even_with_short_history():
     """Parametric formulas emit 'estimated' (not 'unavailable') even with <30 obs,
     as long as we have at least 2 data points. HHI is exact and doesn't need history."""

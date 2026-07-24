@@ -167,9 +167,22 @@ def _beta_to_spx(portfolio_returns: pd.Series, spx_returns: pd.Series) -> float:
 
 
 def _hhi(book: list[dict]) -> float:
-    """HHI from |weight| of each book position, scaled to 0-10000."""
-    weights = [abs(p.get("weight", 0.0)) for p in book]
-    return concentration_hhi(weights)
+    """HHI of book concentration on the 0-10000 scale.
+
+    Weight each position by its share of GROSS exposure — |weight| normalised to
+    sum to 1.0, the unit concentration_hhi documents — so the index measures how
+    concentrated the book's *bets* are, independent of how much of the mandate sits
+    in cash. Passing the raw shares-of-capital (which sum to gross, e.g. ~0.59 when
+    41% is in cash) diluted it by the cash level: the live book read HHI 425,
+    *below* its own "10 000/N fully diversified" baseline (1 111 for 9 names) —
+    impossible for a real HHI — and the 2 000 concentration limit under-triggered
+    because cash, not diversification, was lowering the number.
+    """
+    abs_weights = [abs(p.get("weight", 0.0)) for p in book]
+    gross = sum(abs_weights)
+    if gross <= 0:
+        return 0.0
+    return concentration_hhi([w / gross for w in abs_weights])
 
 
 # ── compute_risk (derivation-aware) ──────────────────────────────────────────
@@ -285,8 +298,7 @@ def compute_risk(
     beta_v: Optional[float] = (
         _beta_to_spx(rets_for_beta, spx) if len(rets_for_beta) >= 2 and len(spx) >= 2 else None
     )
-    weights = [abs(p.get("weight", 0.0)) for p in book]
-    hhi_v = concentration_hhi(weights)
+    hhi_v = _hhi(book)  # normalised by gross so cash does not dilute the index
 
     def _estimated(field_id: str, method_id: str, value: Optional[float], unit: str,
                    confidence: float) -> NumericDerivation:

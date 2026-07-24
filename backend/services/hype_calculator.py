@@ -15,7 +15,13 @@ class ScoringConfig:
     # EdgeScore direction weights (migrations 023–024). Direction = sign(EdgeScore),
     # EdgeScore = w_trend·Trend + w_regime·RegimeFit + w_carry·Carry + w_value·Value.
     # |EdgeScore| < edge_abstain_threshold → abstain (Stage 4).
-    # IC-informed (ADR-0033): carry earned a strong significant IC, trend a weak one.
+    # Priors informed by a WEAK POSITIVE IC, not a fitted result (ADR-0044).
+    # ADR-0033 set carry highest on "a strong significant IC, p=0.007" — measured
+    # on the OLD carry definition. ADR-0036 replaced that signal with excess yield
+    # over funding and never re-ran the test. Re-measured on the live definition:
+    # carry IC +0.128 (N=94, p=0.221), trend +0.033 (N=975, p=0.300), value +0.094
+    # (p=0.368) — all positive, NONE significant. Weights deliberately unchanged:
+    # re-fitting on p=0.22 would be fitting noise.
     edge_trend_weight: float = 0.20
     edge_regime_weight: float = 0.23
     edge_carry_weight: float = 0.34

@@ -38,7 +38,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0030](0030-unify-l5-candidate-pool-with-l1.md) | Unify the L5 candidate pool with L1 (screen_candidates consumes rank_trade_candidates) | accepted | 2026-07-23 |
 | [0031](0031-edge-score-direction-signal.md) | EdgeScore: anchor long/short direction to trend + regime, not sentiment | accepted | 2026-07-23 |
 | [0032](0032-edge-carry-value-abstention-sizing.md) | EdgeScore Stages 3–4: Carry, Value, abstention, conviction sizing | accepted | 2026-07-23 |
-| [0033](0033-edge-stage5-sentiment-ic-weights.md) | EdgeScore Stage 5: sentiment demotion + IC-fit weights | accepted | 2026-07-24 |
+| [0033](0033-edge-stage5-sentiment-ic-weights.md) | EdgeScore Stage 5: sentiment demotion + IC-fit weights | accepted (IC claim **corrected by [0044](0044-carry-ic-was-measured-on-a-superseded-signal.md)**) | 2026-07-24 |
 | [0034](0034-scoring-config-anon-read-policy.md) | Public read policy on scoring_config (frontend sees live weights) | accepted | 2026-07-24 |
 | [0035](0035-volume-subscore-7day-average.md) | HypeScore Volume = 7-day average mentions, not the 1-day count | accepted | 2026-07-24 |
 | [0036](0036-carry-as-excess-yield-over-funding.md) | Carry = excess yield over funding (two-sided); a missing component renormalises rather than scoring 0 | accepted | 2026-07-24 |
@@ -49,6 +49,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0041](0041-regime-as-a-dial-not-a-cliff.md) | The regime is a dial, not a cliff — continuous risk appetite drives direction, the label is display only | accepted | 2026-07-24 |
 | [0042](0042-absolute-hype-subscores.md) | HypeScore sub-scores are absolute, not relative to the day's peer group (supersedes 0006, 0028) | accepted | 2026-07-24 |
 | [0043](0043-single-company-universe.md) | Single companies enter the universe (only meaningful once direction became per-asset) | accepted | 2026-07-24 |
+| [0044](0044-carry-ic-was-measured-on-a-superseded-signal.md) | The carry IC justifying its 0.34 weight was measured on a superseded signal — corrects 0033 | accepted | 2026-07-24 |
 
 ## When to write an ADR
 

@@ -85,7 +85,17 @@ def _fred_series(series_id: str, api_key: str) -> pd.Series | None:
         return None
 
 
-def _ic(signals: list[float], forwards: list[float]) -> dict:
+def _ic(signals: list[float | None], forwards: list[float]) -> dict:
+    """Rank IC of a signal against forward returns, dropping NOT-COMPUTABLE points.
+
+    ``carry_signal``/``value_signal`` return None where L0 cannot support the
+    component (ADR-0036). Those observations must leave the SAMPLE — scoring them
+    as 0.0 would be measuring our data coverage rather than the signal, and would
+    drag the IC toward zero exactly where we know least.
+    """
+    pairs = [(s, f) for s, f in zip(signals, forwards) if s is not None]
+    signals = [s for s, _ in pairs]
+    forwards = [f for _, f in pairs]
     n = len(signals)
     if n < 30:
         return {"n": n, "ic": float("nan"), "t": float("nan"), "p": float("nan"), "hit": float("nan")}
@@ -119,7 +129,21 @@ def _trend_ic(close: pd.DataFrame) -> dict:
 
 
 def _macro_ic(close: pd.DataFrame, api_key: str) -> tuple[dict, dict]:
-    """Carry + Value IC pooled across the credit/rates sleeves."""
+    """Carry + Value IC pooled across the credit/rates sleeves.
+
+    Carry is EXCESS YIELD OVER FUNDING (ADR-0036), so the backtest has to hand
+    carry_signal the same inputs production does — the sleeve's own series PLUS the
+    10y nominal yield and the overnight rate. Feeding it only the sleeve series
+    returned None for every observation and the script died on the first abs().
+    Testing a signal on inputs the production path never sees is worse than not
+    testing it, because the number looks like evidence.
+    """
+    funding = _fred_series("DFF", api_key)
+    ust10 = _fred_series("DGS10", api_key)
+    if funding is None or ust10 is None:
+        print("  skip Carry/Value: need DGS10 + DFF for excess-yield carry")
+        return _ic([], []), _ic([], [])
+
     carry_sig, carry_fwd, value_sig, value_fwd = [], [], [], []
     for asset_class, series_id, etf in MACRO_SLEEVES:
         levels = _fred_series(series_id, api_key)
@@ -142,7 +166,17 @@ def _macro_ic(close: pd.DataFrame, api_key: str) -> tuple[dict, dict]:
             f = float(fwd_slice.iloc[FWD_WINDOW] / fwd_slice.iloc[0] - 1.0)
             if not np.isfinite(f):
                 continue
-            carry_sig.append(carry_signal(asset_class, {series_id: {"value": level}})); carry_fwd.append(f)
+            # As-of values for the two funding inputs, never look-ahead.
+            f_hist = funding.loc[:dt]
+            u_hist = ust10.loc[:dt]
+            if f_hist.empty or u_hist.empty:
+                continue
+            macro = {
+                series_id: {"value": level},
+                "DFF": {"value": float(f_hist.iloc[-1])},
+                "DGS10": {"value": float(u_hist.iloc[-1])},
+            }
+            carry_sig.append(carry_signal(asset_class, macro)); carry_fwd.append(f)
             value_sig.append(value_signal(asset_class, {series_id: z})); value_fwd.append(f)
     return _ic(carry_sig, carry_fwd), _ic(value_sig, value_fwd)
 
@@ -195,6 +229,71 @@ def main() -> None:
         print(f"  edge_{k.lower()}_weight : {weights[k]:.4f}   (prior {priors[k]:.2f})")
     print("\nRegime + Sentiment keep priors (not IC-testable yet — thin history).")
     print("Copy these into scoring_config (migration) once you're satisfied with N.")
+
+    _persist(ics)
+
+
+def _persist(ics: dict[str, dict]) -> None:
+    """Write the ICs to backtest_results so the site can render them.
+
+    Until now this script only PRINTED. That is why `backtest_results` held nothing
+    for EdgeScore and nothing on the site said whether the signal that actually
+    decides the trades has any predictive power — the harness existed, was run once,
+    and its output lived in a terminal that scrolled away. A validation nobody can
+    see is not a validation.
+    """
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        print("[persist] No SUPABASE_URL/SERVICE_KEY — results printed only.")
+        return
+    try:
+        from supabase import create_client
+        import json
+        from datetime import date
+
+        sb = create_client(url, key)
+        today = date.today().isoformat()
+        for name, v in ics.items():
+            ic = v["ic"]
+            # No unique constraint on (metric_name, end_date), so replace rather
+            # than upsert — otherwise a re-run unions with itself and the panel
+            # would render two ICs for one component.
+            sb.table("backtest_results").delete().eq(
+                "metric_name", f"edge_ic_{name.lower()}"
+            ).eq("end_date", today).execute()
+            sb.table("backtest_results").insert(
+                {
+                    # test_name groups the run (matches the hype_ic convention);
+                    # metric_name identifies the component within it.
+                    "test_name": "edge_ic",
+                    "metric_name": f"edge_ic_{name.lower()}",
+                    "start_date": today,
+                    # `pass` = did this component clear conventional significance?
+                    # Recorded honestly: on 2026-07-24 none of the three testable
+                    # components did, and that is the finding.
+                    "pass": bool(np.isfinite(v["p"]) and v["p"] < 0.05),
+                    "realized_value": None if not np.isfinite(ic) else float(ic),
+                    "end_date": today,
+                    # Everything a reader needs to judge the number, including the
+                    # parts that make it look weak. N and p are not optional context.
+                    "notes": json.dumps(
+                        {
+                            "component": name,
+                            "n": int(v["n"]),
+                            "t_stat": None if not np.isfinite(v["t"]) else round(float(v["t"]), 3),
+                            "p_value": None if not np.isfinite(v["p"]) else round(float(v["p"]), 4),
+                            "hit_rate": None if not np.isfinite(v["hit"]) else round(float(v["hit"]), 4),
+                            "horizon_days": FWD_WINDOW,
+                            "panel": len(PANEL),
+                            "testable": bool(np.isfinite(ic)),
+                        }
+                    ),
+                }
+            ).execute()
+        print(f"[persist] {len(ics)} EdgeScore component ICs written to backtest_results.")
+    except Exception as exc:
+        print(f"[persist] failed ({exc.__class__.__name__}): {exc}")
 
 
 if __name__ == "__main__":

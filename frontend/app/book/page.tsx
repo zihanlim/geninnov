@@ -23,6 +23,7 @@ import EdgeBars from "@/components/book/EdgeBars";
 import SizingChainView from "@/components/book/SizingChainView";
 import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import AbstentionRoster from "@/components/book/AbstentionRoster";
+import BookTurnover from "@/components/book/BookTurnover";
 import ClearedNotTaken, {
   type CandidateRow,
   type CandidateCorrelations,
@@ -127,6 +128,21 @@ interface Recommendation {
   lens?: string | null;
 }
 
+/** picks arrives as jsonb (already an array) on most reads and as a JSON string on
+ *  some, so both the current book and the previous one go through the same parser
+ *  rather than each row growing its own inline try/catch. */
+function parsePicks(raw: Pick[] | string | null | undefined): Pick[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw) as Pick[];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 const fmtUSD = (n?: number | null) =>
   n === null || n === undefined || Number.isNaN(n)
     ? "—"
@@ -180,6 +196,9 @@ function BookPageInner() {
     Record<keyof EdgeWeights, boolean>
   >({ trend: false, regime: false, carry: false, value: false, sentiment: false, abstainThreshold: false });
   const [candidates, setCandidates] = useState<CandidateRow[]>([]);
+  const [prevBook, setPrevBook] = useState<{ date: string; assets: string[] } | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [openAsset, setOpenAsset] = useState<string | null>(null);
 
@@ -194,8 +213,9 @@ function BookPageInner() {
             "run_date, picks, book_view, book_risks, agent_run_id, advisory_derivation, book_metrics, scenario_results, cap_utilisation, screening_funnel, correlation_pairs, candidate_correlations, lens"
           )
           .order("run_date", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
+          // Two rows, not one: the second is the previous run_date, which is what
+          // "would you get the same answer tomorrow?" is measured against.
+          .limit(2),
         supabase.from("scoring_config").select("param_name, value"),
         supabase
           .from("portfolio_positions")
@@ -214,6 +234,18 @@ function BookPageInner() {
 
       // Live EdgeScore weights + abstain threshold. Missing rows fall back to the
       // migration-024 defaults, and `resolved` records which were actually found.
+      const recRows = (recRes.data as Recommendation[] | null) ?? [];
+      if (recRows.length > 1) {
+        setPrevBook({
+          date: recRows[1].run_date,
+          // Same string-or-array tolerance as the current row below: picks comes
+          // back as jsonb from one client path and as a string from another.
+          assets: parsePicks(recRows[1].picks)
+            .map((p) => p.asset)
+            .filter(Boolean),
+        });
+      }
+
       const cfg = edgeWeightsFromConfig(
         (cfgRes.data as ScoringConfigRow[] | null) ?? null,
         DEFAULT_EDGE_WEIGHTS
@@ -260,19 +292,11 @@ function BookPageInner() {
         return;
       }
 
-      const r = data as Recommendation | null;
+      // .limit(2) returns an array; the newest row is the current book and the
+      // second (when present) is the previous run_date, used for turnover.
+      const r = (data as Recommendation[] | null)?.[0] ?? null;
       if (r) {
-        const picks = Array.isArray(r.picks)
-          ? r.picks
-          : typeof r.picks === "string"
-            ? (() => {
-                try {
-                  return JSON.parse(r.picks as unknown as string) as Pick[];
-                } catch {
-                  return [];
-                }
-              })()
-            : [];
+        const picks = parsePicks(r.picks);
         setRec({ ...r, picks });
 
         // EdgeScore per position theme — the theme-latest fallback when a
@@ -720,6 +744,13 @@ function BookPageInner() {
               />
             </>
           )}
+
+          {/* ── Turnover vs the previous run ─────────────────────────────── */}
+          <BookTurnover
+            current={(rec?.picks ?? []).map((p) => p.asset).filter(Boolean)}
+            previous={prevBook?.assets ?? null}
+            previousDate={prevBook?.date ?? null}
+          />
 
           {/* ── Abstention roster ───────────────────────────────────────── */}
           <ClearedNotTaken

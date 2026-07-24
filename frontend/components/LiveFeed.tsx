@@ -25,7 +25,13 @@ interface PipelineRun {
 
 // The stages daily_refresh.py records. A stage absent from the latest run_date
 // did not run — which is information, not an error in this component.
-const EXPECTED_STAGES = ["L0", "L2", "L3", "L5"];
+//
+// This list held only L0/L2/L3/L5 because L1 and L4 never called
+// record_pipeline_run(). The bar therefore read "All stages complete · 4/4
+// succeeded" while /method, on the same screen, said of both missing stages
+// "Last success: never" — 4/4 was counting the stages that report, not the stages
+// that exist. Both are instrumented now, so the denominator is the real one.
+const EXPECTED_STAGES = ["L0", "L1", "L2", "L3", "L4", "L5"];
 
 type Health = "healthy" | "degraded" | "failed" | "unknown";
 

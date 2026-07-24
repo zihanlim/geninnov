@@ -1455,6 +1455,19 @@ def main():
             print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
 
     # ── Phase 1–4: Theme signals → HypeScore → TradeScore ──────────────────
+    # L1 is instrumented like every other stage. It was not, and /method said so
+    # honestly — "Last success: never — no row with status='success'" — while the
+    # status bar next to it read "All stages complete · 4/4 succeeded", because 4/4
+    # counted only the stages that report. Theme detection is the heart of Q2's
+    # "daily process"; a process page that cannot say whether it ran is not
+    # describing a process.
+    l1_started = datetime.now(timezone.utc)
+    l1_id = run_id_for(run_date, stage="L1")
+    try:
+        record_pipeline_run(supabase, l1_id, "started", run_date=run_date, stage="L1")
+    except Exception as exc:
+        print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
+
     themes = load_themes()
     raw = build_theme_signals(themes, run_date)
     hyped = compute_hype_scores(raw, cfg)
@@ -1472,6 +1485,16 @@ def main():
                                  asset_edges=asset_edges)
     persist(run_date, scored)
     persist_theme_news(run_date, scored)
+    try:
+        record_pipeline_run(
+            supabase, l1_id, "success", run_date=run_date, stage="L1",
+            duration_s=(datetime.now(timezone.utc) - l1_started).total_seconds(),
+            # Freshness is the point of the stage: how many themes actually got
+            # scored, not merely that the code returned.
+            source_freshness={"themes_scored": len(scored)},
+        )
+    except Exception as exc:
+        print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
 
     # ── Phase 3: trade ranking + portfolio construction ─────────────────────
     longs, shorts = rank_and_persist_trade_candidates(scored, run_date, cfg,
@@ -1482,9 +1505,38 @@ def main():
         return
 
     positioned = allocate_and_persist_portfolio(candidates, run_date, cfg)
-    compute_and_persist_daily_return(positioned, run_date, cfg.total_capital)
-    risk_metrics = compute_and_persist_risk(positioned, run_date, cfg)
-    compute_and_persist_cumulative_return(run_date)
+
+    # L4 (risk engine) was the other uninstrumented stage. It produces every number
+    # on /risk, so "did it run today?" is exactly the question a reader needs
+    # answered before trusting a VaR.
+    l4_started = datetime.now(timezone.utc)
+    l4_id = run_id_for(run_date, stage="L4")
+    try:
+        record_pipeline_run(supabase, l4_id, "started", run_date=run_date, stage="L4")
+    except Exception as exc:
+        print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
+    try:
+        compute_and_persist_daily_return(positioned, run_date, cfg.total_capital)
+        risk_metrics = compute_and_persist_risk(positioned, run_date, cfg)
+        compute_and_persist_cumulative_return(run_date)
+    except Exception as exc:
+        try:
+            record_pipeline_run(
+                supabase, l4_id, "failure", run_date=run_date, stage="L4",
+                duration_s=(datetime.now(timezone.utc) - l4_started).total_seconds(),
+                error=str(exc),
+            )
+        except Exception as rec_exc:
+            print(f"[pipeline_runs] record failed ({rec_exc.__class__.__name__}): {rec_exc}")
+        raise
+    try:
+        record_pipeline_run(
+            supabase, l4_id, "success", run_date=run_date, stage="L4",
+            duration_s=(datetime.now(timezone.utc) - l4_started).total_seconds(),
+            source_freshness={"positions_priced": len(positioned)},
+        )
+    except Exception as exc:
+        print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
 
     # ── Phase 5: L5 — Q1 AI reasoning agent ──────────────────────────────────────
     # Lazy import to avoid requiring anthropic if not installed in unit-test envs

@@ -169,10 +169,14 @@ function lpad(s: string, n: number) {
 /* ══ Stage definitions ═══════════════════════════════════════════════════════
 
    `instrumented` records whether scripts/daily_refresh.py wraps the stage in
-   record_pipeline_run(). Only L0, L2, L3 and L5 do. For those, the absence of a
-   row is evidence the stage never started (the "started" sentinel is written
-   before the work begins). For L1 and L4 the absence of a row proves nothing —
-   they are simply not instrumented. Conflating the two would be a lie.        */
+   record_pipeline_run(). ALL SIX now do, so the absence of a row is evidence the
+   stage never started — the "started" sentinel is written before the work begins.
+
+   L1 and L4 were the exceptions until 2026-07-24, and the gap mattered: L1 is
+   theme detection (the whole of Q2's daily process) and L4 produces every number
+   on /risk, so neither could answer "did you run today?". The flag stays because
+   conflating "no row" with "did not run" would be a lie for any stage that ever
+   stops reporting.                                                            */
 
 const STAGES: {
   code: string;
@@ -194,7 +198,7 @@ const STAGES: {
     what:
       "Brave News + Reddit → VADER sentiment, mention counts, price correlation, momentum",
     writes: "theme_signals_history",
-    instrumented: false,
+    instrumented: true,
   },
   {
     code: "L2",
@@ -216,7 +220,7 @@ const STAGES: {
     name: "Risk engine",
     what: "parametric VaR/CVaR, Sharpe, beta vs SPX, concentration HHI",
     writes: "portfolio_risk",
-    instrumented: false,
+    instrumented: true,
   },
   {
     code: "L5",
@@ -861,12 +865,13 @@ export default function MethodPage() {
 
             <div className="mt-3 grid grid-cols-1 gap-3">
               <Note tone="info" label="How to read the absence of a row">
-                <Code>scripts/daily_refresh.py</Code> wraps only L0, L2, L3 and L5 in{" "}
-                <Code>record_pipeline_run()</Code>. For those four, the sentinel row is written
-                before the stage does any work, so a missing row means the stage never started.
-                L1 and L4 execute inside the same script but emit no row at all — they are shown
-                as <span className="num">not instrumented</span>, and their health has to be read
-                from the tables they write.
+                <Code>scripts/daily_refresh.py</Code> wraps all six stages in{" "}
+                <Code>record_pipeline_run()</Code>. The sentinel row is written before the stage
+                does any work, so a missing row means the stage never started — not that it ran
+                silently. L1 and L4 were uninstrumented until 2026-07-24 and reported{" "}
+                <span className="num">not instrumented</span> here while the status bar counted
+                &ldquo;4/4 succeeded&rdquo;; that denominator was the stages that reported, not
+                the stages that exist.
               </Note>
               {runs.rows.some((r) => r.status === "partial" && r.finished_at === null) && (
                 <Note tone="warn" label="Unfinished stages">

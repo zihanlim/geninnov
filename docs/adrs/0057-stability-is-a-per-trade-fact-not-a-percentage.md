@@ -1,7 +1,12 @@
 # ADR-0057 — Stability is a per-trade fact, not a book-level percentage
 
 **Date:** 2026-07-25
-**Status:** Accepted
+**Status:** Accepted — **implemented, NOT yet confirmed rendering live.** The
+classifier is unit-tested and the deployed page fetches the right data (200,
+`end_date` matches `run_date`, `samples` 3), but the marker renders zero times, so
+`positionStability` is returning `unmeasured` for every row. One prop-chain bug was
+found and fixed and was not the whole cause. See `docs/GOAL.md` for the next
+debugging step. Nothing below should be read as describing what a reader sees today.
 **Relates to:** [0045](0045-turnover-on-names-without-a-verdict.md), [0048](0048-count-independent-ideas-not-candidates.md), [0050](0050-separate-agent-churn-from-market-churn.md)
 
 ## Context

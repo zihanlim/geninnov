@@ -174,6 +174,23 @@ long and a short of the same asset cannot inherit each other's stability.
 
 Also refreshed the standing facts above, which had drifted two books behind.
 
+**NOT YET RENDERING LIVE — do not believe the ADR's screenshots-in-waiting.** The
+classifier is unit-tested (7 tests), typechecks and builds; the page's own fetch of
+`backtest_results` fires on the deployed site and returns 200 with the right shape
+(`notes` is a text column that parses, `end_date` 2026-07-25 equals the book's
+`run_date`, `samples` 3); the marker string is present in the deployed bundle; and the
+JSX sits in the always-visible rationale cell, not behind the expand. It still renders
+**zero** times, which means `positionStability` is returning `unmeasured` for all nine
+rows. One prop-chain bug was already found and fixed this iteration — the
+`<PositionRow>` call site never passed `repl`, lost when an earlier blanket edit was
+reverted — and that was not the whole of it.
+
+**Next step:** expose the computed `stability` as a `data-` attribute, deploy, read it
+off the DOM, and remove. Two deploys, but it distinguishes "`repl` is null in the row"
+from "the date comparison fails" in one shot instead of by inspection. Both props are
+optional, which is right for a usually-absent measurement and is exactly why nothing
+in the type system or the tests complained.
+
 [ADR-0057](adrs/0057-stability-is-a-per-trade-fact-not-a-percentage.md).
 
 

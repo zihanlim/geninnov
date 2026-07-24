@@ -186,17 +186,32 @@ function RiskCard({
     format: (v: number) => string;
     higherIsWorse: boolean;
   };
-  /** Set when the statistic is shown but the return sample is below its minimum. */
+  /** Set when the return sample is below this statistic's declared minimum. */
   sampleCaveat?: string | null;
 }) {
-  const present = derivation.value !== null;
+  // A statistic whose sample is below its own stated minimum is SUPPRESSED, not
+  // annotated. It used to render the number with the caveat underneath, which was
+  // an improvement on silence but still published a figure we simultaneously said
+  // was unreadable — "SHARPE 10.77 ▲ +4.56" at 22px above "2 sessions of history —
+  // needs 60. Too small to read as a real Sharpe." A reader skims the number, not
+  // the footnote, and the delta chip asserted a meaningful IMPROVEMENT in a
+  // meaningless statistic.
+  //
+  // Beta already did the right thing on the same card (value null -> "—" +
+  // "insufficient history"), so the page was treating two under-sampled statistics
+  // two different ways. This makes them agree, and agree with the standing rule:
+  // prefer "unavailable, because X" over a confidently-wrong number. The computed
+  // value stays in portfolio_risk for anyone who queries it; the page no longer
+  // asserts it.
+  const suppressed = Boolean(sampleCaveat);
+  const present = derivation.value !== null && !suppressed;
   return (
     <div className="card p-4">
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <span className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary">
           {label}
         </span>
-        <StatusBadge status={derivation.display_status} />
+        <StatusBadge status={suppressed ? "unavailable" : derivation.display_status} />
       </div>
       <div className="flex items-baseline gap-2 flex-wrap">
         <div
@@ -204,7 +219,7 @@ function RiskCard({
             present ? color : "text-text-tertiary"
           }`}
         >
-          {value}
+          {suppressed ? "—" : value}
         </div>
         {present && delta && (
           <DeltaChip
@@ -233,7 +248,7 @@ function RiskCard({
           </span>
         )}
       </div>
-      {present && sampleCaveat && (
+      {sampleCaveat && (
         <div className="mt-1.5 text-[11px] text-warning leading-[1.45]">
           {sampleCaveat}
         </div>
@@ -353,7 +368,7 @@ export function RiskMetricsGrid({
                 def.minSessions !== undefined &&
                 (sessions as number) < def.minSessions;
               const sampleCaveat = short
-                ? `${sessions} session${sessions === 1 ? "" : "s"} of history — needs ${def.minSessions}. Too small to read as a real ${def.label.split(" ")[0]}.`
+                ? `Not shown: ${sessions} session${sessions === 1 ? "" : "s"} of history, needs ${def.minSessions}. A ${def.label.split(" ")[0]} from this sample is noise, so we do not publish one.`
                 : null;
               return (
                 <RiskCard

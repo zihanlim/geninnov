@@ -89,8 +89,12 @@
   .card {
     @apply bg-bg-surface border border-border rounded-[10px] overflow-hidden;
   }
+  /* flex-wrap so a long right-hand meta string drops under the title instead of
+     pushing past the card edge — the card clips overflow, so on a 375px viewport
+     the tail of e.g. "2 sessions · portfolio_returns.cumulative_return" was cut
+     off with no scrollbar to reveal it. Wraps only when it must. */
   .card-header {
-    @apply flex items-center justify-between px-[18px] py-[14px] border-b border-border;
+    @apply flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-[18px] py-[14px] border-b border-border;
   }
   .card-title {
     @apply text-[11px] uppercase tracking-[0.12em] text-text-secondary font-medium;

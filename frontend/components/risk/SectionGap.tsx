@@ -66,7 +66,11 @@ export function InlineGap({ children }: { children: React.ReactNode }) {
 /** Monospace identifier chip, for naming a table.column inline in prose. */
 export function Ident({ children }: { children: React.ReactNode }) {
   return (
-    <code className="num text-[12px] text-text-secondary bg-bg-elevated border border-border rounded px-1 py-px">
+    // [overflow-wrap:anywhere] because these are table.column identifiers with no
+    // spaces to break on: `research_recommendations.correlation_pairs` is wider than
+    // a 375px card body and its enclosing card clips rather than scrolls, so without
+    // this the tail of the source name is silently cut off on a phone.
+    <code className="num text-[12px] text-text-secondary bg-bg-elevated border border-border rounded px-1 py-px [overflow-wrap:anywhere]">
       {children}
     </code>
   );

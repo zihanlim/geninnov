@@ -129,8 +129,9 @@ export default function ClearedNotTaken({
         {HIGH_CORR_THRESHOLD.toFixed(2)} the idea is largely in the book already;
         at or below &minus;{HIGH_CORR_THRESHOLD.toFixed(2)} taking it would net
         against a position already on. Between the two the name is a genuinely
-        independent idea that was passed over — worth asking about, and the
-        agent&apos;s reasoning is in the thesis above.
+        independent idea that was passed over — worth asking about. Whether the
+        thesis actually accounts for what the book declined is stated in{" "}
+        <strong>Pool depth</strong> above, measured rather than assumed.
       </p>
 
       <ScrollArea hint={false}>

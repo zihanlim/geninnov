@@ -25,6 +25,7 @@ import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import AbstentionRoster from "@/components/book/AbstentionRoster";
 import BookTurnover from "@/components/book/BookTurnover";
 import PoolDepth, { type IndependentIdeas } from "@/components/book/PoolDepth";
+import Replication from "@/components/book/Replication";
 import ClearedNotTaken, {
   type CandidateRow,
   type CandidateCorrelations,
@@ -761,6 +762,9 @@ function BookPageInner() {
             previous={prevBook?.assets ?? null}
             previousDate={prevBook?.date ?? null}
           />
+
+          {/* ── Same inputs, run again: agent churn as against market churn ─ */}
+          <Replication />
 
           {/* ── Abstention roster ───────────────────────────────────────── */}
           <ClearedNotTaken

@@ -61,6 +61,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0054](0054-a-daily-publication-not-a-scanner.md) | The interface is a daily research publication, not a scanner — no streaming, no alerts, no filters; but the scannable layer must differentiate | accepted | 2026-07-25 |
 | [0055](0055-an-acceptance-battery-for-the-model-that-writes-the-book.md) | An acceptance battery for the model that writes the book — frozen fixtures with a written-down right answer; structural checks gate, directional ones report | accepted | 2026-07-25 |
 | [0056](0056-an-instruction-is-not-a-guardrail.md) | An instruction is not a guardrail — measure whether the thesis explains the independent ideas it declined, and let the panel say which case it is | accepted | 2026-07-25 |
+| [0057](0057-stability-is-a-per-trade-fact-not-a-percentage.md) | Stability is a per-trade fact, not a book-level percentage — mark which positions survived every rerun | accepted | 2026-07-25 |
 
 ## When to write an ADR
 

@@ -106,16 +106,19 @@ find, not just what you changed:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 456 backend + 66 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 502 backend + 87 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
   **All six stages report to `pipeline_runs`** since iteration 14 — L1 and L4 were
   silent, so `/method` said "not instrumented" while the status bar said "4/4
   succeeded".
-- **Q1 book** — **5 long / 4 short across 9 positions** (XLE, NUE, UNH, SVXY, BIL
-  long; SLV, BABA, PDD, NOC short) on the last 2026-07-25 run, −3.5% net at 60.7%
-  gross, $39.3M held back by position limits. **The long side is at Q1's five**; the
+- **Q1 book** — **5 long / 4 short across 9 positions** (XLE, JPM, SVXY, NUE, UNH
+  long; SLV, BABA, PDD, NOC short) on the last 2026-07-25 run, +0.9% net at 59.6%
+  gross. **Sized by conviction since iteration 38** (ADR-0053) — it had been
+  HypeScore-weighted while every surface claimed otherwise; `|weight|/conviction` is
+  now one constant per side. **Seven of the nine positions survived every rerun on
+  identical inputs; XLE and UNH did not** (ADR-0057), and each row says which. **The long side is at Q1's five**; the
   short side holds four of the five independent ideas that existed, and `/book`'s Pool
   depth panel says so in warning colour rather than excusing it. Almost every name
   comes from a theme **below** the attention gate (ADR-0046). **The composition moves
@@ -138,6 +141,41 @@ Live at https://andromeda-analytics.vercel.app · 456 backend + 66 frontend test
   agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 39 (2026-07-25)
+
+> Iteration numbers below are per-session and **collide**: two agents worked this repo
+> in parallel on 2026-07-25 and both numbered independently, so there are two "36"
+> sections. Read by date and content, not by number.
+
+**Stability was measured as a percentage. Q1 asks about trades.**
+
+The replication harness answered 25% overall / 33% long / 13% short. That is the right
+experiment in the wrong shape: *"a third of the long side is a coin flip"* tells a
+reader the book is partly arbitrary without saying which part, so it **taints the
+names that were in fact unanimous** and warns about none of them specifically. A
+reviewer can act on *"XLE appeared in some of 3 reruns"*; they cannot act on 33%.
+
+The harness was already recording `stable_names` and `unstable_names` — used only to
+print two lists at the bottom of one panel. Joined to the book they classify every
+held position: **JPM, NUE, SVXY and all four shorts appeared in all three reruns; XLE
+and UNH did not.** Nine held, nine classified, none unmeasured. Both coin flips are
+longs, which is the 33% expressed as names and matches pool depth exactly — 10
+independent long ideas competing for 5 slots.
+
+**No verdict is attached**, per ADR-0045. A coin flip is not a bad trade; it is one of
+several the agent rates equally, which is what a side with slack *should* look like.
+
+Three guards: the join is valid **only within a run** (a replication from another
+`run_date` says nothing about today's names, so the row stays silent); **one sample
+can never establish stability**, since it agrees with itself trivially; and a name
+absent from both lists is **unmeasured, not stable**. Keyed on the *signed* name, so a
+long and a short of the same asset cannot inherit each other's stability.
+
+Also refreshed the standing facts above, which had drifted two books behind.
+
+[ADR-0057](adrs/0057-stability-is-a-per-trade-fact-not-a-percentage.md).
+
 
 ### Loop iteration 36 (2026-07-25)
 

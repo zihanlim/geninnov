@@ -170,7 +170,7 @@ LENS_TICKER_FALLBACK: dict[str, set[str]] = {
                   "TLT", "IEF", "SHY", "TIPS", "AGG", "BIL", "SVXY"},
     "rates":     {"TLT", "IEF", "SHY", "TIPS", "AGG", "BIL", "SVXY"},
     "equity":    {"QQQ", "SPY", "IWM", "FXI", "MCHI", "BABA", "KWEB", "XLE", "XLF", "XLV", "ARKK", "EWJ", "EWZ"},
-    "fx":        {"UUP", "FXE", "DXY"},
+    "fx":        {"UUP", "FXE"},   # DXY is an index, not an instrument (migration 031)
     "commodity": {"GLD", "SLV", "UNG", "OIH", "CL"},
 }
 

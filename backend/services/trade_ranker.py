@@ -51,13 +51,29 @@ _ASSET_CLASS_MAP: dict[str, str] = {
     "XLE": "equity", "XLF": "equity", "XLV": "equity", "ARKK": "equity",
     "EWJ": "equity", "EFA": "equity", "EEM": "equity", "BULL": "equity",
     # fx
-    "UUP": "fx", "FXE": "fx", "EWZ": "fx", "DXY": "fx",
+    "UUP": "fx", "FXE": "fx", "EWZ": "fx",
     # commodity
     "GLD": "commodity", "SLV": "commodity", "UNG": "commodity",
     "OIH": "commodity", "CL": "commodity", "IAU": "commodity",
     # equity (GDX holds gold-miner equities, so it is an equity ETF even though
     # its theme is commodity-adjacent)
     "GDX": "equity",
+    # equity — single companies (ADR-0043)
+    "JPM": "equity",
+    "GS": "equity",
+    "XOM": "equity",
+    "CVX": "equity",
+    "SLB": "equity",
+    "UNH": "equity",
+    "LMT": "equity",
+    "NOC": "equity",
+    "RTX": "equity",
+    "F": "equity",
+    "JD": "equity",
+    "PDD": "equity",
+    "FCX": "equity",
+    "NEM": "equity",
+    "NUE": "equity",
 }
 
 

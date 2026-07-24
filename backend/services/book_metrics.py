@@ -45,7 +45,6 @@ SECTOR_MAP: dict[str, str] = {
     "SLV":   "Metals",
     "TIPS":  "Inflation",
     # FX
-    "DXY":   "FX",
     "UUP":   "FX",
     "FXE":   "FX",
     "EWZ":   "FX-EM",
@@ -75,6 +74,22 @@ SECTOR_MAP: dict[str, str] = {
     # Metals / inflation
     "GDX":   "Gold Miners",
     "IAU":   "Gold",
+    # Single companies (ADR-0043) — see the ADR for why each maps to its theme.
+    "JPM":   "Financials",
+    "GS":    "Financials",
+    "XOM":   "Energy",
+    "CVX":   "Energy",
+    "SLB":   "Energy",
+    "UNH":   "Healthcare",
+    "LMT":   "Defense",
+    "NOC":   "Defense",
+    "RTX":   "Defense",
+    "F":     "Autos",
+    "JD":    "China Equities",
+    "PDD":   "China Equities",
+    "FCX":   "Metals",
+    "NEM":   "Gold Miners",
+    "NUE":   "Metals",
 }
 
 GEO_MAP: dict[str, str] = {
@@ -93,7 +108,6 @@ GEO_MAP: dict[str, str] = {
     "GLD":   "Global",
     "SLV":   "Global",
     "TIPS":  "US",
-    "DXY":   "US",
     "UUP":   "US",
     "FXE":   "Europe",
     "EWZ":   "EM",
@@ -117,6 +131,22 @@ GEO_MAP: dict[str, str] = {
     "BULL":  "US",
     "GDX":   "Global",
     "IAU":   "Global",
+    # Single companies (ADR-0043)
+    "JPM":   "US",
+    "GS":    "US",
+    "XOM":   "US",
+    "CVX":   "US",
+    "SLB":   "US",
+    "UNH":   "US",
+    "LMT":   "US",
+    "NOC":   "US",
+    "RTX":   "US",
+    "F":     "US",
+    "JD":    "China",
+    "PDD":   "China",
+    "FCX":   "US",
+    "NEM":   "US",
+    "NUE":   "US",
 }
 
 # Risk caps

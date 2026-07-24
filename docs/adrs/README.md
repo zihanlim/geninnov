@@ -48,6 +48,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0040](0040-published-book-is-the-book-of-record.md) | The published book is the book of record (positions/returns/risk recomputed on L5 output) | accepted | 2026-07-24 |
 | [0041](0041-regime-as-a-dial-not-a-cliff.md) | The regime is a dial, not a cliff — continuous risk appetite drives direction, the label is display only | accepted | 2026-07-24 |
 | [0042](0042-absolute-hype-subscores.md) | HypeScore sub-scores are absolute, not relative to the day's peer group (supersedes 0006, 0028) | accepted | 2026-07-24 |
+| [0043](0043-single-company-universe.md) | Single companies enter the universe (only meaningful once direction became per-asset) | accepted | 2026-07-24 |
 
 ## When to write an ADR
 

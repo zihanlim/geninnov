@@ -5,20 +5,20 @@ import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 // Ordered as a portfolio manager's morning: what's moving → what we hold →
-// what could go wrong → how it was derived. /book consolidates what used to be
-// split across /trades, /portfolio and /research; those remain reachable while
-// the consolidation beds in.
+// what could go wrong → how it was derived.
+//
+// /trades, /portfolio and /research used to sit beside these as a SECONDARY_NAV,
+// labelled "legacy links (redirects)" in this file, "while the consolidation beds
+// in". The consolidation finished at ADR-0040 and all three page components are now
+// nothing but `redirect("/book")` — so the header offered four separate items that
+// all land on the same page, and showed a reader this project's migration history
+// for no benefit. The ROUTES stay, so bookmarks and inbound links still resolve;
+// only the header entries are gone (ADR-0054).
 const NAV_ITEMS = [
   { href: "/", label: "Themes" },
   { href: "/book", label: "Book" },
   { href: "/risk", label: "Risk" },
   { href: "/method", label: "Method" },
-];
-
-const SECONDARY_NAV = [
-  { href: "/trades", label: "Trade Ideas" },
-  { href: "/portfolio", label: "Portfolio" },
-  { href: "/research", label: "Research" },
 ];
 
 function formatTime(iso: string | null): string {
@@ -96,25 +96,6 @@ export default function TopBar() {
                 isActive
                   ? "text-text-primary bg-bg-elevated"
                   : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
-              }`}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-        {/* Legacy links (redirects) — hidden below xl so the header never crowds. */}
-        <span className="hidden xl:block w-px h-4 bg-border mx-1.5" />
-        {SECONDARY_NAV.map((item) => {
-          const isActive = pathname?.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={isActive ? "page" : undefined}
-              className={`hidden xl:inline-flex px-2.5 py-1.5 rounded-md text-[12px] transition-colors ${
-                isActive
-                  ? "text-text-primary bg-bg-elevated"
-                  : "text-text-tertiary hover:text-text-secondary hover:bg-bg-hover"
               }`}
             >
               {item.label}

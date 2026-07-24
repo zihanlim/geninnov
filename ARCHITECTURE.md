@@ -344,10 +344,13 @@ L5: q1_agent.py / run_q1_agent
 
 The LLM is treated as a *constrained synthesizer*, not a free agent. See [ADR-0012](docs/adrs/0012-citation-guardrail-llm-defense.md) and [ADR-0013](docs/adrs/0013-deterministic-stochastic-split.md) for the design rationale.
 
-L6: frontend/pages/research.tsx
+L6: frontend/app/book/page.tsx
     → Reads research_recommendations from Supabase
-    → Renders: per-trade thesis, book view, scenario table, risk metrics
+    → Renders: per-trade thesis, book view, pool depth, turnover, replication
     → Every numeric claim carries a citation footnote (L7, see ADR-0010)
+    (/research, /portfolio and /trades are RETIRED — server redirect() → /book
+     since ADR-0025/0040. This line said `frontend/pages/research.tsx`, a path
+     that has never existed in the app-router layout.)
 
 L7: frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs}.tsx
     → Reads theme_signals_history (raw signals), themes (normalized sub-scores),

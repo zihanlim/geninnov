@@ -88,7 +88,7 @@ All project documentation lives under `docs/`:
 | `backend/services/book_metrics.py` | L5: value-weighted FF5+UMD book tilts, sector/geo caps, correlation matrix |
 | `backend/services/scenario_analysis.py` | L5: 4-scenario stress test (VIX/rates/USD/credit) |
 | `backend/services/q1_agent.py` | L5: 8-node Q1 reasoning agent (`run_q1_agent`) |
-| `frontend/app/research/page.tsx` | L6: Per-trade thesis writeup rendered on `/research` |
+| `frontend/app/book/page.tsx` | L6: The $100M book — per-trade thesis, pool depth, turnover, replication. (`/research`, `/portfolio`, `/trades` are retired server redirects to it.) |
 | `frontend/lib/supabase.ts` | Supabase client for frontend reads |
 | `supabase/migrations/001_initial_schema.sql` | Full database schema (L1–L4 tables) |
 | `supabase/migrations/005_macro_indicators.sql` | L0 macro_indicators + macro_daily_history |
@@ -175,7 +175,7 @@ The L5 agent (`backend/services/q1_agent.py`) is a deterministic-then-stochastic
 | L3 | `backend/services/regime_classifier.py` | Yield curve + HY OAS + VIX → cycle × sentiment |
 | L4 | `scripts/daily_refresh.py` → `compute_and_persist_risk` | VaR, CVaR, Sharpe, Beta, HHI → `portfolio_risk` |
 | **L5** | `backend/services/q1_agent.py` | 8-node pipeline: aggregate → screen → compute book metrics → scenario analysis → reason_picks (LLM) → verify_citations → size_positions → persist |
-| L6 | `frontend/app/research/page.tsx` | Per-trade thesis + book view rendered on `/research` |
+| L6 | `frontend/app/book/page.tsx` | Per-trade thesis + book view rendered on `/book` |
 | L7 | `frontend/components/{CitationList,ThemeDerivationDrawer,RegimeInputs}.tsx` | Citation footnotes + derivation audit trail |
 
 The citation guardrail (verify_citations → retry → fallback) is the primary defense against LLM hallucination of macro numbers. See [ADR-0012](docs/adrs/0012-citation-guardrail-llm-defense.md) for the design rationale.

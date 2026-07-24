@@ -1551,12 +1551,13 @@ export default function MethodPage() {
           <div className="grid grid-cols-1 gap-4">
             <Formula label="live weights from scoring_config">
               {[
-                `EdgeScore = ${dec(wEdgeTrend ?? 0, 2)}·Trend  +  ${dec(wEdgeRegime ?? 0, 2)}·Regime  +  ${dec(wEdgeCarry ?? 0, 2)}·Carry  +  ${dec(wEdgeValue ?? 0, 2)}·Value`,
+                `EdgeScore = ${dec(wEdgeTrend ?? 0, 2)}·Trend  +  ${dec(wEdgeRegime ?? 0, 2)}·Regime  +  ${dec(wEdgeCarry ?? 0, 2)}·Carry  +  ${dec(wEdgeValue ?? 0, 2)}·Value  +  ${dec(wEdgeSentiment ?? 0, 2)}·Sentiment`,
                 ``,
-                `Trend   = tanh( mean 6-month basket return / 0.15 )          ∈ [−1, +1]`,
-                `Regime  = risk_beta(asset_class)·sentiment_sign + cycle_tilt  ∈ [−1, +1]`,
-                `Carry   = normalised yield / roll / funding advantage         ∈ [−1, +1]`,
-                `Value   = normalised cheapness vs fair value                  ∈ [−1, +1]`,
+                `Trend     = tanh( mean 6-month basket return / 0.15 )          ∈ [−1, +1]`,
+                `Regime    = risk_beta(asset_class)·sentiment_sign + cycle_tilt  ∈ [−1, +1]`,
+                `Carry     = normalised yield / roll / funding advantage         ∈ [−1, +1]`,
+                `Value     = z-score of the macro level vs its 252-day history   ∈ [−1, +1]`,
+                `Sentiment = −tanh( avg VADER / 0.4 )  — CONTRARIAN: crowding to fade, not a buy`,
                 ``,
                 `direction = long    if EdgeScore ≥ +${dec(edgeAbstain ?? 0, 2)}`,
                 `            short   if EdgeScore ≤ −${dec(edgeAbstain ?? 0, 2)}`,
@@ -1696,7 +1697,7 @@ export default function MethodPage() {
                     <Stat
                       label="EdgeScore recomputed"
                       value={edgeRecomputed === null ? "—" : fmtSigned(edgeRecomputed, 4)}
-                      sub="Σ of the four weighted components above"
+                      sub="Σ of the five weighted components above"
                     />
                     <Stat
                       label="Persisted edge_score"

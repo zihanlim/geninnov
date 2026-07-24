@@ -344,19 +344,27 @@ def _macro_zscores() -> dict[str, float]:
     truncation moved real trade direction.
     """
     z: dict[str, float] = {}
+    # Enumerate the series from macro_indicators (one row per series per fetch —
+    # tens of rows), NOT from macro_daily_history. Selecting series_id off the
+    # history table is itself truncated by the same 1000-row cap, and because rows
+    # cluster by series physically it returned only ^DJI/^NDX/^RUT/^SPX — so the
+    # two series Value actually consumes were silently never scored.
     try:
         ids = (
-            supabase.table("macro_daily_history")
+            supabase.table("macro_indicators")
             .select("series_id")
             .execute()
             .data
         ) or []
     except Exception as exc:
-        print(f"[_macro_zscores] macro_daily_history unavailable "
+        print(f"[_macro_zscores] macro_indicators unavailable "
               f"({exc.__class__.__name__}): {exc}. EdgeScore Value component = 0.")
         return z
 
     series_ids = sorted({r["series_id"] for r in ids if r.get("series_id")})
+    if not series_ids:
+        print("[_macro_zscores] no series in macro_indicators — Value component = 0.")
+        return z
     short: list[str] = []
     for sid in series_ids:
         try:

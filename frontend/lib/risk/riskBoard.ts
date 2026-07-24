@@ -143,8 +143,15 @@ export interface LimitRow extends LimitDef {
 /**
  * House defaults for limits with no scoring_config row. Documented here so the
  * board can say "house default" and a PM can see the assumption. Percentages are
- * decimals (0.20 = 20%). Single-name/sector/geo mirror the 35/30/20 caps the
- * backend already enforces (book_metrics MAX_* constants, ADR sizing).
+ * decimals (0.20 = 20%).
+ *
+ * Single-name / sector / geo MUST mirror the caps the backend actually enforces
+ * in sizing — book_metrics.py MAX_SINGLE_NAME_WEIGHT = 0.20, MAX_SECTOR_WEIGHT =
+ * 0.30, MAX_GEO_WEIGHT = 0.35. The single-name and geo values here were
+ * transposed (0.35 / 0.20), so the board judged every position against the wrong
+ * ceiling: it understated single-name breaches (measuring a 20% cap as 35%) and
+ * overstated geography ones (measuring a 35% cap as 20%). Keep these three in
+ * step with book_metrics or the board contradicts the sizer that produced the book.
  */
 export const DEFAULT_LIMITS = {
   var_95_pct: 0.06, // 6% of capital 1-day 95% VaR
@@ -157,9 +164,9 @@ export const DEFAULT_LIMITS = {
   // concentration_hhi = Σwᵢ²·10 000, so the limit must be on the same scale.
   // 2 000 ≈ five equal-weight names; the old 0.2 (a 0–1-scale value) made a 2 500
   // book read as 1 250 000 % utilisation.
-  single_name_pct: 0.35,
-  sector_pct: 0.3,
-  geo_pct: 0.2,
+  single_name_pct: 0.20,  // book_metrics.MAX_SINGLE_NAME_WEIGHT
+  sector_pct: 0.30,       // book_metrics.MAX_SECTOR_WEIGHT
+  geo_pct: 0.35,          // book_metrics.MAX_GEO_WEIGHT
 } as const;
 
 /** scoring_config keys we look up before falling back to DEFAULT_LIMITS. */

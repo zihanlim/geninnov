@@ -209,6 +209,65 @@ the true state, not a harness bug — it grows on its own as more days accrue bo
 and a forward close. Forcing it would fabricate data; abstention is correct. 538 backend
 + 120 frontend.
 
+### Loop iteration 55 (2026-07-25)
+
+**Poked the six numbers a reviewer reads first. They all hold — and nothing was
+checking them.**
+
+Ninth deploy refusal, so this went where verification is possible. `/book`'s headline
+tiles — POSITIONS, LONGS / SHORTS, GROSS, NET, DEPLOYED, WORST SCENARIO — come from
+`book_metrics`, while the table beneath comes from `picks`. **Nothing checked that the
+two agree.**
+
+That is the [ADR-0040](adrs/0040-published-book-is-the-book-of-record.md) family exactly:
+a headline is a claim about the book, so it must be checked *against* the book. And every
+failure this repo has actually shipped is that shape — a computed number presented beside
+positions it did not describe: the provisional 40-name book behind a 9-name headline
+(iteration 32), HHI diluted by cash, net share divided by a near-zero denominator
+(ADR-0060).
+
+**Measured first, then guarded.** All six invariants already hold on the live book:
+
+| invariant | live |
+|---|---|
+| `Σ|weight|` vs `gross_exposure` | 0.567107 vs 0.5671069047008114 |
+| `Σ signed_weight` vs `net_exposure` | 0.052119 vs 0.05211897034103463 |
+| `long + short` vs gross | 0.309613 + 0.257494 = 0.567107 |
+| `long − short` vs net | 0.052119 |
+| `notional` vs `weight × 100M` | no mismatch across 9 picks |
+| `|signed_weight|` and its sign | no mismatch, no wrong sign |
+
+So this is not a defect report. `check_book_arithmetic` exists so those stay true rather
+than being rediscovered — the same reason
+[ADR-0065](adrs/0065-check-the-published-book-not-only-the-generation.md) re-checks the
+published thesis instead of trusting the generation that wrote it.
+
+Tolerance `1e-6` is a float-accumulation guard on sums of ~10 terms, **not** an economic
+tolerance — the distinction [ADR-0068](adrs/0068-a-cap-breach-is-not-decided-by-float-error.md)
+draws. Notional is compared at $1 because it is dollars, not a fraction. Silent when
+there is nothing to check.
+
+**Verified under the entry point CI actually uses** — `python scripts/check_data_integrity.py`,
+the iteration-49 lesson — all four checks green, exit 0:
+
+```
+✓ edge_score reconciles from components for all 8 themes on 2026-07-25.
+✓ Published thesis for 2026-07-25 makes no contradicted claim (checked against 40 screened candidates).
+✓ Book arithmetic reconciles for 2026-07-25 (gross, net, long/short split, notional and signed weights).
+✓ Data integrity check passed — no seed fingerprint detected.
+```
+
+546 backend tests.
+
+**The daily guard now carries four checks**, and the shape of them is worth stating: none
+asserts a judgement, all four assert that **two things the system already computed agree
+with each other**. That is the only class of check this project has found reliable — every
+real defect it has caught came from two numbers on one page that could not both be true,
+never from a unit test of a single function.
+
+**Still not live** (ninth refusal): ADR-0068's limit-board correction. `/risk` shows
+"1 breached" until the quota resets.
+
 ### Loop iteration 54 (2026-07-25)
 
 **The three-iteration reconciliation arc closes, verified on the rendered page.**

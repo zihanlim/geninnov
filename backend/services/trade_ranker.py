@@ -234,13 +234,32 @@ def rank_trade_candidates(
         return picks
 
     if asset_edges:
-        # Per-asset direction (ADR-0038). Themes still gate what is in scope — the
-        # attention premise is untouched — but an asset takes the side its own
-        # EdgeScore implies, which means a "long" theme can contribute a short.
-        # Union both selected pools, dedupe, then partition by the ASSET's sign.
-        pool = _select(positive=True) + _select(positive=False)
-        seen_t: set[str] = set()
-        themes_in_scope = [r for r in pool if not (r["theme_id"] in seen_t or seen_t.add(r["theme_id"]))]
+        # Per-asset direction (ADR-0038/0039). Scope is chosen by ATTENTION, which is
+        # the premise the product rests on; direction and abstention are decided per
+        # ASSET, which is where the decision actually is.
+        #
+        # Scope is deliberately NOT filtered by the theme's own |EdgeScore|. Once
+        # direction is per-asset, the theme edge is a summary statistic and not the
+        # decision variable — and it is smallest exactly when cross-sectional
+        # opportunity is largest, because a theme whose assets disagree averages to
+        # zero. Measured on 2026-07-24, the three themes the old gate abstained were
+        # the three richest in shorts: US Dollar (the HIGHEST-attention theme of the
+        # day at hype 73.4, edge +0.144) held 3 short-capable assets, China Growth
+        # (-0.080) held 2, and Inflation (+0.086) was 4-for-4 short-capable and
+        # still abstained. Its theme edge blends the rates leg's carry and value with
+        # the commodity leg's trend — a number describing no asset that exists.
+        #
+        # This does not weaken abstention, it moves it to where the position is
+        # taken: every candidate below still has to clear |its own edge| >=
+        # abstain_threshold in _expand. Gating on both meant abstaining twice, once
+        # on a statistic that is not the decision.
+        eligible_by_hype = sorted(eligible, key=lambda r: -(r.get("hype_score") or 0))
+        themes_in_scope = eligible_by_hype[:top_n]
+        if len(themes_in_scope) < min_side:
+            seen_t = {r["theme_id"] for r in themes_in_scope}
+            rest = sorted((r for r in below if r["theme_id"] not in seen_t),
+                          key=lambda r: -(r.get("hype_score") or 0))
+            themes_in_scope += rest[: min_side - len(themes_in_scope)]
         expanded = _expand(themes_in_scope, theme_assets_map, direction="long",
                            asset_edges=asset_edges, abstain_threshold=abstain_threshold)
         # The same ticker can express several themes; keep its strongest conviction.

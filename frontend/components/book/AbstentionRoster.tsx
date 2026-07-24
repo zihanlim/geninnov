@@ -57,6 +57,7 @@ export default function AbstentionRoster({
   abstainThreshold,
   thresholdIsLive,
   focusThemeId = null,
+  tradedThemeIds,
 }: {
   edgeByTheme: Record<string, ThemeEdge>;
   themeNames: Record<string, string>;
@@ -65,8 +66,11 @@ export default function AbstentionRoster({
   /** When set (a held-out theme deep-linked from "positions →"), that row is
    *  highlighted and scrolled into view. */
   focusThemeId?: string | null;
+  /** Themes that actually put a position in today's book. Excluded from the
+   *  roster no matter how flat their average edge looks — see abstainedThemes. */
+  tradedThemeIds?: Set<string>;
 }) {
-  const roster = abstainedThemes(edgeByTheme, themeNames, abstainThreshold);
+  const roster = abstainedThemes(edgeByTheme, themeNames, abstainThreshold, tradedThemeIds);
   const scored = Object.values(edgeByTheme).filter(
     (e) => e.edge_score !== null,
   ).length;

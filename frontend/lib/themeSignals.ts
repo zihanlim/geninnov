@@ -376,10 +376,23 @@ export async function fetchThemeEdge(
 export function abstainedThemes(
   byTheme: Record<string, ThemeEdge>,
   themeNames: Record<string, string>,
-  abstainThreshold: number
+  abstainThreshold: number,
+  tradedThemeIds?: Set<string>
 ): Array<ThemeEdge & { theme_id: string; name: string }> {
+  // A theme that put positions in the book is not "scored, not traded" — however
+  // flat its own average edge looks.
+  //
+  // This became load-bearing with ADR-0039. Direction and abstention are decided
+  // per ASSET now, and a theme's average edge is smallest exactly when its assets
+  // disagree — which is when it contributes MOST. On 2026-07-24 US Dollar carried a
+  // theme edge of +0.144, below the 0.15 band, while supplying four of the book's
+  // twelve positions (EEM, EMB long; GLD, FXE short). Listing it as held-out would
+  // have contradicted the positions table directly above it on the same page.
   return Object.entries(byTheme)
-    .filter(([, e]) => e.edge_score !== null && Math.abs(e.edge_score) < abstainThreshold)
+    .filter(([theme_id, e]) => {
+      if (tradedThemeIds?.has(theme_id)) return false;
+      return e.edge_score !== null && Math.abs(e.edge_score) < abstainThreshold;
+    })
     .map(([theme_id, e]) => ({ ...e, theme_id, name: themeNames[theme_id] ?? theme_id }))
     .sort((a, b) => Math.abs(b.edge_score ?? 0) - Math.abs(a.edge_score ?? 0));
 }

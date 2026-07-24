@@ -471,3 +471,54 @@ def test_without_asset_edges_direction_still_comes_from_the_theme():
         score_key="edge_score", abstain_threshold=0.15)
     assert {c.asset for c in longs} == {"TLT", "GLD"}
     assert shorts == []
+
+
+def test_scope_is_attention_not_theme_edge():
+    """ADR-0039 — a theme whose assets DISAGREE must not be gated out.
+
+    Theme-level abstention was a second gate applied to a summary statistic that is
+    no longer the decision variable, and it is smallest precisely when
+    cross-sectional opportunity is largest. Live on 2026-07-24 the three themes it
+    abstained were the three richest in shorts — Inflation was 4-for-4 short-capable
+    at a theme edge of +0.086, because that number blends the rates leg's carry with
+    the commodity leg's trend and describes no asset that exists.
+    """
+    scored = [_theme_row("infl", edge=+0.086, hype=70.0)]   # would abstain on |edge|
+    asset_edges = {
+        ("infl", "GLD"): _ae(-0.38),
+        ("infl", "SLV"): _ae(-0.43),
+        ("infl", "IAU"): _ae(-0.38),
+    }
+    longs, shorts = rank_trade_candidates(
+        scored, {"infl": ["GLD", "SLV", "IAU"]}, hype_threshold=50.0,
+        score_key="edge_score", abstain_threshold=0.15, asset_edges=asset_edges)
+    assert longs == []
+    assert {c.asset for c in shorts} == {"GLD", "SLV", "IAU"}
+
+
+def test_attention_gate_still_binds():
+    """Scope is attention — a theme below the hype gate stays out of the book, so
+    the premise the product rests on is untouched. min_side backfill still applies
+    so the book is never empty when signal exists."""
+    scored = [
+        _theme_row("loud", edge=+0.30, hype=80.0),
+        _theme_row("quiet", edge=+0.30, hype=10.0),
+    ]
+    asset_edges = {("loud", "SPY"): _ae(+0.40), ("quiet", "TLT"): _ae(+0.40)}
+    longs, shorts = rank_trade_candidates(
+        scored, {"loud": ["SPY"], "quiet": ["TLT"]}, hype_threshold=50.0,
+        top_n=5, min_side=1, score_key="edge_score",
+        abstain_threshold=0.15, asset_edges=asset_edges)
+    assert [c.asset for c in longs] == ["SPY"]      # quiet theme never entered scope
+    assert shorts == []
+
+
+def test_per_asset_abstention_still_applies_inside_a_scoped_theme():
+    """Removing the theme gate must not remove abstention — it moves it to the asset."""
+    scored = [_theme_row("infl", edge=+0.086, hype=70.0)]
+    asset_edges = {("infl", "GLD"): _ae(-0.38), ("infl", "TIP"): _ae(+0.03)}
+    longs, shorts = rank_trade_candidates(
+        scored, {"infl": ["GLD", "TIP"]}, hype_threshold=50.0,
+        score_key="edge_score", abstain_threshold=0.15, asset_edges=asset_edges)
+    assert [c.asset for c in shorts] == ["GLD"]
+    assert longs == []                               # TIP held out on its own |edge|

@@ -44,6 +44,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0036](0036-carry-as-excess-yield-over-funding.md) | Carry = excess yield over funding (two-sided); a missing component renormalises rather than scoring 0 | accepted | 2026-07-24 |
 | [0037](0037-position-limits-bind-and-the-rest-is-cash.md) | Position limits actually bind; what they refuse is held in cash, not renormalised away | accepted | 2026-07-24 |
 | [0038](0038-per-asset-direction.md) | Direction is a property of the asset, not its theme (the reason the book had no shorts) | accepted | 2026-07-24 |
+| [0039](0039-scope-by-attention-abstain-by-asset.md) | Scope is chosen by attention; abstention is decided per asset (completes ADR-0038) | accepted | 2026-07-24 |
 
 ## When to write an ADR
 

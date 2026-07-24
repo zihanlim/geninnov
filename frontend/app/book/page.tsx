@@ -679,6 +679,13 @@ function BookPageInner() {
             themeNames={themeNames}
             abstainThreshold={edgeWeights.abstainThreshold}
             thresholdIsLive={weightsResolved.abstainThreshold}
+            tradedThemeIds={
+              new Set(
+                Object.values(posEdgeByAsset)
+                  .map((p) => p.theme_id)
+                  .filter((t): t is string => Boolean(t))
+              )
+            }
             focusThemeId={focusHeldOut ? focusThemeId : null}
           />
 

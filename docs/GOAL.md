@@ -110,6 +110,45 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 28 (2026-07-24)
+
+**The tool I built last iteration disproved the reasoning that motivated it.**
+
+Iteration 27 claimed: GDX and GLD are SLV-duplicates, *"which is exactly why the
+short side is three independent ideas and not the five Q1 asks for."* With real
+correlations now rendering, that is wrong:
+
+| short, not held | edge | closest held | ρ | |
+|---|---|---|---|---|
+| GDX | −0.333 | SLV | +0.82 | duplicate ✓ |
+| GLD | −0.305 | SLV | +0.84 | duplicate ✓ |
+| **NOC** | **−0.301** | JPM | **+0.20** | **independent — and not held** |
+
+The book holds **two** shorts (ARKK, SLV) with a genuinely uncorrelated third
+available and declined. **The short side is not capped by redundancy.** Redundancy
+explains GDX and GLD; it does not explain the size of the short side. Why NOC was
+passed over is L5's call — visible in the thesis, not inferable from the pool — and
+the panel now says **"independent — passed over"** in red so the case is impossible
+to miss. The iteration-27 entry above is annotated with the correction rather than
+rewritten.
+
+**Second finding, from the same reading: "Theme also held?" read "yes" on all sixteen
+rows.** Provably non-discriminating — noise beside a column that separates cleanly —
+so it is gone, along with the `heldThemeIds` prop nothing read any more. A **Read**
+column states the consequence instead, thresholded at ρ 0.70: the same
+`HIGH_CORR_THRESHOLD` `/risk` already uses to flag a correlated pair inside the book.
+One threshold, one meaning.
+
+**The pattern is now explicit and worth keeping:** every honest measurement this
+session has cost me a claim. Carry's IC, the scenario magnitudes, the theme proxy,
+and now the short-side ceiling. Building the instrument is what makes the earlier
+assertion checkable — and it keeps failing, which is the argument for building it.
+
+**Open, and now properly framed:** Q1 wants five shorts. The pool has at least three
+independent short ideas today (SLV, ARKK held; NOC declined) plus two redundant ones.
+The gap is L5's selection, not the universe and not the abstention band. That is a
+different question from the one this file has been asking for several iterations.
+
 ### Loop iteration 27 (2026-07-24)
 
 **Replaced last iteration's hedge with the measurement it was standing in for.**
@@ -134,8 +173,12 @@ candidate against its **closest held position over 252 days**:
 | **BIL** | TLT | **−0.18** |
 
 **GDX and GLD are demonstrably the same precious-metals bet the book already holds
-through SLV — which is exactly why the short side is three independent ideas and not
-the five Q1 asks for.** That was reasoning two iterations ago; it is evidence now.
+through SLV.** That was reasoning two iterations ago; it is evidence now.
+
+> **Corrected in iteration 28.** This section originally continued "...which is
+> exactly why the short side is three independent ideas and not the five Q1 asks
+> for". The measurement disproves that — see iteration 28. Redundancy explains GDX
+> and GLD; it does not explain the short side's size.
 
 **BIL at −0.18 is the control.** It proves the measure discriminates rather than
 flagging everything, and it means BIL's absence needs a different explanation — which

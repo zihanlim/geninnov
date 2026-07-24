@@ -13,6 +13,9 @@ import {
   netShareIsMeaningful,
   type PositionAttribution,
 } from "@/lib/risk/riskBoard";
+// The one ρ 0.70 the whole site flags on — /risk pairs, ClearedNotTaken's "largely
+// already held", and PoolDepth's independent-idea clustering all read it.
+import { HIGH_CORR_THRESHOLD } from "@/lib/candidateOverlap";
 import { isNum } from "@/lib/risk/analytics";
 import { Ident, SectionSkeleton } from "./SectionGap";
 
@@ -105,6 +108,12 @@ export function PositionRiskAttribution({
   //
   // An UNKNOWN session count does not withhold: not knowing the sample size is not
   // evidence that it is short — the same rule buildLimitBoard follows.
+  // Every row's correlation cell is empty. Distinguish "nothing crossed the flag"
+  // (good, and the usual case for a well-diversified book) from "these names are
+  // uncorrelated", which the dashes cannot say (ADR-0067).
+  const noFlaggedPairs =
+    rows.length > 0 && rows.every((r) => !isNum(r.avgCorr));
+
   const betaMinSessions = MIN_SESSIONS.beta_abs ?? 60;
   const bookBetaUnderSampled =
     isNum(returnSessions) && (returnSessions as number) < betaMinSessions;
@@ -172,6 +181,22 @@ export function PositionRiskAttribution({
             avg |ρ| is its mean flagged correlation to the rest of the book.
           </p>
 
+          {noFlaggedPairs && (
+            <p
+              className="m-0 px-[18px] pt-2 text-[12px] text-text-secondary leading-[1.6] max-w-[92ch]"
+              role="note"
+            >
+              <strong>
+                No pair in this book reaches ρ {HIGH_CORR_THRESHOLD.toFixed(2)}
+              </strong>
+              , so the correlation column is empty for every row. That is the{" "}
+              <em>good</em> case — nothing here is doubling another position — but it
+              renders as an absence, so it is worth saying: the dashes mean{" "}
+              <strong>nothing crossed the flag</strong>, not that these names are
+              uncorrelated. A book where every pair sat at ρ 0.65 would look identical.
+            </p>
+          )}
+
           {bookBetaUnderSampled && (
             <p
               className="m-0 px-[18px] pt-2 text-[12px] text-text-secondary leading-[1.6] max-w-[92ch]"
@@ -221,7 +246,11 @@ export function PositionRiskAttribution({
                     "β contribution",
                     "Gross share",
                     "Net share",
-                    "Avg |ρ| to book",
+                    // NOT "to book". This averages only the pairs flagged at ρ ≥ 0.70,
+                    // so a name correlated 0.65 with every other holding renders "—"
+                    // and reads as uncorrelated when it is close to the opposite. The
+                    // header now names the subset it measures (ADR-0067).
+                    `Avg |ρ| · flagged ≥ ${HIGH_CORR_THRESHOLD.toFixed(2)}`,
                   ].map((h, i) => (
                     <th
                       key={h}
@@ -298,7 +327,7 @@ export function PositionRiskAttribution({
                       }`}
                       title={
                         r.avgCorr === null
-                          ? "No flagged correlation pair involves this asset"
+                          ? `No pair involving this asset reaches ρ ${HIGH_CORR_THRESHOLD.toFixed(2)} — not a measure of how correlated it is, only that nothing crossed the flag`
                           : `${r.corrPairCount} flagged pair${r.corrPairCount === 1 ? "" : "s"}`
                       }
                     >

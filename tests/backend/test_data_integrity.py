@@ -160,3 +160,69 @@ def test_is_silent_without_rows_or_weights():
     assert check_edge_score_reconciles(None, _W) == []
     assert check_edge_score_reconciles([_row(edge_score=0.3, trend_signal=0.5)], None) == []
     assert check_edge_score_reconciles([], _W) == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# check_published_book_claims — re-check what is actually on the page
+# ─────────────────────────────────────────────────────────────────────────────
+
+_CANDS = [{"asset": a} for a in ("SLV", "BABA", "PDD", "NOC", "ARKK", "GDX", "KWEB")]
+
+
+def test_catches_the_availability_lie_that_was_live_on_the_published_page():
+    """The exact sentence the 2026-07-25 book carried.
+
+    verify_citations could not have caught it: that book was generated before
+    ADR-0061 existed, and nothing re-examined the row already on the page.
+    """
+    from scripts.check_data_integrity import check_published_book_claims
+
+    rec = {
+        "run_date": "2026-07-25",
+        "book_view": (
+            "The fifth independent short idea per POOL DEPTH, ARKK, is not present in "
+            "the tradable candidate pool, so this book deploys four short picks."
+        ),
+        "independent_ideas": {},
+    }
+    flags = check_published_book_claims(rec, _CANDS)
+    assert len(flags) == 1
+    assert "published book 2026-07-25" in flags[0]
+    assert "ARKK" in flags[0]
+
+
+def test_catches_a_restated_idea_count_that_is_wrong():
+    from scripts.check_data_integrity import check_published_book_claims
+
+    rec = {
+        "run_date": "2026-07-25",
+        "book_view": "The short pool yields only four independent ideas this run.",
+        "independent_ideas": {"short": {"count": 5}, "long": {"count": 9}},
+    }
+    flags = check_published_book_claims(rec, _CANDS)
+    assert len(flags) == 1
+    assert "independent ideas" in flags[0]
+
+
+def test_passes_the_thesis_actually_published_after_the_guardrail_landed():
+    """The real replacement sentence — a reason, not an availability excuse."""
+    from scripts.check_data_integrity import check_published_book_claims
+
+    rec = {
+        "run_date": "2026-07-25",
+        "book_view": (
+            "I declined ARKK as the fifth independent short because its high-beta "
+            "profile would compound existing market-beta exposure rather than diversify "
+            "the short book, and its trade conviction is weaker than the four chosen."
+        ),
+        "independent_ideas": {"short": {"count": 5}},
+    }
+    assert check_published_book_claims(rec, _CANDS) == []
+
+
+def test_is_silent_with_no_row_or_no_thesis():
+    from scripts.check_data_integrity import check_published_book_claims
+
+    assert check_published_book_claims(None, _CANDS) == []
+    assert check_published_book_claims({"run_date": "d", "book_view": ""}, _CANDS) == []
+    assert check_published_book_claims({"run_date": "d", "book_view": None}, _CANDS) == []

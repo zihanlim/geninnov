@@ -160,6 +160,61 @@ def check_edge_score_reconciles(
     return failures
 
 
+def check_published_book_claims(
+    rec_row: dict | None,
+    candidates: list[dict] | None,
+) -> list[str]:
+    """Re-run the thesis guardrails against **what is actually published**.
+
+    `verify_citations` runs *during* generation and blocks a bad book from being
+    written. That leaves two ways an unchecked thesis reaches the page:
+
+    1. **The fallback is terminal.** After the retries are spent, `reason_picks` returns
+       `fallback_picks(state)`, whose templated thesis is persisted without going back
+       through `verify_citations`.
+    2. **A row published by older code stays live.** The 2026-07-25 book carried
+       *"ARKK … is not present in the tradable candidate pool"* — false, ARKK was the
+       eleventh of twelve short candidates — for as long as it took someone to read it.
+       [ADR-0061] added the check that rejects that claim, but only on the *next*
+       generation; nothing re-examined the row already on the page.
+
+    Both are the shape [ADR-0040] exists to prevent: **check the published book, do not
+    assume it.** This applies the two exact-match prose checks — the availability claim
+    (ADR-0061) and the restated idea count (ADR-0049) — to the persisted `book_view`,
+    so a wrong claim on the live page is reported by the daily run rather than by
+    whoever happens to read it.
+
+    Deliberately reuses `q1_agent`'s functions rather than reimplementing them: a second
+    copy of a guardrail is a second thing to drift, which is the defect
+    [ADR-0064] was about. Imported lazily so this module stays importable without the
+    agent's dependencies.
+
+    Silent when there is nothing to check. Returns failure strings; empty means the
+    published thesis makes no checkable false claim.
+    """
+    if not rec_row:
+        return []
+    prose = rec_row.get("book_view") or ""
+    if not prose:
+        return []
+
+    from backend.services.q1_agent import (  # noqa: PLC0415 - lazy by design
+        check_availability_claims,
+        check_idea_count_claims,
+    )
+
+    run_date = rec_row.get("run_date", "?")
+    failures = [
+        f"published book {run_date}: {f}"
+        for f in check_availability_claims(prose, candidates or [])
+    ]
+    failures += [
+        f"published book {run_date}: {f}"
+        for f in check_idea_count_claims(prose, rec_row.get("independent_ideas") or {})
+    ]
+    return failures
+
+
 def main() -> int:
     try:
         from dotenv import load_dotenv
@@ -241,6 +296,37 @@ def main() -> int:
             return 1
         print(f"✓ edge_score reconciles from components for all "
               f"{len(signal_rows or [])} themes on {run_date}.")
+
+    # The thesis guardrails run during generation; the fallback path is terminal and an
+    # older row can stay live, so re-check what is actually on the page (ADR-0040).
+    rec_rows = (
+        sb.table("research_recommendations")
+        .select("run_date, book_view, independent_ideas")
+        .order("run_date", desc=True)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if rec_rows:
+        rec = rec_rows[0]
+        cands = (
+            sb.table("trade_candidates")
+            .select("asset")
+            .eq("run_date", rec["run_date"])
+            .execute()
+            .data
+        )
+        book_flags = check_published_book_claims(rec, cands)
+        if book_flags:
+            print("✗ DATA INTEGRITY CHECK FAILED — the PUBLISHED thesis makes a claim "
+                  "its own inputs contradict:")
+            for f in book_flags:
+                print(f"  - {f}")
+            print("\nThis is the live page, not a generation-time state. Re-run L5 so a "
+                  "corrected thesis is published.")
+            return 1
+        print(f"✓ Published thesis for {rec['run_date']} makes no contradicted claim "
+              f"(checked against {len(cands or [])} screened candidates).")
 
     print("✓ Data integrity check passed — no seed fingerprint detected.")
     return 0

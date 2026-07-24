@@ -149,6 +149,65 @@ Live at https://andromeda-analytics.vercel.app · 518 backend + 111 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 46 (2026-07-25)
+
+**The audit page was accusing the pipeline of a data-integrity failure. The pipeline was
+right; the page's own arithmetic was wrong.**
+
+Q2 is half the assessment and nearly every iteration here has gone to Q1, so this one
+read `/method` — the Q2 surface, whose entire purpose is to show that every published
+number is reproducible from the published formula. It carried a red panel:
+
+> **RECONCILIATION FAILURE** — Applying the live weights to the persisted components
+> yields **+0.1700**, but `theme_signals_history.edge_score` holds **+0.3542**. *Either
+> the weights changed after this row was written, or a component column and the score
+> column were not written from the same inputs.*
+
+**Both stated causes are false.** `0.169999 / (0.20 + 0.23 + 0.05) = 0.354165` — the
+persisted value, exactly. [ADR-0036](adrs/0036-carry-as-excess-yield-over-funding.md)
+established that a `null` component is *not computable* and is **dropped, with its weight
+renormalised over the components present**. `compute_edge_score` does that. The page kept
+summing `w × (v ?? 0)`, kept printing `(null → 0)`, and when the answer disagreed it
+**published an accusation against the pipeline**. The backend was changed; the page never
+was.
+
+**Same root cause on `/book`:** `EdgeBars` sums `edgeContributions`, which applies the
+identical `?? 0`, and warns when the total differs from the persisted score by >0.01 — so
+every position whose theme lacks a carry or value proxy raised the same false alarm
+inside its own derivation. One bug, two surfaces.
+
+This is the sharpest form of the failure this project keeps finding: **not a wrong number
+in isolation, but an auditing surface whose own arithmetic was wrong, presenting its
+error as the audited system's error.** A reviewer checking the maths would have concluded
+the pipeline is unreliable — on the page's own reasoning.
+
+`recomputeEdgeScore` implements ADR-0036 in one place and returns **the parts, not just
+the total**, because a worked example that prints only the answer proves nothing.
+`edgeContributions` is deliberately unchanged — `?? 0` is correct for *ranking* which
+component dominates, where a null must never win; only the surfaces that **reconcile
+against a persisted score** were wrong. The failure panel keeps its trigger and wording:
+it was doing its job, fed a wrong number.
+
+**Worth stating plainly:** every previous finding here corrected a page that was too
+flattering. This one corrects a page that was **unfairly damning**. The discipline is the
+same — make the page say what is true — and the direction of the error is not the point.
+
+**Housekeeping with a lesson:** ADR numbers collided a **third** time (0051, 0053, now
+0062). Mine renumbered to 0063 by the established precedent — the earlier-committed ADR
+keeps the number — and the index was sorted, having drifted (0059 sat after 0063) because
+parallel sessions append rather than insert. The mechanism is reading `ls docs/adrs/` at
+the *start* of an iteration and writing the file at the *end*.
+
+**Three things checked and found NOT to be defects**, recorded so they are not chased:
+the header showing ET `2026-07-24` beside `RUN DATE 2026-07-25` is correct —
+[ADR-0062](adrs/0062-run-date-is-not-a-write-timestamp.md) makes `run_date` deliberately
+**forward-dated** to the trading date the book is *for*; committing the other session's
+untracked `0055` was a **repair**, since the index already linked it and the repo had a
+dead link; and a naive `/NaN|undefined/` sweep flags `/method` on the English word used
+correctly.
+
+[ADR-0064](adrs/0064-the-audit-page-blamed-the-pipeline-for-its-own-arithmetic.md).
+
 ### Loop iteration 45 (2026-07-25)
 
 **Two freshness labels on the showcase page were dating live data wrong. One I had

@@ -95,6 +95,33 @@ Live at https://andromeda-analytics.vercel.app · 380 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 2 (2026-07-24)
+
+**The book is now coherent and two-sided.** `/book` and `/risk` finally describe the
+same portfolio: **2 long (HYG, LQD — Corporate Credit) / 3 short (TIPS, GLD, SLV —
+Inflation)**, each 20%, gross 100%, $100M. That resolves the audit's root-cause
+finding ("the app renders two different books at once").
+
+**Q1 breadth — diagnosed, and the one-line fix deliberately REJECTED.** The binding
+constraint is that the *theme*, not the asset, is the unit of direction, and only
+three themes clear the 0.15 abstention band (2 long-capable, 1 short-capable). The
+pathology is an inversion: the three highest-hype themes all abstain, while all
+three direction-capable themes sit *below* the hype gate — so both sides fall
+through to the backfill, which is capped at `min_side` (1 theme/side).
+Raising that cap to `top_n` would take the book to 6L/3S in one line — but the cap
+is deliberate: ADR-0029's purpose is two-SIDEDNESS, not filling the book, and
+backfilled themes are *below the attention gate*, so topping up from them builds
+the book out of low-attention names and contradicts the premise the product rests
+on. Two tests encode that intent. **Rejected as manufacturing breadth.** The honest
+routes remain: more expressions per theme, more themes, or single names — each of
+which also needs `SECTOR_MAP`/`GEO_MAP`/`_ASSET_CLASS_MAP` entries or names are
+dropped silently.
+
+Also fixed: a `verified=true` run with **zero citations** could present a green
+VERIFIED chip on `/book` (a rule-built book passing as model-verified — the most
+damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" for a
+*fall*, because it passed `Math.abs(d)` to a sign-prefixing formatter.
+
 ### Fixed 2026-07-24 (loop iteration 1)
 
 - **Double-booked portfolio** — `portfolio_positions`/`trade_candidates` unioned
@@ -111,10 +138,19 @@ Live at https://andromeda-analytics.vercel.app · 380 backend tests green.
 
 ## Live candidate gaps (re-verify before trusting)
 
-- **Q1 breadth** — the candidate pool is ~8 anchor themes → ~20 ETFs, which is why
-  so few names clear the bar. Widening the universe is the legitimate route to a
-  real five-and-five. *Highest value.* (The Q1-breadth diagnosis agent died on a
-  connection error before reporting — re-run it.)
+- **L5 keeps failing citation verification**, so the live book is the deterministic
+  fallback — `/book` correctly shows "not an investable recommendation" and no
+  VERIFIED chip. Q1 asks for the trades *and why*; a fallback book has no reasoned
+  why. Making `reason_picks` reliably emit citations that pass the guardrail is now
+  the **highest-value Q1 step**. Start from the run log: the failure is
+  "No citations provided — rejecting output", i.e. the model returns picks with an
+  empty citations array, then retries twice and falls back.
+- **Q1 breadth** — universe is 8 themes → 24 tickers, all ETFs/futures proxies, zero
+  single names; only 3 themes clear conviction. Diagnosed in iteration 2; the
+  one-line backfill change was rejected as dishonest (see above). Legitimate route:
+  more expressions per theme (`004_bootstrap_live.sql` + `_theme_default_assets`),
+  more themes, or single names — each needs `SECTOR_MAP`/`GEO_MAP`/`_ASSET_CLASS_MAP`
+  entries too, or `is_classified` drops them silently.
 - **UI audit backlog** — a full Playwright audit ran 2026-07-24 and found no
   horizontal scroll and no console errors at either viewport, but a long list of
   real defects beyond the ones fixed: `verified=true` with 0 citations still

@@ -213,6 +213,18 @@ def rank_trade_candidates(
     below = [r for r in scored if (r.get("hype_score") or 0) < hype_threshold]
 
     def _select(positive: bool) -> list[dict]:
+        # NOTE (2026-07-24): the backfill is capped at `min_side`, NOT `top_n`, and
+        # that is deliberate — ADR-0029's purpose is two-SIDEDNESS ("so the book is
+        # never one-sided while opposite-sign signal exists"), not filling the book.
+        # Backfilled themes sit BELOW the hype gate, so topping a side up to top_n
+        # from them would build the book out of low-attention themes and quietly
+        # contradict the attention premise the whole product rests on.
+        #
+        # This is why the live book is 2 long / 3 short rather than five-and-five:
+        # on 2026-07-24 the three highest-hype themes all abstained while all three
+        # direction-capable themes sat below the gate, so both sides fell through to
+        # this slice. The honest route to more breadth is a wider universe (more
+        # themes, more expressions per theme, single names) — not re-slicing here.
         picks = _pool(eligible, positive)[:top_n]
         if len(picks) < min_side:
             seen = {r["theme_id"] for r in picks}

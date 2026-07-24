@@ -46,6 +46,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0038](0038-per-asset-direction.md) | Direction is a property of the asset, not its theme (the reason the book had no shorts) | accepted | 2026-07-24 |
 | [0039](0039-scope-by-attention-abstain-by-asset.md) | Scope is chosen by attention; abstention is decided per asset (completes ADR-0038) | accepted | 2026-07-24 |
 | [0040](0040-published-book-is-the-book-of-record.md) | The published book is the book of record (positions/returns/risk recomputed on L5 output) | accepted | 2026-07-24 |
+| [0041](0041-regime-as-a-dial-not-a-cliff.md) | The regime is a dial, not a cliff — continuous risk appetite drives direction, the label is display only | accepted | 2026-07-24 |
 
 ## When to write an ADR
 

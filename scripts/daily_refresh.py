@@ -67,7 +67,7 @@ from backend.services.portfolio import (
     compute_cumulative_return,
     MissingReturnError,
 )
-from backend.services.regime_classifier import RegimeClassifier
+from backend.services.regime_classifier import RegimeClassifier, risk_appetite
 from backend.services.edge_signals import (
     theme_trend,
     theme_regime_bias,
@@ -430,6 +430,18 @@ def compute_edge_scores(
     """
     cycle = getattr(regime, "cycle", None)
     sentiment = getattr(regime, "sentiment", None)
+    # Continuous risk appetite (ADR-0041) rather than the discrete label. The label
+    # is a step function and EdgeScore multiplies it by each asset class's risk beta,
+    # so a label change inverts the equity complex on its own.
+    appetite = risk_appetite(
+        getattr(regime, "vix_level", None),
+        getattr(regime, "hy_oas", None),
+        getattr(regime, "vix_term_diff", None),
+        getattr(regime, "spx_breadth", None),
+    )
+    if appetite is not None:
+        print(f"[compute_edge_scores] risk appetite {appetite:+.3f} "
+              f"(label: {cycle}/{sentiment})")
     macro_z = _macro_zscores()
     if asset_edges is None:
         asset_edges = {}
@@ -463,7 +475,7 @@ def compute_edge_scores(
             missing_trend += 1
         trend = theme_trend(returns)
         acs = [classify(a)["asset_class"] for a in assets if is_classified(a)]
-        rbias = theme_regime_bias(acs, cycle, sentiment)
+        rbias = theme_regime_bias(acs, cycle, sentiment, appetite)
         # Average over the asset classes where the component is COMPUTABLE, and
         # stay None when it is computable for none of them. A theme spanning rates
         # and commodities (Inflation holds TIPS alongside GLD/SLV) gets its carry
@@ -518,7 +530,7 @@ def compute_edge_scores(
             a_value = value_signal(ac, macro_z)
             a_edge = compute_edge_score(
                 a_trend,
-                regime_direction_bias(ac, cycle, sentiment),
+                regime_direction_bias(ac, cycle, sentiment, appetite),
                 a_carry,
                 a_value,
                 sentiment_tilt,      # theme-wide by construction — news is about the theme
@@ -530,7 +542,7 @@ def compute_edge_scores(
             asset_edges[(r["theme_id"], a)] = {
                 "edge_score": a_edge,
                 "trend_signal": a_trend if a_trend is not None else 0.0,
-                "regime_bias": regime_direction_bias(ac, cycle, sentiment),
+                "regime_bias": regime_direction_bias(ac, cycle, sentiment, appetite),
                 "carry_signal": a_carry if a_carry is not None else 0.0,
                 "value_signal": a_value if a_value is not None else 0.0,
                 "sentiment_signal": sentiment_tilt,

@@ -53,16 +53,31 @@ def theme_trend(returns_by_asset: dict[str, float | None], scale: float = 0.15) 
 
 
 def regime_direction_bias(
-    asset_class: str, cycle: str | None, sentiment: str | None
+    asset_class: str, cycle: str | None, sentiment: str | None,
+    appetite: float | None = None,
 ) -> float:
     """Stage 2 — does the current regime favour LONG this asset class? [-1, 1].
 
-    ``bias = risk_beta · sentiment_sign + cycle_tilt`` (clipped). So a risk-off
+    ``bias = risk_beta · risk_appetite + cycle_tilt`` (clipped). So a risk-off
     tape shorts equity/credit and goes long rates/USD; a late-cycle/recession
     adds a defensive lean (fade risk assets, favour havens).
+
+    ``appetite`` is the CONTINUOUS risk appetite in [-1, 1]
+    (``regime_classifier.risk_appetite``). Prefer it. Falling back to the discrete
+    label makes this a step function, and since it is multiplied by the asset class's
+    risk beta, a label change swings an equity's regime component from +0.5·beta to
+    -0.5·beta — a full 1.0·beta move on a term carrying 0.23 of EdgeScore, which is
+    enough to invert the book. It did exactly that on 2026-07-24, when the label went
+    risk-on -> neutral on a single breadth statistic crossing 60 and two runs hours
+    apart produced opposite books. The label remains the right SUMMARY for display;
+    it is a bad dial.
     """
     beta = ASSET_CLASS_RISK_BETA.get(asset_class, 0.0)
-    sigma = _SENTIMENT_SIGN.get(sentiment or "", 0.0)
+    sigma = (
+        max(-1.0, min(1.0, appetite))
+        if appetite is not None
+        else _SENTIMENT_SIGN.get(sentiment or "", 0.0)
+    )
     base = beta * sigma
 
     tilt = 0.0
@@ -77,12 +92,15 @@ def regime_direction_bias(
 
 
 def theme_regime_bias(
-    asset_classes: list[str], cycle: str | None, sentiment: str | None
+    asset_classes: list[str], cycle: str | None, sentiment: str | None,
+    appetite: float | None = None,
 ) -> float:
     """Mean regime bias over the asset classes of a theme's assets. [-1, 1]."""
     if not asset_classes:
         return 0.0
-    return fmean(regime_direction_bias(ac, cycle, sentiment) for ac in asset_classes)
+    return fmean(
+        regime_direction_bias(ac, cycle, sentiment, appetite) for ac in asset_classes
+    )
 
 
 # Squash scale for the carry mapping, in percent of excess yield over funding.

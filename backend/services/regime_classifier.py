@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from datetime import date
+import math
 from typing import Optional
 
 import pandas as pd
@@ -167,6 +168,51 @@ def _classify_sentiment(
         return "risk-on"
 
     return "neutral"
+
+
+def risk_appetite(
+    vix_level: float | None,
+    hy_oas: float | None,
+    vix_term_diff: float | None,
+    spx_breadth: float | None,
+) -> float | None:
+    """Continuous risk appetite in [-1, +1]. Positive = risk-on. None = no inputs.
+
+    The discrete label above is a good SUMMARY and a terrible DIAL. It is a step
+    function, and EdgeScore multiplies it by each asset class's risk beta, so a label
+    change swings an equity's regime component from +0.5*beta to -0.5*beta — a full
+    1.0*beta move on a term carrying 0.23 of the score. That is enough to invert the
+    whole book.
+
+    It did. Two runs hours apart on 2026-07-24 produced opposite books (4 long / 2
+    short at net +26.7%, then 2 long / 3 short at net -20%) because the label went
+    risk-on -> neutral. With VIX at 18.6 (failing the <15 and <18 rules) and HY OAS
+    at 268bp (failing <250), the ONLY rule that could return risk-on was
+    `breadth > 60` — so $100M of positioning hung on one breadth statistic crossing a
+    single integer. 61 and 59 are not different market states.
+
+    Each input contributes a smooth tanh term centred on its own neutral level, and
+    the available ones are averaged. Crossing any threshold now moves the score by a
+    little rather than inverting it, while the ordering and the sign are unchanged
+    where the signal is genuinely strong.
+    """
+    terms: list[float] = []
+    # VIX: calm below ~19, stressed above. Scale 6 keeps 13 and 25 near +/-0.7.
+    if vix_level is not None:
+        terms.append(-math.tanh((vix_level - 19.0) / 6.0))
+    # HY OAS in bp: 350 is the long-run middle of the range we see.
+    if hy_oas is not None:
+        terms.append(-math.tanh((hy_oas - 350.0) / 150.0))
+    # VIX term structure: contango (negative) is calm, backwardation is stress.
+    if vix_term_diff is not None:
+        terms.append(-math.tanh(vix_term_diff / 4.0))
+    # Breadth: 50% is neutral participation.
+    if spx_breadth is not None:
+        terms.append(math.tanh((spx_breadth - 50.0) / 15.0))
+
+    if not terms:
+        return None
+    return max(-1.0, min(1.0, sum(terms) / len(terms)))
 
 
 class RegimeClassifier:

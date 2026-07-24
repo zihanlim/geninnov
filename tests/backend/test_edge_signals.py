@@ -229,3 +229,46 @@ def test_trend_can_overturn_regime_in_composite():
     # A strong downtrend outweighs a mild long regime bias -> net short.
     edge = compute_edge_score(theme_trend({"A": -0.30}), 0.2, w_trend=0.6, w_regime=0.4)
     assert edge < 0
+
+
+# ─── Regime as a dial, not a cliff (ADR-0041) ─────────────────────────────────
+
+def test_risk_appetite_is_continuous_across_the_breadth_threshold():
+    """The book inverted on 2026-07-24 because the discrete label flipped.
+
+    With VIX 18.6 (failing the <15 and <18 rules) and HY OAS 268bp (failing <250),
+    the only rule that could return "risk-on" was `breadth > 60` — so $100M of
+    positioning hung on one breadth statistic crossing a single integer. 61 and 59
+    are not different market states.
+    """
+    from backend.services.regime_classifier import risk_appetite
+    hi = risk_appetite(18.6, 268, -1.79, 61)
+    lo = risk_appetite(18.6, 268, -1.79, 59)
+    assert abs(hi - lo) < 0.05          # the old label moved 1.0 across this point
+    assert hi > lo                      # ordering preserved
+
+
+def test_risk_appetite_still_separates_genuine_regimes():
+    """Smoothing must not flatten the signal — real stress and real calm stay apart."""
+    from backend.services.regime_classifier import risk_appetite
+    stress = risk_appetite(32.0, 620, 6.0, 25)
+    calm = risk_appetite(12.0, 240, -5.0, 72)
+    assert stress < -0.5
+    assert calm > 0.5
+    assert risk_appetite(None, None, None, None) is None
+
+
+def test_regime_bias_prefers_continuous_appetite_over_the_label():
+    """A mildly risk-on tape must not read the same as a flat one.
+
+    Under the label, VIX 18.6 / HY 268 / breadth 60 classifies "neutral" -> sigma 0,
+    so a late-cycle equity gets the full -0.5 defensive tilt and nothing else. The
+    continuous appetite (+0.39) partly offsets it, which is the honest reading.
+    """
+    by_label = regime_direction_bias("equity", "late", "neutral")
+    by_appetite = regime_direction_bias("equity", "late", "neutral", appetite=0.392)
+    assert by_label == pytest.approx(-0.5)
+    assert by_appetite > by_label
+    assert by_appetite == pytest.approx(1.0 * 0.392 - 0.5)
+    # Falling back to the label when no appetite is available stays byte-identical.
+    assert regime_direction_bias("equity", "late", "neutral", None) == by_label

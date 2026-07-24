@@ -95,6 +95,40 @@ Live at https://andromeda-analytics.vercel.app · 380 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 4 (2026-07-24)
+
+**Universe widened 24 → 37 tickers (migration 030); the long side now reaches 8.**
+Each theme carries 4–8 genuine expressions instead of 2–4 (Corporate Credit 2→6
+across the credit stack, Fed Policy 4→8 across the curve, etc). Book went 4 → **8
+positions at 12.5% each, gross 100%**. Crucially every added ticker was *already*
+in all three classification maps and confirmed to have ~251 daily closes — an
+unmapped name is dropped silently by `is_classified`, so a careless expansion
+would have shrunk the book. This raises the ceiling without touching the
+abstention band, so nothing entered on anything but conviction.
+
+**`DXY` was never a real ticker (migration 031).** It sat in Fed Policy since the
+original seed and returns ZERO yfinance observations — the index is `DX-Y.NYB`,
+the tradeable proxy is `UUP`. Every run logged "possibly delisted" and computed its
+Trend/vol as a silent 0: an EdgeScore input reading zero because of a typo rather
+than because the market said so. It only became loud once the widened universe made
+Fed Policy the selected theme and DXY entered the sized book, aborting the run
+("missing prices for ['DXY']"). The guard was right; the data was wrong.
+
+**Shorts are still 0, and ticker breadth cannot fix that.** Positions on a side =
+(themes selected) × (that theme's tickers), so more tickers deepen a side that
+already has a theme — they cannot create one. Today **no theme is short-capable**
+(all edges positive or abstaining). Only more *themes*, or a signal that goes
+negative, produces shorts. Ticker breadth is done; theme breadth is not.
+
+**The citation retry fix was necessary but NOT sufficient — say so.** With the
+rejection quoted back to it, the model still returned no citations twice more. The
+mechanism identified in iteration 3 (identical prompt at temperature=0) was real,
+the remedy insufficient. Root cause is still unknown because **rejected LLM output
+is discarded** — `raw_output` holds the fallback. Added shape-logging at the moment
+citations come back empty (response length, top-level keys, pick count, per-pick
+citation count, `book_view` length). **The next failure is now readable from the run
+log; read it before adding more logic.**
+
 ### Loop iteration 3 (2026-07-24)
 
 **The thesis is verified again — Q1 has its "why" back.** `/book` shows the VERIFIED
@@ -168,23 +202,32 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
 
 ## Live candidate gaps (re-verify before trusting)
 
-- **Universe breadth is now the only thing between here and a real five-and-five.**
-  With correct Value the engine finds 4 long-capable and 0 short-capable themes, and
-  only 3 themes clear conviction at all. The universe is 8 themes → 24 tickers, all
-  ETF/futures proxies, **zero single names** — while `task.md` explicitly allows
-  "any asset class and/or single companies". This is the **highest-value Q1 step**
-  and the only honest one left. Routes, cheapest first: more expressions per theme
-  (`004_bootstrap_live.sql` + `_theme_default_assets`), then more themes, then
-  single names. Every new ticker MUST also land in `SECTOR_MAP`/`GEO_MAP`
-  (`book_metrics.py`) and `_ASSET_CLASS_MAP` (`trade_ranker.py`) or `is_classified`
-  drops it silently.
-- **L5 citation reliability — watch, don't assume.** The retry now carries the
-  rejection (iteration 3), but a live retry-then-verify has not yet been observed;
-  the run that verified never hit a rejection. If a run falls back again, check
-  whether the retry prompt actually changed the outcome before adding more logic.
-  Note also that rejected LLM output is NOT persisted — `raw_output` holds the
-  fallback — so a failure cannot be diagnosed after the fact. Persisting the
-  rejected body would make the next such failure debuggable.
+- **`/risk` mixes two books by construction.** Per-position attribution reads
+  `portfolio_positions` (L1/L4's sized book) while cap utilisation, scenarios and
+  `book_metrics` read `research_recommendations` (L5's independently re-picked
+  book). When L5 picks a different subset the page contradicts itself — observed
+  2026-07-24: attribution showed 8 positions at 12.5% while the single-name cap row
+  claimed 50% (L5's 2-pick book). Iteration 1 fixed same-day *duplication* within
+  `portfolio_positions`; it did not make L1 and L5 agree. Either have `/risk` read
+  one source, or have L5 size the L1 book rather than re-pick it.
+- **L5 empty citations — READ THE NEW LOG FIRST.** Iteration 4 added shape-logging
+  (`[reason_picks] EMPTY CITATIONS ...`) that prints response length, top-level
+  keys, pick count and per-pick citation count at the moment it happens. Run the
+  pipeline, read that line, and let it pick the fix. The live hypotheses, in order:
+  (a) MiniMax-M3's internal reasoning eats `max_tokens` before it emits the
+  citations array — the code already notes this failure mode and set max_tokens to
+  24000; (b) JSON-mode returns picks but silently drops `citations`; (c) it emits
+  no picks at all. Each implies a *different* fix, so do not guess. **This is the
+  highest-value Q1 step** — Q1 asks for the trades *and why*, and a fallback book
+  has no why.
+- **Theme breadth (not ticker breadth) is what produces shorts.** Ticker breadth is
+  done (37 tickers, 4–8 per theme). Positions on a side = (themes selected) ×
+  (their tickers), so tickers deepen a side that already has a theme but cannot
+  create one, and today **no theme is short-capable**. The remaining routes are
+  more themes (promote from `discovered_themes`, which already holds 6 Tier-2
+  candidates the engine found itself) or single names — `task.md` explicitly allows
+  "single companies" and the universe has essentially none. Both need
+  `SECTOR_MAP`/`GEO_MAP`/`_ASSET_CLASS_MAP` entries or names vanish silently.
 - **Q1 breadth** — universe is 8 themes → 24 tickers, all ETFs/futures proxies, zero
   single names; only 3 themes clear conviction. Diagnosed in iteration 2; the
   one-line backfill change was rejected as dishonest (see above). Legitimate route:

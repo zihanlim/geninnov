@@ -137,19 +137,25 @@ deploys. Until it resets:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 533 backend + 120 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 538 backend + 120 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
   **All six stages report to `pipeline_runs`** since iteration 14 — L1 and L4 were
   silent, so `/method` said "not instrumented" while the status bar said "4/4
   succeeded".
-- **Q1 book** — **5 long / 4 short across 9 positions** (XLE, JPM, SVXY, NUE, UNH
-  long; SLV, BABA, PDD, NOC short) on the last 2026-07-25 run, +0.9% net at 59.6%
-  gross. **Sized by conviction since iteration 38** (ADR-0053) — it had been
-  HypeScore-weighted while every surface claimed otherwise; `|weight|/conviction` is
-  now one constant per side. **Seven of the nine positions survived every rerun on
-  identical inputs; XLE and UNH did not** (ADR-0057), and each row says which. **The long side is at Q1's five**; the
+- **Q1 book** — **5 long / 4 short across 9 positions** (SHY, XLE, NUE, OIH, SVXY
+  long; PDD, BABA, SLV, NOC short) on the 2026-07-25 run, +5.2% net at 56.7% gross.
+  The roster turns over ~90% run to run, so treat any specific list as one draw.
+  **Sized by conviction since iteration 38** (ADR-0053) — it had been HypeScore-weighted
+  while every surface claimed otherwise. The model is `weight ∝ conviction`
+  (`|EdgeScore|/vol`, vol-floored) normalised across the **whole book**, *then* the
+  single-name / sector / geography caps bind — it is not a per-side constant: this run
+  the **US geography cap sits at its 35% limit**, so every US name (incl. the NOC
+  short) is scaled to the same `|weight|/conviction` while the non-US shorts are not,
+  and `/risk` reads that geo cap as *near*. Per-row rerun-stability markers say which
+  names survived identical-input reruns and which did not (ADR-0057). **The long side
+  is at Q1's five**; the
   short side holds four of the five independent ideas that existed, and `/book`'s Pool
   depth panel says so in warning colour rather than excusing it. Almost every name
   comes from a theme **below** the attention gate (ADR-0046). **The composition moves
@@ -179,6 +185,42 @@ Live at https://andromeda-analytics.vercel.app · 533 backend + 120 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 53 (2026-07-25)
+
+**A verification pass over a freshly turned-over book: every number I poked held, the
+prior fixes are live, and the one "anomaly" I chased was the sizing working exactly as
+designed.** No new defect to fix — recorded so the next agent inherits the checks, not
+a blank slate.
+
+The book had turned over since iteration 50 (SHY, XLE, NUE, OIH, SVXY long; PDD, BABA,
+SLV, NOC short — JPM/UNH/XLE-long gone), and a concurrent full pipeline run had resynced
+it, so I re-derived against the *new* book:
+
+- **Book-of-record consistent** (ADR-0040): `portfolio_positions` (9) == `picks` (9),
+  and `portfolio_risk.concentration_hhi` = **1208** matches the fixed gross-normalised
+  formula on the current book — so iteration 50's HHI fix is live end-to-end on a book
+  it never saw. Regime reads **34bps / HY OAS 2.77%** (iteration 49 fix), `/method`
+  *"reconciles exactly"* (iteration 48/49 fix). All three hold across a full turnover.
+- **Thesis survives the poke** (priority #2): all seven cited macro numbers verify to
+  the digit against fresh L0 — gold $4,055.7, DFF 3.63%, DGS2 4.37%, DFII10 2.43%, VIX
+  18.58, WTI $90.47, HY OAS 277bps. The citation guardrail is doing its job.
+- **The false lead, recorded so it isn't re-chased:** SHY shows conviction **88.6×**
+  (highest) yet is only the #1 long at 8.9%, and `|weight|/conviction` clusters into two
+  values that look like a per-side sizing bug (the short NOC sits with the longs). It is
+  not a bug. `allocate_portfolio` normalises `weight ∝ conviction` across the *whole*
+  book, then caps; the **US geography total is pinned at exactly its 35% cap**, so every
+  US name (five longs + the NOC short) is scaled by the same factor — that is the
+  cluster. SHY reads lower still because its floored-inverse-vol conviction drove its
+  base weight over the 20% single-name cap first. Working as designed (ADR-0053);
+  the doc's old "one constant per side" phrasing was imprecise and is corrected above.
+
+**UI/UX pass** — `/`, `/book`, `/risk`, `/method` at 1440 and 375: zero horizontal
+scroll, zero console errors, screenshots reviewed. `/risk` HHI **1208**, delta a clean
+−96. One 0.02pp cosmetic drift noted and left: `regime.real_rate` 2.45 vs its source
+DFII10 2.43, a fetch-timing artifact that the next full run reconciles. No code change
+this iteration; docs brought back into lockstep with the live book. 538 backend + 120
+frontend.
 
 ### Loop iteration 52 (2026-07-25)
 

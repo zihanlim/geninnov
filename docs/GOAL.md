@@ -85,6 +85,9 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
+  **All six stages report to `pipeline_runs`** since iteration 14 — L1 and L4 were
+  silent, so `/method` said "not instrumented" while the status bar said "4/4
+  succeeded".
 - **Q1 book** — **4 long / 2 short**, gross 69.2%, net +17.7%, VERIFIED, $30.8M in
   cash, 0 cap violations, and **three of the six positions are single companies**
   (JPM, UNH long; NOC short) as `task.md` asks for. **One portfolio everywhere** since iteration 10
@@ -104,6 +107,45 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
   agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 14 (2026-07-24)
+
+**Two of six pipeline stages never reported, so "4/4 succeeded" counted the wrong
+four.** `/method` showed L1 and L4 as *"not instrumented — Last success: never"*
+while the status bar on the same screen read *"All stages complete · 4/4
+succeeded"*. Both statements were accurate; together they misled.
+`EXPECTED_STAGES` was `["L0","L2","L3","L5"]`, so the denominator counted the stages
+that **report**, not the stages that **exist**.
+
+The two silent ones were the two the deliverables lean on hardest: **L1 is theme
+detection — the whole of Q2's "daily process that identifies which themes are
+trending" — and L4 is the risk engine behind every number on `/risk`.** A process
+page that cannot say whether theme detection ran is not describing a process, and
+"did the risk engine run today?" is exactly the question to settle before trusting a
+VaR.
+
+Both now write a `started` sentinel before any work and a `success` row with
+duration; L4 also writes `failure` before re-raising, so a crash in the risk block is
+visible rather than merely absent. Each carries `source_freshness` naming what it
+actually produced — `themes_scored`, `positions_priced` — because "it returned" is
+not the same as "it did something".
+
+**Live: all six green** — L0 12.4s · **L1 21.9s (themes_scored 8)** · L2 4.5s ·
+L3 1.7s · **L4 1.3s (positions_priced 23)** · L5.
+
+Two claims on `/method` went stale with the change and were corrected rather than
+left: the `STAGES` comment asserting *"Only L0, L2, L3 and L5 do"*, and the reader
+note explaining that L1/L4 *"emit no row at all"*. The `instrumented` flag stays in
+the model — conflating "no row" with "did not run" would be a lie for any stage that
+later stops reporting.
+
+**Re-derived and corrected a stale entry in this file:** the backlog said the Q2
+narrative "is not consolidated as one readable answer". It is. `/method` opens with
+*"The daily process that identifies trending themes, quantifies the attention each
+attracts, and turns that into a long-short book"*, then §01 walks L0→L5 with each
+stage's inputs, destination table, status and duration — which is exactly Q2's "data
+gathering → processing → quantification framework", with the prototype attached.
+That gap is closed; what was actually missing was the stage telemetry above.
 
 ### Loop iteration 13 (2026-07-24)
 
@@ -817,8 +859,11 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   sample is too small; three routes are unreachable at 375px; tertiary text and
   the orange accent sit at 2.8:1 contrast; two `/method` callouts at 2.09:1.
 - **L2 factor betas** — 88 rows, never reconciled against a known benchmark.
-- **Q2 narrative** — data gathering → processing → quantification exists in code
-  and on `/method`, but is not consolidated as one readable answer.
+- ~~**Q2 narrative not consolidated**~~ — **re-derived as already done, iteration
+  14.** `/method` opens with the process statement and §01 walks L0→L5 with each
+  stage's inputs, destination table, live status and duration — that is Q2's "data
+  gathering → processing → quantification framework" with the prototype attached.
+  What was genuinely missing was telemetry for L1 and L4, now fixed.
 
 ## Hard constraints
 

@@ -113,18 +113,23 @@ deploys. Until it resets:
 - **The standing mandate's "verify on the live URL" step cannot be satisfied.** Say so
   rather than claiming a fix is live. `git push` does **not** deploy this project —
   these are CLI (`vercel --prod`) deploys with no git metadata.
-- **Committed, tested, built, NOT deployed:**
-  [ADR-0064](adrs/0064-the-audit-page-blamed-the-pipeline-for-its-own-arithmetic.md)'s
-  EdgeScore renormalisation fix (commit `e8d5b27f`). The live `/method` still shows
-  **RECONCILIATION FAILURE**, `null → 0` and *"does NOT reconcile"* — re-checked at
-  21:08 UTC, still present. **Deploy it first next iteration**, then verify.
+- **RESOLVED (iteration 50):** `e8d5b27f`'s EdgeScore renormalisation fix
+  ([ADR-0064](adrs/0064-the-audit-page-blamed-the-pipeline-for-its-own-arithmetic.md))
+  **is now live** — a deploy from the shared HEAD landed carrying it (it was an
+  ancestor of the iteration-49 regime deploy). `/method` reads *"reconciles exactly"*,
+  no `RECONCILIATION FAILURE`, no `null → 0`. The blocking item is closed; the quota
+  guidance below still holds for **new** frontend changes.
 - **Retried twice more and still refused**, so this is not a transient. A deploy *did*
-  succeed for the other session at 21:03 and did **not** contain `e8d5b27f`, so the
-  quota is shared and whoever spends it last wins.
+  succeed for the other session at 21:03, so the quota is shared and whoever spends it
+  last wins — but a deploy from the shared HEAD carries **both** sessions' committed work.
 - **Backend work is NOT blocked by this.** The daily pipeline and its guard run on
   GitHub Actions, and can be executed and verified against production directly. When the
   quota is out, **prefer backend or measurement work that can actually be verified** over
   frontend work that has to be claimed rather than shown.
+- **Data-layer fixes bypass the deploy entirely.** The frontend reads Supabase live, so
+  a corrected DB value shows immediately with no deploy — recompute with the *fixed code*
+  and persist (iteration 45 `market_assets`, iteration 50 `portfolio_risk.concentration_hhi`).
+  This is the lever to reach for while the quota is out.
 - **Deploy from a clean archive**, never the working tree, because a second agent's
   uncommitted WIP is usually present:
   `git archive HEAD | tar -x -C <tmp> && cd <tmp> && npx vercel --prod --yes`
@@ -174,6 +179,46 @@ Live at https://andromeda-analytics.vercel.app · 533 backend + 120 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 50 (2026-07-25)
+
+**The concentration metric was diluted by cash, so it read below the "fully
+diversified" line printed on its own card — impossible for a real HHI, and it let the
+concentration limit under-fire.**
+
+Re-deriving from live truth with the deploy quota still out, I favoured a fix I could
+*verify without a deploy*. `/risk` was largely healthy — VaR, CVaR, Sharpe and Beta
+all correctly **suppressed** ("3 sessions of history, needs 30/60") rather than
+publishing noise, so the values 425/−1.73/3.83 never reach the page. But the one
+return-independent metric that *is* shown, **HHI = 425**, sat below its own card's
+stated baseline: *"10 000/N is fully diversified"* = **1 111** for 9 names. A real HHI
+cannot fall below the equal-weight floor.
+
+`compute_risk` passed `concentration_hhi` the raw `|weight|` of each position —
+**shares of total capital, which sum to gross (~0.59 with 41% in cash), not 1.0** as
+the function documents. So cash was scaling the whole index down: the same positions
+fully invested read 1 204, but at 59% gross they read 425. Two consequences — the book
+looked *more* diversified than equal-weight (false), and the **2 000 concentration
+limit under-triggered**, because cash, not diversification, was lowering the number.
+That second one is a real Q2 risk-monitoring hole: a genuinely concentrated book could
+sit on cash and never breach.
+
+Fixed by weighting each position by its share of **gross** exposure (`|weight|`
+normalised to sum to 1), the unit `concentration_hhi` already documents — so the index
+measures how concentrated the *bets* are, independent of the cash level. The book's
+true concentration is **1 204** — just above equal-weight-9 (1 111), 60% of the 2 000
+ceiling. Existing tests were unaffected (their books were fully invested, gross = 1);
+a new test pins the invariant: two names at 25% of capital (50% cash) are as
+concentrated as the same two at 50% (HHI 5 000), never 1 250.
+
+**Verified live without a deploy** — recomputed the 07-25 and 07-24 rows with the
+fixed code and persisted them, so `/risk` reads **HHI 1 204**, limit board **60% · OK
+· +796**, metric-grid delta a clean **−100**, and the value now sits correctly above
+its "fully diversified" line. `/`, `/book`, `/risk`, `/method` all clean at 1440 and
+375 — no horizontal scroll, zero console errors; `/method` now reads *"reconciles
+exactly"* (the iteration-48/49 EdgeScore fix is live). Found the way every real bug
+here is found: cross-reading the value against a baseline printed beside it. No new
+ADR — it satisfies `concentration_hhi`'s existing contract. 533 backend + 120 frontend.
 
 ### Loop iteration 49 (2026-07-25)
 

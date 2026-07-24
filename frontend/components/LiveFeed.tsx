@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { assessStaleness } from "@/lib/freshness";
+import { reconcileToBook, type Reconciliation } from "@/lib/risk/bookOfRecord";
+import { bookAssetsFromPicks } from "@/lib/bookPicks";
 
 /**
  * Always-visible pipeline status bar.
@@ -91,7 +93,7 @@ const DOT: Record<Health, string> = {
 export default function LiveFeed() {
   const [runs, setRuns] = useState<PipelineRun[] | null>(null);
   const [themes, setThemes] = useState<number | null>(null);
-  const [tickers, setTickers] = useState<number | null>(null);
+  const [recon, setRecon] = useState<Reconciliation | null>(null);
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
@@ -103,16 +105,28 @@ export default function LiveFeed() {
         .limit(40),
       supabase.from("themes").select("id", { count: "exact", head: true }),
       supabase.from("portfolio_positions").select("asset"),
-    ]).then(([runRes, themeRes, posRes]) => {
+      // The book of record is L5's published picks (ADR-0040), the same source
+      // /book renders. "Held tickers" read portfolio_positions instead, which the
+      // pipeline fills with L1's full candidate pool and only later reconciles down
+      // to the picks — so mid-reconcile it showed "Held tickers 40" while /book held
+      // 9. Count the published book, and disclose the positions divergence the way
+      // /risk does rather than hide it (bookOfRecord.ts: the check is the disagreement).
+      supabase
+        .from("research_recommendations")
+        .select("picks")
+        .order("run_date", { ascending: false })
+        .limit(1),
+    ]).then(([runRes, themeRes, posRes, bookRes]) => {
       if (runRes.error) setUnavailable(true);
       else setRuns((runRes.data as PipelineRun[]) ?? []);
       setThemes(themeRes.count ?? null);
-      setTickers(
-        posRes.error
-          ? null
-          : new Set((posRes.data ?? []).map((r: { asset: string }) => r.asset))
-              .size
-      );
+      const positionAssets = posRes.error
+        ? []
+        : (posRes.data ?? []).map((r: { asset: string }) => r.asset);
+      const bookAssets = bookRes.error
+        ? null
+        : bookAssetsFromPicks(bookRes.data?.[0]?.picks);
+      setRecon(reconcileToBook(positionAssets, bookAssets));
     });
   }, []);
 
@@ -181,7 +195,22 @@ export default function LiveFeed() {
       </span>
       <span className="text-text-tertiary">|</span>
       <span>
-        Held tickers <span className="num">{tickers ?? "—"}</span>
+        Held tickers{" "}
+        <span className="num">
+          {recon === null
+            ? "—"
+            : recon.bookMissing
+              ? recon.positionCount
+              : recon.bookCount}
+        </span>
+        {recon && !recon.reconciled && !recon.bookMissing && (
+          <span
+            style={{ color: "var(--warning)" }}
+            title="portfolio_positions holds L1's provisional candidate pool; the pipeline reconciles it down to the published book after L5. /risk discloses that its risk numbers are computed on the pool meanwhile (ADR-0040)."
+          >
+            {" "}· {recon.positionCount} in positions, reconciling
+          </span>
+        )}
       </span>
       <Link
         href="/method"

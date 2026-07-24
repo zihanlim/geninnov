@@ -22,6 +22,7 @@ import {
   Th,
   Td,
 } from "@/components/method/primitives";
+import SignalValidation from "@/components/method/SignalValidation";
 
 /* ══ Row types ═══════════════════════════════════════════════════════════════ */
 
@@ -1314,6 +1315,9 @@ export default function MethodPage() {
           </div>
         )}
       </Section>
+
+      {/* Validation of the above — honest "is HypeScore predictive?" status. */}
+      <SignalValidation />
 
       {/* ═══ 3. TradeScore ═════════════════════════════════════════════════ */}
       <Section

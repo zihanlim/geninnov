@@ -110,6 +110,54 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 29 (2026-07-24)
+
+**Chased the open gap — "the short side is limited by L5's selection" — and found
+what L5 was actually being handed.**
+
+First hypothesis: the agent is choosing blind, without correlation data. **Wrong** —
+`format_book_metrics_summary` does inject high-correlation pairs into the prompt, and
+they are computed across the CANDIDATE pool before selection, which is the right
+place. Worth stating, because it would have been an easy and satisfying thing to
+"fix" without checking.
+
+What is wrong is the shape. `correlation_warning` emitted **one verbose sentence per
+pair**, each ending with the same "verify this is intentional, not accidental
+doubling of the same bet" — **31 of them** on the live 23-name pool:
+
+```
+IEF and AGG are same-direction correlated (+0.97) — verify this is intentional...
+SPY and QQQ are same-direction correlated (+0.93) — verify this is intentional...
+TLT and AGG are same-direction correlated (+0.91) — verify this is intentional...
+... 28 more
+```
+
+Pairwise is the wrong unit as well as the wrong volume. Nobody reasons about TLT-IEF,
+TLT-AGG, IEF-AGG and IEF-SHY separately; they reason about **the duration complex**.
+Connected components collapse those 31 lines to four named bets:
+
+```
+ONE BET: AGG, IEF, SHY, TLT move together — holding several is concentration,
+         not diversification.
+ONE BET: GDX, GLD, SLV move together — ...
+ONE BET: EFA, EWJ ...            ONE BET: QQQ, SPY ...
+```
+
+**Inverse pairs are excluded from clusters and reported separately.** A −0.8
+correlation is a HEDGE; folding it into a "these are the same" cluster would invert
+the meaning, which is the most damaging thing this section could say. A test pins it.
+
+**I am not claiming this changes the book, and it should not be recorded as if it
+did.** It improves a decision input that was demonstrably noisy. Whether L5 selects
+differently is its call and will be visible in the thesis — the honest test is the
+next few runs, not this one.
+
+**Also worth keeping:** two existing tests asserted exact line COUNTS, which pinned
+the old formatting rather than the meaning, and both broke on a change that improved
+the output. Rewritten to assert properties — two independent pairs make two bets, an
+inverse pair makes a HEDGE and never a ONE BET. A test that breaks when the output
+gets better is testing the wrong thing.
+
 ### Loop iteration 28 (2026-07-24)
 
 **The tool I built last iteration disproved the reasoning that motivated it.**

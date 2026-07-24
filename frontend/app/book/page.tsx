@@ -378,20 +378,18 @@ function BookPageInner() {
   // — the case that used to dead-end silently on an abstained theme — say plainly
   // that it was held out and point at the abstention roster.
   const focusThemeId = useSearchParams().get("theme");
-  const focusPicks = useMemo(
-    () =>
-      focusThemeId
-        ? (rec?.picks ?? []).filter((p) => p.theme_id === focusThemeId)
-        : [],
-    [rec, focusThemeId]
-  );
-  // Prefer the themes-table name; fall back to a position's own theme label.
-  const focusName = focusThemeId
-    ? themeNames[focusThemeId] ??
-      focusPicks[0]?.theme_name ??
-      focusPicks[0]?.theme ??
-      null
-    : null;
+  const focusName = focusThemeId ? themeNames[focusThemeId] ?? null : null;
+  // Picks store the theme NAME (`theme`), not the theme_id — theme_id is null on
+  // L5 output — so match on the name resolved from the URL's id, with theme_id as
+  // a forward-compatible fallback for when the agent starts populating it.
+  const focusPicks = useMemo(() => {
+    if (!focusThemeId) return [];
+    return (rec?.picks ?? []).filter(
+      (p) =>
+        (p.theme_id && p.theme_id === focusThemeId) ||
+        (!!focusName && (p.theme === focusName || p.theme_name === focusName))
+    );
+  }, [rec, focusThemeId, focusName]);
   // A known theme (named, or carrying an EdgeScore) with no positions is held out.
   const focusIsKnown =
     !!focusThemeId &&

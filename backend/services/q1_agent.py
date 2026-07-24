@@ -223,6 +223,47 @@ def _strip_reasoning_and_fences(text: str) -> str:
 
 def _llm_complete(prompt: str, system: str = "", temperature: float = 0.0,
                   response_schema: dict | None = None) -> str:
+    """Provider call under a WALL-CLOCK deadline.
+
+    ``LLM_TIMEOUT_SECONDS`` was passed straight to ``requests.post(timeout=...)``,
+    which does not mean what the name suggests: requests applies it to the connect
+    and to the gap BETWEEN BYTES, and its own docs are explicit that it "is not a
+    time limit on the entire response download". A provider that trickles data — or
+    a reasoning model thinking slowly with the connection alive — never trips it.
+
+    Observed rather than theorised: with the value set to 900s, one L5 call ran 23
+    minutes and a later one passed 45 minutes still inside a single attempt. In the
+    daily GitHub Actions job that is not a slow book, it is a hung workflow that
+    produces nothing and holds the runner toward its 6-hour ceiling.
+
+    So the deadline is enforced here, around whichever provider runs, and the
+    per-request timeout is kept as the inner (inter-byte) guard it actually is. On
+    expiry the worker is abandoned — it holds a socket, and this is a batch process —
+    and TimeoutError propagates into the existing retry-then-fallback path, which is
+    what should happen when a provider stalls.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as _FTimeout
+
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        fut = pool.submit(
+            _llm_complete_inner, prompt, system, temperature, response_schema
+        )
+        try:
+            return fut.result(timeout=LLM_TIMEOUT_SECONDS)
+        except _FTimeout:
+            raise TimeoutError(
+                f"LLM call exceeded {LLM_TIMEOUT_SECONDS}s wall clock "
+                f"(provider={_select_provider()})"
+            ) from None
+    finally:
+        # Never block on an abandoned worker on the way out.
+        pool.shutdown(wait=False)
+
+
+def _llm_complete_inner(prompt: str, system: str = "", temperature: float = 0.0,
+                        response_schema: dict | None = None) -> str:
     """
     Route LLM call: MiniMax (preferred) → Anthropic Claude → Gemini (fallbacks).
     Raises ValueError if no provider is configured.

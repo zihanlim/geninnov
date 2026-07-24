@@ -1299,3 +1299,61 @@ def test_verify_citations_still_passes_a_clean_book():
         "independent_ideas": {"short": {"count": 5}},
     }
     assert verify_citations(state)["verified"] is True
+
+
+# ─── LLM wall-clock deadline (ADR-0051) ──────────────────────────────────────
+
+def test_llm_complete_enforces_a_wall_clock_deadline(monkeypatch):
+    """requests' `timeout=` bounds the gap BETWEEN BYTES, not the call.
+
+    Its docs say so explicitly — "not a time limit on the entire response
+    download" — and the consequence was observed, not theorised: with
+    LLM_TIMEOUT_SECONDS=900 one L5 call ran 23 minutes and a later one passed 45
+    still inside a single attempt. In the daily job that is a hung workflow.
+    """
+    import time
+    from backend.services import q1_agent as qa
+
+    monkeypatch.setattr(qa, "LLM_TIMEOUT_SECONDS", 1)
+    monkeypatch.setattr(qa, "_select_provider", lambda: "minimax")
+
+    def _slow(*_a, **_k):
+        time.sleep(30)          # a provider that is alive but not finishing
+        return "never reached"
+
+    monkeypatch.setattr(qa, "_llm_complete_inner", _slow)
+
+    started = time.monotonic()
+    with pytest.raises(TimeoutError) as exc:
+        qa._llm_complete("prompt")
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 10, f"deadline not enforced — took {elapsed:.1f}s"
+    assert "wall clock" in str(exc.value)
+
+
+def test_llm_complete_returns_the_providers_answer_untouched(monkeypatch):
+    """The deadline must be a wrapper, not a rewrite: a normal call is unchanged."""
+    from backend.services import q1_agent as qa
+
+    monkeypatch.setattr(qa, "LLM_TIMEOUT_SECONDS", 30)
+    monkeypatch.setattr(
+        qa, "_llm_complete_inner",
+        lambda prompt, system="", temperature=0.0, response_schema=None: f"ok:{prompt}",
+    )
+    assert qa._llm_complete("hello") == "ok:hello"
+
+
+def test_llm_complete_propagates_a_provider_error_not_a_timeout(monkeypatch):
+    """A provider that fails fast must surface its own error — the wrapper must not
+    turn every failure into a timeout, or the retry feedback becomes useless."""
+    from backend.services import q1_agent as qa
+
+    monkeypatch.setattr(qa, "LLM_TIMEOUT_SECONDS", 30)
+
+    def _boom(*_a, **_k):
+        raise ValueError("MiniMax API error 429: rate limited")
+
+    monkeypatch.setattr(qa, "_llm_complete_inner", _boom)
+    with pytest.raises(ValueError, match="429"):
+        qa._llm_complete("hello")

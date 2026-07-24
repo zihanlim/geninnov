@@ -186,6 +186,64 @@ Live at https://andromeda-analytics.vercel.app · 538 backend + 120 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 54 (2026-07-25)
+
+**The three-iteration reconciliation arc closes, verified on the rendered page.**
+
+Deploy refused again, so this went to verifying what is already live rather than adding
+more that cannot reach it. Expanding XLE on `/book` — a position whose theme has no carry
+or value proxy, the exact case that started this:
+
+```
+Trend     +0.94   +0.189
+Regime    +0.07   +0.015
+Carry      n/a     —          ← was "+0.00  +0.000"
+Value      n/a     —
+Sentiment +0.11   +0.005
+Σ contributions → EdgeScore → LONG +0.436
+```
+
+**No mismatch warning.** [ADR-0064](adrs/0064-the-audit-page-blamed-the-pipeline-for-its-own-arithmetic.md)
+taught the surfaces to renormalise; [ADR-0066](adrs/0066-not-computable-must-persist-as-null.md)
+gave them something to renormalise over. Neither worked alone — 0064 shipped and `/book`
+still could not reconcile, which is what exposed 0066 — and together the per-position
+decomposition reconciles on the page for the first time. `n/a` where a component is not
+computable, and the Σ matching the persisted score.
+
+That closes a defect that survived three separate fixes: a page inventing a total, a row
+inventing a component, and the two only fixable in that order.
+
+#### Handed over, not built — the sizing chain
+
+The same expanded panel says: *"These steps do not compose: 13.1% normalised, no cap
+binding, yet the book holds 7.6%."* That is the other session's honest disclosure
+(`fix(book): the sizing chain showed steps that cannot compose`), and it is their open
+surface, so this iteration measured it rather than touching it:
+
+| | |
+|---|---|
+| XLE normalised conviction share | `29.94 / 229.27` = **13.06%** |
+| book gross (deployed fraction) | **56.71%** |
+| normalised × gross | **7.41%** |
+| actually held | **7.61%** |
+
+**Deployment scaling explains almost all of it.** The normalised weight is a share of the
+*risk sleeve*; the book weight is a share of *$100M*, and the two differ by the cash the
+position limits hold back (ADR-0037). The residual 0.2pp is cap redistribution — SHY's
+conviction share is **38.65%**, far over the single-name cap, so clamping it pushes weight
+onto the others and the mapping stops being a single scalar.
+
+So the chain does compose; it is **missing two steps** — deployment and cap
+redistribution — rather than being inconsistent. Recorded here with the arithmetic so the
+session that owns that surface does not have to re-derive it.
+
+**Verified:** `/book` at 375px — 5/4 on run 2026-07-25, no horizontal scroll, no `NaN`,
+zero console errors.
+
+**Still not live** (`api-deployments-free-per-day`, eighth refusal): ADR-0068's board
+correction and the ADR-0067 follow-up sit committed and tested. `/risk` still shows
+"1 breached" until the quota resets.
+
 ### Loop iteration 53 (2026-07-25)
 
 **A verification pass over a freshly turned-over book: every number I poked held, the

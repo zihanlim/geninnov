@@ -212,7 +212,7 @@ its place, the Beta tile and the footer now agree, and the Σ still reads −0.0
 least two independent cross-sections."* Match on `NaN`, and read the context before
 calling a word a defect.
 
-[ADR-0062](adrs/0062-one-beta-bar-across-every-surface.md).
+[ADR-0063](adrs/0063-one-beta-bar-across-every-surface.md).
 
 ### Loop iteration 43 (2026-07-25)
 
@@ -396,7 +396,7 @@ no horizontal scroll at 1440px or 375px, zero console errors.
 > book-level quantity** — asserting a direction without computing the magnitude, the
 > exact error class this project has caught five times in its own code. The number was
 > already on the page: `/risk` prints `Σ β contribution −0.04` two panels from where I
-> was looking. See [ADR-0062](adrs/0062-one-beta-bar-across-every-surface.md).
+> was looking. See [ADR-0063](adrs/0063-one-beta-bar-across-every-surface.md).
 
 **Half that reason is verifiably true and half states its mechanism backwards, and
 nothing catches it.** Checked against the same run's data:

@@ -101,7 +101,7 @@ export function PositionRiskAttribution({
   // target in another, on one page. That is precisely the defect iteration 21 fixed for
   // the risk-limit board; it survived here because this panel takes beta as a prop and
   // never saw the sample size. It now obeys MIN_SESSIONS.beta_abs like the tile and the
-  // board (ADR-0062).
+  // board (ADR-0063).
   //
   // An UNKNOWN session count does not withhold: not knowing the sample size is not
   // evidence that it is short — the same rule buildLimitBoard follows.

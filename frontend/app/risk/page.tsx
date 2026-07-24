@@ -629,7 +629,7 @@ function RiskPageInner() {
         rows={attribution}
         bookBeta={data.risk?.beta ?? null}
         // The same sample size the Beta tile and the limit board use, so all three
-        // agree about whether a regression beta is publishable (ADR-0062).
+        // agree about whether a regression beta is publishable (ADR-0063).
         returnSessions={data.returns.length}
         positionsFailure={data.positionsFailure}
         factorsFailure={data.factorsFailure}

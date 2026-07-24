@@ -1,4 +1,4 @@
-# ADR-0062 — One sample bar for beta across every surface; and the recorded next step was wrong
+# ADR-0063 — One sample bar for beta across every surface; and the recorded next step was wrong
 
 **Date:** 2026-07-25
 **Status:** Accepted

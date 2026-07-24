@@ -209,6 +209,59 @@ horizontal scroll, zero console errors. Regression test locks 0.36pp → "36bps"
 100 deploys/day was exhausted by the day's cadence — but a deploy built from the
 shared HEAD landed while I watched, carrying the commit, so the fix is live regardless.
 
+### Loop iteration 49 (2026-07-25)
+
+**I broke the guard last iteration, said it was "verified against production", and both
+were true at once.**
+
+Deploy refused a fifth time, so the iteration went to checking my own last change rather
+than adding another. Running the guard **the way `daily-refresh.yml` actually invokes
+it** — `python scripts/check_data_integrity.py` — crashed:
+
+```
+ModuleNotFoundError: No module named 'backend'
+```
+
+Run as a **script**, `sys.path[0]` is `scripts/` and the repo root is absent, so the lazy
+`backend.services.q1_agent` import could not resolve. Last iteration's verification ran
+it as a **module** (`python -m scripts.check_data_integrity`), which *does* put the repo
+root on `sys.path`. **The check passed against production while being broken in the only
+invocation production uses.** Verify the entry point that runs, not a convenient one.
+
+**And it would not have been loud.** The workflow wraps the step in
+`|| echo "::warning::"`, so a crash and a real integrity flag are indistinguishable —
+both a warning, the step never red. Nothing separated *"the guard says the data is bad"*
+from *"the guard never ran"*. Fixed with the `sys.path.insert` every other script here
+already carries.
+
+**A second defect, found by writing the test rather than by reading the code:** the guard
+prints check marks, and on a cp1252 console — any Windows shell without
+`PYTHONIOENCODING` — printing one raises `UnicodeEncodeError` and exits 1, which the same
+fallback turns into a warning that looks like a real flag. **A guard that dies formatting
+its own verdict is worse than one that says nothing.** `stdout`/`stderr` are reconfigured
+to UTF-8 defensively.
+
+Two tests pin the **entry point** rather than the function — a subprocess run of the
+script asserting no `ModuleNotFoundError`, no `UnicodeEncodeError`, no traceback. The
+exit code accepts **0 or 2 deliberately**: `load_dotenv()` searches from the *script's*
+directory upward, so credentials cannot be stripped from a subprocess and the code
+differs locally (0) from CI (2). Pinning either would assert where the test runs rather
+than what it tests.
+
+**Verified under both invocations against production**, script and module, exit 0, all
+three checks green. 530 backend tests.
+
+**The general lesson, and it is the second time today:** a test can pass while the thing
+it is meant to protect is broken, if the test exercises a different path than production.
+[ADR-0063](adrs/0063-one-beta-bar-across-every-surface.md) was a panel that never saw a
+sample size; this is a guard that never saw its own entry point.
+
+**Standing note on the `|| echo "::warning::"` wrapper.** Left unchanged, deliberately —
+turning the guard into a hard failure would red the daily run for a second agent working
+in this repo, and that is not a call to make unilaterally at 2am. But it is why this bug
+would have gone unnoticed indefinitely, and it should be revisited: **a guard whose step
+is always green is a guard nobody reads.**
+
 ### Loop iteration 48 (2026-07-25)
 
 **A guardrail only ran at generation time, so a wrong claim could sit on the live page

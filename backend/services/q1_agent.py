@@ -49,6 +49,7 @@ from .book_metrics import (
     book_metrics_to_dict,
     correlation_pairs_to_dict,
     cap_utilisation,
+    independent_ideas,
     MIN_ADV_Millions,
     SECTOR_MAP,
     GEO_MAP,
@@ -782,6 +783,17 @@ def compute_book_metrics_node(state: Q1State) -> Q1State:
     cap_violations = list(bm.sector_violations + bm.geo_violations + bm.weight_violations)
     state["cap_violations"] = cap_violations
 
+    # How many genuinely separate bets each side of the POOL contains (ADR-0048).
+    # Q1 asks for five and five; the agent is told "fewer if the pool is thin", and
+    # until now it had no way to know whether the pool was thin. Twelve short
+    # candidates that collapse to three complexes IS thin; twelve that collapse to
+    # five is not. Wrapped: an explanatory measurement must never fail the book.
+    try:
+        state["independent_ideas"] = independent_ideas(state.get("candidates") or [])
+    except Exception as exc:   # pragma: no cover - network/data shape
+        print(f"[compute_book_metrics] independent_ideas failed ({exc.__class__.__name__}): {exc}")
+        state["independent_ideas"] = {}
+
     return state
 
 
@@ -1045,8 +1057,15 @@ Concentration HHI: {hhi}
 === RECENT NEWS (if any) ===
 {news_summary}
 
+=== POOL DEPTH (measured, not estimated) ===
+{independent_ideas_summary}
+
 === INSTRUCTIONS ===
 Select up to 5 LONG and up to 5 SHORT from the candidate pool (fewer if the pool is thin).
+POOL DEPTH above says how thin it actually is: it counts INDEPENDENT ideas, having
+already collapsed each group of mutually-correlated names into one. Returning fewer
+picks than that count needs a reason stated in book_view; returning fewer than five
+per side when five independent ideas exist is a choice, not a constraint.
 Check the correlation warnings — do not add picks that compound existing high-correlation exposures.
 Check the cap violations — avoid picks that worsen sector/geo concentration.
 Reference the scenario analysis in your book_risks.
@@ -1114,6 +1133,40 @@ def _make_factor_table(factor_exp: dict[str, dict]) -> str:
             f"{_num(vals.get('beta_cma')):>8.2f} | {_num(vals.get('beta_umd')):>7.2f} | {_num(vals.get('r_squared')):>4.2f}"
         )
     return header + "\n" + "\n".join(rows)
+
+
+def _format_independent_ideas(idea_counts: dict) -> str:
+    """State how many SEPARATE bets each side of the pool holds (ADR-0048).
+
+    The agent is told "fewer if the pool is thin" and had no way to know whether it
+    was. A candidate count cannot tell it: on 2026-07-25 the short side's twelve
+    names were five ideas, because five of them are one precious-metals bet and four
+    are one China-internet bet. Naming the complexes rather than only counting them
+    lets the agent see WHICH names are interchangeable, so it can take the strongest
+    of each rather than quietly dropping the whole group.
+    """
+    if not idea_counts:
+        return "(pool depth unavailable — correlation history missing)"
+
+    lines: list[str] = []
+    for side in ("long", "short"):
+        d = idea_counts.get(side) or {}
+        count, names = d.get("count", 0), d.get("names", 0)
+        reach = "reachable" if count >= 5 else "NOT reachable — take what exists"
+        lines.append(
+            f"{side.upper()}: {names} candidates -> {count} INDEPENDENT "
+            f"idea{'' if count == 1 else 's'} (Q1 asks for 5; {reach})"
+        )
+        for cx in d.get("complexes", []):
+            members = ", ".join(cx.get("members", []))
+            lines.append(
+                f"    ONE IDEA: {members} — take at most one; "
+                f"strongest is {cx.get('strongest')}"
+            )
+        alone = d.get("standalone") or []
+        if alone:
+            lines.append(f"    independent on their own: {', '.join(alone)}")
+    return "\n".join(lines)
 
 
 def _make_candidate_table(candidates: list[dict]) -> str:
@@ -1199,6 +1252,9 @@ def reason_picks(state: Q1State) -> Q1State:
         "beta": f"{risk.get('beta', 'N/A'):.2f}" if risk.get("beta") else "N/A",
         "hhi": f"{risk.get('concentration_hhi', 'N/A'):.0f}" if risk.get("concentration_hhi") else "N/A",
         "candidate_table": _make_candidate_table(candidates),
+        "independent_ideas_summary": _format_independent_ideas(
+            state.get("independent_ideas") or {}
+        ),
         "news_summary": news_summary,
     }
 
@@ -2019,6 +2075,10 @@ def _persist_to_supabase(state: Q1State) -> bool:
             "candidate_correlations": state.get("candidate_correlations_final") or {},
             "cap_utilisation": state.get("cap_utilisation_final"),
             "screening_funnel": state.get("screening_funnel") or [],
+            # ADR-0048: the same pool-depth measurement the agent reasoned over, so
+            # /book answers "why not five and five?" with that number rather than
+            # re-deriving it and risking a different answer on the same day.
+            "independent_ideas": state.get("independent_ideas") or {},
             "lens": state.get("lens", "multi_asset"),
         }
 

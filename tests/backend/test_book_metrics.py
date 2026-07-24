@@ -302,3 +302,117 @@ def test_geo_map_populated():
     assert GEO_MAP["TLT"] == "US"
     assert GEO_MAP["GLD"] == "Global"
     assert GEO_MAP["FXI"] == "China"
+
+
+# ─── Independent ideas (ADR-0048) ────────────────────────────────────────────
+
+def _cand(asset, direction, edge):
+    return {"asset": asset, "direction": direction, "edge_score": edge}
+
+
+def test_independent_ideas_collapses_a_correlated_group_to_one(monkeypatch):
+    """Twelve short candidates are not twelve short ideas.
+
+    Live on 2026-07-25 the short side's twelve names were five: GDX/GLD/IAU/NEM/SLV
+    are one precious-metals bet and BABA/FXI/KWEB/MCHI are one China-internet bet.
+    Counting names told the agent the pool was deep when it was not.
+    """
+    from backend.services import book_metrics as bmod
+
+    metals = ["SLV", "GDX", "NEM", "IAU", "GLD"]
+    china = ["BABA", "KWEB", "PDD", "MCHI", "FXI"]
+
+    def fake_matrix(picks, lookback_days=252, threshold=0.70):
+        assets = {p["asset"] for p in picks}
+        pairs = []
+        for group in (metals, china):
+            present = [a for a in group if a in assets]
+            for i in range(len(present)):
+                for j in range(i + 1, len(present)):
+                    # PDD stands alone in the live data despite being a China name.
+                    if "PDD" in (present[i], present[j]):
+                        continue
+                    pairs.append((present[i], present[j], 0.85))
+        return pairs
+
+    monkeypatch.setattr(bmod, "compute_correlation_matrix", fake_matrix)
+
+    cands = [_cand(a, "short", -0.30) for a in metals + china]
+    cands.append(_cand("NOC", "short", -0.286))
+    cands.append(_cand("ARKK", "short", -0.264))
+
+    out = bmod.independent_ideas(cands)
+    short = out["short"]
+    assert short["names"] == 12
+    # metals + china complexes, plus PDD, NOC, ARKK standalone.
+    assert short["count"] == 5
+    assert len(short["complexes"]) == 2
+    assert set(short["standalone"]) == {"PDD", "NOC", "ARKK"}
+
+
+def test_independent_ideas_names_the_strongest_of_each_complex(monkeypatch):
+    """The agent needs to know WHICH name to take, not just that a group exists."""
+    from backend.services import book_metrics as bmod
+
+    monkeypatch.setattr(
+        bmod, "compute_correlation_matrix",
+        lambda picks, lookback_days=252, threshold=0.70: [("GDX", "SLV", 0.82)],
+    )
+    cands = [_cand("SLV", "short", -0.430), _cand("GDX", "short", -0.367)]
+    cx = bmod.independent_ideas(cands)["short"]["complexes"]
+    assert len(cx) == 1
+    assert cx[0]["strongest"] == "SLV"       # larger |edge|, not alphabetical
+
+
+def test_independent_ideas_keeps_the_two_sides_apart(monkeypatch):
+    """A long and a short of correlated names are two bets, not one — the sides are
+    measured separately so a hedge is never counted as redundancy."""
+    from backend.services import book_metrics as bmod
+
+    monkeypatch.setattr(
+        bmod, "compute_correlation_matrix",
+        lambda picks, lookback_days=252, threshold=0.70: [("SPY", "QQQ", 0.95)],
+    )
+    cands = [_cand("SPY", "long", 0.20), _cand("QQQ", "short", -0.20)]
+    out = bmod.independent_ideas(cands)
+    assert out["long"]["count"] == 1
+    assert out["short"]["count"] == 1
+    assert out["long"]["complexes"] == []    # nothing to cluster with, one per side
+
+
+def test_independent_ideas_counts_an_unmeasurable_name_as_its_own_idea(monkeypatch):
+    """No return history means it cannot be clustered. Reporting it as standalone
+    biases the count UP, which never understates the choice the agent had — the safe
+    direction for a number used to say 'you could have picked more'."""
+    from backend.services import book_metrics as bmod
+
+    monkeypatch.setattr(
+        bmod, "compute_correlation_matrix",
+        lambda picks, lookback_days=252, threshold=0.70: [],
+    )
+    out = bmod.independent_ideas([_cand("NEWCO", "long", 0.4), _cand("X", "long", 0.3)])
+    assert out["long"]["count"] == 2
+    assert set(out["long"]["standalone"]) == {"NEWCO", "X"}
+
+
+def test_independent_ideas_is_empty_for_an_empty_side(monkeypatch):
+    from backend.services import book_metrics as bmod
+
+    monkeypatch.setattr(
+        bmod, "compute_correlation_matrix",
+        lambda picks, lookback_days=252, threshold=0.70: [],
+    )
+    out = bmod.independent_ideas([_cand("SPY", "long", 0.2)])
+    assert out["short"] == {"count": 0, "names": 0, "complexes": [], "standalone": []}
+
+
+def test_independent_ideas_dedupes_a_ticker_reached_twice(monkeypatch):
+    from backend.services import book_metrics as bmod
+
+    monkeypatch.setattr(
+        bmod, "compute_correlation_matrix",
+        lambda picks, lookback_days=252, threshold=0.70: [],
+    )
+    out = bmod.independent_ideas([_cand("SPY", "long", 0.2), _cand("SPY", "long", 0.3)])
+    assert out["long"]["names"] == 1
+    assert out["long"]["count"] == 1

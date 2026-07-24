@@ -24,6 +24,7 @@ import SizingChainView from "@/components/book/SizingChainView";
 import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import AbstentionRoster from "@/components/book/AbstentionRoster";
 import BookTurnover from "@/components/book/BookTurnover";
+import PoolDepth, { type IndependentIdeas } from "@/components/book/PoolDepth";
 import ClearedNotTaken, {
   type CandidateRow,
   type CandidateCorrelations,
@@ -125,6 +126,8 @@ interface Recommendation {
   screening_funnel?: FunnelStage[] | null;
   correlation_pairs?: CorrelationPairLite[] | null;
   candidate_correlations?: CandidateCorrelations | null;
+  /** ADR-0048: independent-idea count per side, as the agent saw it. */
+  independent_ideas?: IndependentIdeas | null;
   lens?: string | null;
 }
 
@@ -210,7 +213,7 @@ function BookPageInner() {
         supabase
           .from("research_recommendations")
           .select(
-            "run_date, picks, book_view, book_risks, agent_run_id, advisory_derivation, book_metrics, scenario_results, cap_utilisation, screening_funnel, correlation_pairs, candidate_correlations, lens"
+            "run_date, picks, book_view, book_risks, agent_run_id, advisory_derivation, book_metrics, scenario_results, cap_utilisation, screening_funnel, correlation_pairs, candidate_correlations, independent_ideas, lens"
           )
           .order("run_date", { ascending: false })
           // Two rows, not one: the second is the previous run_date, which is what
@@ -744,6 +747,13 @@ function BookPageInner() {
               />
             </>
           )}
+
+          {/* ── Pool depth: the answer to "why not five and five?" ───────── */}
+          <PoolDepth
+            ideas={rec?.independent_ideas ?? null}
+            heldLongs={(rec?.picks ?? []).filter((p) => p.direction === "long").length}
+            heldShorts={(rec?.picks ?? []).filter((p) => p.direction === "short").length}
+          />
 
           {/* ── Turnover vs the previous run ─────────────────────────────── */}
           <BookTurnover

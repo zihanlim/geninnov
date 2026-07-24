@@ -629,3 +629,74 @@ def format_book_metrics_summary(bm: BookMetrics, pairs: list[tuple[str, str, flo
             lines.append(f"    {w}")
 
     return "\n".join(lines)
+
+
+def independent_ideas(
+    candidates: list[dict],
+    lookback_days: int = 252,
+    threshold: float = HIGH_CORR_THRESHOLD,
+) -> dict:
+    """How many genuinely SEPARATE bets does each side of the pool contain?
+
+    Q1 asks for five long and five short trades. The book has answered with fewer for
+    many iterations, and the reason kept moving: first the universe was too narrow,
+    then the attention gate was discarding whole themes (ADR-0046). With the gate
+    fixed the pool reached 39 names — 27 long, 12 short — and the book still came
+    back 4 and 3. Twelve short candidates is not twelve short ideas, and until now
+    nothing measured the difference.
+
+    A "complex" is a connected component of names correlated at or above `threshold`
+    over `lookback_days` — the same clustering and the same threshold /risk uses to
+    flag redundancy inside the book, so one number means one thing across the site.
+    Taking two names from one complex is one idea expressed twice, which is why an
+    agent told to avoid compounding correlated exposure correctly declines to do it.
+
+    Measured on 2026-07-25: the LONG side's 27 names collapse to 13 ideas (a 12-name
+    beta/duration complex, two energy complexes, and ten standalone names), and the
+    SHORT side's 12 collapse to exactly 5 (precious metals; China internet; PDD; NOC;
+    ARKK). So five-and-five is reachable on the short side today and comfortably
+    reachable on the long side — the pool is no longer the constraint, and saying so
+    with a number is what turns "why not five?" from a shrug into a check.
+
+    Returns {"long": {...}, "short": {...}} with, per side:
+        count      — independent ideas available
+        names      — how many candidates the side holds
+        complexes  — [{"members": [...], "strongest": ticker}] for multi-name groups
+        standalone — tickers correlated with nothing else on their side
+
+    Correlation needs history; a name with none simply cannot be clustered, so it is
+    reported as standalone rather than dropped. That biases the count UP, which is the
+    safe direction: it never understates how much choice the agent had.
+    """
+    out: dict = {}
+    for side in ("long", "short"):
+        members = [c for c in candidates if c.get("direction") == side and c.get("asset")]
+        assets = list(dict.fromkeys(c["asset"] for c in members))
+        if not assets:
+            out[side] = {"count": 0, "names": 0, "complexes": [], "standalone": []}
+            continue
+
+        pairs = compute_correlation_matrix(
+            [{"asset": a} for a in assets], lookback_days=lookback_days, threshold=threshold
+        )
+        clusters = correlation_clusters(pairs)
+        # Only clusters drawn from THIS side count — correlation_matrix was already
+        # scoped to it, but be explicit so a future caller cannot pass a mixed list.
+        clusters = [sorted(set(c) & set(assets)) for c in clusters]
+        clusters = [c for c in clusters if len(c) > 1]
+
+        clustered = {a for c in clusters for a in c}
+        standalone = [a for a in assets if a not in clustered]
+
+        edge_by = {c["asset"]: abs(c.get("edge_score") or 0.0) for c in members}
+        complexes = [
+            {"members": c, "strongest": max(c, key=lambda a: edge_by.get(a, 0.0))}
+            for c in clusters
+        ]
+        out[side] = {
+            "count": len(complexes) + len(standalone),
+            "names": len(assets),
+            "complexes": complexes,
+            "standalone": standalone,
+        }
+    return out

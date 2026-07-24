@@ -30,6 +30,11 @@ import {
   positionRationale,
 } from "@/lib/positionDistinction";
 import Replication from "@/components/book/Replication";
+import {
+  positionStability,
+  stabilityLabel,
+  type ReplicationNames,
+} from "@/lib/book/positionStability";
 import ClearedNotTaken, {
   type CandidateRow,
   type CandidateCorrelations,
@@ -204,6 +209,10 @@ function BookPageInner() {
     Record<keyof EdgeWeights, boolean>
   >({ trend: false, regime: false, carry: false, value: false, sentiment: false, abstainThreshold: false });
   const [candidates, setCandidates] = useState<CandidateRow[]>([]);
+  // Per-position replication stability (ADR-0057) — which names the agent picked in
+  // every rerun on identical inputs. Read separately from the book because it is a
+  // deliberate harness run, not part of the daily job.
+  const [repl, setRepl] = useState<ReplicationNames | null>(null);
   const [prevBook, setPrevBook] = useState<{ date: string; assets: string[] } | null>(
     null
   );
@@ -242,6 +251,29 @@ function BookPageInner() {
 
       // Live EdgeScore weights + abstain threshold. Missing rows fall back to the
       // migration-024 defaults, and `resolved` records which were actually found.
+      // Replication names, keyed to the run they were measured on.
+      supabase
+        .from("backtest_results")
+        .select("end_date, notes")
+        .eq("test_name", "book_replication")
+        .order("end_date", { ascending: false })
+        .limit(1)
+        .then(({ data }) => {
+          const row = (data ?? [])[0] as { end_date: string; notes: string } | undefined;
+          if (!row) return;
+          try {
+            const n = JSON.parse(row.notes ?? "{}");
+            setRepl({
+              stable: n.stable_names ?? [],
+              unstable: n.unstable_names ?? [],
+              endDate: row.end_date ?? null,
+              samples: n.samples ?? 0,
+            });
+          } catch {
+            /* advisory only — a parse failure must not blank the book */
+          }
+        });
+
       const recRows = (recRes.data as Recommendation[] | null) ?? [];
       if (recRows.length > 1) {
         setPrevBook({
@@ -723,6 +755,8 @@ function BookPageInner() {
                 openAsset={openAsset}
                 setOpenAsset={setOpenAsset}
                 citations={citations}
+                repl={repl}
+                bookRunDate={rec.run_date}
                 advisory={advisory}
                 capByAsset={capByAsset}
                 edgeByAsset={edgeByAsset}
@@ -741,6 +775,8 @@ function BookPageInner() {
                 openAsset={openAsset}
                 setOpenAsset={setOpenAsset}
                 citations={citations}
+                repl={repl}
+                bookRunDate={rec.run_date}
                 advisory={advisory}
                 capByAsset={capByAsset}
                 edgeByAsset={edgeByAsset}
@@ -960,6 +996,8 @@ function PositionSection({
   correlationPairs,
   ideas,
   scenarios,
+  repl,
+  bookRunDate,
   emptyNote,
 }: {
   title: string;
@@ -969,6 +1007,8 @@ function PositionSection({
   openAsset: string | null;
   setOpenAsset: (a: string | null) => void;
   citations?: Citation[];
+  repl?: ReplicationNames | null;
+  bookRunDate?: string | null;
   advisory: AdvisoryDerivation | null;
   capByAsset: Map<string, CapRow>;
   edgeByAsset: Record<string, ResolvedEdge>;
@@ -1062,6 +1102,8 @@ function PositionRow({
   correlationPairs,
   ideas,
   scenarios,
+  repl,
+  bookRunDate,
 }: {
   pick: Pick;
   rank: number;
@@ -1077,6 +1119,8 @@ function PositionRow({
   correlationPairs: CorrelationPairLite[] | null;
   ideas: IndependentIdeas | null;
   scenarios: ScenarioResult[];
+  repl?: ReplicationNames | null;
+  bookRunDate?: string | null;
 }) {
   const isLong = pick.direction === "long";
   const dirColor = isLong ? "var(--long)" : "var(--short)";
@@ -1101,6 +1145,14 @@ function PositionRow({
   // independent-idea complex, the same rho 0.70 measurement PoolDepth renders — which
   // is the sharpest available answer to "why this ticker". ADR-0054.
   const plain = hasEdge && edge ? plainRationale(edge, edgeWeights) : null;
+  // Per-position replication stability (ADR-0057).
+  const stability = positionStability(
+    pick.direction,
+    pick.asset,
+    repl,
+    bookRunDate,
+  );
+  const stabilityNote = stabilityLabel(stability, repl?.samples ?? 0);
   const rationale = positionRationale(
     plain,
     distinguishPosition(pick.asset, pick.direction, ideas)
@@ -1216,6 +1268,29 @@ function PositionRow({
           >
             {rationale ?? "EdgeScore not persisted for this position"}
           </span>
+          {/* Did the agent pick THIS name every time it was re-run on identical
+              inputs? The replication panel reports 33% long-side churn as an
+              aggregate, which taints the names that were in fact unanimous. Per
+              position it separates them. Silent when unmeasured — a replication
+              from another run_date says nothing about today's names. */}
+          {stabilityNote && (
+            <span
+              className="text-[10.5px] num"
+              style={{
+                color:
+                  stability === "coinflip"
+                    ? "var(--warning)"
+                    : "var(--text-tertiary)",
+              }}
+              title={
+                stability === "coinflip"
+                  ? "Re-running the reasoning step on identical inputs did not always produce this position — the agent rates several names here equally."
+                  : "Re-running the reasoning step on identical inputs produced this position every time."
+              }
+            >
+              {stabilityNote}
+            </span>
+          )}
         </span>
         <span className="text-right">
           <span className="num text-[13px] font-semibold">

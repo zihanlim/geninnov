@@ -13,6 +13,7 @@ import MarketBar from "@/components/MarketBar";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
 import { StatusBadge } from "@/components/status/StatusBadge";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
+import { resolveRunDates, ageSeconds } from "@/lib/homeFreshness";
 import {
   fetchThemeHistories,
   fetchThemeEdge,
@@ -144,6 +145,10 @@ function ConvictionPageInner() {
   const [loading, setLoading] = useState(true);
   const [runDate, setRunDate] = useState<string | null>(null);
   const [lastPipelineRun, setLastPipelineRun] = useState<string | null>(null);
+  // Wall-clock time the pipeline finished, used ONLY for the "Updated Nm ago"
+  // freshness age — kept apart from runDate, which is the forward-dated run_date the
+  // rest of the site labels the data with (see the RUN DATE fix below).
+  const [pipelineFinishedAt, setPipelineFinishedAt] = useState<string | null>(null);
   const [drawerTheme, setDrawerTheme] = useState<ConvictionTheme | null>(null);
   const [counts, setCounts] = useState({
     total: 0,
@@ -188,13 +193,25 @@ function ConvictionPageInner() {
       const rawThemes = (themesRes.data ?? []) as ConvictionTheme[];
       setThemes(rawThemes);
       setRegime((regimeRes.data as Regime) ?? null);
-      setRunDate(rawThemes[0]?.updated_at ?? null);
-      setLastPipelineRun(
-        (pipeRes.data as { finished_at?: string; run_date?: string } | null)
-          ?.finished_at ??
-          (pipeRes.data as { run_date?: string } | null)?.run_date ??
-          null
-      );
+      // RUN DATE is the run's canonical run_date — the date the data is FOR, the same
+      // identifier the status bar, /method and /book all show. It was sourced from
+      // `themes.updated_at`, a write timestamp that lags the run_date: on 2026-07-25
+      // the row held the 07-25 hype scores (US Election 60.1) but updated_at read
+      // 2026-07-24T20:13, so the landing page dated the current run 2026-07-24 —
+      // contradicting its own status bar three lines below ("Last run 2026-07-25").
+      const pipe = pipeRes.data as
+        | { finished_at?: string; run_date?: string }
+        | null;
+      const dates = resolveRunDates({
+        pipeRunDate: pipe?.run_date,
+        pipeFinishedAt: pipe?.finished_at,
+        themeUpdatedAt: rawThemes[0]?.updated_at,
+      });
+      setRunDate(dates.display);
+      // LAST PIPELINE RUN is the same run, so it shows the same canonical date rather
+      // than finished_at (the execution wall-clock, which is what made it read 07-24).
+      setLastPipelineRun(dates.display);
+      setPipelineFinishedAt(dates.freshnessTs);
 
       // Factor tilt of the book. This reads the `portfolio_factor_exposure`
       // view added in migration 021 — before it existed the query 404d and the
@@ -336,9 +353,11 @@ function ConvictionPageInner() {
     [themes]
   );
 
-  const observed_age_seconds = runDate
-    ? Math.max(0, Math.floor((Date.now() - new Date(runDate).getTime()) / 1000))
-    : Number.POSITIVE_INFINITY;
+  // Age is measured from the pipeline's finish TIMESTAMP, not runDate — runDate is
+  // now the forward-dated run_date ("2026-07-25"), and `new Date("2026-07-25")` is in
+  // the future relative to the ~20:13 UTC finish, which would clamp the age to 0 and
+  // read "just now" over data that is hours old.
+  const observed_age_seconds = ageSeconds(pipelineFinishedAt, Date.now());
   const runDateStatus: NumericStatus =
     !Number.isFinite(observed_age_seconds)
       ? "unavailable"

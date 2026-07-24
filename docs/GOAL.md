@@ -85,8 +85,9 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
-- **Q1 book** — **4 long / 2 short**, gross 98.9%, net +26.7%, VERIFIED with 26
-  citations (L5); the L1 book beneath it is 12 positions, 9L/3S, 92.2% deployed.
+- **Q1 book** — **2 long / 3 short**, gross 55.0%, net −20.0%, VERIFIED with 32
+  citations. **One portfolio everywhere** as of iteration 10 (ADR-0040): `/book` and
+  `/risk` describe the same five names, and every risk number is computed on them.
   Two-sided since iteration 8 (ADR-0038, direction per asset) and deeper since
   iteration 9 (ADR-0039, scope by attention). Genuinely cap-bound since iteration 7
   — **`/risk` now shows 0 breached limits**, down from 6 violations. The L5 fallback
@@ -98,6 +99,54 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
   (LDA ∩ embeddings, 6 two-method agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 10 (2026-07-24)
+
+**The app was publishing two different portfolios — closed** ([ADR-0040](../docs/adrs/0040-published-book-is-the-book-of-record.md)).
+This had been on the gap list since **iteration 1** as "`/risk` mixes two books by
+construction".
+
+`/book` renders `research_recommendations.picks` — L5's selection. But
+`portfolio_positions`, the daily return and **every risk statistic** came from L1's
+*provisional* book, which L5 re-picks a subset of, and nothing reconciled them:
+
+| source | names | gross |
+|---|---|---|
+| `portfolio_positions` → `/risk` attribution, VaR, Sharpe, HHI, returns | **12** | 92.2% |
+| `research_recommendations.picks` → `/book` | **6** | 98.9% |
+
+**EFA, IWM, QQQ, SLV, SPY and XLV were being attributed risk on `/risk` while
+appearing nowhere in the published book.** "Do I own QQQ?" got yes on one page and no
+on the other. Worse than a display bug — **VaR, CVaR, Sharpe, Beta, HHI, the daily
+return and the drawdown curve all described a portfolio nobody holds**, and `/risk`
+contradicted *itself*, reading caps and scenarios from L5's book but attribution from
+L1's.
+
+The published book is now the book of record: after L5 persists, `portfolio_positions`
+is rewritten to its picks and return/risk/cumulative are recomputed on it — the rule
+ADR-0024 already applied to tilts, scenarios and correlation. **Compute-twice is
+deliberate**: L5 *consumes* the provisional risk as reasoning input, so the final
+recompute must follow it. Two refusals: no usable picks → the L1 book stands (a
+fallback day still has a coherent portfolio); a pick outside the candidate set → log
+loudly and keep L1 rather than publish a book that disagrees with its own risk.
+
+**Verified live:** `Book of record reconciled to L5: 5 positions (was 13 from L1)`;
+`portfolio_positions` and `picks` now match exactly, 55.0% gross on both sides;
+`/risk` per-position attribution lists exactly TLT, UUP, XLF, IWM, EEM and nothing
+else; **risk-limit board 0 breached · 2 near · 7 ok**, net exposure 20% against a 30%
+limit, HHI 706.
+
+**Caveat worth stating: the book is not stable across same-day re-runs.** This run
+produced **2 long / 3 short, net −20%**; the previous run on the same prices produced
+4 long / 2 short, net +26.7%. L5 re-picks each time from a candidate pool whose risk
+inputs shift slightly between runs, so composition swings. A reviewer refreshing the
+page would notice. Not investigated — recorded as the next thing to look at, since a
+book that flips direction on a re-run is hard to defend as "the" answer regardless of
+how well each version reasons.
+
+**Note for the record:** the daily-return series changes meaning at this date. It
+tracked the L1 book before and the published book after — a discontinuity to remember
+when reading the cumulative curve.
 
 ### Loop iteration 9 (2026-07-24)
 
@@ -534,14 +583,18 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
 
 ## Live candidate gaps (re-verify before trusting)
 
-- **`/risk` mixes two books by construction.** Per-position attribution reads
-  `portfolio_positions` (L1/L4's sized book) while cap utilisation, scenarios and
-  `book_metrics` read `research_recommendations` (L5's independently re-picked
-  book). When L5 picks a different subset the page contradicts itself — observed
-  2026-07-24: attribution showed 8 positions at 12.5% while the single-name cap row
-  claimed 50% (L5's 2-pick book). Iteration 1 fixed same-day *duplication* within
-  `portfolio_positions`; it did not make L1 and L5 agree. Either have `/risk` read
-  one source, or have L5 size the L1 book rather than re-pick it.
+- ~~**`/risk` mixes two books by construction**~~ — **CLOSED, iteration 10**
+  (ADR-0040). The published book is now the book of record: `portfolio_positions`,
+  the daily return and all risk statistics are recomputed on L5's picks after it
+  runs. Verified live — attribution and `/book` list the same five names, 55.0%
+  gross both sides.
+- **The book is not stable across same-day re-runs — investigate next.** Same
+  prices, two consecutive runs: 4 long / 2 short at net +26.7%, then 2 long / 3
+  short at net **−20%**. L5 re-picks from a pool whose risk inputs shift slightly
+  between runs. A book that flips direction on a refresh is hard to defend as "the"
+  answer however well each version reasons, and a reviewer hitting reload would see
+  it. Check whether the swing comes from the LLM (prompt differs because provisional
+  risk differs) or from genuine candidate churn.
 - ~~**L5 falls back because `reason_picks` never parses a response**~~ — **CLOSED,
   iteration 6.** It was a hardcoded 120s read timeout against a ~205s generation.
   `LLM_TIMEOUT_SECONDS` (default 420). Verified live: `verified=True`, 28 citations.

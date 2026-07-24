@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildLimitBoard, CAP_UTIL_EPSILON } from "@/lib/risk/riskBoard";
+import { buildLimitBoard, CAP_UTIL_EPSILON, snapHeadroom } from "@/lib/risk/riskBoard";
 
 /**
  * `/risk`'s limit board recomputes each row's status client-side from weights and
@@ -69,5 +69,38 @@ describe("a cap sitting exactly on its limit is compliance, not breach", () => {
   it("a comfortably-under weight is still ok, and a near one still near", () => {
     expect(geoRow(0.10)!.status).toBe("ok");
     expect(geoRow(0.30)!.status).toBe("near"); // 0.30/0.35 = 0.857 >= 0.8
+  });
+});
+
+describe("headroom does not contradict the badge beside it", () => {
+  it("reports zero headroom, not −0.0%, at the live one-ULP overshoot", () => {
+    const row = geoRow(LIVE_GEO_US)!;
+    // The raw arithmetic that produced "−0.0%" on the page.
+    expect(0.35 - LIVE_GEO_US).toBeLessThan(0);
+    // ...and the row must not carry a negative headroom while reading compliant.
+    expect(row.status).not.toBe("breached");
+    expect(row.headroom).toBe(0);
+    expect(Object.is(row.headroom, -0)).toBe(false);
+  });
+
+  it("leaves real headroom untouched", () => {
+    const row = geoRow(0.30)!;
+    expect(row.headroom).toBeCloseTo(0.05, 12);
+  });
+
+  it("still reports negative headroom on a genuine breach", () => {
+    const row = geoRow(0.40)!;
+    expect(row.status).toBe("breached");
+    expect(row.headroom).toBeCloseTo(-0.05, 12);
+  });
+
+  it("snapHeadroom scales with the limit rather than using an absolute epsilon", () => {
+    // The board mixes units — weight fractions, percentages, HHI points — so the
+    // guard must mean the same thing on a 0.35 cap and a 2000-point one.
+    expect(snapHeadroom(-5.55e-17, 0.35)).toBe(0);
+    expect(snapHeadroom(-1e-7, 2000)).toBe(0);
+    // ...and must not swallow anything a reader could act on.
+    expect(snapHeadroom(-0.001, 0.35)).toBeCloseTo(-0.001, 12);
+    expect(snapHeadroom(-1, 2000)).toBe(-1);
   });
 });

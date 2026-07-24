@@ -217,6 +217,29 @@ export const NEAR_LIMIT_FRACTION = 0.8;
  */
 export const CAP_UTIL_EPSILON = 1e-9;
 
+/**
+ * Headroom whose magnitude is below representation error is **zero**, not a signed
+ * sliver.
+ *
+ * `headroom = limit − value`, and the same clamping that puts a fully-utilised group
+ * exactly on its cap (ADR-0037) leaves `0.35 − 0.35000000000000003 = −5.55e-17`, which
+ * formats as **"−0.0%"**. ADR-0068 deferred this as cosmetic — correctly at the time,
+ * because the row still read BREACHED and a negative headroom agreed with that badge.
+ *
+ * Fixing the badge invalidated the deferral: the geography row now reads
+ * `35.0% / 35.0% / 100% / −0.0% / NEAR`, a **negative headroom on a row the same board
+ * has just declared compliant**. Two cells of one row disagreeing is the defect class
+ * this project keeps finding, and it was introduced by the fix for the previous one.
+ *
+ * Scaled by the limit rather than absolute, because this board mixes units — weight
+ * fractions, percentages, HHI points — so a single absolute epsilon would mean
+ * different things per row. Relative keeps it unit-free and matches
+ * {@link CAP_UTIL_EPSILON}'s magnitude.
+ */
+export function snapHeadroom(headroom: number, limit: number): number {
+  return Math.abs(headroom) < Math.abs(limit) * CAP_UTIL_EPSILON ? 0 : headroom;
+}
+
 function statusFor(util: number | null): LimitStatus {
   if (util === null) return "unknown";
   // Sitting exactly on a limit is compliance, not breach — the allocator puts it there.
@@ -428,7 +451,8 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
   const rows: LimitRow[] = defs.map(({ def, value, limitKey }) => {
     const { limit, source } = resolveLimit(inp.config, limitKey);
     const util = value !== null && isNum(limit) && limit !== 0 ? value / limit : null;
-    const headroom = value !== null && isNum(limit) ? limit - value : null;
+    const headroom =
+      value !== null && isNum(limit) ? snapHeadroom(limit - value, limit) : null;
     return {
       ...def,
       limitSource: source,

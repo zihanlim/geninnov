@@ -21,10 +21,14 @@ const config: Config = {
         // Ink
         "text-primary": "#1c1815",
         "text-secondary": "#6b6156",
-        "text-tertiary": "#9c9182",
+        // Darkened for WCAG AA (was #9c9182 at 2.80:1 on paper). Tailwind
+        // compiles these to literal RGB at build time — the utility classes do
+        // NOT read the :root variables — so this file and globals.css must be
+        // changed together or only var() call sites move.
+        "text-tertiary": "#756b5e",
         // Brand / attention
-        accent: "#e11048",          // interactive / active (bright crimson-pink)
-        "accent-dim": "rgba(225,16,72,0.10)",
+        accent: "#d40e43",          // interactive / active (crimson-pink), AA 4.81:1
+        "accent-dim": "rgba(212,14,67,0.10)",
         brand: "#9f172a",           // primary crimson — emphasis
         "brand-dim": "rgba(159,23,42,0.09)",
         // Direction (ledger ink: green long / crimson short)
@@ -32,8 +36,8 @@ const config: Config = {
         "long-dim": "rgba(20,122,92,0.11)",
         short: "#9f172a",
         "short-dim": "rgba(159,23,42,0.10)",
-        warning: "#f97316",
-        "warning-dim": "rgba(249,115,22,0.12)",
+        warning: "#c2410c",         // AA 4.68:1 (was #f97316 at 2.53:1)
+        "warning-dim": "rgba(194,65,12,0.12)",
         // Legacy alias (kept for backward compat)
         neutral: "#6b6156",
         edge: "#e7e0d3",

@@ -110,6 +110,43 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 25 (2026-07-24)
+
+**"Why isn't X in the book?" finally has an answer — and it is the answer to Q1's
+five-and-five question.**
+
+The abstention roster covers themes that failed the |EdgeScore| band. The screening
+funnel counts what each filter removed. But a candidate that passed **every** filter
+and simply was not selected by L5 was **invisible** — the largest remaining gap
+between the pool and the book, and exactly what a reviewer probes.
+
+It matters most for the short side. **Q1 asks five long and five short; the book holds
+five and THREE.** The pool had five shorts:
+
+| candidate | edge | sector |
+|---|---|---|
+| SLV | −0.399 | Metals |
+| GDX | −0.336 | Gold Miners |
+| NOC | −0.304 | Defense |
+| GLD | −0.301 | Metals |
+| ARKK | −0.228 | Disruptive Innovation |
+
+L5 took **SLV, NOC and ARKK — one from each distinct complex** — skipping GDX and GLD
+as the same precious-metals bet already expressed through SLV. **Three independent
+short ideas is the honest answer to "why not five", and showing the two it declined is
+what makes that checkable rather than merely assertable.** Forcing GDX and GLD in
+would produce a five-short book that is really a three-bet book wearing five tickers.
+
+The panel states only what the data supports — name, side, EdgeScore, theme, and
+whether the book already holds that theme. It deliberately does **not** attribute a
+reason to L5: the agent's rationale belongs in the thesis, and narrating one here
+would be the confident invention this file keeps warning about.
+
+**Where Q1 actually stands, plainly:** five longs, three shorts, every position
+reasoned and cited, and the two names that would have padded the short side now
+visible with the reason they were passed over. The remaining route to five genuine
+shorts is more *independent* short ideas — not more tickers, and not a looser band.
+
 ### Loop iteration 24 (2026-07-24)
 
 **The site now says when the book is not today's book.**

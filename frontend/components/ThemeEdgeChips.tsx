@@ -18,7 +18,12 @@ import {
  *  - <PositionsLink> — the theme → trade linkage into /book?theme=<id>.
  */
 
-function abstainThresholdOf(edge: ThemeEdge | undefined, threshold: number): boolean {
+/** True when a theme's |EdgeScore| is below the abstain threshold — it was held
+ *  out of the book. Exported so callers can label a "positions →" link honestly. */
+export function isThemeAbstained(
+  edge: ThemeEdge | undefined,
+  threshold: number,
+): boolean {
   if (!edge || edge.edge_score === null) return false;
   return Math.abs(edge.edge_score) < threshold;
 }
@@ -44,7 +49,7 @@ export function EdgeDirectionChip({
     );
   }
 
-  const abstained = abstainThresholdOf(edge, abstainThreshold);
+  const abstained = isThemeAbstained(edge, abstainThreshold);
   const dir = abstained ? null : edge.direction;
 
   const cls = abstained
@@ -104,12 +109,18 @@ export function ProvenanceDot({
 export function PositionsLink({
   themeId,
   className,
-  label = "positions →",
+  label,
+  held = false,
 }: {
   themeId: string;
   className?: string;
   label?: string;
+  /** True when the theme was abstained/held out — it has no sized position, so
+   *  the link says so honestly and lands on the book's held-out explanation
+   *  (banner → abstention roster) rather than implying positions exist. */
+  held?: boolean;
 }) {
+  const text = label ?? (held ? "held out →" : "positions →");
   return (
     <Link
       href={`/book?theme=${encodeURIComponent(themeId)}`}
@@ -118,9 +129,13 @@ export function PositionsLink({
         className ??
         "text-[11px] text-text-tertiary hover:text-accent transition-colors whitespace-nowrap"
       }
-      title="See this theme's sized positions in the book"
+      title={
+        held
+          ? "This theme was held out of the book — see why in the abstention roster"
+          : "See this theme's sized positions in the book"
+      }
     >
-      {label}
+      {text}
     </Link>
   );
 }

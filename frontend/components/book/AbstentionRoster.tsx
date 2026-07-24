@@ -11,6 +11,7 @@
 // and value pulling opposite ways, or every signal simply near zero).
 
 "use client";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { abstainedThemes, type ThemeEdge } from "@/lib/themeSignals";
 
@@ -54,19 +55,35 @@ export default function AbstentionRoster({
   themeNames,
   abstainThreshold,
   thresholdIsLive,
+  focusThemeId = null,
 }: {
   edgeByTheme: Record<string, ThemeEdge>;
   themeNames: Record<string, string>;
   abstainThreshold: number;
   thresholdIsLive: boolean;
+  /** When set (a held-out theme deep-linked from "positions →"), that row is
+   *  highlighted and scrolled into view. */
+  focusThemeId?: string | null;
 }) {
   const roster = abstainedThemes(edgeByTheme, themeNames, abstainThreshold);
   const scored = Object.values(edgeByTheme).filter(
     (e) => e.edge_score !== null,
   ).length;
 
+  // Scroll the focused (held-out) theme's row into view once it renders.
+  const focusRowRef = useRef<HTMLTableRowElement | null>(null);
+  useEffect(() => {
+    if (focusThemeId && focusRowRef.current) {
+      focusRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [focusThemeId, roster.length]);
+
   return (
-    <section className="card mb-6" aria-labelledby="abstention-heading">
+    <section
+      id="abstention-roster"
+      className="card mb-6 scroll-mt-20"
+      aria-labelledby="abstention-heading"
+    >
       <div className="card-header">
         <h2 id="abstention-heading" className="card-title m-0">
           Abstention roster — scored, not traded
@@ -132,12 +149,22 @@ export default function AbstentionRoster({
               </tr>
             </thead>
             <tbody>
-              {roster.map((e) => (
-                <tr key={e.theme_id} className="hover:bg-bg-elevated">
+              {roster.map((e) => {
+                const focused = e.theme_id === focusThemeId;
+                return (
+                <tr
+                  key={e.theme_id}
+                  ref={focused ? focusRowRef : undefined}
+                  className={
+                    focused
+                      ? "bg-brand-dim ring-1 ring-inset ring-brand"
+                      : "hover:bg-bg-elevated"
+                  }
+                >
                   <td className="px-[14px] py-2.5 border-b border-border">
                     <Link
                       href={`/?theme=${e.theme_id}`}
-                      className="text-text-primary hover:text-accent hover:underline"
+                      className={`hover:text-accent hover:underline ${focused ? "text-brand font-semibold" : "text-text-primary"}`}
                     >
                       {e.name}
                     </Link>
@@ -163,7 +190,8 @@ export default function AbstentionRoster({
                     {abstainReason(e)}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

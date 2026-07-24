@@ -1,6 +1,7 @@
 "use client";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import CitationList, { Citation } from "@/components/CitationList";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
@@ -371,6 +372,34 @@ function BookPageInner() {
     return m;
   }, [rec]);
 
+  // ── Theme focus (?theme=<id>) ────────────────────────────────────────────
+  // A "positions →" link from the heatmap/cards lands here. Honour the param so
+  // the deep-link is meaningful: name the theme's positions if it holds any, or
+  // — the case that used to dead-end silently on an abstained theme — say plainly
+  // that it was held out and point at the abstention roster.
+  const focusThemeId = useSearchParams().get("theme");
+  const focusPicks = useMemo(
+    () =>
+      focusThemeId
+        ? (rec?.picks ?? []).filter((p) => p.theme_id === focusThemeId)
+        : [],
+    [rec, focusThemeId]
+  );
+  // Prefer the themes-table name; fall back to a position's own theme label.
+  const focusName = focusThemeId
+    ? themeNames[focusThemeId] ??
+      focusPicks[0]?.theme_name ??
+      focusPicks[0]?.theme ??
+      null
+    : null;
+  // A known theme (named, or carrying an EdgeScore) with no positions is held out.
+  const focusIsKnown =
+    !!focusThemeId &&
+    (focusName !== null ||
+      !!allEdgeByTheme[focusThemeId] ||
+      !!edgeByTheme[focusThemeId]);
+  const focusHeldOut = focusIsKnown && focusPicks.length === 0;
+
   return (
     <main className="max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-8 pt-7 pb-20 overflow-x-hidden">
       <div className="flex justify-between items-end mb-7 gap-6 flex-wrap">
@@ -424,6 +453,64 @@ function BookPageInner() {
         </div>
       ) : (
         <>
+          {/* ── Theme-focus banner (from a "positions →" deep link) ──────── */}
+          {focusThemeId && focusIsKnown && (
+            <div
+              className="card p-4 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2"
+              style={
+                focusHeldOut
+                  ? { borderColor: "var(--border-strong)" }
+                  : { borderColor: "var(--long)", background: "var(--long-dim, rgba(20,122,92,0.06))" }
+              }
+              data-testid="theme-focus-banner"
+            >
+              <div className="text-[13px] leading-[1.55] min-w-0 flex-1">
+                {focusHeldOut ? (
+                  <>
+                    <span className="font-semibold text-text-primary">
+                      {focusName ?? "This theme"}
+                    </span>{" "}
+                    <span className="text-text-secondary">
+                      is held out of the current book — it produced no net-edge
+                      position this run, so there is nothing to size. See the exact
+                      component conflict in the abstention roster below.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold text-text-primary">
+                      {focusName ?? "This theme"}
+                    </span>{" "}
+                    <span className="text-text-secondary">
+                      holds {focusPicks.length} position
+                      {focusPicks.length === 1 ? "" : "s"} in the book:{" "}
+                      <span className="num text-text-primary">
+                        {focusPicks.map((p) => p.asset).join(", ")}
+                      </span>
+                      .
+                    </span>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-3 shrink-0 text-[12px]">
+                {focusHeldOut && (
+                  <a
+                    href="#abstention-roster"
+                    className="text-accent hover:underline whitespace-nowrap"
+                  >
+                    See the roster ↓
+                  </a>
+                )}
+                <Link
+                  href="/book"
+                  className="text-text-tertiary hover:text-text-secondary whitespace-nowrap"
+                >
+                  Clear
+                </Link>
+              </div>
+            </div>
+          )}
+
           {/* ── Fallback banner ─────────────────────────────────────────── */}
           {isFallback && (
             <div
@@ -576,6 +663,7 @@ function BookPageInner() {
             themeNames={themeNames}
             abstainThreshold={edgeWeights.abstainThreshold}
             thresholdIsLive={weightsResolved.abstainThreshold}
+            focusThemeId={focusHeldOut ? focusThemeId : null}
           />
 
           {/* ── Screening funnel (collapsed — audit detail) ────────────── */}

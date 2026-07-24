@@ -1,5 +1,5 @@
 import { toDisplayScore, type ThemeEdge } from "@/lib/themeSignals";
-import { EdgeDirectionChip, ProvenanceDot, PositionsLink } from "./ThemeEdgeChips";
+import { EdgeDirectionChip, ProvenanceDot, PositionsLink, isThemeAbstained } from "./ThemeEdgeChips";
 import { isSynthetic, type ThemeProvenance } from "@/lib/themeProvenance";
 
 export interface HeatmapTheme {
@@ -222,7 +222,10 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({
                     : "—"}
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <PositionsLink themeId={t.id} />
+                  <PositionsLink
+                    themeId={t.id}
+                    held={isThemeAbstained(edgeByTheme?.[t.id], abstainThreshold)}
+                  />
                 </td>
               </tr>
             ))}

@@ -2,7 +2,7 @@ import Sparkline from "./Sparkline";
 import SubScoreBars from "./SubScoreBars";
 import ScoreDeltaBadge from "./ScoreDeltaBadge";
 import { toDisplayScore, edgeRationale, plainRationale, type ThemeEdge } from "@/lib/themeSignals";
-import { EdgeDirectionChip, ProvenanceDot, PositionsLink } from "./ThemeEdgeChips";
+import { EdgeDirectionChip, ProvenanceDot, PositionsLink, isThemeAbstained } from "./ThemeEdgeChips";
 import { isSynthetic, provenanceLabel, type ThemeProvenance } from "@/lib/themeProvenance";
 
 export interface ConvictionTheme {
@@ -124,7 +124,7 @@ export default function ConvictionCard({
           with the one-line IC-defensible rationale beneath. */}
       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
         <EdgeDirectionChip edge={edge} abstainThreshold={abstainThreshold} />
-        <PositionsLink themeId={theme.id} className="ml-auto text-[11px] text-text-tertiary hover:text-accent transition-colors whitespace-nowrap" />
+        <PositionsLink themeId={theme.id} held={isThemeAbstained(edge, abstainThreshold)} className="ml-auto text-[11px] text-text-tertiary hover:text-accent transition-colors whitespace-nowrap" />
       </div>
       {edge && edge.edge_score !== null && (
         <div

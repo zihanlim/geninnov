@@ -1,6 +1,7 @@
 import { toDisplayScore, type ThemeEdge } from "@/lib/themeSignals";
 import { EdgeDirectionChip, ProvenanceDot, PositionsLink, isThemeAbstained } from "./ThemeEdgeChips";
 import { isSynthetic, type ThemeProvenance } from "@/lib/themeProvenance";
+import { ScrollArea } from "@/components/ScrollArea";
 
 export interface HeatmapTheme {
   id: string;
@@ -114,7 +115,7 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({
           </span>
         </div>
       </div>
-      <div className="overflow-x-auto">
+      <ScrollArea>
         <table className="w-full min-w-[760px] border-collapse text-[12px]">
           <caption className="sr-only">
             Theme sub-score heatmap · {themes.length} themes × 4 sub-scores
@@ -231,7 +232,7 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollArea>
       <div className="px-4 py-2.5 border-t border-border text-[11px] text-text-tertiary flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <span>
           Click any row for the full score derivation. Each sub-score is that

@@ -97,10 +97,60 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
   is depth: the ask is five and five.
 - **Direction** EdgeScore = trend/regime/carry/value/sentiment, IC-weighted, with
   abstention + conviction sizing (ADR-0031/32/33).
-- **Q2 hype** HypeScore (volume/sentiment/|ρ|/momentum) + theme discovery
-  (LDA ∩ embeddings, 6 two-method agreements) surfaced on `/`.
+- **Q2 hype** HypeScore (volume/sentiment/|ρ|/momentum), **absolute and therefore
+  comparable over time** since iteration 12 (ADR-0042) — which is what "support risk
+  monitoring" requires — plus theme discovery (LDA ∩ embeddings, 6 two-method
+  agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 12 (2026-07-24)
+
+**A theme's HypeScore was a statement about its peer group, not about the theme**
+([ADR-0042](../docs/adrs/0042-absolute-hype-subscores.md), supersedes 0006 and 0028).
+
+Q2 asks for a score supporting *"idea generation **and risk monitoring**"*. Risk
+monitoring means tracking a theme's attention over time — and three of the four
+sub-scores were min-max normalised across the day's themes, so that was impossible.
+Measured on production across two run dates:
+
+| theme | 7d mentions | HypeScore |
+|---|---|---|
+| China Growth | 1.14286 → **1.14286** (identical) | 60.6 → **36.6** |
+| Corporate Credit | 0.857143 → **0.857143** (identical) | 45.7 → **34.2** |
+
+**ADR-0006 contradicts itself on exactly this**, listing "comparable across run
+dates" as a *positive* and "a theme can score 100 today and 30 tomorrow without
+changing its absolute signal" as a *negative*. Its rejection of z-scores was aimed at
+the wrong target too — the objection ("scores move because other themes moved")
+argues against **cross-sectional** normalisation of any kind, which is what min-max
+is. It never considered scoring each signal against its own scale.
+
+Each sub-score now maps the theme's own signal to a documented anchor: volume
+`tanh(m7/3.0)`, sentiment unchanged, correlation `min(1, |corr|/0.50)`, momentum
+`(tanh(z/2.0)+1)/2`. The same two cases now move **−7.5 and −2.2** instead of −24.0
+and −11.5, the residual being each theme's genuine correlation decline, and both
+volume sub-scores are now *identical* across the two days.
+
+**Second defect closed with it: the `hype ≥ 50` gate was self-fulfilling.** Min-max
+guarantees a theme at 100 and one at 0 every day, so the composite spanned a similar
+range and the gate admitted a similar count whether or not anything was trending. *A
+gate that adapts to the pack is not a gate.* Scores are no longer forced across
+0–100 — today they sit between 35.4 and 69.6, which is the honest reading.
+
+**Caught a self-inflicted contradiction the same iteration.** `persist()` still wrote
+min-maxed sub-scores while `compute_hype_scores` had moved to absolute, so the live
+heatmap showed **US Election VOL 100 and Inflation VOL 0 beside HypeScores of 58 and
+35** — four numbers that could not add up to the fifth. The invariant existed only as
+a comment in `persist()` ("or the derivation drawer silently disagrees with itself");
+it is now a **test** that recomposes the stored sub-scores with the live weights and
+asserts they equal the stored score. Verified live on all 8 themes: stored ==
+recomposed, exactly.
+
+**UI:** the heatmap clipped **760px into 294px** on a phone with no affordance — the
+HYPE column and the book link were invisible — so it moved to `<ScrollArea>`. The
+caption also still claimed sub-scores were "min-max normalised across these 8
+themes", the opposite of what now matters; it now says they are absolute.
 
 ### Loop iteration 11 (2026-07-24)
 
@@ -661,13 +711,19 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   fixed, iteration 11** (ADR-0041). It was neither the LLM nor candidate churn: the
   discrete regime label flipped on a breadth statistic crossing 60, swinging every
   equity's regime term by 1.0·β. Direction now uses a continuous risk appetite.
-- **Residual instability — measure it before claiming stability.** Prices, news
-  counts and above all the HypeScore **min-max normalisation** still churn between
-  runs; ADR-0006 already records that min-max over ~8 themes is outlier-dominated and
-  not comparable day to day, and hype moved a lot across today's runs (US Dollar
-  73.4 → 54.4). Next: quantify how much book turnover survives ADR-0041, and if
-  min-max is the culprit, consider a rank or z-score normalisation with a documented
-  cross-sectional basis.
+- ~~**Residual instability from HypeScore min-max**~~ — **fixed, iteration 12**
+  (ADR-0042). Sub-scores are absolute now; a theme's score moves only when its own
+  signal moves. Two themes with byte-identical mention counts had been moving 24 and
+  11 points.
+- **Still to measure: how much book turnover remains.** ADR-0041 removed the regime
+  cliff and ADR-0042 the normalisation artefact, which were the two known amplifiers.
+  What is left — genuine price/news movement, and L5 re-picking — has not been
+  quantified. Do that before claiming the book is stable; run the pipeline twice on
+  frozen inputs and diff the positions.
+- **The anchors in ADR-0042 are judgement calls, not fitted values** (3 mentions/day,
+  |corr| 0.50, momentum scale 2.0). They are stated constants — the same status
+  min-max's implicit choices had, but now visible. This is exactly what the HypeScore
+  IC study should calibrate, and `/method` already says NOT YET VALIDATED.
 - ~~**L5 falls back because `reason_picks` never parses a response**~~ — **CLOSED,
   iteration 6.** It was a hardcoded 120s read timeout against a ~205s generation.
   `LLM_TIMEOUT_SECONDS` (default 420). Verified live: `verified=True`, 28 citations.

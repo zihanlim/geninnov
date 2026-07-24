@@ -76,6 +76,22 @@ MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "")
 MINIMAX_MODEL   = os.environ.get("MINIMAX_MODEL_ID", "MiniMax-M3")
 MINIMAX_ENDPOINT = "https://api.minimax.io/v1/chat/completions"
 
+# Read timeout for a reason_picks generation, seconds.
+#
+# This was hardcoded at 120s and was THE reason the Q1 book kept falling back. The
+# request is a reasoning model asked for a ten-pick book where every pick carries a
+# thesis, catalysts, a counter-thesis and citations — that routinely runs past two
+# minutes, so requests raised ReadTimeout, reason_picks fell back, and the empty
+# fallback citations got reported as "No citations provided". The tell was that the
+# runs which DID verify carried only 1-2 picks (small, fast books), and widening the
+# universe made the failure constant by enlarging the ask.
+#
+# 120s of thinking is not an error worth retrying — it is the model working. The
+# retry loop made it worse: three attempts x 120s spent ~6 minutes to reach a
+# guaranteed fallback. A daily batch job can afford to wait; GitHub Actions allows
+# 30 minutes for the whole run.
+LLM_TIMEOUT_SECONDS = int(os.environ.get("LLM_TIMEOUT_SECONDS", "420"))
+
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 DEFAULT_MODEL     = os.environ.get("ANTHROPIC_MODEL_ID", "claude-sonnet-4-20250514")
 
@@ -233,7 +249,7 @@ def _llm_complete(prompt: str, system: str = "", temperature: float = 0.0,
                 "Content-Type": "application/json",
             },
             json=payload,
-            timeout=120,
+            timeout=LLM_TIMEOUT_SECONDS,
         )
         if resp.status_code != 200:
             err = resp.json()
@@ -282,7 +298,7 @@ def _llm_complete(prompt: str, system: str = "", temperature: float = 0.0,
             params={"key": GEMINI_API_KEY},
             headers={"Content-Type": "application/json"},
             json=body,
-            timeout=120,
+            timeout=LLM_TIMEOUT_SECONDS,
         )
         if resp.status_code != 200:
             err = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}

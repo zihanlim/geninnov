@@ -183,9 +183,11 @@ validated, because breadth is not stability.
 One honest wrinkle from ordering: I persisted the real IC row *before* the frontend
 fix deployed, so for the deploy window the OLD `validated = some(ic != null)` logic saw
 the non-null −0.2275 and showed the green *"a stable non-zero IC is what makes
-HypeScore a signal"* copy — the exact overclaim, briefly live. The corrected build
-replaces it with the measured-thin / not-yet-validated state. Next time: deploy the
-guard before writing the data it guards.
+HypeScore a signal"* copy — the exact overclaim, briefly live. **Now resolved and
+confirmed live** (verified 2026-07-25, next iteration): the panel reads *"1d −0.2275 ·
+measured · 1 date — not yet stable"* with the footer *"Not yet validated … a
+single-date point estimate,"* and the green copy is gone. Deploy lag ran ~35 min, far
+longer than usual. Next time: deploy the guard before writing the data it guards.
 
 Also closed last iteration's loose end: the debug `data-` attributes are gone from the
 deployed `/book`, and the per-position stability marker renders correctly (nine
@@ -193,6 +195,81 @@ positions, XLE/UNH the coin flips).
 
 [ADR-0059](adrs/0059-a-single-date-ic-is-not-validation.md).
 
+
+### Loop iteration 42 (2026-07-25)
+
+**Published under the corrected prompt. The agent explained itself — and lied.**
+
+Iteration 41 proved on frozen inputs that the ADR-0056 prompt makes the agent name the
+idea it declines. **Nothing had published under it**: the live book predated the change,
+so the page was showing a failure caused by code that no longer existed. Re-running after
+a code change is normal operation — *re-rolling until the page looks good would be
+cherry-picking*, so this was **one run, published whatever it returned**.
+
+**Two things happened on that run, and both are findings.**
+
+**1. The ADR-0049 guardrail fired live, for the first time observed.** Attempt 1 claimed
+*"4 independent ideas on the short side"* against a measurement of 5 —
+`check_idea_count_claims` rejected it, the run retried, attempt 2 passed. Iteration 34
+built that check and it had never been seen catching a real run.
+
+**2. The agent named ARKK, as required, and gave a reason that is false.**
+
+> *"The fifth independent short idea per POOL DEPTH, ARKK, is not present in the tradable
+> candidate pool, so this book deploys four short picks rather than five."*
+
+**ARKK was in the pool.** `trade_candidates` holds it at `edge_score −0.2658`,
+`hype_score 60.69` — eleventh of twelve short candidates — and POOL DEPTH counted it as an
+independent idea *because* it was there. The sentence is contradicted by the data the
+model was shown, **in the same breath as citing that data**.
+
+**And it is worse than the silence it replaced.** Naming ARKK set `satisfied = true`,
+flipping `/book`'s panel out of its warning branch into *"the thesis accounts for what it
+declined"*. **The iteration-40 fix made the page credit a fabrication** — a true warning
+was more useful than a neutral-coloured endorsement of a false sentence. This is the
+limitation ADR-0056 named for itself (*"verifies a declined idea is mentioned, not that
+the reason is sound"*) arriving on the first run.
+
+**It also shows what pressure does.** The agent was told it *must* explain, had no reason
+it judged good enough, and produced one. **Demanding an explanation without checking it
+manufactures explanations.**
+
+Judging whether a reason is *good* is out of reach; judging whether it is *contradicted
+by our own pool* is not. `check_availability_claims` rejects an availability excuse about
+a screened name — exact, no grounding tolerance, and it **blocks**, where a merely-missing
+explanation deliberately does not. An omission leaves the reader to ask a question; a
+false reason answers them wrongly **and clears the guardrail while doing it**. The prompt
+is given an honest way out — *"if you have no better reason than 'I chose not to', say
+exactly that"* — because **a guardrail with no truthful escape just teaches a different
+lie**. [ADR-0061](adrs/0061-a-false-excuse-is-worse-than-none.md) extends ADR-0049's rule
+from **numbers** to **facts**.
+
+**Second thread — `/risk` said one position was −1071% of the book.** The **Net share**
+column read −1071.4% (PDD), −1019.0% (BABA), +975.7% (XLE). The formula was
+`signedWeight / |net|` guarded only by `netAbs > 0`, which catches a *perfectly* hedged
+book and nothing else — but the interesting case is *near* zero, and near zero is this
+product's **design target**: the book runs **net +0.90% on 59.6% gross**, and `/book`
+says *"It is close to market-neutral."* **The column was systematically broken for
+exactly the kind of book the system exists to build.**
+
+The fix is not a tuned threshold but what the word means: **a share is a part of a whole
+and cannot exceed the whole**, so it renders only when `max|wᵢ| ≤ |Σw|`. Withheld rather
+than clamped — capping at 100% would still assert the decomposition exists. The predicate
+is **exported and used by both the computation and the note explaining the blank**, so
+they cannot drift, which is the failure ADR-0058 hit.
+[ADR-0060](adrs/0060-a-share-cannot-exceed-the-whole.md).
+
+**Two pieces of earlier work confirmed working live, worth recording as non-defects:**
+iteration 32's provisional-window check fired correctly during the run — *"THESE ARE
+PROVISIONAL POSITIONS, NOT THE PUBLISHED BOOK · 40 held · 9 published"* — and the
+net-share note correctly did **not** show on that 40-position provisional book, because
+its net exposure is large and the share is genuinely meaningful there. The suppression is
+per-book, not a blanket.
+
+**Still open, narrowed rather than closed:** a reason that is merely weak, or false in a
+way we cannot mechanically test (a misdescribed correlation), still passes. What changed
+is that the one falsifiable excuse class the model actually reached for is now closed.
+**No claim is made that theses are now truthful.**
 
 ### Loop iteration 41 (2026-07-25)
 

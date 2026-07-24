@@ -95,6 +95,36 @@ Live at https://andromeda-analytics.vercel.app · 380 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 3 (2026-07-24)
+
+**The thesis is verified again — Q1 has its "why" back.** `/book` shows the VERIFIED
+chip, **13 evidence sources**, no fallback warning, and a real reasoned body citing
+live values ("VIX 18.81, HY OAS 268bps at `BAMLH0A0HYM2`"). Previous run:
+`verified=False, citations=0`, i.e. a templated fallback with no reasoning at all.
+
+**Root cause fixed: the citation retry never told the model what was wrong.**
+ADR-0012 specifies a failed guardrail "re-invokes reason_picks with explicit error
+feedback"; it didn't — the loop re-called the node with a byte-identical prompt at
+`temperature=0`, so a deterministic model returned the same rejected answer three
+times ("No citations provided" ×3 → fallback). The retry now appends the actual
+rejection plus the requirements it violated. *Honest caveat:* the run that verified
+did so without a citation rejection, so the feedback path was not itself exercised
+live — the unit test proves the prompt now differs and quotes the reason, but a
+live retry-then-verify has not yet been observed. Watch for it.
+
+**The corrected Value signal makes the book one-sided.** With the 252-obs z-scores
+the engine produced **4 long / 0 short** candidates (the earlier 2L/3S came from the
+buggy `Value=0` state), and L5 picked 2 longs. So the honest position today is: no
+short clears conviction. That is abstention working, not a defect — but it means
+Q1's "five short trades" is unanswered by the engine, and universe breadth is the
+only honest lever.
+
+Also verified live: caps now read against the real `book_metrics` values
+(single-name 20%, sector 30%, geo 35%), delta chips no longer contradict themselves
+(no "▼ +2.44"), zero console errors, zero horizontal scroll at 360px, and the limit
+board fell from "5 breached" to "2 breached · 2 near · 5 ok" once the phantom
+double-booked positions were gone.
+
 ### Loop iteration 2 (2026-07-24)
 
 **The book is now coherent and two-sided.** `/book` and `/risk` finally describe the
@@ -138,13 +168,23 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
 
 ## Live candidate gaps (re-verify before trusting)
 
-- **L5 keeps failing citation verification**, so the live book is the deterministic
-  fallback — `/book` correctly shows "not an investable recommendation" and no
-  VERIFIED chip. Q1 asks for the trades *and why*; a fallback book has no reasoned
-  why. Making `reason_picks` reliably emit citations that pass the guardrail is now
-  the **highest-value Q1 step**. Start from the run log: the failure is
-  "No citations provided — rejecting output", i.e. the model returns picks with an
-  empty citations array, then retries twice and falls back.
+- **Universe breadth is now the only thing between here and a real five-and-five.**
+  With correct Value the engine finds 4 long-capable and 0 short-capable themes, and
+  only 3 themes clear conviction at all. The universe is 8 themes → 24 tickers, all
+  ETF/futures proxies, **zero single names** — while `task.md` explicitly allows
+  "any asset class and/or single companies". This is the **highest-value Q1 step**
+  and the only honest one left. Routes, cheapest first: more expressions per theme
+  (`004_bootstrap_live.sql` + `_theme_default_assets`), then more themes, then
+  single names. Every new ticker MUST also land in `SECTOR_MAP`/`GEO_MAP`
+  (`book_metrics.py`) and `_ASSET_CLASS_MAP` (`trade_ranker.py`) or `is_classified`
+  drops it silently.
+- **L5 citation reliability — watch, don't assume.** The retry now carries the
+  rejection (iteration 3), but a live retry-then-verify has not yet been observed;
+  the run that verified never hit a rejection. If a run falls back again, check
+  whether the retry prompt actually changed the outcome before adding more logic.
+  Note also that rejected LLM output is NOT persisted — `raw_output` holds the
+  fallback — so a failure cannot be diagnosed after the fact. Persisting the
+  rejected body would make the next such failure debuggable.
 - **Q1 breadth** — universe is 8 themes → 24 tickers, all ETFs/futures proxies, zero
   single names; only 3 themes clear conviction. Diagnosed in iteration 2; the
   one-line backfill change was rejected as dishonest (see above). Legitimate route:

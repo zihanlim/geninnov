@@ -202,6 +202,16 @@ does not withhold, per `buildLimitBoard`'s rule.
 **The recurrence after iteration 21 is itself the finding:** a shared constant is not
 enough when a panel receives the value as a prop.
 
+**Verified live** at 1440px and 375px: `book β −1.73` is gone, the note explains why in
+its place, the Beta tile and the footer now agree, and the Σ still reads −0.04. `/`,
+`/book`, `/risk`, `/method` all clean — no horizontal scroll, zero console errors.
+
+**One false positive worth recording so the next agent does not chase it:** a naive
+`/NaN|undefined/` sweep flags `/method`, but the hit is the English word used correctly —
+*"The IC information ratio (mean/σ across dates) is **undefined** until there are at
+least two independent cross-sections."* Match on `NaN`, and read the context before
+calling a word a defect.
+
 [ADR-0062](adrs/0062-one-beta-bar-across-every-surface.md).
 
 ### Loop iteration 43 (2026-07-25)

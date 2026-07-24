@@ -226,3 +226,79 @@ def test_is_silent_with_no_row_or_no_thesis():
     assert check_published_book_claims(None, _CANDS) == []
     assert check_published_book_claims({"run_date": "d", "book_view": ""}, _CANDS) == []
     assert check_published_book_claims({"run_date": "d", "book_view": None}, _CANDS) == []
+
+
+def test_guard_runs_as_a_script_not_only_as_a_module():
+    """`daily-refresh.yml` invokes `python scripts/check_data_integrity.py`.
+
+    Run that way, sys.path[0] is `scripts/` and the repo root is absent, so the lazy
+    `backend.services.q1_agent` import inside check_published_book_claims raised
+    ModuleNotFoundError and the guard exited 1 before printing a verdict — while
+    passing when run as `python -m scripts.check_data_integrity`, which is how it was
+    verified.
+
+    This pins the ENTRY POINT the workflow actually uses. It asserts the import
+    resolves in a subprocess with a clean sys.path; it does not touch Supabase, so it
+    stays fast and offline (the guard exits 2 without credentials, which is a pass for
+    this test's purpose).
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[2]
+    script = repo / "scripts" / "check_data_integrity.py"
+    assert script.exists(), script
+
+    # Strip the creds AND run from a directory with no .env, because main() calls
+    # load_dotenv() and would otherwise pick the repo's up and hit the network.
+    # sys.path is set from __file__, so the import under test does not need cwd.
+    import tempfile
+
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in ("SUPABASE_URL", "SUPABASE_SERVICE_KEY")
+    }
+    with tempfile.TemporaryDirectory() as elsewhere:
+        proc = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True,
+            text=True,
+            cwd=elsewhere,
+            env=env,
+            timeout=120,
+        )
+    combined = proc.stdout + proc.stderr
+    assert "ModuleNotFoundError" not in combined, combined
+    assert "No module named 'backend'" not in combined, combined
+    # A guard must not die formatting its own verdict, on any console encoding.
+    assert "UnicodeEncodeError" not in combined, combined
+    assert "Traceback" not in combined, combined
+    # Accept 0 or 2, deliberately. `load_dotenv()` searches from the SCRIPT's directory
+    # upward, so it finds the repo `.env` whatever cwd is and the creds cannot be
+    # stripped from a subprocess — locally this runs the real check and exits 0, while
+    # in CI (no .env, secrets as env vars) it exits 2. Pinning either number would make
+    # the test assert where it happens to run rather than what it is testing, which is
+    # that the entry point the workflow uses imports and completes without crashing.
+    assert proc.returncode in (0, 2), f"exit={proc.returncode}\n{combined}"
+
+
+def test_published_book_check_imports_cleanly_from_a_bare_process():
+    """The lazy import must resolve, not just be syntactically present."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[2]
+    code = (
+        "import sys; sys.path.insert(0, r'%s');"
+        "from scripts.check_data_integrity import check_published_book_claims as c;"
+        "print(c({'run_date':'d','book_view':'ARKK is not present in the candidate pool.'},"
+        "        [{'asset':'ARKK'}]))" % str(repo)
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=120
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "ARKK" in proc.stdout, proc.stdout

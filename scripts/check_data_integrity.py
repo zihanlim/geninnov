@@ -20,6 +20,33 @@ from __future__ import annotations
 import os
 import sys
 
+# The repo root, so `backend.*` imports resolve however this file is invoked.
+#
+# `daily-refresh.yml` runs it as a SCRIPT — `python scripts/check_data_integrity.py` —
+# which puts `scripts/` on sys.path and NOT the repo root, so the lazy
+# `backend.services.q1_agent` import in check_published_book_claims raised
+# ModuleNotFoundError and the guard exited 1 before printing its verdict. The step is
+# wrapped in `|| echo "::warning::"`, so that crash would have shown up as a warning
+# rather than as the missing check it was.
+#
+# It was verified as a MODULE (`python -m scripts.check_data_integrity`), which puts the
+# repo root on sys.path and works — so the check passed against production while being
+# broken in the invocation production actually uses. Verify the entry point that runs,
+# not a convenient one. Same guard the other scripts here already carry.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# This guard prints check marks, and a guard that dies formatting its own verdict is
+# worse than one that says nothing. On a console defaulting to cp1252 — any Windows
+# shell without PYTHONIOENCODING set — `print("✓ …")` raises UnicodeEncodeError and the
+# process exits 1, which the workflow's `|| echo "::warning::"` turns into a warning
+# that looks exactly like a real integrity flag. Force UTF-8 where the stream supports
+# it; `reconfigure` exists on 3.7+ and is a no-op when the encoding is already right.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+    except (AttributeError, ValueError, OSError):
+        pass
+
 # Hardcoded metrics the seed script wrote (RESIDUAL R0). The genuine computed
 # HHI for the same book is ~1000.12 — nowhere near 1850.
 RISK_SENTINELS: dict[str, float] = {

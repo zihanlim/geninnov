@@ -841,12 +841,44 @@ def compute_and_persist_daily_return(
             f"daily return aborted for {today_str}: missing prices for {missing}"
         ) from None
 
-    portfolio_value = total_capital * (1 + daily)
+    # Since-inception cumulative: compound EVERY prior daily return with today's.
+    #
+    # This column used to be written as `daily` with a "recompute when history is
+    # sufficient" note that was never implemented — so `cumulative_return` was
+    # ALWAYS just that day's return. The /risk drawdown chart reads this column as
+    # its cumulative series, which meant the curve (and the max-drawdown computed
+    # from it, and portfolio_value) were a daily-return series wearing a
+    # cumulative label. Surfaced by reconciling against portfolio_cumulative_return,
+    # which compounds correctly: +0.73% persisted vs -0.68% here on 2026-07-24.
+    _prior_raw = (
+        supabase.table("portfolio_returns")
+        .select("run_date, daily_return")
+        .lt("run_date", today_str)
+        .order("run_date")
+        .execute()
+        .data
+    )
+    # Only treat the response as history when it really is a list of rows — a
+    # failed/!=200 read can hand back None, and it keeps this honest under test doubles.
+    prior_rows = _prior_raw if isinstance(_prior_raw, list) else []
+    series = [
+        float(r["daily_return"])
+        for r in prior_rows
+        if r.get("daily_return") is not None
+    ]
+    series.append(daily)
+    inception = (
+        date.fromisoformat(prior_rows[0]["run_date"]) if prior_rows else run_date
+    )
+    cumulative = float(compute_cumulative_return(series, inception=inception)["value"])
+
+    # Book value follows the compounded path, not one day's move.
+    portfolio_value = total_capital * (1 + cumulative)
 
     supabase.table("portfolio_returns").upsert({
         "run_date": today_str,
         "daily_return": daily,
-        "cumulative_return": daily,  # First day: same as daily. Recompute when history is sufficient.
+        "cumulative_return": cumulative,
         "portfolio_value": portfolio_value,
     }, on_conflict="run_date").execute()
 

@@ -636,6 +636,61 @@ def test_compute_and_persist_daily_return_sign_flips_shorts():
     assert "portfolio_returns" in table_names
 
 
+def test_daily_return_persists_compounded_cumulative_not_todays_return():
+    """Regression: `cumulative_return` must be the since-inception COMPOUNDED
+    return, not a copy of today's daily return.
+
+    It was written as `cumulative_return: daily` with a "recompute when history is
+    sufficient" note that was never implemented, so every row carried the daily
+    figure under a cumulative label. /risk reads this column as its cumulative
+    series, so the curve, the max-drawdown derived from it, and portfolio_value
+    were all wrong once the book had more than one session. Caught by reconciling
+    against portfolio_cumulative_return (+0.73% persisted vs -0.68% here).
+    """
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+
+    import pandas as pd
+    from daily_refresh import compute_and_persist_daily_return
+    from services.trade_ranker import TradeCandidate
+
+    positioned = [
+        (TradeCandidate("t1", "TLT", "long", 0.5, 80.0, 0.3), 100_000_000.0, 1.0),
+    ]
+    # TLT -1% today → daily = -0.01
+    price_df = pd.DataFrame([
+        {"date": date(2026, 7, 20), "ticker": "TLT", "close": 100.0, "return": None},
+        {"date": date(2026, 7, 21), "ticker": "TLT", "close": 99.0, "return": -0.01},
+    ])
+    # One prior session at +2%.
+    prior = [{"run_date": "2026-07-20", "daily_return": 0.02}]
+
+    with patch("daily_refresh.supabase") as mock_supabase, \
+         patch("daily_refresh.fetch_price_data", return_value=price_df):
+        mock_supabase.table.return_value.select.return_value.lt.return_value \
+            .order.return_value.execute.return_value.data = prior
+        daily = compute_and_persist_daily_return(
+            positioned, date(2026, 7, 21), 100_000_000.0
+        )
+
+    upserts = [
+        c.args[0]
+        for c in mock_supabase.table.return_value.upsert.call_args_list
+        if c.args and isinstance(c.args[0], dict)
+    ]
+    row = next(u for u in upserts if "cumulative_return" in u)
+
+    assert abs(daily - (-0.01)) < 1e-9
+    # 1.02 * 0.99 - 1 = +0.98%, NOT the -1% daily.
+    expected = 1.02 * 0.99 - 1.0
+    assert abs(row["cumulative_return"] - expected) < 1e-9, (
+        f"cumulative_return {row['cumulative_return']} should compound to {expected}"
+    )
+    assert row["cumulative_return"] != row["daily_return"]
+    # Book value follows the compounded path, not one day's move.
+    assert abs(row["portfolio_value"] - 100_000_000.0 * (1 + expected)) < 1e-6
+
+
 def test_compute_and_persist_risk_writes_hhi():
     """Without history, HHI is computed from current weights; other metrics may be null."""
     os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")

@@ -306,14 +306,30 @@ function Chart({ series }: { series: DrawdownSeries }) {
   );
 }
 
+/** The authoritative since-inception figure persisted by L4 to
+ *  `portfolio_cumulative_return` — a growth factor (1.0073 = +0.73%) carrying its
+ *  own provenance (inception date, how many daily returns compounded into it). */
+export interface InceptionRow {
+  as_of: string;
+  inception_date: string;
+  cumulative_value: number;
+  daily_returns_count: number;
+  compounded: boolean;
+}
+
 export function DrawdownChart({
   loading,
   rows,
   failure,
+  inception = null,
 }: {
   loading: boolean;
   rows: ReturnRow[];
   failure: QueryFailure | null;
+  /** Optional: the persisted since-inception row. Shown alongside the series so
+   *  the authoritative number is read from the table rather than only re-derived
+   *  here — and so the two can be reconciled in the open. */
+  inception?: InceptionRow | null;
 }) {
   const series = rows.length > 0 ? buildDrawdownSeries(rows) : null;
 
@@ -321,6 +337,21 @@ export function DrawdownChart({
     series?.method === "cumulative_return_column"
       ? "portfolio_returns.cumulative_return"
       : "compounded from portfolio_returns.daily_return";
+
+  // Reconcile the persisted since-inception return against the series' last point.
+  // Same number by construction; a divergence means a run wrote one and not the
+  // other, which is worth seeing rather than silently preferring one.
+  const persistedPct =
+    inception && Number.isFinite(inception.cumulative_value)
+      ? inception.cumulative_value - 1
+      : null;
+  const seriesPct = series?.points.length
+    ? series.points[series.points.length - 1].cum
+    : null;
+  const divergence =
+    persistedPct !== null && seriesPct !== null
+      ? Math.abs(persistedPct - seriesPct)
+      : null;
 
   return (
     <details className="card mb-6 group" aria-labelledby="risk-dd-heading">
@@ -407,6 +438,32 @@ export function DrawdownChart({
             />
             <Stat label="Sessions" value={`${series.points.length}`} />
           </div>
+
+          {inception && persistedPct !== null && (
+            <p className="m-0 mb-3 text-[12px] text-text-secondary leading-[1.6] max-w-[95ch]">
+              <span className="text-text-tertiary">Since inception (persisted):</span>{" "}
+              <span
+                className={`num font-semibold ${persistedPct >= 0 ? "text-long" : "text-short"}`}
+              >
+                {fmtSignedPct(persistedPct)}
+              </span>{" "}
+              — compounded from {inception.daily_returns_count} daily return
+              {inception.daily_returns_count === 1 ? "" : "s"} since{" "}
+              <span className="num">{inception.inception_date}</span>, as of{" "}
+              <span className="num">{inception.as_of}</span>. Source{" "}
+              <Ident>portfolio_cumulative_return</Ident> — L4&rsquo;s authoritative
+              figure, read rather than re-derived.
+              {divergence !== null && divergence > 0.0005 && (
+                <span className="text-warning">
+                  {" "}
+                  The series above ends at {fmtSignedPct(seriesPct ?? 0)} — a{" "}
+                  {(divergence * 100).toFixed(2)}pp divergence, which means a run wrote
+                  one and not the other. Trust the persisted figure and re-run the
+                  pipeline.
+                </span>
+              )}
+            </p>
+          )}
 
           {series.points.length === 1 && (
             <p className="m-0 mb-3 text-[12px] text-warning leading-[1.6] max-w-[90ch]">

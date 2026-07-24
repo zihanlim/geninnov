@@ -19,7 +19,8 @@ import { CorrelationMatrix } from "@/components/risk/CorrelationMatrix";
 import { CapUtilisation } from "@/components/risk/CapUtilisation";
 import { BookFactorTilt } from "@/components/risk/BookFactorTilt";
 import { RiskMetricsGrid } from "@/components/risk/RiskMetricsGrid";
-import { DrawdownChart } from "@/components/risk/DrawdownChart";
+import { DrawdownChart, type InceptionRow } from "@/components/risk/DrawdownChart";
+import { DailyPLHistory } from "@/components/portfolio/DailyPLHistory";
 import { RiskLimitBoard } from "@/components/risk/RiskLimitBoard";
 import { PositionRiskAttribution } from "@/components/risk/PositionRiskAttribution";
 import { AttentionCrowding } from "@/components/risk/AttentionCrowding";
@@ -105,6 +106,8 @@ interface PageData {
   riskOrderingNote: string | null;
   returns: ReturnRow[];
   returnsFailure: QueryFailure | null;
+  /** Latest persisted since-inception row (portfolio_cumulative_return). */
+  inception: InceptionRow | null;
   // ── Actionable-risk inputs ──────────────────────────────────────────────
   positions: PositionRow[];
   positionsFailure: string | null;
@@ -130,6 +133,7 @@ const INITIAL: PageData = {
   riskOrderingNote: null,
   returns: [],
   returnsFailure: null,
+  inception: null,
   positions: [],
   positionsFailure: null,
   factors: [],
@@ -170,6 +174,7 @@ function RiskPageInner() {
         factorsRes,
         configRes,
         themesRes,
+        inceptionRes,
       ] = await Promise.all([
         supabase
           .from("research_recommendations")
@@ -205,6 +210,13 @@ function RiskPageInner() {
           .limit(2000),
         supabase.from("scoring_config").select("param_name, value"),
         supabase.from("themes").select("id, name"),
+        // L4's authoritative since-inception return, read rather than re-derived
+        // from the daily series (DrawdownChart reconciles the two).
+        supabase
+          .from("portfolio_cumulative_return")
+          .select("as_of, inception_date, cumulative_value, daily_returns_count, compounded")
+          .order("as_of", { ascending: false })
+          .limit(1),
       ]);
 
       // portfolio_risk.run_date only exists from migration 016. If ordering by it
@@ -286,6 +298,8 @@ function RiskPageInner() {
         riskFailure,
         riskOrderingNote,
         returns: (returnsRes.data as ReturnRow[] | null) ?? [],
+        inception:
+          ((inceptionRes.data as InceptionRow[] | null) ?? [])[0] ?? null,
         returnsFailure: toFailure(
           "portfolio_returns",
           RETURN_COLUMNS,
@@ -588,7 +602,14 @@ function RiskPageInner() {
         loading={data.loading}
         rows={data.returns}
         failure={data.returnsFailure}
+        inception={data.inception}
       />
+
+      {/* 11 — The same series as an exact per-day table. The chart above shows
+          shape; a PM reconciling P&L needs the actual daily figures. */}
+      <div className="mb-6">
+        <DailyPLHistory limit={30} />
+      </div>
     </main>
   );
 }

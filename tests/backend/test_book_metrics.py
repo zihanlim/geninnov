@@ -416,3 +416,65 @@ def test_independent_ideas_dedupes_a_ticker_reached_twice(monkeypatch):
     out = bmod.independent_ideas([_cand("SPY", "long", 0.2), _cand("SPY", "long", 0.3)])
     assert out["long"]["names"] == 1
     assert out["long"]["count"] == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# exceeds_cap — a breach must not be decided by float representation error
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_sitting_exactly_on_the_cap_is_not_a_breach():
+    """The allocator CLAMPS to the cap (ADR-0037), so this is the designed state."""
+    from backend.services.book_metrics import exceeds_cap
+
+    assert exceeds_cap(0.35, 0.35) is False
+    assert exceeds_cap(0.20, 0.20) is False
+
+
+def test_the_live_one_ulp_overshoot_is_not_a_breach():
+    """The exact value that produced 'US (35.0% > 35%)' on the 2026-07-25 book.
+
+    geo US summed to 0.35000000000000003 against a 0.35 cap — 5.55e-17 over, one
+    unit in the last place — and `w > cap` reported a governance violation on a book
+    that was correctly capped.
+    """
+    from backend.services.book_metrics import exceeds_cap
+
+    live = 0.35000000000000003
+    assert live > 0.35            # the raw comparison that caused it
+    assert exceeds_cap(live, 0.35) is False
+
+
+def test_a_real_breach_is_still_a_breach():
+    """The guard is for representation error, not an economic tolerance.
+
+    1e-9 sits seven orders of magnitude below a basis point, so nothing anyone could
+    act on is masked.
+    """
+    from backend.services.book_metrics import exceeds_cap
+
+    assert exceeds_cap(0.3501, 0.35) is True        # 1bp over
+    assert exceeds_cap(0.35 + 1e-4, 0.35) is True   # exactly 1bp
+    assert exceeds_cap(0.40, 0.35) is True
+    # ...and just above the noise floor still counts.
+    assert exceeds_cap(0.35 + 1e-8, 0.35) is True
+
+
+def test_under_the_cap_is_never_a_breach():
+    from backend.services.book_metrics import exceeds_cap
+
+    assert exceeds_cap(0.34, 0.35) is False
+    assert exceeds_cap(0.0, 0.35) is False
+
+
+def test_violation_text_numbers_support_the_claim_they_make():
+    """The old form printed '35.0% > 35%' — a strict inequality between two equal
+    looking numbers. Stating the EXCESS makes the sentence checkable at the precision
+    it is printed to."""
+    from backend.services.book_metrics import _violation_text
+
+    msg = _violation_text("US", 0.3612, 0.35)
+    assert "1.12pp over" in msg
+    assert "36.12%" in msg
+    assert "35% cap" in msg
+    # No bare strict inequality between two rounded, equal-looking figures.
+    assert ">" not in msg

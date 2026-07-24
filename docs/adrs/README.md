@@ -72,6 +72,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0065](0065-check-the-published-book-not-only-the-generation.md) | Check the published book, not only the generation that produced it — the thesis guardrails now re-run daily against the persisted book_view | accepted | 2026-07-25 |
 | [0066](0066-not-computable-must-persist-as-null.md) | "Not computable" must persist as NULL, not 0.0 — eight of nine positions had a renormalised score beside components written as zero | accepted | 2026-07-25 |
 | [0067](0067-a-column-must-name-the-subset-it-measures.md) | A column must name the subset it measures — "Avg |rho| to book" averaged only pairs flagged at 0.70, so an empty column read as uncorrelated | accepted | 2026-07-25 |
+| [0068](0068-a-cap-breach-is-not-decided-by-float-error.md) | A cap breach is not decided by floating-point error — a book clamped exactly to its 35% cap reported "US (35.0% > 35%)" | accepted | 2026-07-25 |
 
 ## When to write an ADR
 

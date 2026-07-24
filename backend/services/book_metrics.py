@@ -154,6 +154,42 @@ MAX_SINGLE_NAME_WEIGHT = 0.20      # no single position > 20% of book
 MAX_SECTOR_WEIGHT = 0.30           # no single sector > 30%
 MAX_GEO_WEIGHT = 0.35             # no single geography > 35%
 HIGH_CORR_THRESHOLD = 0.70         # flag pairs with correlation > this
+
+# A cap breach must not be decided by floating-point representation error.
+#
+# `allocate_portfolio` CLAMPS a group to its cap (ADR-0037), so a fully-utilised book
+# lands on the limit exactly by design. Summing the clamped per-position floats then
+# reintroduces error: the live 2026-07-25 book carried geo US at
+# 0.35000000000000003 against a 0.35 cap — one ULP, 5.55e-17 over — and `w > cap`
+# reported a governance violation reading **"US (35.0% > 35%)"**. 35.0% is not greater
+# than 35%; the message asserted a strict inequality its own printed numbers deny, on
+# a book that was correctly capped.
+#
+# 1e-9 is a representation-error guard, NOT an economic tolerance. It is nine orders
+# of magnitude above the observed 5.55e-17 error and seven below a single basis point
+# (1e-4), so it cannot mask a breach anyone could act on — deliberately unlike a
+# fitted threshold, which ADR-0047 warns is a statement about the day's numbers rather
+# than about the rule.
+CAP_EPSILON = 1e-9
+
+
+def exceeds_cap(weight: float, cap: float, eps: float = CAP_EPSILON) -> bool:
+    """Is `weight` over `cap` by more than floating-point noise?
+
+    Sitting exactly on a cap is compliance, not breach: the allocator puts it there.
+    """
+    return weight - cap > eps
+
+
+def _violation_text(key: str, weight: float, cap: float) -> str:
+    """A violation message whose own numbers support the claim it makes.
+
+    The old form printed the weight at one decimal against a whole-number cap
+    (`"US (35.0% > 35%)"`), so any overshoot smaller than 0.05pp rendered as a strict
+    inequality between two equal-looking numbers. Stating the EXCESS instead means the
+    sentence is checkable at the precision it is printed to.
+    """
+    return f"{key} {weight:.2%} — {(weight - cap) * 100:.2f}pp over its {cap:.0%} cap"
 MIN_ADV_Millions = 2.0            # exclude names with ADV < $2M/day
 
 
@@ -253,16 +289,16 @@ def compute_book_metrics(
         sector_weights[sec] = sector_weights.get(sec, 0.0) + w
         geo_weights[geo] = geo_weights.get(geo, 0.0) + w
 
-        if w > MAX_SINGLE_NAME_WEIGHT:
-            weight_violations.append(f"{asset} ({w:.1%} > {MAX_SINGLE_NAME_WEIGHT:.0%})")
+        if exceeds_cap(w, MAX_SINGLE_NAME_WEIGHT):
+            weight_violations.append(_violation_text(asset, w, MAX_SINGLE_NAME_WEIGHT))
 
     for sec, w in sector_weights.items():
-        if w > MAX_SECTOR_WEIGHT:
-            sector_violations.append(f"{sec} ({w:.1%} > {MAX_SECTOR_WEIGHT:.0%})")
+        if exceeds_cap(w, MAX_SECTOR_WEIGHT):
+            sector_violations.append(_violation_text(sec, w, MAX_SECTOR_WEIGHT))
 
     for geo, w in geo_weights.items():
-        if w > MAX_GEO_WEIGHT:
-            geo_violations.append(f"{geo} ({w:.1%} > {MAX_GEO_WEIGHT:.0%})")
+        if exceeds_cap(w, MAX_GEO_WEIGHT):
+            geo_violations.append(_violation_text(geo, w, MAX_GEO_WEIGHT))
 
     return BookMetrics(
         book_beta_mkt=book_tilts["beta_mkt"],
@@ -560,7 +596,9 @@ def cap_utilisation(bm: BookMetrics, picks: list[dict]) -> dict:
                     "weight": w,
                     "cap": cap,
                     "utilisation": (w / cap) if cap else 0.0,
-                    "breached": w > cap,
+                    # Same predicate the violation list uses, so the row's badge and
+                    # the message can never disagree about whether a cap was breached.
+                    "breached": exceeds_cap(w, cap),
                 }
                 for key, w in weights.items()
             ),

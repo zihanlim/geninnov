@@ -180,6 +180,63 @@ Live at https://andromeda-analytics.vercel.app · 533 backend + 120 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 52 (2026-07-25)
+
+**The book reported a cap violation it had not committed, and the message said so in
+numbers that contradicted it.**
+
+The recorded next step, re-derived against the live row rather than taken on faith:
+
+```
+cap violations: ['US (35.0% > 35%)']
+  BREACHED  geo  US   weight = 0.350000   cap = 0.350000   utilisation = 1.0000
+```
+
+**35.0% is not greater than 35%**, and this is the first figure a reviewer would poke on
+a page whose entire claim is that limits bind. At full precision the cause is one unit in
+the last place:
+
+```
+weight = 0.35000000000000003
+cap    = 0.35
+w - c  = 5.551115123125783e-17
+```
+
+**This is the cap working correctly, reported as a failure.**
+[ADR-0037](adrs/0037-position-limits-bind-and-the-rest-is-cash.md) made the limits
+actually bind — `allocate_portfolio` **clamps** a group to its cap and holds the rest in
+cash — so a fully-utilised book lands *exactly on* the limit **by design**, and summing
+the clamped per-position floats reintroduces representation error. Iteration 21 saw the
+same boundary and left it as *"an artefact worth tidying if that row is ever touched"*.
+It was ugly then; it is a false sentence about risk governance now.
+
+`exceeds_cap(weight, cap)` requires the excess to beat representation error.
+**`1e-9` is a representation-error guard, not an economic tolerance** — nine orders of
+magnitude above the observed 5.55e-17 and seven *below* a basis point, so nothing anyone
+could act on is masked. [ADR-0047](adrs/0047-conviction-needs-a-vol-floor.md) warned that
+a *fitted* threshold states something about the day's numbers rather than about the rule;
+this one states something about IEEE-754.
+
+**Sitting exactly on a cap is compliance, not breach** — the allocator puts it there, and
+reporting the designed state as a violation trains a reader to ignore the alert.
+`cap_utilisation`'s `breached` badge uses the **same predicate**, so the row and the
+message cannot disagree — the drift ADR-0058 hit when a verdict was re-derived at a
+second site. And the message now states the **excess** (`US 36.12% — 1.12pp over its 35%
+cap`) instead of a bare inequality, so the sentence is checkable at the precision it is
+printed to.
+
+**Verified against the exact live value**, not a fixture: the persisted
+`0.35000000000000003 / 0.35` clears, and nothing else in the book is within 1e-9 of a
+cap, so no real breach is masked. The persisted *string* refreshes on the next pipeline
+run — this changes the computation, not history. 538 backend tests.
+
+**The rule, and it is the fourth instance this week: a displayed claim must be supported
+by the numbers displayed beside it.** ADR-0060 refused a share that exceeded its whole;
+ADR-0066 stopped a row encoding absence as a value; ADR-0067 stopped a column labelling a
+subset as the whole; this stops a message asserting an inequality its own figures deny.
+
+[ADR-0068](adrs/0068-a-cap-breach-is-not-decided-by-float-error.md).
+
 ### Loop iteration 51 (2026-07-25)
 
 **ADR-0066 verified on the book of record, the half-finished run resolved itself, and a

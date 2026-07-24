@@ -26,7 +26,9 @@ function fmtByUnit(v: number | null, unit: LimitRow["unit"]): string {
     case "ratio":
       return v.toFixed(2);
     case "score":
-      return v.toFixed(3);
+      // HHI on the 0–10 000 scale is naturally integer-ish; 3 decimals ("2500.000")
+      // read as spurious precision. Whole number with a thousands separator.
+      return v.toLocaleString("en-US", { maximumFractionDigits: 0 });
   }
 }
 

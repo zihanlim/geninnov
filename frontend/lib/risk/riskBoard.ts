@@ -153,7 +153,10 @@ export const DEFAULT_LIMITS = {
   net_exposure_pct: 0.3, // ±30% net long/short of capital
   gross_exposure_pct: 2.0, // 200% gross (2x leverage)
   beta_abs: 0.5, // |beta| to SPX, market-neutral-ish mandate
-  hhi: 0.2, // Herfindahl concentration ceiling
+  hhi: 2000, // Herfindahl ceiling on the 0–10 000 (DOJ) scale — backend
+  // concentration_hhi = Σwᵢ²·10 000, so the limit must be on the same scale.
+  // 2 000 ≈ five equal-weight names; the old 0.2 (a 0–1-scale value) made a 2 500
+  // book read as 1 250 000 % utilisation.
   single_name_pct: 0.35,
   sector_pct: 0.3,
   geo_pct: 0.2,
@@ -311,7 +314,7 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         label: "Concentration (HHI)",
         unit: "score",
         limitSource: "house_default",
-        note: "Herfindahl–Hirschman index of position weights; 1/N is fully diversified, 1.0 is a single name. From portfolio_risk.concentration_hhi.",
+        note: "Herfindahl–Hirschman index of position weights on the 0–10 000 (DOJ) scale: 10 000/N is fully diversified, 10 000 is a single name; the 2 000 ceiling ≈ five equal names. From portfolio_risk.concentration_hhi.",
       },
     },
     {

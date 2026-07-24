@@ -1166,6 +1166,25 @@ def reason_picks(state: Q1State) -> Q1State:
                         if c.get("source") and key not in seen:
                             seen.add(key)
                             citations.append(c)
+            # Diagnose an empty citation set AT THE POINT IT HAPPENS. When the
+            # guardrail rejects a run, raw_output ends up holding the deterministic
+            # fallback, so what the model actually returned is lost and the failure
+            # cannot be diagnosed after the fact — on 2026-07-24 three runs failed
+            # "No citations provided" with no way to tell whether the model returned
+            # no picks, picks without citations, or a truncated body. Print the
+            # shape (never the full text, which is large and may be noisy) so the
+            # next failure is readable straight from the run log.
+            if not citations:
+                per_pick = sum(len(p.get("citations") or []) for p in state["picks"])
+                print(
+                    f"[reason_picks] EMPTY CITATIONS (attempt {retries + 1}): "
+                    f"raw={len(raw)} chars, top-level keys={sorted(parsed.keys())}, "
+                    f"picks={len(state['picks'])}, per-pick citations={per_pick}, "
+                    f"book_view={len(parsed.get('book_view') or '')} chars"
+                )
+                if state["picks"]:
+                    print(f"[reason_picks]   pick[0] keys={sorted(state['picks'][0].keys())}")
+
             state["citations"] = citations
             state["retries"] = retries
             # T18: LLM succeeded — the body is NOT a fallback synthesis.

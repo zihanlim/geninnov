@@ -51,3 +51,4 @@ tests/backend/*.json
 # Playwright verification artifacts
 .playwright-mcp/
 /*.png
+backend/data/factors_daily.csv

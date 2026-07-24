@@ -1417,11 +1417,30 @@ def reason_picks(state: Q1State) -> Q1State:
                     f"({exc.__class__.__name__}: {exc}; raw={len(raw or '')} chars) — using fallback"
                 )
                 return fallback_picks(state)
+        except TimeoutError as exc:
+            # A stall is NOT worth retrying, and retrying it was the real cost.
+            #
+            # This loop treated every exception alike, so a timeout consumed all
+            # three attempts: 3 x LLM_TIMEOUT_SECONDS. At the 900s default that is
+            # 2700s, and 45 minutes is exactly what a stalled run was measured at.
+            # ADR-0052 corrects ADR-0051, which blamed one unbounded call for that
+            # observation — the wall-clock wrapper was still needed, but it was not
+            # what produced the number.
+            #
+            # Retrying a DECODE failure is sensible: the model can fix malformed
+            # output, and the branch above feeds the error back so it can. Retrying
+            # a timeout asks a deterministic model the same question again while the
+            # provider is demonstrably slow, and pays another full deadline to learn
+            # nothing.
+            print(f"[reason_picks] LLM TIMED OUT (attempt {retries + 1}): {exc} — "
+                  f"not retrying; a stall is not fixed by asking again.")
+            state["error"] = f"LLM timeout: {exc} — using fallback"
+            return fallback_picks(state)
         except Exception as exc:
             # Same masking problem as the decode branch above: this falls through
             # to a fallback whose empty citations get reported as "No citations
-            # provided", hiding the real cause (auth, rate limit, timeout, HTTP
-            # error from the provider).
+            # provided", hiding the real cause (auth, rate limit, HTTP error from
+            # the provider).
             print(
                 f"[reason_picks] LLM CALL FAILED (attempt {retries + 1}): "
                 f"{exc.__class__.__name__}: {exc}"

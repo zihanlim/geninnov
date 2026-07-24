@@ -1357,3 +1357,73 @@ def test_llm_complete_propagates_a_provider_error_not_a_timeout(monkeypatch):
     monkeypatch.setattr(qa, "_llm_complete_inner", _boom)
     with pytest.raises(ValueError, match="429"):
         qa._llm_complete("hello")
+
+
+# ─── Timeout is not retried (ADR-0052) ───────────────────────────────────────
+
+def test_a_timeout_goes_straight_to_fallback_not_three_more_attempts():
+    """The real cost of a stalled provider was the retry loop, not one long call.
+
+    reason_picks retries up to 3 times and treated every exception alike, so a
+    timeout consumed 3 x LLM_TIMEOUT_SECONDS. At the 900s default that is 2700s —
+    and 45 minutes is exactly what a stalled run measured. Retrying a decode failure
+    is sensible (the model can fix its output, and the error is fed back); retrying a
+    stall pays another full deadline to ask a deterministic model the same question.
+    """
+    from backend.services import q1_agent as qa
+
+    calls = {"n": 0}
+
+    def _stall(*_a, **_k):
+        calls["n"] += 1
+        raise TimeoutError("LLM call exceeded 420s wall clock (provider=minimax)")
+
+    orig = qa._llm_complete
+    qa._llm_complete = _stall
+    try:
+        state = dict(MOCK_STATE) if "MOCK_STATE" in globals() else {}
+        state.update({
+            "candidates": [{"asset": "SPY", "direction": "long", "theme_id": "t",
+                            "hype_score": 50.0, "trade_score": 0.1,
+                            "avg_sentiment": 0.0, "edge_score": 0.3}],
+            "macro_snapshot": {}, "regime": {}, "risk_metrics": {}, "theme_scores": [],
+            "factor_exposures": {}, "news_headlines": [], "cfg": MOCK_CFG,
+            "picks": [], "citations": [], "retries": 0, "error": None,
+            "lens": "multi_asset", "run_date": "2026-07-25",
+        })
+        out = qa.reason_picks(state)
+    finally:
+        qa._llm_complete = orig
+
+    assert calls["n"] == 1, f"timeout was retried {calls['n']} times"
+    assert "timeout" in (out.get("error") or "").lower()
+
+
+def test_a_decode_failure_is_still_retried():
+    """The distinction has to hold in both directions — malformed output is exactly
+    what the retry-with-feedback path exists for."""
+    from backend.services import q1_agent as qa
+
+    calls = {"n": 0}
+
+    def _garbage(*_a, **_k):
+        calls["n"] += 1
+        return "not json at all"
+
+    orig = qa._llm_complete
+    qa._llm_complete = _garbage
+    try:
+        state = {
+            "candidates": [{"asset": "SPY", "direction": "long", "theme_id": "t",
+                            "hype_score": 50.0, "trade_score": 0.1,
+                            "avg_sentiment": 0.0, "edge_score": 0.3}],
+            "macro_snapshot": {}, "regime": {}, "risk_metrics": {}, "theme_scores": [],
+            "factor_exposures": {}, "news_headlines": [], "cfg": MOCK_CFG,
+            "picks": [], "citations": [], "retries": 0, "error": None,
+            "lens": "multi_asset", "run_date": "2026-07-25",
+        }
+        qa.reason_picks(state)
+    finally:
+        qa._llm_complete = orig
+
+    assert calls["n"] == 3, f"decode failure should use all attempts, used {calls['n']}"

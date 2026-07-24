@@ -132,7 +132,7 @@ deploys. Until it resets:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 528 backend + 120 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 533 backend + 120 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -208,6 +208,55 @@ horizontal scroll, zero console errors. Regression test locks 0.36pp → "36bps"
 **Deploy footnote:** my direct `vercel --prod` was refused — the free tier's cap of
 100 deploys/day was exhausted by the day's cadence — but a deploy built from the
 shared HEAD landed while I watched, carrying the commit, so the fix is live regardless.
+
+### Loop iteration 50 (2026-07-25)
+
+**The deploy landed after six attempts, the pending fix went live — and expanding one
+position showed the fix was only half of it.**
+
+`vercel --prod` finally succeeded, so [ADR-0064](adrs/0064-the-audit-page-blamed-the-pipeline-for-its-own-arithmetic.md)'s
+renormalisation is live and **verified**: `/method`'s RECONCILIATION FAILURE panel is
+gone, the verdict reads *"reconciles exactly"*, `(null → 0)` is gone, and the block
+prints `Σ weight (present) = 0.480000` with `EdgeScore (recomputed) = 0.354165` — the
+persisted value. Clean at 1440px and 375px, zero console errors.
+
+**Then the same fix on `/book` did not work, and that was the finding.** Expanding XLE:
+
+```
+Carry     +0.00   +0.000      ← not null. zero.
+Value     +0.00   +0.000
+Persisted EdgeScore differs from the sum of shown components by +0.224
+```
+
+The renormalisation had **nothing to renormalise over**. `/method` reads
+`theme_signals_history`, where carry and value are genuinely `NULL`; `/book` reads the
+per-position columns, where they were `0` for **every** position — including names whose
+theme has both computable.
+
+**Measured, not inferred:** eight of nine positions satisfied
+`persisted_edge == naive_sum / 0.48`, where 0.48 is `w_trend + w_regime + w_sentiment`.
+The pipeline renormalised the score **correctly** and then wrote carry and value as `0`.
+**The score was right and the components beside it contradicted it.** One coercion did
+it — `a_carry if a_carry is not None else 0.0` — doing precisely what ADR-0036's own
+docstring warns against.
+
+Now persisted as `None`. Checked rather than assumed that this is safe: **nothing in
+`backend/` or `scripts/` does arithmetic on these four fields**; they are carried for
+display and reconciliation, and the score is computed before the coercion, so no position
+changes sign or size.
+
+**Verified end-to-end on a live pipeline run** — non-computable components persist `None`
+(CL, EFA, EWJ, JD, RTX, SPY), real ones persist numbers (EMB carry 0.857 / value −0.600;
+TLT 0.345 / 0.996), and **every row's renormalised recomputation equals its persisted
+`edge_score`**. That also answers the SVXY case the ADR left open: the distinction was
+real and was being flattened.
+
+**The rule this closes, and it is the third instance in two days: encoding absence as a
+value.** [ADR-0060](adrs/0060-a-share-cannot-exceed-the-whole.md) withheld a share rather
+than print a meaningless one; ADR-0064 stopped a page inventing a total; this stops a row
+inventing a component. The recurring failure was never bad arithmetic.
+
+[ADR-0066](adrs/0066-not-computable-must-persist-as-null.md).
 
 ### Loop iteration 49 (2026-07-25)
 

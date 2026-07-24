@@ -23,6 +23,7 @@ import {
   Td,
 } from "@/components/method/primitives";
 import SignalValidation from "@/components/method/SignalValidation";
+import FactorReconciliation from "@/components/method/FactorReconciliation";
 
 /* ══ Row types ═══════════════════════════════════════════════════════════════ */
 
@@ -1850,10 +1851,29 @@ export default function MethodPage() {
         )}
       </Section>
 
-      {/* ═══ 5. Data sources ═══════════════════════════════════════════════ */}
+      {/* ═══ 5. Factor model ═══════════════════════════════════════════════ */}
+      <Section
+        id="factors"
+        index="05"
+        title="Factor exposures — and do they reconcile?"
+        lede={
+          <>
+            L2 regresses each asset&apos;s daily excess return on Fama-French 5 + UMD over a
+            rolling 252-day window. Those betas are what the book&apos;s factor tilts and the
+            scenario shocks are built from, so a tilt is only as trustworthy as the beta beneath
+            it. Nothing on this site checked them until now — a factor model whose numbers nobody
+            has reconciled is an assertion. The table below is the check a reviewer would ask
+            for: assets whose market beta is known before you run anything.
+          </>
+        }
+      >
+        <FactorReconciliation />
+      </Section>
+
+      {/* ═══ 6. Data sources ═══════════════════════════════════════════════ */}
       <Section
         id="sources"
-        index="05"
+        index="06"
         title="Data sources and provenance"
         lede={
           <>
@@ -2086,7 +2106,7 @@ export default function MethodPage() {
       {/* ═══ 6. Guardrails ═════════════════════════════════════════════════ */}
       <Section
         id="guardrails"
-        index="06"
+        index="07"
         title="Guardrails on the reasoning layer"
         lede={
           <>

@@ -106,7 +106,7 @@ find, not just what you changed:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 509 backend + 95 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 511 backend + 106 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -148,6 +148,45 @@ Live at https://andromeda-analytics.vercel.app · 509 backend + 95 frontend test
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 43 (2026-07-25)
+
+> Numbering note: two agents worked this repo in parallel today and both reached
+> "iteration 42", so there are two 42 sections below. Read by date and content.
+
+**Two things: confirmed last iteration's IC fix landed, then found and fixed a wrong
+date on the site's first screen.**
+
+The HypeScore-IC honesty fix from the previous iteration is now **verified live** — the
+panel reads *"1d −0.2275 · measured · 1 date — not yet stable"* with the footer *"Not
+yet validated … a single-date point estimate,"* and the green overclaim is gone. The
+transient window (I had persisted the data before the guard deployed) is closed.
+
+Then the UI pass surfaced a real defect on **"What we're watching"**: the header read
+**RUN DATE 2026-07-24** and **LAST PIPELINE RUN 2026-07-24** above theme data that is
+the **2026-07-25** run (US Election HypeScore 60.1, the 07-25 value; 07-24 was 58.4).
+The status bar three lines below correctly said *"Last run 2026-07-25"* — so the
+landing page contradicted itself and every other route.
+
+RUN DATE was sourced from `themes.updated_at`, a write timestamp; LAST PIPELINE RUN
+from `finished_at`. Both render 07-24 because `run_date` is **forward-dated** — the run
+that executes the evening of 07-24 UTC produces the book *for* 07-25. Both header
+dates now show `pipeline_runs.run_date` (07-25), the canonical identifier the status
+bar, `/method` and `/book` all use; freshness *"Updated Nm ago"* is measured separately
+from `finished_at`. That split is load-bearing: `run_date` is a bare date, so
+`new Date("2026-07-25")` is in the *future* of a 20:13Z finish and measuring age from it
+would clamp to 0 ("just now") over hours-old data. Extracted to
+`lib/homeFreshness.ts`, unit-tested including that clamp trap.
+
+Also confirmed, but left to the agent who owns it: the live book's thesis still claims
+*"ARKK … is not present in the tradable candidate pool"* — **false** (ARKK is a short
+candidate at edge −0.26). That is already guarded by the parallel session's
+`check_availability_claims` (ADR-0061), which I verified fires on the exact live
+sentence; the live book is simply stale and a re-run will purge it. Not mine to
+regenerate.
+
+[ADR-0062](adrs/0062-run-date-is-not-a-write-timestamp.md).
+
 
 ### Loop iteration 42 (2026-07-25)
 

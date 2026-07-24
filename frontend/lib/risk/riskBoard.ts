@@ -195,9 +195,32 @@ function resolveLimit(
 /** Fraction of the limit at/above which a row is flagged "near" (amber). */
 export const NEAR_LIMIT_FRACTION = 0.8;
 
+/**
+ * Utilisation above which a row is genuinely over its limit.
+ *
+ * Mirrors `CAP_EPSILON` in `backend/services/book_metrics.py` (ADR-0068), and exists
+ * for the same reason: `allocate_portfolio` CLAMPS a group to its cap (ADR-0037), so a
+ * fully-utilised book sits exactly on the limit by design, and summing the clamped
+ * per-position floats reintroduces representation error. The live 2026-07-25 book
+ * carried geo US at 0.35000000000000003 against a 0.35 cap, so
+ * `util = 1.0000000000000002` and a bare `util > 1` reported a governance breach on a
+ * book that was correctly capped.
+ *
+ * ADR-0068 fixed the BACKEND comparison. This board never read it — it recomputes the
+ * status client-side from weights and limits — so the phantom breach kept rendering
+ * here regardless. Two implementations of one rule is the drift ADR-0058 and ADR-0064
+ * were both about; this is the second site, corrected to match.
+ *
+ * A representation-error guard, NOT an economic tolerance: an absolute weight error of
+ * 1e-9 maps to ~3e-9 of utilisation against a 0.35 cap, while one basis point of real
+ * overshoot is ~3e-4 — five orders of magnitude clear.
+ */
+export const CAP_UTIL_EPSILON = 1e-9;
+
 function statusFor(util: number | null): LimitStatus {
   if (util === null) return "unknown";
-  if (util > 1) return "breached";
+  // Sitting exactly on a limit is compliance, not breach — the allocator puts it there.
+  if (util > 1 + CAP_UTIL_EPSILON) return "breached";
   if (util >= NEAR_LIMIT_FRACTION) return "near";
   return "ok";
 }

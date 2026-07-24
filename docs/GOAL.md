@@ -216,6 +216,61 @@ don't ship frontend you can't verify live).
 scroll, zero console errors. `/book` stable at the 9-name published book; `/risk`
 discloses the divergence; only the home under-discloses it. 546 backend + 129 frontend.
 
+### Loop iteration 59 (2026-07-25)
+
+**The scheduled daily job stopped finishing, and nothing noticed.**
+
+Re-deriving the live state found `/risk` computing on **38 provisional positions** with no
+book published for 2026-07-24. Chasing why produced the finding.
+
+`record_pipeline_run` maps its internal `"started"` sentinel to the DB status
+**`'partial'`**, updating it to `success`/`failure` on completion. So `partial` means
+*began and has not finished* — the transient state **during** a run, and the **permanent**
+state of a run that died. Nothing distinguished the two.
+
+| run_date | stage | status | started | finished |
+|---|---|---|---|---|
+| 2026-07-23 | L5 | **success** | 22:31:45 | 22:34:13 |
+| 2026-07-24 | L5 | **partial** | 22:34:58 | *never* |
+
+**The day before, the same stage succeeded in 2.5 minutes.** On 07-24 it started and never
+wrote a terminal status, so no book was published for that date, the site went on serving
+the previous run's, and `pipeline_runs` simply held `partial` indefinitely.
+
+**That run was the scheduled one, not a local one** — it stamped `run_date` 2026-07-24,
+the **UTC** date, which this UTC+8 machine could not produce before
+[ADR-0069](adrs/0069-run-date-is-utc-not-the-local-clock.md): at 22:34 UTC its
+`date.today()` was already 07-25. So the identity is established by the very artifact the
+last two iterations were about.
+
+**For a deliverable whose Q2 claim is "a daily process", a daily job that silently stops
+finishing is the failure that matters most** — and it was invisible. Every guard built so
+far checks whether the *data* is consistent; none asked whether the *run happened*.
+
+`check_stalled_stages` flags any stage still `partial` beyond the window. **The threshold
+has a stated basis rather than a fitted one:** `daily-refresh.yml` sets
+`timeout-minutes: 60`, so no legitimately-running stage can be older than that — GitHub
+kills the job first. 90 minutes is that ceiling plus a 30-minute margin for a delayed
+scheduler and clock skew, so **a run genuinely in progress can never trip it and a dead
+one always will.** That distinction is the ADR-0047 lesson: a fitted threshold states
+something about the day's numbers, a derived one states something about the rule.
+
+Silent when there is nothing to judge — no rows, no `started_at`, an unparseable
+timestamp, or a terminal status. A stage inside the window is *running*, not stalled, and
+saying otherwise would fire on every concurrent run **including the one this was written
+during**. A naive timestamp is read as UTC; treating it as local would shift the age by
+the writer's offset, the same class of bug ADR-0069 just fixed.
+
+554 backend tests.
+
+**Also this iteration:** re-ran the pipeline to complete 2026-07-24, since the scheduled
+run left it unpublished. That is the honest restoration — the site was serving a book from
+a different date with the ADR-0040 warning correctly covering it.
+
+**Twelfth deploy refusal**, so the headroom fix
+([ADR-0068](adrs/0068-a-cap-breach-is-not-decided-by-float-error.md) follow-up) remains
+committed and tested but not live.
+
 ### Loop iteration 58 (2026-07-25)
 
 **A documented convention turned out to be a description of my own bug.**

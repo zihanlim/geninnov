@@ -383,3 +383,73 @@ def test_is_silent_without_a_row_picks_or_book_metrics():
     assert check_book_arithmetic(_book(picks=[])) == []
     assert check_book_arithmetic(_book(book_metrics={})) == []
     assert check_book_arithmetic(_book(picks="not json")) == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# check_stalled_stages — a stage that began and never finished
+# ─────────────────────────────────────────────────────────────────────────────
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+_NOW = datetime(2026, 7, 25, 0, 30, tzinfo=timezone.utc)
+
+
+def _stage(status="partial", minutes_ago=120, stage="L5", run_date="2026-07-24"):
+    return {
+        "run_date": run_date,
+        "stage": stage,
+        "status": status,
+        "started_at": (_NOW - timedelta(minutes=minutes_ago)).isoformat(),
+    }
+
+
+def test_flags_the_live_l5_that_started_and_never_finished():
+    """2026-07-24: L5 started 22:34:58 and never wrote a terminal status.
+
+    No book was published for that date, the site served the previous run's, and
+    pipeline_runs simply held 'partial' indefinitely.
+    """
+    from scripts.check_data_integrity import check_stalled_stages
+
+    flags = check_stalled_stages([_stage(minutes_ago=115)], now=_NOW)
+    assert len(flags) == 1
+    assert "L5" in flags[0] and "2026-07-24" in flags[0]
+    assert "never finished" in flags[0]
+
+
+def test_a_stage_still_inside_the_window_is_running_not_stalled():
+    """Must never fire on a concurrent run — the workflow allows 60 minutes."""
+    from scripts.check_data_integrity import check_stalled_stages
+
+    assert check_stalled_stages([_stage(minutes_ago=5)], now=_NOW) == []
+    assert check_stalled_stages([_stage(minutes_ago=59)], now=_NOW) == []
+    # 60-minute workflow ceiling + 30-minute margin = 90.
+    assert check_stalled_stages([_stage(minutes_ago=89)], now=_NOW) == []
+    assert check_stalled_stages([_stage(minutes_ago=91)], now=_NOW) != []
+
+
+def test_terminal_statuses_are_never_flagged():
+    from scripts.check_data_integrity import check_stalled_stages
+
+    for st in ("success", "failure"):
+        assert check_stalled_stages([_stage(status=st, minutes_ago=10_000)], now=_NOW) == []
+
+
+def test_is_silent_without_rows_or_a_start_time():
+    from scripts.check_data_integrity import check_stalled_stages
+
+    assert check_stalled_stages(None, now=_NOW) == []
+    assert check_stalled_stages([], now=_NOW) == []
+    row = _stage(); row["started_at"] = None
+    assert check_stalled_stages([row], now=_NOW) == []
+    row2 = _stage(); row2["started_at"] = "not a timestamp"
+    assert check_stalled_stages([row2], now=_NOW) == []
+
+
+def test_a_naive_timestamp_is_read_as_utc():
+    """Postgres can hand back a naive string; treating it as local would shift the age."""
+    from scripts.check_data_integrity import check_stalled_stages
+
+    row = _stage(minutes_ago=200)
+    row["started_at"] = (_NOW - timedelta(minutes=200)).replace(tzinfo=None).isoformat()
+    assert len(check_stalled_stages([row], now=_NOW)) == 1

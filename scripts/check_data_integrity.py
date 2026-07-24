@@ -352,6 +352,70 @@ def check_book_arithmetic(
     return out
 
 
+WORKFLOW_TIMEOUT_MINUTES = 60   # daily-refresh.yml `timeout-minutes`
+STALE_STAGE_MARGIN_MINUTES = 30
+
+
+def check_stalled_stages(
+    rows: list[dict] | None,
+    now: "datetime | None" = None,
+    max_age_minutes: int = WORKFLOW_TIMEOUT_MINUTES + STALE_STAGE_MARGIN_MINUTES,
+) -> list[str]:
+    """Did a pipeline stage start and never reach a terminal status?
+
+    `record_pipeline_run` maps the internal ``"started"`` sentinel to the DB status
+    ``'partial'``, updating it to ``'success'`` or ``'failure'`` on completion. So
+    ``partial`` means *began and has not finished* — the transient state during a run,
+    and the **permanent** state of a run that died.
+
+    Nothing detected the second case. On 2026-07-24 the scheduled job's **L5 started at
+    22:34:58 and never wrote a terminal status**: no book was published for that date, the
+    site went on serving the previous run's, and `pipeline_runs` simply held `partial`
+    indefinitely. The day before, the same stage had succeeded in 2.5 minutes. For a
+    deliverable whose Q2 claim is *"a daily process"*, a daily job that silently stops
+    finishing is the failure that matters most, and it was invisible.
+
+    **The threshold has a stated basis rather than a fitted one.** `daily-refresh.yml`
+    sets ``timeout-minutes: 60``, so no legitimately-running stage can be older than that
+    — GitHub kills the job first. 90 minutes is that ceiling plus a 30-minute margin for
+    a delayed scheduler and clock skew, so a run genuinely in progress can never trip it
+    and a dead one always will.
+
+    Silent when there is nothing to judge: no rows, a stage with no ``started_at``, or a
+    stage that reached ``success``/``failure``. A stage still inside the window is
+    *running*, not stalled, and saying otherwise would fire on every concurrent run.
+
+    Returns failure strings; empty means no stage is stuck.
+    """
+    if not rows:
+        return []
+    from datetime import datetime, timedelta, timezone
+
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=max_age_minutes)
+    out: list[str] = []
+    for r in rows:
+        if (r.get("status") or "") != "partial":
+            continue
+        started = r.get("started_at")
+        if not started:
+            continue
+        try:
+            ts = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        if ts < cutoff:
+            age = int((now - ts).total_seconds() // 60)
+            out.append(
+                f"stage {r.get('stage', '?')} for run_date {r.get('run_date', '?')} has "
+                f"been 'partial' for {age} min (started {str(started)[:19]}Z) — it began "
+                f"and never finished, so that run published nothing"
+            )
+    return out
+
+
 def main() -> int:
     try:
         from dotenv import load_dotenv
@@ -483,6 +547,25 @@ def main() -> int:
             return 1
         print(f"✓ Book arithmetic reconciles for {rec['run_date']} "
               f"(gross, net, long/short split, notional and signed weights).")
+
+    # A stage that began and never finished means that run published nothing.
+    stage_rows = (
+        sb.table("pipeline_runs")
+        .select("run_date, stage, status, started_at")
+        .order("started_at", desc=True)
+        .limit(60)
+        .execute()
+        .data
+    )
+    stalled = check_stalled_stages(stage_rows)
+    if stalled:
+        print("✗ DATA INTEGRITY CHECK FAILED — a pipeline stage started and never "
+              "finished:")
+        for f in stalled:
+            print(f"  - {f}")
+        print("\nRe-run the pipeline for that date; the site is serving an older run.")
+        return 1
+    print("✓ No pipeline stage is stuck mid-run.")
 
     print("✓ Data integrity check passed — no seed fingerprint detected.")
     return 0

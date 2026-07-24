@@ -104,6 +104,25 @@ find, not just what you changed:
   candidate universe instead, which is the honest fix.
 - **Verify live.** Local build passing is not evidence; drive the deployed URL.
 
+## ⛔ BLOCKED: the Vercel deploy quota is exhausted (2026-07-25)
+
+**`vercel --prod` fails with `api-deployments-free-per-day` — "more than 100, try again
+in 24 hours".** Two sessions deploying in parallel all day spent the free tier's 100
+deploys. Until it resets:
+
+- **The standing mandate's "verify on the live URL" step cannot be satisfied.** Say so
+  rather than claiming a fix is live. `git push` does **not** deploy this project —
+  these are CLI (`vercel --prod`) deploys with no git metadata.
+- **Committed, tested, built, NOT deployed:**
+  [ADR-0064](adrs/0064-the-audit-page-blamed-the-pipeline-for-its-own-arithmetic.md)'s
+  EdgeScore renormalisation fix (commit `e8d5b27f`). The live `/method` still shows
+  **RECONCILIATION FAILURE**, `null → 0` and *"does NOT reconcile"* — verified still
+  present at 21:07 UTC. **Deploy it first next iteration**, then verify.
+- **Deploy from a clean archive**, never the working tree, because a second agent's
+  uncommitted WIP is usually present:
+  `git archive HEAD | tar -x -C <tmp> && cd <tmp> && npx vercel --prod --yes`
+- **Batch changes into one deploy** while the quota is scarce.
+
 ## Where things stand (update me)
 
 Live at https://andromeda-analytics.vercel.app · 518 backend + 111 frontend tests green.

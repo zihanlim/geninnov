@@ -139,7 +139,78 @@ Live at https://andromeda-analytics.vercel.app · 456 backend + 66 frontend test
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
-### Recorded next step — the why-column says the same thing nine times
+### Loop iteration 36 (2026-07-25)
+
+**The why-column said the same thing nine times, and the mobile fix took two goes.**
+
+Prompted by a direct question — *does this work like a scanner?* — the answer is no and
+should stay no ([ADR-0054](adrs/0054-a-daily-publication-not-a-scanner.md), and the
+stance is now a standing section at the top of this file so the loop cannot drift into
+building alert rules). But the scanner critique's real claim is **time-to-insight**, and
+that standard does bind here. Auditing against it found the failure at the worst
+possible place.
+
+`/book`'s `ASSET · THEME · RATIONALE` column rendered **"Long · a strong price uptrend"
+on all five longs and "Short · a price downtrend" on all four shorts** — nine positions,
+**two distinct strings**, on the only layer a reader sees without clicking, answering the
+question Q1 literally asks. `plainRationale` names the *dominant* EdgeScore component;
+trend carries the largest raw magnitudes so it wins almost everywhere. The function is
+correct and does exactly what its docstring says. The call site's own comment states the
+intent it defeats: *"a reader gets the 'why' without decoding values."*
+
+**Not fixed by adding phrases** — a second templated string is the same bug with more
+words. The line now carries a fact that genuinely differs per position and was *already
+measured but unused at that layer*: the independent-idea complexes `PoolDepth` renders
+(ADR-0048). A name is either the strongest member of a correlated complex — the other
+members being what it was taken **instead of** — or it stands alone. **Live: 2 distinct
+lines → 7 across 9 rows.**
+
+It stays silent rather than guessing. Absence from the idea map is *unmeasured*, never
+"standalone" — it usually means no usable return history, and asserting independence
+from missing data is the invention this file keeps warning about. A non-strongest member
+is silent too, rather than claiming to have beaten names it did not.
+
+**Then the 375px pass caught the fix half-done, twice over.** The row grid is
+`min-w-[640px]` inside a horizontal ScrollArea, so the rationale cell is **~150px at
+every viewport below desktop** — not because the screen is narrow, but because the
+column is `1fr` of 640 minus 418px of fixed columns and 72px of gaps. Scrolling the
+container reveals other *columns*, not more of this one.
+
+1. The distinction had been **appended**, and truncation eats the end — so the only
+   differentiating half was exactly what a mobile reader never saw. Reordered to
+   `side · distinction · driver`.
+2. **Measuring what a reader actually sees**, rather than only whether the text
+   truncated, showed the cell renders **eighteen characters**. The reorder alone would
+   have traded `"Long · a strong p…"` for `"Long · taken ove…"` — still identical on
+   every row that beat something. *No ordering fixes a cell that narrow.* The
+   truncation itself is the defect: an ellipsis on the line carrying the per-position
+   reasoning hides content with no affordance to reveal it — the same failure as the
+   `/risk` cards clipping in iteration 30. It wraps now.
+
+**Both were found by measuring the rendered result, not by reading the diff**, which is
+now true of every defect this project has found.
+
+**Verified live at 1440px:** 7 distinct lines across 9 rows, no truncation, no
+horizontal page scroll. **At 375px the reorder is confirmed live and the wrap was still
+deploying when this was written** — recorded as pending rather than claimed, per the rule
+at the top of this file.
+
+**Two process notes worth keeping.**
+
+*Concurrent sessions collide on ADR numbers.* Another session was writing ADRs against
+this repo at the same time; both claimed **0051**, then both claimed **0053**. Theirs is
+already cited by its own 0052 (*"corrects 0051"*), so **an ADR with a dependent cannot be
+renumbered** — this one moved to 0054. Worth checking `ls docs/adrs/` immediately before
+writing, not at the start of an iteration.
+
+*A `git checkout <file>` to undo my own bad `sed` destroyed that session's uncommitted
+edit to the same file.* Restored from the diff, but the lesson is that in a shared
+working tree, `checkout` is not a private undo.
+
+### Recorded next step — resolved above, kept for the reasoning
+
+**Status: fixed in iteration 36.** Left in place because the analysis of *why the
+scannable layer must differentiate* is the durable part.
 
 Verified live on `/book` (2026-07-25, captures in `docs/captures/2026-07-25/`): the
 `ASSET · THEME · RATIONALE` column renders **"Long · a strong price uptrend" on all five

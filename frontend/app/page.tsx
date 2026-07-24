@@ -149,6 +149,7 @@ function ConvictionPageInner() {
     total: 0,
     longCount: 0,
     shortCount: 0,
+    aboveThreshold: 0,
     avgHype: 0,
     threshold: 50,
     topScore: 0,
@@ -254,10 +255,19 @@ function ConvictionPageInner() {
         hype_score: number;
       }[];
 
+      const hypeGate = Number.isFinite(cfg.hype_score_threshold)
+        ? cfg.hype_score_threshold
+        : 50;
       setCounts({
         total: rawThemes.length,
         longCount: cands.filter((c) => c.direction === "long").length,
         shortCount: cands.filter((c) => c.direction === "short").length,
+        // How many THEMES actually cleared the hype gate. The candidate counts
+        // above are sized names, which is a different quantity entirely — a side
+        // is frequently filled by backfilling the strongest SUB-threshold theme
+        // (ADR-0029), so "candidates" and "above the gate" routinely disagree.
+        aboveThreshold: rawThemes.filter((t) => (t.hype_score ?? 0) >= hypeGate)
+          .length,
         avgHype:
           rawThemes.length > 0
             ? rawThemes.reduce((s, t) => s + (t.hype_score ?? 0), 0) /
@@ -548,7 +558,7 @@ function ConvictionPageInner() {
                 <Stat
                   label="Long / short candidates"
                   value={`${counts.longCount} / ${counts.shortCount}`}
-                  sub={`Above the HypeScore ${counts.threshold} threshold`}
+                  sub={`Sized names in the book · ${counts.aboveThreshold} of ${counts.total} themes cleared HypeScore ${counts.threshold}`}
                 />
                 <Stat
                   label="Avg HypeScore"

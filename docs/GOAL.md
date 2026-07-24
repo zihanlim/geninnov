@@ -110,6 +110,67 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 17 (2026-07-24)
+
+**First job from last iteration: closed.** `/method#factors` renders live —
+**8/8 within band**, SPY 0.99 at R² 1.00, BIL −0.00, ARKK 1.49. It was a slow Vercel
+build, as suspected but not then confirmable.
+
+**Then: the IC justifying EdgeScore's largest weight was measured on a signal that no
+longer exists** ([ADR-0044](../docs/adrs/0044-carry-ic-was-measured-on-a-superseded-signal.md)).
+
+ADR-0033 gave carry **0.34 of 1.00** — more than trend, regime or value — on *"a
+strong, statistically significant IC, p=0.007"*. ADR-0036 then replaced carry with
+excess-yield-over-funding **and never re-ran the test**. The weight kept a
+justification about a different formula for eight iterations. My own change; my own
+omission.
+
+Re-measured on the live definition, same panel, same 94 observations:
+
+| component | N | IC | p | significant |
+|---|---|---|---|---|
+| Trend | 975 | +0.0332 | 0.300 | no |
+| **Carry** | **94** | **+0.1275** | **0.221** | **no** |
+| Value | 94 | +0.0939 | 0.368 | no |
+| Regime / Sentiment | 0 | — | — | not testable |
+
+Same N, p = 0.221 rather than 0.007. Carry is still strongest and still the right
+sign, but **no component of EdgeScore clears conventional significance.**
+
+Getting a number at all meant repairing the harness, and both faults matter:
+- It had **died on `abs(None)` since ADR-0036** (which made carry/value return
+  `None`) — broken for eight iterations **because nothing runs it**.
+- It fed `carry_signal` only the sleeve's own series when the new definition needs
+  `DGS10`+`DFF`, so it would have **measured a signal production never computes**.
+  Testing on inputs production never sees is worse than not testing: the number looks
+  like evidence.
+- It only ever **printed**. That is why `backtest_results` held nothing for EdgeScore
+  and the site had never said whether the trade signal predicts anything.
+
+Now persisted under `test_name='edge_ic'` with N, t, p, hit-rate and a `pass` flag —
+**false for all five today**.
+
+**Weights deliberately unchanged.** Five insignificant ICs cannot distinguish the
+components, and re-fitting on p=0.22 would be fitting noise — which is what
+ADR-0033's own 50% shrinkage exists to prevent. They are relabelled as *priors
+informed by a weak positive signal*, not a fitted result, and the stale
+`hype_calculator.py` comment is corrected in place.
+
+**General lesson recorded in the ADR: changing a signal invalidates the evidence that
+set its weight.** Any future change to a scored component should re-run
+`backtest_edge.py` in the same commit.
+
+**Honest state of validation now:** both HypeScore *and* EdgeScore are measured and
+**unvalidated**. That is a weaker claim than this codebase was making and a truer one.
+The fix is more data — carry's N=94 is two macro sleeves at month-ends over six years,
+and no estimator change improves that.
+
+**Still to do:** surface the EdgeScore IC on `/method` beside the HypeScore panel. The
+numbers are persisted and readable; nothing renders them yet.
+
+Verified live: `/method` at 375px — **0 contrast failures of 517 checked**, zero
+console errors, no horizontal scroll, factor panel present.
+
 ### Loop iteration 16 (2026-07-24)
 
 **The factor model had never been reconciled. It checks out — and that was a
@@ -986,10 +1047,14 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   improvement; the limit board stamps OK on statistics whose own tiles say the
   sample is too small; three routes are unreachable at 375px; tertiary text and
   the orange accent sit at 2.8:1 contrast; two `/method` callouts at 2.09:1.
-- ~~**L2 factor betas never reconciled**~~ — **DONE, iteration 16.** SPY +0.99 at
+- **RENDER THE EDGESCORE IC — next step.** `backtest_results` now holds it
+  (`test_name='edge_ic'`) but no panel reads it. `/method` should say EdgeScore is
+  measured-and-unvalidated in the same breath as HypeScore.
+- ~~**L2 factor betas never reconciled**~~ — **DONE, iteration 16, verified live in
+  17 (8/8 within band).** SPY +0.99 at
   R2 1.00, BIL -0.00, ARKK +1.49 — the model is sound; the gap was that nobody had
   checked. Rendered live on `/method` section 05 and pinned by 5 synthetic-series
-  tests. **Caveat: the panel itself was not confirmed rendering live — verify first.**
+  tests. Panel confirmed rendering live in iteration 17.
 - ~~**Q2 narrative not consolidated**~~ — **re-derived as already done, iteration
   14.** `/method` opens with the process statement and §01 walks L0→L5 with each
   stage's inputs, destination table, live status and duration — that is Q2's "data

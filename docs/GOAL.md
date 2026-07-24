@@ -110,6 +110,44 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 23 (2026-07-24)
+
+**One dropped quote killed the entire daily run.** Checking whether iteration 22's
+scenario fix had persisted turned up that it never got the chance — the pipeline
+died with:
+
+```
+RuntimeError: daily return aborted for 2026-07-24: missing prices for ['EMB']
+```
+
+**EMB is a liquid ETF that fetched fine seconds later** (5 rows, last close 94.62), so
+a batch yfinance download had silently dropped it. **L4 risk, the L5 book and the
+whole day's thesis were lost because one quote out of eighteen went missing in a
+single HTTP call.**
+
+The guard is right and stays — never invent a return for an unpriced position, the
+rule that caught DXY in migration 031. **Aborting over a transient batch artefact is
+the disproportionate part.** For something billed as a *daily systematic process*,
+losing a day to a dropped quote is the more serious failure, and it is exactly the
+operational question a reviewer asks first: what happens when a data source hiccups?
+
+Missing tickers are now retried **individually** before the gap is treated as real; a
+single-ticker fetch reliably succeeds where a batch call dropped it. **The contract is
+unchanged** — a ticker still absent after its own dedicated fetch aborts exactly as
+before. A test pins that alongside the recovery case, because the easy mistake here
+is to "fix" the abort by tolerating missing data.
+
+**Worth noting about the failure mode:** this is the first defect this session that
+was not a wrong number but a *missing run*. Every previous one was visible on the
+page; this one was invisible until I went looking for why a persisted value had not
+changed. The pipeline_runs telemetry added in iteration 14 records stage failures —
+but nothing surfaces "yesterday's book is still today's book", which is what a
+silently-dead run actually looks like to a reader.
+
+**Still to verify:** iteration 22's corrected stress scenarios have not persisted yet
+(the run that would have written them is the one that died). Confirm on the next run
+that `/risk` shows the recomputed figures — VIX ≈ +1.63% rather than −0.02%.
+
 ### Loop iteration 22 (2026-07-24)
 
 **The stress test said a $100M book loses $21k in a VIX spike.**

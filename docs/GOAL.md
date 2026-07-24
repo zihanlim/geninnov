@@ -110,6 +110,43 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 20 (2026-07-24)
+
+**The risk page published three statistics it simultaneously called unreadable.**
+
+| tile | rendered | caveat underneath |
+|---|---|---|
+| VaR (95%) | **$1.7M** ▼ −$0.4M | "2 sessions — needs 30" |
+| CVaR (95%) | **$2.1M** ▼ −$0.5M | "2 sessions — needs 30" |
+| **Sharpe (252D)** | **10.77 ▲ +4.56** | "2 sessions — needs 60. Too small to read as a real Sharpe." |
+| Beta (vs SPX) | **—** | "Unavailable · insufficient history" |
+
+**Beta is the one doing it right, and it is on the same card.** Two under-sampled
+statistics, two different treatments, side by side.
+
+A Sharpe of 10.77 is absurd on its face and it sat at 22px above an 11px footnote.
+A reader skims the number, not the footnote. Worse, the delta chip asserted a
+meaningful **improvement** (▲ +4.56) in a figure we had just called noise — and that
+same Sharpe read **−8.23** before an upstream correction earlier in this project,
+which is exactly how a 12-point swing gets mistaken for risk-adjusted performance.
+
+Annotating the number was a deliberate earlier choice and was better than silence.
+It still broke the standing rule at the top of this file: *prefer "unavailable,
+because X" over a confidently-wrong number.* Captioning a figure does not stop it
+being read.
+
+Statistics below their declared `MIN_DAYS_FOR_*` are now **suppressed exactly like
+Beta** — value `—`, badge **Unavailable** rather than Estimated, delta chip withheld,
+reason in place: *"Not shown: 2 sessions of history, needs 60. A Sharpe from this
+sample is noise, so we do not publish one."* The computed value stays in
+`portfolio_risk` for anyone who queries it; the page stops asserting it.
+
+**Note the shape of this one — it is the recurring failure in this codebase.** Not a
+wrong calculation: a correct calculation presented as if it meant something. The
+cumulative-return bug, the HHI scale, the min-max HypeScore, the carry IC measured on
+a superseded formula, and now this. Each was found by cross-checking a number against
+something else on the same page, never by a unit test.
+
 ### Loop iteration 19 (2026-07-24)
 
 **Both validation panels are live, and I owe a correction on one of them.**

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { slopeToBps } from "@/lib/regimeUnits";
 
 /**
  * Expandable panel that shows the 6 macro inputs that drove the current regime
@@ -39,6 +40,8 @@ interface InputRow {
   source: string;
   value: number | null;
   unit: string;
+  /** Decimal places for the value. Defaults to 2; 0 for basis-point rows. */
+  digits?: number;
   influences: ("cycle" | "sentiment")[];
   threshold: string;
   direction: "higher=worse" | "higher=better" | "context-only";
@@ -90,8 +93,12 @@ export default function RegimeInputsPanel({ runDate }: Props) {
       key: "yield_curve_slope",
       label: "10y-2y slope",
       source: "FRED · DGS10 − DGS2",
-      value: row?.yield_curve_slope ?? null,
+      // Persisted in percentage points (DGS10−DGS2 = 0.36). The curve is quoted
+      // in basis points and the threshold below is in bps, so scale to bps
+      // (0.36 → 36). Rendering it raw printed "0.36 bp" against a ">200" threshold.
+      value: slopeToBps(row?.yield_curve_slope),
       unit: "bp",
+      digits: 0,
       influences: ["cycle"],
       threshold: "inverted (≤ 0) → late/recession; steep (>200) → early",
       direction: "context-only",
@@ -100,10 +107,13 @@ export default function RegimeInputsPanel({ runDate }: Props) {
       key: "hy_oas",
       label: "HY OAS",
       source: "FRED · BAMLH0A0HYM2",
+      // FRED reports OAS in percent (2.77 = 2.77% = 277bps). Keep it in percent
+      // and state the unit; the thresholds are in percent to match, so the row no
+      // longer read "2.77 bp" against a ">350" (bps) threshold.
       value: row?.hy_oas ?? null,
-      unit: "bp",
+      unit: "%",
       influences: ["cycle", "sentiment"],
-      threshold: ">500 → recession; >350 → caution; <300 → risk-on",
+      threshold: ">5% → recession; >3.5% → caution; <3% → risk-on",
       direction: "higher=worse",
     },
     {
@@ -181,7 +191,7 @@ export default function RegimeInputsPanel({ runDate }: Props) {
                 </div>
                 <div className="num text-text-primary">
                   {a && <span style={{ color: a.color, marginRight: 4 }}>{a.glyph}</span>}
-                  {fmt(inp.value)}
+                  {fmt(inp.value, inp.digits)}
                   <span className="text-text-tertiary ml-0.5">{inp.unit}</span>
                 </div>
                 <div className="flex gap-1 flex-wrap">

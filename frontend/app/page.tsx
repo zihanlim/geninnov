@@ -14,6 +14,7 @@ import { FreshnessLabel } from "@/components/status/FreshnessLabel";
 import { StatusBadge } from "@/components/status/StatusBadge";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
 import { resolveRunDates, ageSeconds } from "@/lib/homeFreshness";
+import { formatSlopeBps } from "@/lib/regimeUnits";
 import {
   fetchThemeHistories,
   fetchThemeEdge,
@@ -66,9 +67,14 @@ function regimeHeadline(r: Regime | null): string {
   const cycle = r.cycle ?? "unknown";
   const sentiment = r.sentiment ?? "unknown";
   const bits: string[] = [];
+  // yield_curve_slope and hy_oas are persisted in PERCENTAGE POINTS (DGS10−DGS2 =
+  // 0.36, BAMLH0A0HYM2 = 2.77), the same unit as the underlying FRED yields. The
+  // curve is quoted in basis points, so formatSlopeBps scales it (0.36pp → 36bps);
+  // rendering it raw printed "0bps" over a +36bps curve. HY OAS keeps percent and
+  // gets its unit so "2.77" is not mistaken for bps.
   if (typeof r.yield_curve_slope === "number")
-    bits.push(`10y−2y at ${r.yield_curve_slope.toFixed(0)}bps`);
-  if (typeof r.hy_oas === "number") bits.push(`HY OAS ${r.hy_oas.toFixed(2)}`);
+    bits.push(`10y−2y at ${formatSlopeBps(r.yield_curve_slope)}`);
+  if (typeof r.hy_oas === "number") bits.push(`HY OAS ${r.hy_oas.toFixed(2)}%`);
   if (typeof r.vix_level === "number") bits.push(`VIX ${r.vix_level.toFixed(1)}`);
   const evidence = bits.length ? ` on ${bits.join(", ")}` : "";
   return `${cycle[0].toUpperCase()}${cycle.slice(1)}-cycle, ${sentiment}${evidence}.`;
@@ -428,7 +434,7 @@ function ConvictionPageInner() {
             narrative={regimeNarrative(regime)}
             cycleSubtext={
               typeof regime?.yield_curve_slope === "number"
-                ? `10y−2y ${regime.yield_curve_slope.toFixed(0)}bps${
+                ? `10y−2y ${formatSlopeBps(regime.yield_curve_slope)}${
                     typeof regime?.real_rate === "number"
                       ? ` · real rate ${regime.real_rate.toFixed(2)}%`
                       : ""

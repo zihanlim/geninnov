@@ -1070,6 +1070,8 @@ function PositionSection({
                 )
               }
               citations={citations}
+              repl={repl}
+              bookRunDate={bookRunDate}
               advisory={advisory}
               cap={capByAsset.get(p.asset)}
               edge={edgeByAsset[p.asset]}

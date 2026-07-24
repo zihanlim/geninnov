@@ -110,6 +110,40 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 24 (2026-07-24)
+
+**The site now says when the book is not today's book.**
+
+Iteration 23's pipeline death was invisible in a way none of this session's other
+defects were. Every other one was a **wrong number on the page** — findable by
+cross-checking two figures against each other. This was a **missing run**, and the
+page had no way to show it: `/book` printed *"RUN DATE 2026-07-22"* and the status bar
+said *"2d ago"*, both factual, both in the same neutral grey as *"5 min ago"*, while
+the site went on presenting the previous day's positions as the current $100M book.
+
+`assessStaleness` judges a run_date in **business days**. Calendar days are the wrong
+unit — a Friday book read on Sunday is two calendar days old and perfectly current.
+
+**Threshold is 2 business days, not 1, and that is the load-bearing choice.** The job
+runs *after* the close, so on any weekday morning the newest book is legitimately
+yesterday's. Flagging at 1 would fire every single morning, and **a warning that is
+always on is a warning nobody reads** — it would have made the page noisier and no
+more honest.
+
+`/book` gets a banner naming the date, the number of missed weekday runs and the
+consequence in plain words — *"These are not today's positions"* — the run date turns
+amber, and the status bar carries the same signal on every page so a reader does not
+have to be on `/book` to notice.
+
+Six tests pin the boundaries, including **silence when there is no run date at all**:
+a missing date is a different problem, and inventing a staleness claim from it would
+be exactly the fabrication this file keeps warning about.
+
+**Not exercised live, and cannot honestly be:** today's book IS current, so the
+banner correctly does not render. The logic is proven by unit test against injected
+dates rather than by a live stale state — which is the right way round, since the
+alternative is waiting for the pipeline to break again.
+
 ### Loop iteration 23 (2026-07-24)
 
 **One dropped quote killed the entire daily run.** Checking whether iteration 22's

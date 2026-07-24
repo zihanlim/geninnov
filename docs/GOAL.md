@@ -85,8 +85,10 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
-- **Q1 book** — VERIFIED thesis w/ citations, conviction-sized, cap-aware. The L5
-  fallback that dogged iterations 3–5 is **fixed and closed** (see iteration 6).
+- **Q1 book** — VERIFIED thesis w/ citations, conviction-sized, and genuinely
+  cap-bound as of iteration 7: the 20/30/35 limits now bind and whatever they refuse
+  is held in cash, so a thin book deploys less than $100M and says so. The L5
+  fallback that dogged iterations 3–5 is **fixed and closed** (iteration 6).
   Long-only today: the universe is 5 long-capable themes, 0 short-capable.
 - **Direction** EdgeScore = trend/regime/carry/value/sentiment, IC-weighted, with
   abstention + conviction sizing (ADR-0031/32/33).
@@ -94,6 +96,52 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
   (LDA ∩ embeddings, 6 two-method agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 7 (2026-07-24)
+
+**The position limits were computed, reported, and then undone — all three of them.**
+`/book` published three positions at **33.3% each against a stated 20% single-name
+limit** (167% utilisation, six violations) on a page whose own copy — and
+`ARCHITECTURE.md` — said the caps were enforced. Three independent defects in
+`allocate_portfolio`, any one of which alone voided them
+([ADR-0037](../docs/adrs/0037-position-limits-bind-and-the-rest-is-cash.md)):
+
+1. A final *"normalise so weights sum to 1.0"* erased every cap above it. Capping
+   three names at 20% leaves the sum at 0.60 — that **is** the cap working — and
+   dividing by 0.60 put all three back to 33.3%. The harder a cap bit, the harder
+   this undid it.
+2. Group caps compared each **member** against the **group** cap, so two credit
+   names at 20% each left the sector at 40% under a 30% limit with nothing capped;
+   a guard also skipped groups with <3 members because "the single-name cap is
+   sufficient", which 2 × 20% = 40% disproves.
+3. Single-name redistribution ran **once**, so an 88/12 book handed the whole excess
+   to the second name and left it at **80%, four times its own limit** — and a test
+   asserted that $80M as correct.
+
+**None of the 385 tests caught any of it, because none exercised a book small enough
+for a cap to bind.** The failure was invisible exactly when it mattered. Three new
+tests now cover it.
+
+**The decision that matters: what the limits refuse is held in CASH, not
+renormalised away.** Forcing full notional into whatever names happen to clear is
+precisely what a position limit exists to prevent. A book that cannot be filled
+inside its risk limits should be *smaller*, not more concentrated. The limit values
+(20/30/35) are untouched — they were never the defect, and re-specifying them is an
+operator decision.
+
+Measured on the live universe, the asymmetry is what a limit should produce:
+8 names → **98%** deployed, 10 names → **95%**, today's 3-name book → **60%**, and a
+6-name all-US credit book → **30%** (it genuinely violates a 30% sector limit, so
+30% is all it can hold). Live proof: `portfolio_positions` re-ran to **6 positions,
+max weight 16.7%, 85% deployed** — previously it would have been forced to 100%.
+
+`/book` now states the cash instead of leaving it to be inferred: *"$40.0M is held
+in cash: at 3 names the book cannot take more without breaching its own position
+limits"*, and the Deployed card carries the same in its hint.
+
+**This raises the value of the single-names gap rather than substituting for it.**
+More genuinely independent ideas is now the only way to deploy more capital *without*
+relaxing a limit — which is the honest lever, and still the top Q1 gap.
 
 ### Loop iteration 6 (2026-07-24)
 
@@ -149,8 +197,11 @@ book's basis — **Fed Policy, which was all four positions of the $100M book, f
 +0.372) and US Election (+0.165 → +0.340) rose, both equity themes that had been
 diluted by the silent zeros. The book is no longer one theme wearing five tickers.
 
-**A 3-name book deploys $100M and breaches its own single-name cap by 67% — fix
-this first.** `/book` now shows three positions at **33.3% each against a stated 20%
+- ~~**A 3-name book deploys $100M and breaches its own single-name cap by 67%**~~ —
+**CLOSED, iteration 7** (ADR-0037). Three defects; caps now bind and the remainder
+is cash. Superseded text kept below for the reasoning.
+
+**[CLOSED] A 3-name book deploys $100M and breaches its own single-name cap by 67%.** `/book` now shows three positions at **33.3% each against a stated 20%
 single-name limit (167% utilisation, red)**. The sizer allocates the full $100M
 across whatever names clear, so the fewer the names, the harder it breaks its own
 limit. The honest portfolio answer is the opposite: if the pool cannot fill a book

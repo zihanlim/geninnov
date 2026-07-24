@@ -32,7 +32,7 @@ and probes whether the picks survive being questioned. That sets the priority or
    size, why not this other name".
 4. Polish and breadth come after 1–3.
 
-## What kind of interface this is (ADR-0051 — read before proposing UI work)
+## What kind of interface this is (ADR-0054 — read before proposing UI work)
 
 **A daily research publication. Not a scanner, not a screener.** A screener hands you
 candidates when you click; a scanner hands you the same candidates faster and without
@@ -44,7 +44,7 @@ user does the deciding. It is the whole product here.
 **Do not build:** realtime subscriptions, polling timers, price tickers, alert rules,
 saved screens, filter panels. The inputs (daily news volume, Reddit sentiment, 252-day
 correlations, FF5 betas) do not move intraday; streaming them would be a lie told at
-60fps. If you want one of these, reopen [ADR-0051](adrs/0051-a-daily-publication-not-a-scanner.md)
+60fps. If you want one of these, reopen [ADR-0054](adrs/0054-a-daily-publication-not-a-scanner.md)
 with an argument — do not just add it.
 
 **Do take these three from the scanner model**, which are about time-to-insight and do
@@ -106,7 +106,7 @@ find, not just what you changed:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 452 backend + 52 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 456 backend + 66 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -170,12 +170,57 @@ edge conviction rather than attention (ADR-0046). Measure whether the chosen lin
 actually differentiates across the live book before shipping it — a nine-row column with
 three distinct values is a smaller version of the same failure.
 
-[ADR-0051](adrs/0051-a-daily-publication-not-a-scanner.md) · found by the interface
+[ADR-0054](adrs/0054-a-daily-publication-not-a-scanner.md) · found by the interface
 audit, not by a test, which is now true of every defect this project has found.
 
 **Also open, cheap:** `TopBar.tsx`'s `SECONDARY_NAV` (`/trades`, `/portfolio`,
 `/research`) is marked "legacy links (redirects)" in its own comment and shows a reader
 this project's migration state at ≥xl for no benefit. ADR-0040's consolidation is done.
+
+### Loop iteration 37 (2026-07-25)
+
+**The published book was sized by HypeScore. Every surface said conviction.**
+
+`/book`: *"sized by conviction across $100M"*. `/method` §04: *"sizing weight ∝
+conviction"*. `SizingChainView`'s docstring: *"the documented model sizes by
+conviction"*. ADR-0032 specifies it. `size_positions` built its `TradeCandidate`s
+**without `conviction` or `vol`** — the dataclass defaults them to 0.0 — and called
+`allocate_portfolio` **without `size_by`**, taking the `"hype"` default.
+
+The live book settles it. `|weight| / hype` is **exactly 0.00198** for six positions
+and **0.00353** for three — two constants, weight proportional to HypeScore within cap
+group. Against conviction the same book spans 2.8× and is close to *inverted*:
+highest-conviction XLE (31.1) held 6.4%, lowest-conviction long EEM (15.8) held 9.3%.
+
+**This is worse than the usual instance of "the page describes a model the code does
+not run", because the number is how much of $100M goes where** — the substance of Q1,
+not an explanatory panel. And `SizingChainView` carries a guard for exactly this case
+which never fired: `portfolio_positions.conviction` is *populated* from the L1
+candidates but was never *used*. A present-but-inert field defeated the check meant to
+catch its absence.
+
+**It also corrects ADR-0047, from three iterations ago.** The vol floor is right and
+its arithmetic held, but its claim that an unfloored ratio let a cash proxy absorb
+*the book* was true of L1's provisional book only — the published book was never
+conviction-sized. I verified that floor by reading the Conv. column, which could not
+have revealed the difference.
+
+**Second finding: the replication harness nearly published a meaningless 0%.** The
+frozen-input run reported 0% turnover on every side with all ten names identical —
+which looks like a perfectly reproducible agent and is nothing of the sort. Both
+samples had timed out and fallen back, and `fallback_picks` is *deterministic*: two
+fallbacks agree exactly. It was measuring the template. The harness now discards any
+sample where `reason_picks` set an error, and refuses to report or persist with fewer
+than two genuine samples. The same run proved ADR-0052's fix works — *"LLM TIMED OUT
+(attempt 1) … not retrying"* — and that the persist was broken anyway (`42P10`: no
+matching ON CONFLICT constraint on `backtest_results`), now delete-then-insert.
+
+**On evidence strength.** ADR-0051 and ADR-0052 are now annotated with theirs. Both
+rest on a *single* observation — one 23-minute call and one 45-minute call that was
+killed by hand, so even its duration is a lower bound. Neither was replicated, and
+that thinness is why 0051 named the wrong cause.
+
+[ADR-0053](adrs/0053-the-published-book-was-sized-by-hype.md).
 
 ### Loop iteration 36 (2026-07-25)
 

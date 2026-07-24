@@ -41,6 +41,14 @@ import { ScrollArea } from "@/components/ScrollArea";
  *
  * A candidate with no usable return history shows as an em dash, never 0.00: an
  * unmeasurable correlation is not an absent one.
+ *
+ * The "theme also held?" column is gone. Once the correlation column landed it read
+ * "yes" on all sixteen rows — provably non-discriminating, and noise beside a column
+ * that separates cleanly. The Read column states the consequence instead, and it
+ * immediately surfaced something the theme proxy hid: NOC, a short with edge -0.301
+ * and only +0.20 correlation to anything held, is INDEPENDENT and was still passed
+ * over. So the short side is not capped by redundancy — a claim made one iteration
+ * earlier and disproved by this very measurement.
  */
 
 export interface CandidateRow {
@@ -49,6 +57,11 @@ export interface CandidateRow {
   edge_score: number | null;
   theme_id: string | null;
 }
+
+/** |rho| at or above which a candidate is largely the same bet as something held.
+ *  Matches book_metrics.HIGH_CORR_THRESHOLD, the level /risk already uses to flag
+ *  a correlated pair inside the book — one threshold, one meaning. */
+const DUPLICATE_RHO = 0.7;
 
 /** {asset: {closest, corr}} from research_recommendations.candidate_correlations. */
 export type CandidateCorrelations = Record<
@@ -59,15 +72,12 @@ export type CandidateCorrelations = Record<
 export default function ClearedNotTaken({
   candidates,
   heldAssets,
-  heldThemeIds,
   themeNames,
   correlations = {},
 }: {
   candidates: CandidateRow[];
   /** Assets in today's book. */
   heldAssets: Set<string>;
-  /** Themes the book already has exposure to. */
-  heldThemeIds: Set<string>;
   themeNames: Record<string, string>;
   correlations?: CandidateCorrelations;
 }) {
@@ -97,10 +107,10 @@ export default function ClearedNotTaken({
       <p className="m-0 px-[18px] py-3 text-[12.5px] text-text-secondary leading-[1.6] max-w-[92ch]">
         These names passed every screen and still did not make the book.{" "}
         <strong>Closest held</strong> is the position each is most correlated with
-        over 252 days — a high reading means the idea is largely already in the book,
-        which is the usual reason a strong candidate is left out. Theme overlap is
-        shown too but is only a hint: one theme can hold four positions across four
-        sectors and both directions. The agent&apos;s own reasoning is in the thesis
+        over 252 days. At or above &rho;&nbsp;{DUPLICATE_RHO.toFixed(2)} the idea is
+        largely in the book already, which is the usual reason a strong candidate is
+        left out. Below it the name is a genuinely independent idea that was passed
+        over — worth asking about, and the agent&apos;s reasoning is in the thesis
         above.
       </p>
 
@@ -125,16 +135,15 @@ export default function ClearedNotTaken({
                 Theme
               </th>
               <th className="text-left font-medium px-3 py-2 text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
-                Theme also held?
+                Closest held (252d)
               </th>
               <th className="text-left font-medium px-3 py-2 text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
-                Closest held (252d)
+                Read
               </th>
             </tr>
           </thead>
           <tbody>
             {notTaken.map((c) => {
-              const dup = c.theme_id ? heldThemeIds.has(c.theme_id) : false;
               const corr = correlations[c.asset];
               return (
                 <tr
@@ -159,13 +168,7 @@ export default function ClearedNotTaken({
                   <td className="px-3 py-2.5 text-text-secondary">
                     {(c.theme_id && themeNames[c.theme_id]) || "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-text-secondary">
-                    {dup ? (
-                      <span className="text-text-secondary">yes</span>
-                    ) : (
-                      <span className="text-text-tertiary">no</span>
-                    )}
-                  </td>
+
                   <td className="px-3 py-2.5">
                     {corr ? (
                       <>
@@ -186,6 +189,19 @@ export default function ClearedNotTaken({
                     ) : (
                       /* No return history: an unmeasurable correlation is not 0.00. */
                       <span className="text-text-tertiary">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {!corr ? (
+                      <span className="text-text-tertiary">unmeasured</span>
+                    ) : Math.abs(corr.corr) >= DUPLICATE_RHO ? (
+                      <span style={{ color: "var(--warning)" }}>
+                        largely already held
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--short)" }}>
+                        independent — passed over
+                      </span>
                     )}
                   </td>
                 </tr>

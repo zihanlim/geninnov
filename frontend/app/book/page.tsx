@@ -725,13 +725,6 @@ function BookPageInner() {
           <ClearedNotTaken
             candidates={candidates}
             heldAssets={new Set((rec?.picks ?? []).map((p) => p.asset))}
-            heldThemeIds={
-              new Set(
-                (rec?.picks ?? [])
-                  .map((p) => p.theme_id)
-                  .filter((t): t is string => Boolean(t))
-              )
-            }
             themeNames={themeNames}
             correlations={rec?.candidate_correlations ?? {}}
           />

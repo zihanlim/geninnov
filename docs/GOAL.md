@@ -107,9 +107,11 @@ find, not just what you changed:
 ## Deploy notes (quota is a rolling daily cap — spend it deliberately)
 
 **The Vercel free tier caps `vercel --prod` at 100 deploys/day** (`api-deployments-free-per-day`).
-It exhausted on 2026-07-25 with two sessions deploying in parallel, and **reset by
-iteration 55** — deploys work again. Treat the cap as a recurring hazard, not a
-permanent block:
+With two sessions deploying in parallel it **oscillates**: exhausted, a partial reset
+opens a few slots, then exhausted again within minutes (iteration 55 got a slot and
+shipped a fix; iteration 57 was refused again). Check by attempting a deploy, not by
+assuming — and treat a live window as scarce. It is a recurring hazard, not a permanent
+block:
 
 - **`git push` does NOT deploy this project** — production is CLI (`vercel --prod`)
   deploys with no git metadata. A commit is not live until someone deploys.
@@ -128,7 +130,7 @@ permanent block:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 538 backend + 120 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 546 backend + 129 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -176,6 +178,43 @@ Live at https://andromeda-analytics.vercel.app · 538 backend + 120 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 57 (2026-07-25)
+
+**A verification pass: every number I poked on the live book held, and the one
+apparent contradiction was intended design. No new defect — recorded so the checks
+carry forward, and one honest false-lead ruled out.**
+
+Re-derived against the live 2026-07-25 book (unchanged: SHY/XLE/NUE/OIH/SVXY long,
+PDD/BABA/SLV/NOC short):
+
+- **Every number verifies.** All eight heatmap **Δ1D** values equal the exact
+  day-over-day HypeScore change (US Dollar −24.5 = 47.2−71.7, Geopolitical −28.4, …);
+  all seven **thesis citations** match fresh L0 to the digit (gold $4,055.7, DFF 3.63%,
+  DGS2 4.37%, DFII10 2.43%, VIX 18.58, WTI $90.47, HY OAS 277bps); the **market bar**
+  (S&P 7,411.98 +0.05%, …) equals `market_assets`, freshly stamped (iteration-45 fix
+  holding); regime **34bps**, HHI **1 208**, `/method` reconciles. `/`, `/book`,
+  `/risk`, `/method` clean at 1440 and 375 — no horizontal scroll, zero console errors.
+- **The cap board is fixed and live** — re-confirmed this iteration: `/risk` reads
+  **0 breached · 1 near · 6 ok**, US geo **NEAR** (the ADR-0068 correction I shipped in
+  iteration 55; the other session's "still not live" note predated my deploy reaching it).
+- **False lead ruled out (theme-vs-asset direction).** The heatmap shows *Geopolitical
+  Risk → LONG +0.22* while the book holds **NOC short** under that theme. Not a
+  contradiction: the heatmap column is the **theme-level EdgeScore**
+  (`theme_signals_history.edge_score`, +0.22), and direction is decided **per asset**
+  (ADR-0038/0039) — NOC's own edge is −0.29, and `/book` states its short rationale
+  directly. The theme's `trade_score` (−0.274, which the thesis cites) is a third,
+  distinct signal. Three coherent numbers, not one wrong one; the apparent conflict is
+  the theme-vs-asset split working as designed. Any change here needs an ADR-0054
+  argument, not a silent edit — flagged for a future legibility pass, not touched.
+
+**Actionable item blocked, not skipped:** the other session's headroom fix
+(`ff5b758a`, `snapHeadroom`) that turns the geo row's cosmetic **−0.0%** headroom into
+**0.0%** is committed but undeployed, and my deploy was **refused — the quota is
+exhausted again**. It is cosmetic (the row already reads NEAR correctly) and ships on
+the next open slot; a data-layer patch of the persisted weight would be redundant with
+`snapHeadroom` and overwritten on the next run, so it was not the right lever. 546
+backend + 129 frontend.
 
 ### Loop iteration 56 (2026-07-25)
 

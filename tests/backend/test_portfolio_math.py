@@ -65,7 +65,13 @@ class TestCumulativeValueContract:
     """
 
     def _reader_pct(self, stored: float) -> float:
-        """Mirror CumulativeReturn.tsx: `const cumReturn = row.cumulative_value - 1`."""
+        """Mirror the frontend reader: `const cumReturn = row.cumulative_value - 1`.
+
+        (The reader lives in components/risk/DrawdownChart.tsx, which renders
+        cumulative return / drawdown / the daily strip from portfolio_returns. The
+        old portfolio/CumulativeReturn.tsx that this used to name was superseded by
+        it and removed in the dark-machinery audit.)
+        """
         return stored - 1.0
 
     def test_growth_factor_and_return_differ_by_one(self):

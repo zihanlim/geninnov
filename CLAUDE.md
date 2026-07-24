@@ -38,9 +38,30 @@ The L5 agent supports a **`lens` parameter** that filters the candidate pool by 
 - **Database**: Supabase (PostgreSQL) — frontend reads directly via `@supabase/supabase-js`
 - **Scoring pipeline**: Python `daily_refresh.py` script runs once/day at market close → writes to Supabase
 - **Theme discovery**: `theme_discovery.py` runs at bootstrap and monthly
-- **Cron**: cron-job.org (free) triggers `daily_refresh.py` daily
+- **Scheduling**: **GitHub Actions**, not cron-job.org. The pipeline is a ~10-minute Python job (news fetch → scoring → LLM book), which no HTTP-ping cron or Vercel serverless function can host inside its timeout; Actions runs Python directly, holds the secrets, and keeps run logs.
 
 **No FastAPI, no Redis, no VPS for the backend** — see ADRs for why.
+
+### Scheduled jobs
+
+| Workflow | Schedule | Runs |
+|---|---|---|
+| `.github/workflows/daily-refresh.yml` | `30 21 * * 1-5` (21:30 UTC weekdays, after the US close) | `daily_refresh.py` (L0–L5), then refreshes the HypeScore IC validation, then the data-integrity guard |
+| `.github/workflows/theme-discovery.yml` | `0 6 1 * *` (1st of the month) | `theme_discovery.py` — LDA ∩ embedding candidates → `discovered_themes` (shadow) |
+| `.github/workflows/ci.yml` | on push / PR | backend + frontend tests |
+
+Both scheduled jobs need these **GitHub repo secrets** (Settings → Secrets and variables → Actions). Without `SUPABASE_*` the run fails fast at the guard step; the rest degrade with a warning rather than fabricating data:
+
+| Secret | Required? | Without it |
+|---|---|---|
+| `SUPABASE_URL` | **yes** | run fails at the guard |
+| `SUPABASE_SERVICE_KEY` | **yes** | run fails at the guard |
+| `BRAVE_SEARCH_API_KEY` | strongly recommended | news is empty → mention counts 0 |
+| `MINIMAX_API_KEY` | recommended | L5 falls back to the deterministic template book |
+| `FRED_API_KEY` | recommended | macro series skipped |
+| `GEMINI_API_KEY` | optional | third-choice L5 fallback |
+
+Note `workflow_dispatch` is enabled on both, so either can be run on demand from the Actions tab. GitHub also **auto-disables scheduled workflows after 60 days of repo inactivity** — if the book goes stale, check that first.
 
 ## Project docs
 
@@ -51,8 +72,9 @@ All project documentation lives under `docs/`:
 | `docs/superpowers/specs/2026-07-21-andromeda-market-theme-platform-design.md` | Full design spec — architecture, scoring formulas, data model, frontend pages |
 | `docs/superpowers/plans/2026-07-21-andromeda-implementation-plan.md` | Implementation plan — task-by-task build guide |
 | `docs/adrs/` | Architecture Decision Records in im-Jarvis format |
-| `docs/captures/` | Playwright screenshots of live frontend deployments |
-| `docs/playwright-mcp/` | Playwright browser snapshots and console logs |
+| `docs/captures/YYYY-MM-DD/` | Playwright screenshots — **one folder per capture date**. See [Screenshot convention](#screenshot-convention). |
+| `docs/baseline/screenshots/` | Frozen pre-refactor visual baselines. Read-only — never overwrite these with fresh captures |
+| `.playwright-mcp/` | Playwright MCP scratch output (page `.yml` snapshots, console `.log` files). Gitignored, safe to delete |
 
 ## Key source files
 
@@ -116,13 +138,26 @@ Use these to interact with external services directly:
 # Typical verification flow with Playwright MCP:
 # 1. Navigate to the URL
 mcp__playwright__browser_navigate({ url: "https://..." })
-# 2. Take a screenshot
-mcp__playwright__browser_take_screenshot({ type: "png" })
+# 2. Take a screenshot — ALWAYS pass an absolute filename (see Screenshot convention)
+mcp__playwright__browser_take_screenshot({
+  type: "png",
+  filename: "C:/Users/zihan/projects/andromeda/docs/captures/2026-07-24/home-desktop.png"
+})
 # 3. Get the page snapshot
 mcp__playwright__browser_snapshot({})
 # 4. Check for console errors
 mcp__playwright__browser_console_messages({ level: "error" })
 ```
+
+### Screenshot convention
+
+**Every Playwright screenshot goes in `docs/captures/<YYYY-MM-DD>/`, one folder per capture date. Never the repo root.**
+
+1. **Pass an absolute path** in `filename`. No Playwright MCP output directory is configured, so a bare relative name like `book-final.png` resolves against the repo root and dumps the file there. `/*.png` in `.gitignore` is a backstop that hides those strays — it is not permission to create them.
+2. **Create the dated folder first** if today's doesn't exist: `mkdir -p docs/captures/$(date +%Y-%m-%d)`.
+3. **Name by what it shows, not by attempt** — `book-positions-desktop.png`, not `book-final-2-fixed.png`. Overwrite the same name when re-capturing after a fix; the previous version is in git.
+4. **`docs/baseline/screenshots/` is off-limits** for new captures. It holds frozen visual baselines referenced by `docs/baseline/frontend-routes.md`; overwriting one destroys the before-image of a regression.
+5. Page snapshots and console logs land in `.playwright-mcp/` on their own. Leave them there — that folder is gitignored scratch. Only promote one into `docs/captures/` if a doc cites it.
 
 ## Scoring weights
 

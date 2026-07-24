@@ -74,6 +74,18 @@ jobs:
       - name: Run daily refresh (L0–L5)
         run: python scripts/daily_refresh.py
 
+      # Re-measure HypeScore's information coefficient against the history this run
+      # just extended, and persist it to backtest_results — the /method "Does
+      # HypeScore actually predict returns?" panel reads that table, so the
+      # validation status keeps itself current and fills in the moment there are
+      # enough run-dates with a forward price window. Non-fatal: a validation
+      # hiccup must never fail the refresh that already persisted the book.
+      - name: Refresh HypeScore IC validation
+        if: success()
+        run: |
+          python scripts/backtest_hype.py --horizons 1 5 20 --persist \
+            || echo "::warning::HypeScore IC backtest did not complete"
+
       - name: Data-integrity guard (fabricated-data fingerprint)
         if: always()
         run: python scripts/check_data_integrity.py || echo "::warning::integrity check flagged the output"

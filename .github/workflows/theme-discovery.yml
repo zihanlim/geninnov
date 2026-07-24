@@ -1,0 +1,71 @@
+name: Theme Discovery (monthly)
+
+# Runs the L1 theme-DISCOVERY job (scripts/theme_discovery.py): clusters the
+# accumulated news corpus two independent ways (LDA topics + SBERT→UMAP→HDBSCAN
+# embedding clusters) and persists the candidates where the two methods agree to
+# `discovered_themes` (shadow mode — an operator promotes, nothing auto-enters the
+# book). Surfaced on / as "What the engine is discovering".
+#
+# Monthly, not daily: discovery is a slow-moving structural question ("what themes
+# exist?"), whereas the daily job answers "how loud is each theme today?". The ML
+# stack here (sentence-transformers/torch, umap, hdbscan, gensim) is heavy, which
+# is exactly why daily-refresh.yml deliberately does NOT install it.
+
+on:
+  schedule:
+    # 06:00 UTC on the 1st of each month — off-hours, no contention with the daily.
+    - cron: "0 6 1 * *"
+  workflow_dispatch: {}   # manual "Run workflow" button
+
+concurrency:
+  group: theme-discovery
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    name: LDA ∩ embedding theme discovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      # Only needed for the bootstrap fallback path (live fetch). The normal path
+      # reads the corpus from the theme_news rows the daily job already persisted.
+      BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
+      ANDROMEDA_ALLOW_MOCK: "0"
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Set up Node (Brave news helper, fallback path only)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install discovery dependencies (ML stack)
+        run: |
+          python -m pip install --upgrade pip
+          # CPU-only torch keeps the install to ~2 min instead of pulling CUDA.
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install "gensim>=4.3.0" "sentence-transformers>=2.2.0" \
+                      "umap-learn>=0.5.0" "hdbscan>=0.8.0" \
+                      "scipy" "numpy>=1.26.0" "pandas>=2.2.0" \
+                      "supabase>=2.0.0" python-dotenv
+
+      - name: Guard — required secrets present
+        run: |
+          test -n "$SUPABASE_URL" || { echo "::error::SUPABASE_URL secret missing"; exit 1; }
+          test -n "$SUPABASE_SERVICE_KEY" || { echo "::error::SUPABASE_SERVICE_KEY secret missing"; exit 1; }
+
+      - name: Run theme discovery
+        run: python scripts/theme_discovery.py

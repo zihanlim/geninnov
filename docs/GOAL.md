@@ -104,36 +104,27 @@ find, not just what you changed:
   candidate universe instead, which is the honest fix.
 - **Verify live.** Local build passing is not evidence; drive the deployed URL.
 
-## ⛔ BLOCKED: the Vercel deploy quota is exhausted (2026-07-25)
+## Deploy notes (quota is a rolling daily cap — spend it deliberately)
 
-**`vercel --prod` fails with `api-deployments-free-per-day` — "more than 100, try again
-in 24 hours".** Two sessions deploying in parallel all day spent the free tier's 100
-deploys. Until it resets:
+**The Vercel free tier caps `vercel --prod` at 100 deploys/day** (`api-deployments-free-per-day`).
+It exhausted on 2026-07-25 with two sessions deploying in parallel, and **reset by
+iteration 55** — deploys work again. Treat the cap as a recurring hazard, not a
+permanent block:
 
-- **The standing mandate's "verify on the live URL" step cannot be satisfied.** Say so
-  rather than claiming a fix is live. `git push` does **not** deploy this project —
-  these are CLI (`vercel --prod`) deploys with no git metadata.
-- **RESOLVED (iteration 50):** `e8d5b27f`'s EdgeScore renormalisation fix
-  ([ADR-0064](adrs/0064-the-audit-page-blamed-the-pipeline-for-its-own-arithmetic.md))
-  **is now live** — a deploy from the shared HEAD landed carrying it (it was an
-  ancestor of the iteration-49 regime deploy). `/method` reads *"reconciles exactly"*,
-  no `RECONCILIATION FAILURE`, no `null → 0`. The blocking item is closed; the quota
-  guidance below still holds for **new** frontend changes.
-- **Retried twice more and still refused**, so this is not a transient. A deploy *did*
-  succeed for the other session at 21:03, so the quota is shared and whoever spends it
-  last wins — but a deploy from the shared HEAD carries **both** sessions' committed work.
-- **Backend work is NOT blocked by this.** The daily pipeline and its guard run on
-  GitHub Actions, and can be executed and verified against production directly. When the
-  quota is out, **prefer backend or measurement work that can actually be verified** over
-  frontend work that has to be claimed rather than shown.
-- **Data-layer fixes bypass the deploy entirely.** The frontend reads Supabase live, so
-  a corrected DB value shows immediately with no deploy — recompute with the *fixed code*
-  and persist (iteration 45 `market_assets`, iteration 50 `portfolio_risk.concentration_hhi`).
-  This is the lever to reach for while the quota is out.
-- **Deploy from a clean archive**, never the working tree, because a second agent's
-  uncommitted WIP is usually present:
-  `git archive HEAD | tar -x -C <tmp> && cd <tmp> && npx vercel --prod --yes`
-- **Batch changes into one deploy** while the quota is scarce.
+- **`git push` does NOT deploy this project** — production is CLI (`vercel --prod`)
+  deploys with no git metadata. A commit is not live until someone deploys.
+- **Deploy from a clean archive**, never the working tree, so a second agent's
+  uncommitted WIP does not ship:
+  `git archive HEAD | tar -x -C <tmp> && cp -r .vercel <tmp> && cd <tmp> && npx vercel deploy --prod --yes`.
+  A HEAD archive carries **both** sessions' committed work — so it also lands the other
+  session's fixes that were committed-but-not-deployed (iteration 55 shipped
+  `1336a57a`'s cap-breach board fix this way; iterations 45/49/50 the same pattern).
+- **When the cap is out, prefer verifiable work:** backend/pipeline (runs on GitHub
+  Actions, verifiable against prod directly), or **data-layer fixes that bypass the
+  deploy entirely** — the frontend reads Supabase live, so recomputing with the *fixed
+  code* and persisting shows immediately with no deploy (iteration 45 `market_assets`,
+  iteration 50 `portfolio_risk.concentration_hhi`).
+- **Batch changes into one deploy** when the cap is scarce.
 
 ## Where things stand (update me)
 
@@ -185,6 +176,38 @@ Live at https://andromeda-analytics.vercel.app · 538 backend + 120 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 55 (2026-07-25)
+
+**The risk page showed a cap `BREACHED` that was a floating-point sliver, and the fix
+for it was committed but sitting undeployed — so I shipped it.** Also confirmed the Q2
+IC validation is honestly data-limited (not a bug), and refreshed the stale deploy note
+now that the quota has reset.
+
+Re-deriving from live truth: the quota had **reset** (deploys landing again), which
+reopens frontend work. The `/risk` limit board read **Geography cap · 35.0% / 35.0% /
+100% / BREACHED** — but 35.0% is not over 35%; the persisted `cap_utilisation.geo[US]`
+carried `weight 0.35000000000000003`, `breached: true`, a 3e-17 float sliver over the
+cap. The other session had already fixed this (their [ADR-0068](adrs/0068-a-cap-breach-is-not-decided-by-float-error.md):
+`f002966e` fixed the pipeline predicate, `1336a57a` made the **board** recompute with
+`CAP_UTIL_EPSILON = 1e-9` instead of trusting the persisted flag) — but `1336a57a` was
+committed at 22:08 UTC, **five minutes after** the last deploy at 22:03, so the live
+board still trusted the stale flag. Not a code change of mine — the fix existed; it was
+undeployed. Shipped it via a clean `git archive HEAD` deploy (committed work only).
+**Verified live:** the US geo row now reads **NEAR** (at the cap, 0 headroom, not over),
+the board summary **0 breached · 1 near · 6 ok**; HHI still 1 208, `/method` reconciles,
+regime 34bps. `/`, `/book`, `/risk`, `/method` clean at 1440 and 375 — no horizontal
+scroll, zero console errors.
+
+**Q2 IC validation — confirmed honestly data-limited, recorded so it is not re-chased.**
+The panel says *"measured · 1 date — not yet stable"*; I checked whether the data could
+support the ≥2 dates an information ratio needs. It cannot yet: `theme_signals_history`
+has five dates but **07-21/07-22 carry null hype** (backfilled before hype scoring
+began), so only 07-23/24/25 have a signal; and yfinance prices in this sim end at
+**07-24**, so of those three only **07-23** has a 1-day forward return. `n_dates = 1` is
+the true state, not a harness bug — it grows on its own as more days accrue both a hype
+and a forward close. Forcing it would fabricate data; abstention is correct. 538 backend
++ 120 frontend.
 
 ### Loop iteration 54 (2026-07-25)
 

@@ -139,8 +139,12 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
     results = []
     today_str = run_date.isoformat()
 
-    for theme in themes:
+    for idx, theme in enumerate(themes, 1):
         theme_name = theme["name"]
+        # Per-theme progress on its own line (flushed) so a stall in the news or
+        # price fetch is pinpointable in the logs rather than a silent hang.
+        print(f"[build_theme_signals] {idx}/{len(themes)} {theme_name}: fetching…",
+              flush=True)
 
         # Fetch news + Reddit over the correlation window (momentum uses the
         # trailing 7 days of it; the price correlation uses the full window).

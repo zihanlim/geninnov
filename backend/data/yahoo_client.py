@@ -14,7 +14,13 @@ def fetch_price_data(tickers: list[str], lookback_days: int = 30) -> pd.DataFram
     end = date.today()
     start = end - timedelta(days=lookback_days + 10)  # extra days for return calc
 
-    data = yf.download(tickers, start=start, end=end, progress=False, auto_adjust=True)
+    # timeout: yfinance passes this to the underlying requests call. Without it a
+    # stalled Yahoo connection (common when a ticker is delisted and yfinance
+    # retries — e.g. DXY) can block the whole daily pipeline indefinitely, since
+    # requests has no default timeout. 20s per batch is plenty for a daily job.
+    data = yf.download(
+        tickers, start=start, end=end, progress=False, auto_adjust=True, timeout=20
+    )
 
     if data.empty:
         return pd.DataFrame(columns=["date", "ticker", "close", "return"])

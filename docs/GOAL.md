@@ -250,7 +250,14 @@ long and a short of the same asset cannot inherit each other's stability.
 
 Also refreshed the standing facts above, which had drifted two books behind.
 
-**NOT YET RENDERING LIVE — do not believe the ADR's screenshots-in-waiting.** The
+**NOT YET CONFIRMED LIVE — and the reason is probably plain deploy lag, not a bug.**
+The previous iteration concluded "it's a real bug, not deploy lag" and that was
+premature. `positionRationale` has exactly one renderer (`page.tsx:1158`), so the
+`<span>` carrying the marker *is* the one on screen; when a debug `data-` attribute
+added to that same span also failed to appear, the only consistent explanation is that
+the commit had not deployed. The earlier "not deploy lag" call rested on finding
+`bookRunDate` in the bundle — a prop name that predated the fix and could never have
+distinguished the two builds. The
 classifier is unit-tested (7 tests), typechecks and builds; the page's own fetch of
 `backtest_results` fires on the deployed site and returns 200 with the right shape
 (`notes` is a text column that parses, `end_date` 2026-07-25 equals the book's

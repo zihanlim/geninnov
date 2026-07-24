@@ -1,12 +1,14 @@
 # ADR-0057 — Stability is a per-trade fact, not a book-level percentage
 
 **Date:** 2026-07-25
-**Status:** Accepted — **implemented, NOT yet confirmed rendering live.** The
-classifier is unit-tested and the deployed page fetches the right data (200,
-`end_date` matches `run_date`, `samples` 3), but the marker renders zero times, so
-`positionStability` is returning `unmeasured` for every row. One prop-chain bug was
-found and fixed and was not the whole cause. See `docs/GOAL.md` for the next
-debugging step. Nothing below should be read as describing what a reader sees today.
+**Status:** Accepted — **implemented and unit-tested; live rendering not yet
+confirmed.** One prop-chain bug was found and fixed (the `<PositionRow>` call site
+never passed `repl`). The marker had still not appeared at the time of writing, which
+looks like **deploy lag rather than a defect**: `positionRationale` has a single
+renderer, so the `<span>` carrying the marker is demonstrably the one on screen, and a
+debug `data-` attribute added to that same span was also absent — consistent only with
+the build not being live. Treat the behaviour described below as designed and tested,
+not as observed on the deployed page.
 **Relates to:** [0045](0045-turnover-on-names-without-a-verdict.md), [0048](0048-count-independent-ideas-not-candidates.md), [0050](0050-separate-agent-churn-from-market-churn.md)
 
 ## Context

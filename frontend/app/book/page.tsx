@@ -25,6 +25,10 @@ import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import AbstentionRoster from "@/components/book/AbstentionRoster";
 import BookTurnover from "@/components/book/BookTurnover";
 import PoolDepth, { type IndependentIdeas } from "@/components/book/PoolDepth";
+import {
+  distinguishPosition,
+  positionRationale,
+} from "@/lib/positionDistinction";
 import Replication from "@/components/book/Replication";
 import ClearedNotTaken, {
   type CandidateRow,
@@ -726,6 +730,7 @@ function BookPageInner() {
                 convictionSum={convictionSum}
                 allPicks={allPicks}
                 correlationPairs={correlationPairs}
+                ideas={rec?.independent_ideas ?? null}
                 scenarios={rec.scenario_results ?? []}
               />
               <PositionSection
@@ -743,6 +748,7 @@ function BookPageInner() {
                 convictionSum={convictionSum}
                 allPicks={allPicks}
                 correlationPairs={correlationPairs}
+                ideas={rec?.independent_ideas ?? null}
                 scenarios={rec.scenario_results ?? []}
                 emptyNote="This book has no short positions. A $100M long-short mandate with zero shorts carries full directional market exposure — check the screening funnel for why no theme produced a negative TradeScore."
               />
@@ -952,6 +958,7 @@ function PositionSection({
   convictionSum,
   allPicks,
   correlationPairs,
+  ideas,
   scenarios,
   emptyNote,
 }: {
@@ -969,6 +976,7 @@ function PositionSection({
   convictionSum: number | null;
   allPicks: { asset: string; direction: "long" | "short"; notional?: number }[];
   correlationPairs: CorrelationPairLite[] | null;
+  ideas: IndependentIdeas | null;
   scenarios: ScenarioResult[];
   emptyNote?: string;
 }) {
@@ -1029,6 +1037,7 @@ function PositionSection({
               convictionSum={convictionSum}
               allPicks={allPicks}
               correlationPairs={correlationPairs}
+              ideas={ideas}
               scenarios={scenarios}
             />
           ))}
@@ -1051,6 +1060,7 @@ function PositionRow({
   convictionSum,
   allPicks,
   correlationPairs,
+  ideas,
   scenarios,
 }: {
   pick: Pick;
@@ -1065,6 +1075,7 @@ function PositionRow({
   convictionSum: number | null;
   allPicks: { asset: string; direction: "long" | "short"; notional?: number }[];
   correlationPairs: CorrelationPairLite[] | null;
+  ideas: IndependentIdeas | null;
   scenarios: ScenarioResult[];
 }) {
   const isLong = pick.direction === "long";
@@ -1083,7 +1094,17 @@ function PositionRow({
   // Always-visible plain-English rationale (never hidden behind expand). The
   // numeric component breakdown (edgeRationale) becomes the hover title and the
   // expanded EdgeScore bars — a reader gets the "why" without decoding values.
-  const rationale = hasEdge && edge ? plainRationale(edge, edgeWeights) : null;
+  //
+  // The driver phrase ALONE does not differentiate: trend has the largest raw
+  // magnitudes and wins on nearly every name, so the live book rendered two strings
+  // across nine rows. It is joined to what the name was taken instead of — its
+  // independent-idea complex, the same rho 0.70 measurement PoolDepth renders — which
+  // is the sharpest available answer to "why this ticker". ADR-0051.
+  const plain = hasEdge && edge ? plainRationale(edge, edgeWeights) : null;
+  const rationale = positionRationale(
+    plain,
+    distinguishPosition(pick.asset, pick.direction, ideas)
+  );
   const rationaleDetail = hasEdge && edge ? edgeRationale(edge) : undefined;
 
   // The sizing derivation — conviction × inverse-vol → cap → notional.

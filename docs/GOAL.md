@@ -110,6 +110,56 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 22 (2026-07-24)
+
+**The stress test said a $100M book loses $21k in a VIX spike.**
+
+| scenario | book return | on $100M |
+|---|---|---|
+| VIX Spike (>30) | −0.021% | **−$21k** |
+| Credit Widening (+150bps) | −0.012% | −$12k |
+| USD Strength (+5%) | −0.005% | −$5k |
+| Rate Shock (+50bps) | −0.003% | −$3k |
+
+All "low" severity — on a row whose own description reads *"historically associated
+with −15 to −25% SPX drawdown"*. **A stress test that says the book cannot lose money
+is worse than no stress test, because it is reassuring.**
+
+`estimate_scenario_pnl` substituted `book_metrics`' **book-level** factor tilt for
+every pick's beta, and took `abs()` of it. Pushing a book-level tilt inside the
+per-pick loop computes
+
+```
+beta_book × Σ(±wᵢ) × shock   =   beta_book × NET exposure × shock
+```
+
+when the exposure a shock acts on is **GROSS**. The book ran **48.7% gross against
+0.6% net**, so `0.191 × 0.006 × −0.18 = −0.021%` — exactly the number on screen. The
+`abs()` separately destroyed the sign, so a net-short-beta book could never show a
+gain.
+
+**The function's own docstring always specified per-asset betas** ("Σ signed_weightᵢ ×
+beta_factorᵢ × shock"); only the code disagreed. `factor_exposures` was already in
+state at both call sites, is the same table `/risk` renders per-position betas from,
+and reconciled **8/8 against known benchmarks** two iterations ago — there was never
+a reason to proxy it.
+
+**After:** VIX **+1.63%**, rates +1.05%, USD +0.26%, credit −0.02%.
+
+**Independently confirmed, not merely plausible:** `/risk` already showed
+**Σβ contribution = −0.09** for this book (net short beta — short GDX 13.7%, ARKK,
+NOC; long cash-like SHY/BIL), and −0.09 × −18% ≈ **+1.6%**. The scenario now agrees
+with the attribution table on the same page. **It did not before** — two numbers
+about the same book, on the same page, that could not both be right.
+
+Assets with no factor row are skipped rather than scored as β 0: *"we cannot measure
+this exposure"* is not *"this has no exposure"*.
+
+**Also checked and found sound** (the item this file flagged last iteration): the
+what-if estimator and the scenario table both run off validated factor betas and
+today's weights, need no return history, and are labelled "estimate". No defect —
+the flag was over-cautious.
+
 ### Loop iteration 21 (2026-07-24)
 
 **My own last fix made a contradiction sharper instead of resolving it.** Iteration

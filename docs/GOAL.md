@@ -146,6 +146,16 @@ Shorts are **SLV −0.39 and GLD −0.26**; longs are QQQ/IWM/EWJ/SPY/EFA/XLV/XL
 universe. The shorts came from signal that was already in the data and was being
 destroyed before anything could use it.
 
+L5 then reasoned over it and published a two-sided book of its own: **3 long / 1
+short (XLF, EWJ, XLV vs short GLD), gross 75% / net +35%, $25M cash, 0 cap
+violations, VERIFIED with 21 citations** — and the thesis argues the short on its
+merits ("a short that fades extreme gold ($4060.40) against restrictive real yields").
+`/book` shows Shorts (1) instead of the long-only warning.
+
+Also verified live this iteration: **iteration 7's prompt fix works** — `book_view`
+no longer asserts net/gross (it previously claimed "+100%/+100%" above cards reading
+60%). That was the one item left unverified last iteration.
+
 **Single names are now worth adding, and for the stated reason.** An asset's own
 trend can finally oppose its theme, which is exactly why idiosyncratic dispersion was
 supposed to help. Under theme-level direction it would have contributed nothing. This

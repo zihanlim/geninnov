@@ -85,9 +85,11 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
-- **Q1 book** — **2 long / 3 short**, gross 55.0%, net −20.0%, VERIFIED with 32
-  citations. **One portfolio everywhere** as of iteration 10 (ADR-0040): `/book` and
-  `/risk` describe the same five names, and every risk number is computed on them.
+- **Q1 book** — **3 long / 2 short**, gross 75.0%, net +11.7%, VERIFIED with **51
+  citations**, $25M held in cash. **One portfolio everywhere** since iteration 10
+  (ADR-0040) — `/book` and `/risk` describe the same names and every risk number is
+  computed on them — and direction no longer inverts on a regime label flip since
+  iteration 11 (ADR-0041).
   Two-sided since iteration 8 (ADR-0038, direction per asset) and deeper since
   iteration 9 (ADR-0039, scope by attention). Genuinely cap-bound since iteration 7
   — **`/risk` now shows 0 breached limits**, down from 6 violations. The L5 fallback
@@ -99,6 +101,73 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
   (LDA ∩ embeddings, 6 two-method agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 11 (2026-07-24)
+
+**The book inverted because $100M of positioning hung on one breadth statistic
+crossing a single integer** ([ADR-0041](../docs/adrs/0041-regime-as-a-dial-not-a-cliff.md)).
+
+Iteration 10 flagged that two runs hours apart produced opposite books (4L/2S at net
++26.7%, then 2L/3S at net −20%). Traced it. Three themes flipped sign — Corporate
+Credit +0.244 → −0.407, US Election +0.342 → −0.166, US Dollar +0.144 → −0.199 — and
+the whole equity complex inverted, from **one input**: the regime moved
+`late/risk-on` → `late/neutral`.
+
+`regime_direction_bias` reads that label through `_SENTIMENT_SIGN {+1, 0, −1}` times
+the asset class's risk beta:
+
+```
+risk-on   equity bias = β·(+1) + (−0.5β) = +0.5β
+neutral   equity bias = β·( 0) + (−0.5β) = −0.5β
+```
+
+**A full 1.0·β swing on a component carrying 0.23 of EdgeScore.** And the label moved
+for a trivial reason — with VIX 18.6 (failing `<15` and `<18`) and HY OAS 268bp
+(failing `<250`), the *only* rule that could return risk-on was `breadth > 60`.
+Breadth 61 and 59 are not different market states.
+
+The label is a good **summary** and a terrible **dial**. It stays for display;
+direction now uses `risk_appetite(vix, hy_oas, vix_term_diff, breadth)` → continuous
+[−1, +1] from smooth tanh terms centred on each input's neutral level.
+
+| breadth | old label → sigma | new appetite |
+|---|---|---|
+| 61 | risk-on → **+1.0** | +0.402 |
+| 59 | neutral → **0.0** | +0.380 |
+
+**0.022 instead of 1.0**, with genuine regimes still well separated (stress −0.94,
+calm +0.80). Verified in production immediately: the next run logged
+`risk appetite +0.552 (label: late/risk-on)` — *the same label transition that
+inverted the book last time*, now a 0.16 move on the dial.
+
+**Not full stability, and not claimed as such.** Prices, news counts and the
+HypeScore min-max normalisation (ADR-0006, known outlier-dominated) still churn. This
+removes the largest and most arbitrary source.
+
+**Separately: found why L5 intermittently returns nothing.** A run logged
+`JSON DECODE FAILED … raw=0 chars` twice. A direct probe reproduced it — HTTP 200,
+`base_resp status_code 0` (success), content consisting solely of an **unterminated
+`<think>` block** and no answer. MiniMax emits reasoning BEFORE the answer out of the
+*same* `max_tokens` budget, so long reasoning leaves nothing for the answer;
+`_strip_reasoning_and_fences` only matched *closed* `<think>` blocks, so the fragment
+survived and the failure was reported as malformed JSON — describing the response
+instead of the budget. **This confirms the iteration-5 hypothesis** ("MiniMax-M3's
+reasoning has eaten the token budget"), which the timeout finding had superseded and
+which was never separately verified. `MINIMAX_MAX_TOKENS` 24000 → 64000, and an
+unclosed `<think>` is now stripped.
+
+**ADR-0040 held under degradation**, which is the useful test of it: on the run where
+L5 fell back, the log still shows `Book of record reconciled to L5: 3 positions (was
+13 from L1)`. The two-book contradiction cannot reappear even when L5 fails.
+
+**Both fixes verified on a clean run:** `risk appetite +0.550` against `+0.552` the
+run before (the dial is steady where the label was flipping), **zero** JSON-decode
+failures, **retries=0** — first attempt, no timeout, no empty response — and
+`verified=True` with **51 citations**, the richest thesis yet. `positions == picks`.
+Book: **3 long / 2 short**, gross 75.0%, net +11.7%, $25M cash. The thesis argues
+each leg on specifics — *"2y at 4.31% (DGS2) sitting 68bps above Fed funds at 3.63%
+(DFF)"*, *"short ARKK captures late-cycle underperformance of long-duration,
+anti-quality growth (RMW −1.36 per L2)"*.
 
 ### Loop iteration 10 (2026-07-24)
 
@@ -588,13 +657,17 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   the daily return and all risk statistics are recomputed on L5's picks after it
   runs. Verified live — attribution and `/book` list the same five names, 55.0%
   gross both sides.
-- **The book is not stable across same-day re-runs — investigate next.** Same
-  prices, two consecutive runs: 4 long / 2 short at net +26.7%, then 2 long / 3
-  short at net **−20%**. L5 re-picks from a pool whose risk inputs shift slightly
-  between runs. A book that flips direction on a refresh is hard to defend as "the"
-  answer however well each version reasons, and a reviewer hitting reload would see
-  it. Check whether the swing comes from the LLM (prompt differs because provisional
-  risk differs) or from genuine candidate churn.
+- ~~**The book is not stable across same-day re-runs**~~ — **largest cause found and
+  fixed, iteration 11** (ADR-0041). It was neither the LLM nor candidate churn: the
+  discrete regime label flipped on a breadth statistic crossing 60, swinging every
+  equity's regime term by 1.0·β. Direction now uses a continuous risk appetite.
+- **Residual instability — measure it before claiming stability.** Prices, news
+  counts and above all the HypeScore **min-max normalisation** still churn between
+  runs; ADR-0006 already records that min-max over ~8 themes is outlier-dominated and
+  not comparable day to day, and hype moved a lot across today's runs (US Dollar
+  73.4 → 54.4). Next: quantify how much book turnover survives ADR-0041, and if
+  min-max is the culprit, consider a rank or z-score normalisation with a documented
+  cross-sectional basis.
 - ~~**L5 falls back because `reason_picks` never parses a response**~~ — **CLOSED,
   iteration 6.** It was a hardcoded 120s read timeout against a ~205s generation.
   `LLM_TIMEOUT_SECONDS` (default 420). Verified live: `verified=True`, 28 citations.

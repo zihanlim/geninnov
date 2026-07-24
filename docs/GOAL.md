@@ -88,10 +88,10 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
   **All six stages report to `pipeline_runs`** since iteration 14 — L1 and L4 were
   silent, so `/method` said "not instrumented" while the status bar said "4/4
   succeeded".
-- **Q1 book** — **5 long / 3 short across 8 positions**, VERIFIED with 38 citations,
-  close to market-neutral, $51.3M in cash, and **four positions are single
-  companies** as `task.md` asks for — including RTX long against NOC short, two
-  defence primes on opposite sides. Long side is at the five Q1 asks for; the short
+- **Q1 book** — **5 long / 3 short across 8 positions** (JPM, EWZ, EMB, EWJ, TLT
+  long; GDX, ARKK, NOC short), VERIFIED against 44 evidence sources, +26.8% net at
+  87.7% gross, $12.3M held back by position limits, and **two positions are single
+  companies** as `task.md` asks for. Long side is at the five Q1 asks for; the short
   side is at three. **One portfolio everywhere** since iteration 10
   (ADR-0040) — `/book` and `/risk` describe the same names and every risk number is
   computed on them — and direction no longer inverts on a regime label flip since
@@ -109,6 +109,55 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
   agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 30 (2026-07-24)
+
+**Answered "would you get the same answer tomorrow?", then found that the panel
+directly below the answer had been saying the opposite of the truth.**
+
+The stability question is the first thing anyone asks of a systematic book, it had
+been deferred four times, and the data to answer it was always there —
+`research_recommendations` keeps one row per `run_date` and no code had ever compared
+two of them. `BookTurnover` now does, on **names rather than weights** (a position
+that survives at a different size is the same idea) with the **union** as denominator
+so a closed name counts as much as an opened one.
+
+**No verdict is attached, deliberately.** "Low turnover = stable = good" is a verdict
+about the market wearing a verdict about the process; a regime turn *should* churn a
+book. The three lists — held through / opened / closed — are printed so a reader
+judges the change instead of reading a score.
+
+**The first reading was 100%, and printing only that would have been a lie by
+omission.** Today's book holds 8 names; the previous run holds 2, from before the
+universe expanded. `comparabilityCaveat` says so in the panel, in warning colour:
+this measures how much the *candidate universe* changed, not how much the *view*
+did. It clears itself once two consecutive full runs exist, with no code change.
+
+**Then the UI pass paid for itself.** Reading the deployed page against the book
+above it: `ClearedNotTaken` thresholds each candidate against its closest held
+position on the **raw price correlation**, ignoring which side the book holds. The
+book is **short ARKK**; QQQ, IWM and SPY are long candidates at ρ +0.77 to +0.80
+against ARKK, and all three read **"largely already held"**. A long SPY against a
+short ARKK is nearer the *reverse* of that bet than a duplicate of it. The one column
+that exists to explain omissions was inverted on 3 of its 15 rows.
+
+`classifyOverlap` now signs by both directions before thresholding — `aligned = ρ ×
+sign(candidate) × sign(held)` — which also gives the panel a category it could not
+previously express: **"would net against ARKK"**, a *better* reason to pass a name
+over than the one the page had been giving. Same error `abs(corr)` made inside
+HypeScore and ADR-0042 removed: discarding the sign that decides the meaning.
+
+**And the 375px pass found /risk clipping rather than scrolling.** Cards set
+`overflow-x: hidden`, so content wider than the body is cut off with *nothing to
+reveal it* — strictly worse than a scrollbar, because nothing signals anything is
+missing. Cap utilisation lost ~76px off its right edge: the `(68%)` utilisation
+reading, the number that panel exists to show. Two columns below `sm` now, three
+above. Source identifiers wrap; `.card-header` wraps.
+
+Every defect this iteration was found by **reading two numbers on one page that
+could not both be true**, not by a test. Both fixes are pinned by tests now, but no
+test would have caught either — the old code computed exactly what it meant to.
+[ADR-0045](adrs/0045-turnover-on-names-without-a-verdict.md).
 
 ### Loop iteration 29 (2026-07-24)
 

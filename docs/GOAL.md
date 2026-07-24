@@ -292,6 +292,13 @@ from the candidates by asset.
 **A test that supplies the input the caller never supplies proves nothing about the
 caller.** Only running the pipeline revealed it; a green suite never would have.
 
+**Verified live after the real fix.** `|weight| / conviction` is now **exactly
+0.00297** across all six longs and **0.00641** across all three shorts — two
+constants, weight proportional to conviction within side, the mirror image of the
+defect signature. The inversion is gone: XLE (highest conviction, 29.4) holds the
+largest long at **8.75%**, while UNH (highest *hype* at 57.7 but lowest conviction at
+15.7) holds the smallest at **4.66%**. Under the old sizing UNH's hype would have won.
+
 **Second: the sizing chain was rendering an impossible step, and had been all along.**
 XLE's panel read *"Normalised weight (÷ Σ conviction) **19.0%** → Single-name cap
 (20%) → Final weight **6.4%**"*. A 19.0% weight under a 20% cap cannot become 6.4%.
@@ -302,8 +309,10 @@ the panel whose whole job is to make sizing auditable. The existing guard keys o
 `buildSizingChain` now checks its own arithmetic and says so when the steps do not
 compose.
 
-**Also delivered: the replication number, finally measured.** On frozen inputs, two
-genuine model samples (none fell back): **22% turnover overall, 33% long, 0% short.**
+**Also delivered: the replication number, finally measured and persisted.** On frozen
+inputs, three genuine model samples (none fell back): **25% turnover overall, 33%
+long, 13% short** — now in `backtest_results` and rendering on `/book`. An earlier
+two-sample run gave 22% / 33% / 0%.
 That is exactly the asymmetry ADR-0050 was designed to expose — the short side had 4
 independent ideas for 5 slots, so the pool binds and the answer is reproducible; the
 long side had 10 for 5, so the agent chooses, and chooses differently. OIH and UNH

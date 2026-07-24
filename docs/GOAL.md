@@ -81,19 +81,88 @@ find, not just what you changed:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 380 backend tests green.
+Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
-- **Q1 book** — VERIFIED thesis w/ citations, conviction-sized, cap-aware. After
-  the 2026-07-24 fixes the engine produced **shorts for the first time**
-  (2 long + 3 short candidates, 5 positions, $100M). Still short of five-and-five.
+- **Q1 book** — VERIFIED thesis w/ citations, conviction-sized, cap-aware. The L5
+  fallback that dogged iterations 3–5 is **fixed and closed** (see iteration 6).
+  Long-only today: the universe is 5 long-capable themes, 0 short-capable.
 - **Direction** EdgeScore = trend/regime/carry/value/sentiment, IC-weighted, with
   abstention + conviction sizing (ADR-0031/32/33).
 - **Q2 hype** HypeScore (volume/sentiment/|ρ|/momentum) + theme discovery
   (LDA ∩ embeddings, 6 two-method agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 6 (2026-07-24)
+
+**The L5 fallback was a 120-second read timeout. Closed, verified, and it was the
+whole story.** `reason_picks` asks a reasoning model for a ten-pick book with a
+thesis, catalysts, a counter-thesis and citations each. That generation takes
+**~205 seconds**. The MiniMax call was hardcoded to `timeout=120`, so it raised
+`ReadTimeout` every time → `fallback_picks` → `citations = []` → reported as "No
+citations provided". Iterations 3–5 chased that phantom.
+
+Measured directly against the live endpoint: at 120s, `ReadTimeout`; at 420s,
+**20,763 chars, parsed, 10 picks, 34 citations**. Every observation now fits — small
+probes always worked, the runs that historically verified carried only 1–2 picks
+(small = fast), and iteration 4's universe widening made the failure constant by
+enlarging the ask. Retrying could never have helped: three attempts hit the same
+deterministic wall and burned ~6 minutes to reach a guaranteed fallback. Now
+`LLM_TIMEOUT_SECONDS`, default 420. Live proof: the 09:12 run persisted
+`verified=True` with **28 citations**; the 08:58 run before it, `verified=False`
+with 0. **Q1 has its "why" reliably, not intermittently.**
+
+**Zero shorts was never a breadth problem — carry could not be negative**
+([ADR-0036](../docs/adrs/0036-carry-as-excess-yield-over-funding.md)). Three
+iterations widened the universe (24 → 37 tickers, then more themes) against a
+constraint that lived in the signal. `carry_signal` scored the raw LEVEL of a
+spread/yield — `tanh(HY_OAS / 4.0)` — and a credit spread is positive by
+construction, so the largest EdgeScore weight (0.34) was a standing long offset of
++0.20…+0.28 on every credit/rates/FX theme, not a signal. It was also wrong on its
+own terms: HY OAS at 268bp, near the tights, read "+0.585, well paid".
+
+Carry is now **excess yield over funding** (`(10y + OAS) − DFF` for credit,
+`10y − DFF` for rates), which goes negative when the curve inverts — a test pins
+that case because it is the property the old form could not express. Separately,
+`carry_signal`/`value_signal` returned a hardcoded `0.0` where L0 has no proxy, so
+an equity theme had 52% of its weight pinned at zero and could not exceed |Edge|
+0.48 while a credit theme reached 1.0 — both judged against the same 0.15 band.
+They now return `None` and `compute_edge_score` renormalises over what is present.
+
+**It did not create shorts, and I did not tune it until it did.** Re-scored live:
+**5 long-capable, 0 short-capable**. Across eight macro themes in one regime,
+trend/regime/carry genuinely lean the same way today. What it did change is the
+book's basis — **Fed Policy, which was all four positions of the $100M book, fell
++0.249 → +0.162** once its carry stopped mistaking the level of the real yield
+(+0.71) for the term premium duration earns (+0.33); Energy Prices (+0.176 →
++0.372) and US Election (+0.165 → +0.340) rose, both equity themes that had been
+diluted by the silent zeros. The book is no longer one theme wearing five tickers.
+
+**Theme discovery is ruled out as the route to shorts — it rediscovers the anchors.**
+All 6 Tier-2 candidates map onto existing themes (dollar→US Dollar, oil→Energy
+Prices, nato/ukraine→Geopolitical Risk, federal/rates→Fed Policy,
+democratic→US Election, credit/spreads→Corporate Credit). That is a genuine
+*validation* of the two-method discovery — it independently re-finds the hand-picked
+set — but promoting them adds no breadth. **Do not spend another iteration there.**
+
+**So the remaining route to shorts is single names, and that is now the top Q1 gap.**
+Eight macro themes in one regime are directionally correlated *by construction* —
+that is what a macro theme is — so a long-short book built only from them leans one
+way in any decisive regime. Single names supply cross-sectional dispersion (some
+names fall while the theme rises), and `task.md` explicitly permits "single
+companies" while the universe has essentially none. Needs `SECTOR_MAP`/`GEO_MAP`/
+`_ASSET_CLASS_MAP` entries or `is_classified` drops them silently.
+
+**UI:** wide tables clipped their most important columns on a phone with no hint —
+at 375px the `/book` positions table is 640px in a 326px box, and the columns past
+the edge were EDGE, CONV. and CAP, i.e. the entire "why" of each position. Added a
+shared `<ScrollArea>` that measures its own scroll state and fades the clipped edge
+plus a one-time "swipe →" chip; both are measurement-driven so neither advertises
+scrollability that isn't there. Also removed a scrollbar track drawn across the
+bottom of *every* page (the fixed status bar reserved a 16px gutter with nothing to
+scroll — `offsetHeight` 45 vs `clientHeight` 29).
 
 ### Loop iteration 5 (2026-07-24)
 
@@ -241,25 +310,22 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   claimed 50% (L5's 2-pick book). Iteration 1 fixed same-day *duplication* within
   `portfolio_positions`; it did not make L1 and L5 agree. Either have `/risk` read
   one source, or have L5 size the L1 book rather than re-pick it.
-- **L5 falls back because `reason_picks` never parses a response — READ THE LOG.**
-  Iteration 5 established the failure is upstream of citations and unmasked it. The
-  next run prints one of:
-  `[reason_picks] JSON DECODE FAILED … raw=N chars` + head/tail, or
-  `[reason_picks] LLM CALL FAILED … <ExceptionType>`, or
-  `[reason_picks] EMPTY CITATIONS …` (only if it genuinely parsed).
-  **Run the pipeline, read that line, then fix what it says** — the likely one is a
-  truncated body (raise `MINIMAX_MAX_TOKENS`, or drop `response_format` json_object
-  which can interact badly with a reasoning model), but do not assume. This remains
-  the **highest-value Q1 step**: Q1 asks for the trades *and why*, and a fallback
-  book has no why.
-- **Theme breadth (not ticker breadth) is what produces shorts.** Ticker breadth is
-  done (37 tickers, 4–8 per theme). Positions on a side = (themes selected) ×
-  (their tickers), so tickers deepen a side that already has a theme but cannot
-  create one, and today **no theme is short-capable**. The remaining routes are
-  more themes (promote from `discovered_themes`, which already holds 6 Tier-2
-  candidates the engine found itself) or single names — `task.md` explicitly allows
-  "single companies" and the universe has essentially none. Both need
-  `SECTOR_MAP`/`GEO_MAP`/`_ASSET_CLASS_MAP` entries or names vanish silently.
+- ~~**L5 falls back because `reason_picks` never parses a response**~~ — **CLOSED,
+  iteration 6.** It was a hardcoded 120s read timeout against a ~205s generation.
+  `LLM_TIMEOUT_SECONDS` (default 420). Verified live: `verified=True`, 28 citations.
+- **SINGLE NAMES ARE THE TOP Q1 GAP — this is the next step.** Shorts are the last
+  thing standing between the book and the literal question. Two routes are now
+  *excluded by evidence*, so do not re-spend iterations on them:
+  (a) *ticker breadth* — done, 37 tickers, 4–8/theme, and positions on a side =
+  (themes selected) × (their tickers), so tickers deepen a side that already exists
+  and cannot create one; (b) *theme discovery* — all 6 Tier-2 candidates are
+  rediscoveries of the existing anchors (validation of the method, zero new breadth).
+  What remains is single companies, which `task.md` explicitly permits and the
+  universe lacks entirely. They matter because eight macro themes in one regime are
+  directionally correlated **by construction**; single names carry idiosyncratic,
+  cross-sectional dispersion, so some fall while their theme rises. Needs
+  `SECTOR_MAP`/`GEO_MAP`/`_ASSET_CLASS_MAP` entries or `is_classified` drops them
+  silently, and each needs ~252 daily closes or the guard aborts the run.
 - **Q1 breadth** — universe is 8 themes → 24 tickers, all ETFs/futures proxies, zero
   single names; only 3 themes clear conviction. Diagnosed in iteration 2; the
   one-line backfill change was rejected as dishonest (see above). Legitimate route:

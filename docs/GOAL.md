@@ -161,6 +161,23 @@ failed — the pool was still 30 names and the funnel still balanced. The pool i
 ordered by |EdgeScore|. **A scope decision is only as good as every ordering
 downstream of it.**
 
+**Measured result after both fixes, on the live book:** 5 long / 3 short, and **7 of
+the 8 positions came from themes below the attention gate** — JPM, SVXY, BIL and GLD
+(Fed Policy, hype 39.9), NUE (Inflation, 29.1), BABA (China Growth, 37.2), NOC
+(Geopolitical, 43.4). Only UNH arrived by attention. Under the old rule this book
+would have been six US Election names. **BABA is a genuinely new independent short**;
+the short side is three ideas, not five, and the page says so.
+
+**The abstention roster then produced two defects of its own, both found by reading
+it against another number on the same page.** It sourced "which themes traded" from
+`portfolio_positions` rather than the published book, so during the L5 window every
+theme looked traded and the roster emptied itself; and with an empty roster it
+concluded *"Every scored theme cleared the |Edge| ≥ 0.15 conviction bar"* — false,
+Inflation is +0.117 and traded through NUE. "Nothing was held out" and "everything
+cleared the bar" are different claims that diverge exactly when a sub-band theme
+trades on one decisive asset, which is what ADR-0039 made possible and ADR-0046 made
+common. Both fixed; five tests pin them.
+
 [ADR-0046](adrs/0046-attention-chooses-what-we-look-at-not-what-is-tradable.md) ·
 migration 034 applied to prod.
 
@@ -1677,6 +1694,19 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   `globals.css` and `tailwind.config.ts` — Tailwind compiles literals.
 - ~~**Three routes unreachable at 375px**~~ — **not a defect.** They are the retired
   `/trades`, `/portfolio`, `/research` redirects; hiding them on mobile is right.
+- **`/risk` publishes a provisional book for the minutes L5 takes** — found
+  2026-07-25 by reading the abstention roster against the positions table above it.
+  L1 writes its **full candidate set** to `portfolio_positions` (39 rows today) and
+  computes VaR/HHI on it; only after the agent picks does
+  `reconcile_positions_to_published_book` cut it to the published book (7 rows) and
+  recompute. So for several minutes every day `/risk` describes a portfolio nobody
+  selected — **HHI 154 provisional against 632 final today**, a 4× difference in the
+  headline concentration number. The roster symptom is fixed (it reads `rec.picks`
+  now, per ADR-0040); **the window itself is not.** The reorder is not trivial: L5
+  *reads* the provisional risk as a reasoning input, so the L1 write cannot simply
+  move after L5 — the likely fix is a `provisional` flag the frontend refuses to
+  present as the book of record, or writing risk under the run's status. Evidence is
+  in the 2026-07-25 pipeline log.
 - **[historic] UI audit backlog** — a full Playwright audit ran 2026-07-24 and found no
   horizontal scroll and no console errors at either viewport, but a long list of
   real defects beyond the ones fixed: `verified=true` with 0 citations still

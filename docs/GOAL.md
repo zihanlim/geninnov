@@ -110,6 +110,34 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 19 (2026-07-24)
+
+**Both validation panels are live, and I owe a correction on one of them.**
+
+`/method` now renders **EDGESCORE COMPONENT IC — "measured · none significant ·
+2026-07-24"** with Carry 0.34/+0.1275/N=94/p=0.221, Trend 0.20/+0.0332/N=975/p=0.300,
+Value 0.18/+0.0939/p=0.368 all reading *"right sign, not significant"*, and Regime and
+Sentiment as *"not testable — needs per-theme history"*. Weights come from
+`scoring_config` live. Directly beneath it, **FACTOR-MODEL RECONCILIATION 8/8 within
+band**. The two together are the honest state of the platform: the factor machinery
+is verifiably right, and the signal built on it is measured and unproven.
+
+**The correction:** I reported the EdgeScore panel as "not deployed" twice. It had
+deployed. I was matching `document.body.innerText` against the literal
+`"EdgeScore component IC"`, but `.card-title` is `text-transform: uppercase` and
+`innerText` returns the transformed text. The panel was rendering the whole time.
+The evidence was in front of me — the same section's footer text WAS present in the
+page, which is impossible if the component never mounted — and I read past it.
+
+**Lesson, recorded because this will recur: assert on the DOM, not on rendered
+text.** `querySelector` on an id or class survives `text-transform`, whitespace
+collapsing and unicode punctuation substitution; an `innerText` string match does
+not. Iteration 16 checked `#factors` with `querySelector` and was trustworthy; this
+check was not, and it cost two iterations of false reporting.
+
+Also confirmed: the three hex-literal contrast fixes landed — `/` at 375px is now
+**0 failing of 311 checked** (was 4), zero console errors, no horizontal scroll.
+
 ### Loop iteration 18 (2026-07-24)
 
 **The trade signal now says what it is worth.** Last iteration measured and persisted
@@ -134,10 +162,18 @@ It renders the uncomfortable parts as they are:
 lookup first and it was wrong: a stale copy drifts the moment anyone tunes the config,
 and would misstate precisely the thing this panel exists to expose.
 
-**Deploy not confirmed at time of writing.** `npm run build` succeeds and `/method`
-grew 23.3 → **24.7 kB**, so the panel compiles in, but Vercel had not published it
-after ~5 minutes — the same lag seen in iterations 16–17, where it eventually
-appeared. Verify `/method` shows "EdgeScore component IC" first thing next iteration.
+**CORRECTION (iteration 19): it had deployed. My check was wrong, not the deploy.**
+I searched `document.body.innerText` for the literal `"EdgeScore component IC"`, but
+`.card-title` applies `text-transform: uppercase` and `innerText` returns the
+*transformed* text — so the case-sensitive match never hit while the panel was
+rendering fine as `EDGESCORE COMPONENT IC`. I reported "not deployed" twice on the
+strength of it. The tell was available and I missed it: the same section's footer
+text WAS present in the page, which cannot happen if the component has not mounted.
+
+**Verification lesson: assert on the DOM, not on rendered text.** `querySelector` on
+an id or class is immune to `text-transform`, `white-space` and unicode punctuation
+substitution; an `innerText` match is not. The `#factors` check in iteration 16 used
+`querySelector` and was trustworthy; this one did not and was not.
 
 **Three more contrast failures, all hex literals the token sweep could not see.**
 Auditing `/` at 375px — a page iteration 15 never checked, having covered only

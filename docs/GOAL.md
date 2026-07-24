@@ -177,6 +177,46 @@ Live at https://andromeda-analytics.vercel.app · 538 backend + 120 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 56 (2026-07-25)
+
+**The cap-breach fix is live and verified. Fixing the badge invalidated a deferral, and
+the row now contradicts itself.**
+
+`/risk`'s limit board reads **"0 breached · 1 near · 6 ok · 3 no-data"**, down from
+"1 breached". The phantom governance violation is gone — the item carried across the last
+four iterations, resolved and confirmed on the page at both widths, zero console errors.
+
+**And the row that no longer breaches still says it has negative headroom:**
+
+```
+Geography cap (max)    35.0%  /  35.0%  /  100%  /  −0.0%  /  NEAR
+```
+
+**A negative headroom on a row the same board has just declared compliant.** Two cells of
+one row disagreeing is the defect class this project keeps finding — and this instance
+was **introduced by the fix for the previous one**.
+
+[ADR-0068](adrs/0068-a-cap-breach-is-not-decided-by-float-error.md) deferred the `−0.0%`
+explicitly, and was right to at the time: the row still read BREACHED, so a negative
+headroom **agreed with its badge**. Correcting the badge is what made the pair
+contradictory. **A deferral is only valid against the state it was made in** — worth
+recording, because this file is full of deliberate deferrals and any of them can be
+invalidated by the next fix rather than by new information.
+
+Same float error underneath: `headroom = limit − value`, and the clamping that puts a
+fully-utilised group exactly on its cap (ADR-0037) leaves
+`0.35 − 0.35000000000000003 = −5.55e-17`, which formats as `−0.0%`.
+
+`snapHeadroom` treats a magnitude below representation error as zero, **scaled by the
+limit rather than absolute** — this board mixes weight fractions, percentages and HHI
+points, so one absolute epsilon would mean different things per row. Tests pin the live
+value, real headroom untouched, a genuine breach still reporting negative headroom, the
+relative scaling across a 0.35 cap and a 2000-point one, and that the result is **not
+negative zero**, which formats as `−0.0%` even though it compares equal to `0`.
+
+129 frontend tests. **Committed and tested, not live** — the deploy window closed again
+between committing and deploying, so the `−0.0%` is still on the page.
+
 ### Loop iteration 55 (2026-07-25)
 
 **The risk page showed a cap `BREACHED` that was a floating-point sliver, and the fix

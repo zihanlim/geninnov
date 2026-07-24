@@ -24,6 +24,7 @@ import { DailyPLHistory } from "@/components/portfolio/DailyPLHistory";
 import { RiskLimitBoard } from "@/components/risk/RiskLimitBoard";
 import { PositionRiskAttribution } from "@/components/risk/PositionRiskAttribution";
 import { AttentionCrowding } from "@/components/risk/AttentionCrowding";
+import { reconcileToBook } from "@/lib/risk/bookOfRecord";
 import { WhatIfScenario } from "@/components/risk/WhatIfScenario";
 import { Ident } from "@/components/risk/SectionGap";
 import {
@@ -56,7 +57,9 @@ import {
 import { fetchThemeHistories } from "@/lib/themeSignals";
 
 const ANALYTICS_COLUMNS =
-  "run_date, lens, scenario_results, correlation_pairs, cap_utilisation, book_metrics";
+  // picks: the published book, so this page can check that the positions it computes
+  // risk on are the names the book actually holds (ADR-0040).
+  "run_date, lens, scenario_results, correlation_pairs, cap_utilisation, book_metrics, picks";
 const BASE_COLUMNS = "run_date, lens";
 const RISK_COLUMNS =
   "run_date, updated_at, total_capital, var_95, cvar_95, sharpe, beta, concentration_hhi, numeric_derivations";
@@ -465,6 +468,27 @@ function RiskPageInner() {
   );
   const prevRunDate = data.riskRows[1]?.run_date ?? null;
 
+  // ADR-0040's invariant, checked rather than assumed: the names this page computes
+  // risk on must be the names the book publishes.
+  const reconciliation = useMemo(() => {
+    const raw = data.analyticsRow?.picks;
+    const parsed = Array.isArray(raw)
+      ? raw
+      : typeof raw === "string"
+        ? (() => {
+            try {
+              return JSON.parse(raw) as Array<{ asset?: string | null }>;
+            } catch {
+              return null;
+            }
+          })()
+        : null;
+    return reconcileToBook(
+      data.positions.map((p) => p.asset).filter((a): a is string => Boolean(a)),
+      parsed ? parsed.map((p) => p.asset ?? "").filter(Boolean) : null,
+    );
+  }, [data.analyticsRow, data.positions]);
+
   const failures = [
     data.analyticsFailure,
     data.baseFailure,
@@ -502,6 +526,52 @@ function RiskPageInner() {
           </div>
         </div>
       </div>
+
+      {/* Every number below is computed on portfolio_positions. When that table has
+          not been reconciled to the published book, they describe a portfolio nobody
+          selected — say so before the reader reads them, not after. */}
+      {!data.loading && !reconciliation.reconciled && (
+        <div
+          className="card mb-6"
+          style={{ borderColor: "var(--warning)" }}
+          role="alert"
+          aria-labelledby="risk-provisional"
+        >
+          <div className="card-header">
+            <h2 id="risk-provisional" className="card-title m-0" style={{ color: "var(--warning)" }}>
+              These are provisional positions, not the published book
+            </h2>
+            <span className="num text-[11px] text-text-tertiary">
+              {reconciliation.positionCount} held · {reconciliation.bookCount} published
+            </span>
+          </div>
+          <p className="m-0 p-[18px] pt-3 text-[12.5px] text-text-secondary leading-[1.65] max-w-[92ch]">
+            <Ident>portfolio_positions</Ident> holds{" "}
+            <span className="num">{reconciliation.positionCount}</span> names while the
+            published book holds{" "}
+            <span className="num">{reconciliation.bookCount}</span>, so every figure on
+            this page — VaR, CVaR, Sharpe, beta, HHI, attribution — is computed on names
+            the book does not hold. The daily pipeline writes L1&apos;s full candidate
+            set here first, hands it to L5 as a reasoning input, and reconciles the
+            table to the picked book only after the agent returns. This is what the
+            page looks like in the middle of that window; it clears when the run
+            finishes.
+            {reconciliation.extra.length > 0 && (
+              <>
+                {" "}
+                Not in the book:{" "}
+                <span className="num">
+                  {reconciliation.extra.slice(0, 12).join(", ")}
+                  {reconciliation.extra.length > 12
+                    ? ` +${reconciliation.extra.length - 12} more`
+                    : ""}
+                </span>
+                .
+              </>
+            )}
+          </p>
+        </div>
+      )}
 
       {failures.length > 0 && (
         <div

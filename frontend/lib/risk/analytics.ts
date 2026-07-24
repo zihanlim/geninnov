@@ -91,6 +91,9 @@ export interface ResearchAnalyticsRow {
   correlation_pairs: CorrelationPair[] | null;
   cap_utilisation: CapUtilisation | null;
   book_metrics: BookMetrics | null;
+  /** The published book. Only the assets are read here — /risk uses them to check
+   *  that the positions it computes on are the names the book holds (ADR-0040). */
+  picks?: Array<{ asset?: string | null }> | string | null;
 }
 
 /** portfolio_risk latest row. */

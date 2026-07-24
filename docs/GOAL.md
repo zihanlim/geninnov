@@ -149,6 +149,61 @@ Live at https://andromeda-analytics.vercel.app · 511 backend + 106 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 44 (2026-07-25)
+
+**The recorded next step was mine, and it was wrong. Finding out why exposed the real
+defect.**
+
+The previous entry recorded that the thesis's ARKK reason was *backwards* — that shorting
+a 1.49-beta name offsets the long beta of JPM/UNH/NUE rather than compounding it — and
+proposed a guardrail on the sign of a claimed beta contribution. Re-deriving before
+building it, as the mandate requires, **disproved the premise**.
+
+**The book's net factor beta is −0.0355.** It is net *short* beta: the three largest
+contributions are shorts (PDD −0.130, BABA −0.113, SLV −0.063) against longs led by SVXY
++0.089 and JPM +0.076. Adding ARKK **short** contributes negatively again, so |β| grows —
+**"compound" is defensible against the book.** The earlier entry reasoned about the three
+long positions the sentence names and never computed the book-level quantity.
+
+That is **asserting a direction without computing the magnitude** — the exact error class
+this project has caught five times in its own code (min-max HypeScore, book-level beta
+inside a per-pick loop, unfloored conviction, the net-share denominator). Committed here
+in a document, about the agent, while building guardrails against the agent doing it.
+**And the number was already rendered:** `/risk` prints `Σ β contribution −0.04` two
+panels from where I was looking.
+
+**So the guardrail is NOT built, and that is a decision, not an omission.** The claim is
+**ambiguous rather than false** — true of the book's net beta, false of the three longs
+the sentence names — and a mechanical check would have to silently pick a referent. **A
+guardrail that rejects a defensible sentence is worse than none**, because it pushes the
+agent off a true statement toward one that merely passes. The rule that has now worked
+four times: find the claim class the model actually makes, **confirm it is falsifiable**,
+then check that class exactly. ADR-0061's availability claim passes that test; "compounds
+exposure" does not.
+
+**Reading the number I should have read first exposed the real defect.** That same footer
+continues `Σ β contribution −0.04 · book β −1.73`, while ~200px above the metrics grid
+says **BETA (VS SPX) · Unavailable — "3 sessions of history, needs 60. A Beta from this
+sample is noise, so we do not publish one."**
+
+**The same statistic, withheld as noise in one panel and printed as a reconciliation
+target in another, on one page.** `book β` is `portfolio_risk.beta`, a *regression* beta
+on realised returns; the Σ beside it is the bottom-up factor beta. The panel's copy —
+*"the contributions sum to the book beta"* — invites a check that **fails 40×**, and it
+fails because the reference number is three sessions of noise already declared
+unpublishable. Iteration 21 fixed exactly this for the risk-limit board; it survived here
+because this panel **takes beta as a prop and never saw the sample size**.
+
+Now three surfaces share one bar (`MIN_SESSIONS.beta_abs` = 60). The Σ is untouched and
+is the number to read — it needs no return history — and the copy says *factor-model*
+beta so it stops promising a reconciliation it cannot deliver. An unknown session count
+does not withhold, per `buildLimitBoard`'s rule.
+
+**The recurrence after iteration 21 is itself the finding:** a shared constant is not
+enough when a panel receives the value as a prop.
+
+[ADR-0062](adrs/0062-one-beta-bar-across-every-surface.md).
+
 ### Loop iteration 43 (2026-07-25)
 
 > Numbering note: two agents worked this repo in parallel today and both reached
@@ -321,7 +376,17 @@ choice, not by constraint, and the thesis accounts for what it declined — ARKK
 +1.3% against a largest single position of 10%…"*, no four-figure percentages anywhere,
 no horizontal scroll at 1440px or 375px, zero console errors.
 
-#### Recorded next step — the open limitation, now with a concrete instance
+#### Recorded next step — **WRONG, corrected in iteration 43. Left in place because the correction is the lesson.**
+
+> **The "backwards" verdict below is mine and it is wrong.** The book's net factor beta
+> is **−0.0355** — net *short* beta, because the three largest contributions are shorts
+> (PDD −0.130, BABA −0.113, SLV −0.063). Adding ARKK **short** contributes negatively
+> again, so |β| grows: **"compound" is defensible against the book.** The entry below
+> reasoned about the three long positions the sentence names and **never computed the
+> book-level quantity** — asserting a direction without computing the magnitude, the
+> exact error class this project has caught five times in its own code. The number was
+> already on the page: `/risk` prints `Σ β contribution −0.04` two panels from where I
+> was looking. See [ADR-0062](adrs/0062-one-beta-bar-across-every-surface.md).
 
 **Half that reason is verifiably true and half states its mechanism backwards, and
 nothing catches it.** Checked against the same run's data:

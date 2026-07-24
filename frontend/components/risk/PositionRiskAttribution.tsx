@@ -8,7 +8,11 @@
 // beta, never a zero that would understate its risk.
 
 "use client";
-import { netShareIsMeaningful, type PositionAttribution } from "@/lib/risk/riskBoard";
+import {
+  MIN_SESSIONS,
+  netShareIsMeaningful,
+  type PositionAttribution,
+} from "@/lib/risk/riskBoard";
 import { isNum } from "@/lib/risk/analytics";
 import { Ident, SectionSkeleton } from "./SectionGap";
 
@@ -55,14 +59,17 @@ export function PositionRiskAttribution({
   loading,
   rows,
   bookBeta,
+  returnSessions,
   positionsFailure,
   factorsFailure,
   hasPositions,
 }: {
   loading: boolean;
   rows: PositionAttribution[];
-  /** Value-weighted book beta, for the "sum of contributions" reconciliation. */
+  /** REGRESSION beta from portfolio_risk, shown only when the sample supports it. */
   bookBeta: number | null;
+  /** Sessions of return history behind `bookBeta`. Null = unknown, do not withhold. */
+  returnSessions?: number | null;
   positionsFailure: string | null;
   factorsFailure: string | null;
   hasPositions: boolean;
@@ -79,6 +86,29 @@ export function PositionRiskAttribution({
   const missingBeta = rows.filter(
     (r) => isNum(r.signedWeight) && !isNum(r.betaContribution),
   );
+
+  // `book β` beside the contribution sum is portfolio_risk.beta — a REGRESSION beta on
+  // realised returns, not the bottom-up Σ signed_weight × β_mkt printed next to it. The
+  // panel's own copy says "the contributions sum to the book beta", which invites the
+  // reader to check one against the other.
+  //
+  // On the live 2026-07-25 book that check fails 40×: Σ contribution −0.04 against book
+  // β −1.73. The reason it fails is that −1.73 is computed on THREE sessions, and the
+  // Beta tile 200px above already says so — "Unavailable · Not shown: 3 sessions of
+  // history, needs 60. A Beta from this sample is noise, so we do not publish one."
+  //
+  // The same statistic, withheld as noise in one panel and printed as a reconciliation
+  // target in another, on one page. That is precisely the defect iteration 21 fixed for
+  // the risk-limit board; it survived here because this panel takes beta as a prop and
+  // never saw the sample size. It now obeys MIN_SESSIONS.beta_abs like the tile and the
+  // board (ADR-0062).
+  //
+  // An UNKNOWN session count does not withhold: not knowing the sample size is not
+  // evidence that it is short — the same rule buildLimitBoard follows.
+  const betaMinSessions = MIN_SESSIONS.beta_abs ?? 60;
+  const bookBetaUnderSampled =
+    isNum(returnSessions) && (returnSessions as number) < betaMinSessions;
+  const showBookBeta = !bookBetaUnderSampled;
 
   // Whether "net share" is a share for this book. The predicate is imported rather
   // than re-derived here so the column and the note explaining its absence cannot
@@ -135,11 +165,28 @@ export function PositionRiskAttribution({
           <p className="m-0 px-[18px] pt-3.5 text-[12px] text-text-secondary leading-[1.6] max-w-[92ch]">
             Each position&apos;s marginal contribution to book market-beta is its signed
             weight × its own β<sub>mkt</sub> (from <Ident>factor_exposures</Ident>). The
-            contributions sum to the book beta, so a large red bar is a position pulling
-            the whole book directional — the first candidate to cut. Gross and net shares
+            contributions sum to the book&apos;s factor-model beta, so a large red bar is
+            a position pulling the whole book directional — the first candidate to cut.
+            Gross and net shares
             show how much of the book&apos;s leverage and directional tilt the name owns;
             avg |ρ| is its mean flagged correlation to the rest of the book.
           </p>
+
+          {bookBetaUnderSampled && (
+            <p
+              className="m-0 px-[18px] pt-2 text-[12px] text-text-secondary leading-[1.6] max-w-[92ch]"
+              role="note"
+            >
+              The <strong>regression</strong> book beta is not shown beside the sum:{" "}
+              <span className="num">{returnSessions}</span> session
+              {returnSessions === 1 ? "" : "s"} of returns against the{" "}
+              <span className="num">{betaMinSessions}</span> it needs, the same bar the
+              Beta tile above applies. The Σ below is the{" "}
+              <strong>factor-model</strong> beta — built from today&apos;s weights and
+              252-day regressions, so it needs no return history and is the number to
+              read.
+            </p>
+          )}
 
           {!netShareMeaningful && (
             <p
@@ -267,7 +314,7 @@ export function PositionRiskAttribution({
                   </td>
                   <td className="px-[14px] py-2.5 text-left num text-[12px] text-text-primary">
                     {fmtSignedBeta(sumBeta)}
-                    {isNum(bookBeta) && (
+                    {isNum(bookBeta) && showBookBeta && (
                       <span className="text-text-tertiary">
                         {" "}
                         · book β {fmtSignedBeta(bookBeta)}

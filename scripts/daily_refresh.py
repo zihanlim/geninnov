@@ -1444,9 +1444,32 @@ def _load_spx_returns(lookback_days: int) -> "pd.Series | None":
     return returns
 
 
+def utc_run_date() -> date:
+    """The run's date, in UTC — the same date the scheduled job would stamp.
+
+    `date.today()` is the LOCAL calendar date, and the scheduled job
+    (`daily-refresh.yml`, `30 21 * * 1-5`) runs on a UTC runner. A local run from a
+    UTC+8 machine at 06:00 therefore stamps **tomorrow's** `run_date` relative to the
+    same evening's scheduled run — 21:30 UTC on the 24th and 06:00 SGT on the 25th are
+    the same instant, and produced `2026-07-24` and `2026-07-25` respectively.
+
+    Observed live, not theorised: the scheduled run wrote 38 provisional positions at
+    `run_date` 2026-07-24 while `research_recommendations` still held the 9-pick book a
+    local run had published at 2026-07-25. `/risk` then computed every statistic on
+    positions from one date beneath a header naming the other — caught only because
+    iteration 32's ADR-0040 check compares position COUNT against the published picks
+    and said *"38 held · 9 published"*.
+
+    UTC also matches the trading date the book is for: 21:30 UTC is 17:30 ET, the same
+    calendar day in both zones, so this changes nothing about the scheduled run and only
+    brings ad-hoc local runs into line with it (ADR-0069).
+    """
+    return datetime.now(timezone.utc).date()
+
+
 # ─── Main orchestration ──────────────────────────────────────────────────────
 def main():
-    run_date = date.today()
+    run_date = utc_run_date()
     print(f"[{run_date}] Starting daily refresh...")
 
     cfg = load_config()

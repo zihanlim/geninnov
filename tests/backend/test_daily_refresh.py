@@ -1201,3 +1201,58 @@ def test_conviction_floor_is_absolute_not_a_percentile():
     quiet_day = [_conviction(0.30, v, 0.00315) for v in (0.004, 0.005, 0.006)]
     wild_day = [_conviction(0.30, v, 0.00315) for v in (0.004, 0.040, 0.060)]
     assert quiet_day[0] == pytest.approx(wild_day[0])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# utc_run_date — a local run must stamp the same date as the scheduled job
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_run_date_is_utc_not_the_local_calendar_date():
+    """The scheduled job runs on a UTC runner; ad-hoc local runs must agree with it.
+
+    `daily-refresh.yml` fires at 21:30 UTC. A local run from a UTC+8 machine at 06:00
+    is the SAME INSTANT and `date.today()` returns the next day — which is exactly what
+    happened: the scheduled run wrote 38 positions at run_date 2026-07-24 while a local
+    run's 9-pick book sat at 2026-07-25, so /risk computed on positions from one date
+    under a header naming the other (ADR-0069).
+    """
+    from datetime import datetime, timezone
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+    from daily_refresh import utc_run_date
+
+    assert utc_run_date() == datetime.now(timezone.utc).date()
+
+
+def test_run_date_does_not_read_the_local_clock():
+    """Pinned by source, because the failure is invisible on a UTC machine.
+
+    A test comparing utc_run_date() to date.today() passes on any UTC runner — which
+    is where CI runs — so it would never catch a regression to the local date. Assert
+    the implementation instead.
+    """
+    import inspect
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+    from daily_refresh import utc_run_date
+
+    # The docstring deliberately MENTIONS date.today() to explain the bug, so assert on
+    # the code body rather than the whole source — a test that read the prose would fail
+    # for the wrong reason.
+    src = inspect.getsource(utc_run_date)
+    body = src.rsplit('"""', 1)[-1]
+    assert "datetime.now(timezone.utc).date()" in body
+    assert "date.today()" not in body
+
+
+def test_main_uses_the_utc_helper():
+    """The helper is only useful if main() actually calls it."""
+    import inspect
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+    import daily_refresh
+
+    src = inspect.getsource(daily_refresh.main)
+    assert "utc_run_date()" in src
+    # The exact line that caused the split must not come back.
+    assert "run_date = date.today()" not in src

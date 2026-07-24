@@ -73,6 +73,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0066](0066-not-computable-must-persist-as-null.md) | "Not computable" must persist as NULL, not 0.0 — eight of nine positions had a renormalised score beside components written as zero | accepted | 2026-07-25 |
 | [0067](0067-a-column-must-name-the-subset-it-measures.md) | A column must name the subset it measures — "Avg |rho| to book" averaged only pairs flagged at 0.70, so an empty column read as uncorrelated | accepted | 2026-07-25 |
 | [0068](0068-a-cap-breach-is-not-decided-by-float-error.md) | A cap breach is not decided by floating-point error — a book clamped exactly to its 35% cap reported "US (35.0% > 35%)" | accepted | 2026-07-25 |
+| [0069](0069-run-date-is-utc-not-the-local-clock.md) | `run_date` is UTC, not the local clock — a UTC+8 local run stamped a day ahead of the scheduled job, splitting positions from the published book | accepted | 2026-07-25 |
 
 ## When to write an ADR
 

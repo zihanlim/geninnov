@@ -76,6 +76,18 @@ interface MetricDef {
   deltaHigherIsWorse?: boolean;
   /** Formats a raw delta magnitude for the chip (may differ from `format`). */
   deltaFormat?: (v: number) => string;
+  /**
+   * Sessions of return history this statistic needs to mean anything — the
+   * MIN_DAYS_FOR_* constants in backend/services/risk_engine.py.
+   *
+   * compute_risk deliberately emits a value from as few as 2 observations and
+   * labels it "estimated" (T9 brief), so the number renders regardless. That is
+   * fine for VaR's parametric form but badly misleading for an ANNUALISED
+   * Sharpe: on this book it read −8.23, then +3.77 after a single upstream
+   * correction. Below this threshold we say the sample is too small, in the same
+   * place the number is read, rather than letting it pass as a real estimate.
+   */
+  minSessions?: number;
 }
 
 const signedUsdM = (v: number): string =>
@@ -98,6 +110,7 @@ const METRICS: MetricDef[] = [
     deltaKey: "var_95",
     deltaHigherIsWorse: true,
     deltaFormat: signedUsdM,
+    minSessions: 30,   // MIN_DAYS_FOR_VAR
   },
   {
     derivationKey: "cvar_95",
@@ -111,6 +124,7 @@ const METRICS: MetricDef[] = [
     deltaKey: "cvar_95",
     deltaHigherIsWorse: true,
     deltaFormat: signedUsdM,
+    minSessions: 30,   // MIN_DAYS_FOR_VAR
   },
   {
     derivationKey: "sharpe",
@@ -123,6 +137,7 @@ const METRICS: MetricDef[] = [
     deltaKey: "sharpe",
     deltaHigherIsWorse: false,
     deltaFormat: signedRatio,
+    minSessions: 60,   // MIN_DAYS_FOR_SHARPE
   },
   {
     derivationKey: "beta",
@@ -138,6 +153,7 @@ const METRICS: MetricDef[] = [
     // but we colour the raw signed change: up = red (more market exposure).
     deltaHigherIsWorse: true,
     deltaFormat: signedRatio,
+    minSessions: 60,   // MIN_DAYS_FOR_BETA
   },
   {
     derivationKey: "hhi",
@@ -159,6 +175,7 @@ function RiskCard({
   derivation,
   color = "text-text-primary",
   delta,
+  sampleCaveat,
 }: {
   label: string;
   value: string;
@@ -169,6 +186,8 @@ function RiskCard({
     format: (v: number) => string;
     higherIsWorse: boolean;
   };
+  /** Set when the statistic is shown but the return sample is below its minimum. */
+  sampleCaveat?: string | null;
 }) {
   const present = derivation.value !== null;
   return (
@@ -214,6 +233,11 @@ function RiskCard({
           </span>
         )}
       </div>
+      {present && sampleCaveat && (
+        <div className="mt-1.5 text-[11px] text-warning leading-[1.45]">
+          {sampleCaveat}
+        </div>
+      )}
     </div>
   );
 }
@@ -225,6 +249,7 @@ export function RiskMetricsGrid({
   orderingNote,
   deltas,
   prevRunDate,
+  sessions,
 }: {
   loading: boolean;
   risk: RiskRow | null;
@@ -235,6 +260,8 @@ export function RiskMetricsGrid({
   deltas?: Record<DeltaKey, MetricDelta> | null;
   /** run_date of the previous risk run, for the header note. */
   prevRunDate?: string | null;
+  /** Sessions of return history behind these statistics (portfolio_returns rows). */
+  sessions?: number | null;
 }) {
   const persisted = (risk?.numeric_derivations ?? null) as Record<
     string,
@@ -319,6 +346,15 @@ export function RiskMetricsGrid({
                       higherIsWorse: def.deltaHigherIsWorse ?? true,
                     }
                   : undefined;
+              // A statistic can be "estimated" and still be noise: compute_risk
+              // emits from as few as 2 observations. Say so next to the number.
+              const short =
+                isNum(sessions) &&
+                def.minSessions !== undefined &&
+                (sessions as number) < def.minSessions;
+              const sampleCaveat = short
+                ? `${sessions} session${sessions === 1 ? "" : "s"} of history — needs ${def.minSessions}. Too small to read as a real ${def.label.split(" ")[0]}.`
+                : null;
               return (
                 <RiskCard
                   key={def.derivationKey}
@@ -327,6 +363,7 @@ export function RiskMetricsGrid({
                   derivation={derivation}
                   color={def.color}
                   delta={delta}
+                  sampleCaveat={sampleCaveat}
                 />
               );
             })}

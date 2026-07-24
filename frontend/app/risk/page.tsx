@@ -546,6 +546,7 @@ function RiskPageInner() {
         orderingNote={data.riskOrderingNote}
         deltas={riskDeltas}
         prevRunDate={prevRunDate}
+        sessions={data.returns.length}
       />
 
       {/* 3 — Per-position risk attribution: "which trade to cut". */}

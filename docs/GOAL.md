@@ -81,21 +81,21 @@ find, not just what you changed:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 436 backend + 45 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 442 backend + 52 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
   **All six stages report to `pipeline_runs`** since iteration 14 — L1 and L4 were
   silent, so `/method` said "not instrumented" while the status bar said "4/4
   succeeded".
-- **Q1 book** — **4 long / 3 short across 7 positions** (XLE, JPM, EEM, UNH long;
-  GLD, KWEB, NOC short) on the last 2026-07-25 run, +1.4% net at 71.8% gross, $28.2M
-  held back by position limits. Almost every name comes from a theme **below** the
-  attention gate (ADR-0046) — under the old rule the pool would have been six US
-  Election names. **Both sides are short of the five Q1 asks for**, and the
-  composition moves run to run: this is one draw from a 39-name pool, not a fixed
-  answer, and `/book`'s turnover panel says so. Conviction now reads **13.6×–30.2×
-  across every position** (ADR-0047) rather than one name at 2375×. **One portfolio everywhere** since iteration 10
+- **Q1 book** — **5 long / 4 short across 9 positions** (XLE, NUE, UNH, SVXY, BIL
+  long; SLV, BABA, PDD, NOC short) on the last 2026-07-25 run, −3.5% net at 60.7%
+  gross, $39.3M held back by position limits. **The long side is at Q1's five**; the
+  short side holds four of the five independent ideas that existed, and `/book`'s Pool
+  depth panel says so in warning colour rather than excusing it. Almost every name
+  comes from a theme **below** the attention gate (ADR-0046). **The composition moves
+  hard run to run** — 94% turnover against the previous book — so this is one draw
+  from the pool, not a settled answer, and the turnover panel says that too. **One portfolio everywhere** since iteration 10
   (ADR-0040) — `/book` and `/risk` describe the same names and every risk number is
   computed on them, and since iteration 32 `/risk` *checks* that rather than assuming
   it — and direction no longer inverts on a regime label flip since
@@ -113,6 +113,72 @@ Live at https://andromeda-analytics.vercel.app · 436 backend + 45 frontend test
   agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 33 (2026-07-25)
+
+**Counted the independent *ideas* instead of the candidates, and the five-and-five
+explanation finally stopped moving.**
+
+Q1 asks five long and five short. The book has answered with fewer for many
+iterations and the reason changed every time: the universe was too narrow (widened,
+ADR-0043); redundancy caps the short side (**disproved** the next day by NOC); the
+attention gate discards whole themes (**true**, fixed by ADR-0046, pool 23 → 39).
+Every one was *argued* rather than measured, and each was disproved by the next
+measurement.
+
+After ADR-0046 the pool holds 27 long / 12 short and L5 still returns 4–5 and 3 —
+with **nothing dropped downstream**; its raw output was checked. Rather than infer
+"L5 under-picks", it was measured, using the clustering already in the codebase at
+the same **ρ 0.70** `/risk` uses to flag redundancy inside the book:
+
+| | candidates | independent ideas |
+|---|---|---|
+| Long | 27 | **13** |
+| Short | 12 | **5** |
+
+GDX/GLD/IAU/NEM/SLV are one precious-metals bet; BABA/FXI/KWEB/MCHI are one
+China-internet bet; PDD, NOC and ARKK stand alone. **Twelve short candidates were
+never twelve short ideas — but they are five, and five is exactly what Q1 asks for.**
+The pool has stopped being the constraint on the short side and never was on the long
+side.
+
+It also explains the agent without accusing it. The prompt says *"select up to 5 …
+fewer if the pool is thin"* and, in the next breath, *"do not add picks that compound
+existing high-correlation exposures."* An agent obeying the second correctly refuses a
+second metals short — and a candidate count could never tell it that four *other*
+independent short ideas existed.
+
+Shipped in both directions: a **POOL DEPTH (measured, not estimated)** block in the
+prompt that names each complex and its strongest member, and a `/book` panel reading
+candidates → independent ideas → held per side. The panel **deliberately does not
+excuse the book**: when five or more are available and fewer are held, it says in
+warning colour that the shortfall is *selection, not constraint*, and points at the
+thesis. That is the sentence this project has repeatedly been unable to write.
+
+**Then running the pipeline killed it.** A Supabase **HTTP/2 ConnectionTerminated**
+aborted the whole daily run partway through persisting candidates — after L0–L1
+completed, before any book existed — because the write was a per-candidate loop of
+**39 sequential unwrapped round-trips**. Batched to one request each. The
+reconciliation write mattered most: it deletes the day's rows then re-inserts the
+published book row by row, so a drop midway leaves *part* of the book live with the
+rest gone — a portfolio that never existed, presented as the book of record, which is
+precisely what ADR-0040 exists to prevent.
+
+**The book moved.** The run with POOL DEPTH in the prompt returned **5 long / 4
+short** (9 positions, up from 4 and 3), and it took **the strongest of each complex** —
+SLV out of the metals group, BABA out of China — which is exactly what the block
+names. The long side is now at Q1's five. One run is not proof: the pool also changed
+between runs (19 long / 11 short this time). Stated as observed, not as established.
+
+**And reading the result found the next defect.** The agent's thesis now cites the
+measurement and *misquotes it*: "the SHORT pool yields only four independent ideas".
+The clustering it describes is right; the count is wrong — there are five, it forgot
+ARKK. The panel below says 5, so the page contradicts itself. `verify_citations`
+cannot catch it because that number is tied to no source key. Recorded above as the
+next step.
+
+[ADR-0048](adrs/0048-count-independent-ideas-not-candidates.md) · migration 036
+applied to prod.
 
 ### Loop iteration 32 (2026-07-25)
 
@@ -1757,6 +1823,21 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   Verified on a live run: **BIL 2375.2× → 92.8×**, SHY 292.1 → 87.7, AGG 99.2 → 82.8,
   IEF unchanged at 79.6, every above-floor name untouched — a floor, not a rescaling.
   Book-wide max/median **148× → under 6×**.
+- **The thesis can misquote the pool-depth number it was given** — found 2026-07-25
+  by reading the deployed page against itself. With POOL DEPTH in the prompt the
+  agent's book_view now cites it: *"the SHORT pool yields only four independent ideas
+  because GDX/NEM collapse into SLV and KWEB collapses into BABA"*. The clustering
+  logic is right and **the count is wrong** — the measurement says **five** (metals,
+  China, PDD, NOC, ARKK); the agent forgot ARKK. The Pool depth panel immediately
+  below says 5, so the page contradicts itself, which is at least self-correcting for
+  a reader who scrolls.
+  **The citation guardrail cannot catch it**: `verify_citations` checks numbers
+  against source keys, and "four independent ideas" is tied to no source. The fix is
+  to expose the count as a citable source (`independent_ideas.short.count`) so a
+  wrong restatement is rejected the way a wrong HY OAS would be. Not shipped this
+  iteration — it needs a guardrail change plus a pipeline run to verify, and shipping
+  it unverified is what this file's principles forbid. **This is the next iteration's
+  step.**
 - **`/risk` publishes a provisional book for the minutes L5 takes** — **the silence
   is fixed, the window is not.** Since iteration 32 `/risk` compares its positions
   against `research_recommendations.picks` and, when they disagree, leads with a

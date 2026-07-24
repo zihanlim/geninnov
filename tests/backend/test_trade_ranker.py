@@ -399,3 +399,75 @@ def test_allocate_group_cap_binds_on_the_GROUP_total_not_the_member():
     assert by["HYG"] + by["LQD"] == pytest.approx(0.30)   # Credit capped at 30%
     assert by["HYG"] == pytest.approx(by["LQD"])          # relative sizes preserved
     assert by["GLD"] == pytest.approx(0.20)               # untouched, its own sector
+
+
+def _theme_row(theme_id, edge, hype=60.0):
+    return {"theme_id": theme_id, "trade_score": 0.3, "hype_score": hype,
+            "avg_sentiment": 0.0, "edge_score": edge, "trend_signal": 0.0,
+            "regime_bias": 0.0, "carry_signal": 0.0, "value_signal": 0.0,
+            "sentiment_signal": 0.0, "vol": 0.02, "conviction": 5.0}
+
+
+def _ae(edge, vol=0.02):
+    return {"edge_score": edge, "trend_signal": 0.0, "regime_bias": 0.0,
+            "carry_signal": 0.0, "value_signal": 0.0, "sentiment_signal": 0.0,
+            "vol": vol, "conviction": abs(edge) / vol}
+
+
+def test_asset_takes_its_own_side_against_its_theme():
+    """ADR-0038 — the reason the book could not produce a short.
+
+    Direction used to be a THEME property: `_expand(..., direction="long")` stamped
+    every asset in a long theme long. Live on 2026-07-24 that held GLD long inside
+    Fed Policy, Inflation, US Dollar and Geopolitical Risk simultaneously, because
+    each theme averaged to a positive edge — while GLD's own trend and regime scored
+    it -0.44. Four of EdgeScore's five components are natively per-asset or
+    per-asset-class, so the theme average was destroying real dispersion.
+    """
+    scored = [_theme_row("geo", +0.22)]
+    asset_edges = {
+        ("geo", "TLT"): _ae(+0.15),     # agrees with its theme
+        ("geo", "GLD"): _ae(-0.40),     # disagrees, strongly
+    }
+    longs, shorts = rank_trade_candidates(
+        scored, {"geo": ["TLT", "GLD"]}, hype_threshold=50.0,
+        score_key="edge_score", abstain_threshold=0.15, asset_edges=asset_edges)
+
+    assert [c.asset for c in longs] == ["TLT"]
+    assert [c.asset for c in shorts] == ["GLD"]      # a SHORT out of a LONG theme
+    assert shorts[0].edge_score == pytest.approx(-0.40)
+    # The candidate carries the ASSET's components, not the theme's.
+    assert shorts[0].conviction == pytest.approx(0.40 / 0.02)
+
+
+def test_asset_abstains_on_its_own_edge_not_its_themes():
+    """A strong theme does not drag a flat asset into the book."""
+    scored = [_theme_row("geo", +0.22)]
+    asset_edges = {("geo", "TLT"): _ae(+0.30), ("geo", "EFA"): _ae(+0.04)}
+    longs, shorts = rank_trade_candidates(
+        scored, {"geo": ["TLT", "EFA"]}, hype_threshold=50.0,
+        score_key="edge_score", abstain_threshold=0.15, asset_edges=asset_edges)
+    assert [c.asset for c in longs] == ["TLT"]       # EFA held out on its own |edge|
+    assert shorts == []
+
+
+def test_same_ticker_in_two_themes_is_deduped_to_its_strongest_view():
+    """GLD expresses four themes. It must appear once, at its strongest conviction,
+    or the book double-counts a single position."""
+    scored = [_theme_row("infl", +0.09), _theme_row("geo", +0.22)]
+    asset_edges = {("infl", "GLD"): _ae(-0.30), ("geo", "GLD"): _ae(-0.44)}
+    longs, shorts = rank_trade_candidates(
+        scored, {"infl": ["GLD"], "geo": ["GLD"]}, hype_threshold=50.0,
+        score_key="edge_score", abstain_threshold=0.15, asset_edges=asset_edges)
+    assert len(shorts) == 1
+    assert shorts[0].edge_score == pytest.approx(-0.44)
+
+
+def test_without_asset_edges_direction_still_comes_from_the_theme():
+    """Legacy path unchanged, so existing callers and tests are unaffected."""
+    scored = [_theme_row("geo", +0.22)]
+    longs, shorts = rank_trade_candidates(
+        scored, {"geo": ["TLT", "GLD"]}, hype_threshold=50.0,
+        score_key="edge_score", abstain_threshold=0.15)
+    assert {c.asset for c in longs} == {"TLT", "GLD"}
+    assert shorts == []

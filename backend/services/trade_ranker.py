@@ -172,6 +172,7 @@ def rank_trade_candidates(
     min_side: int = 1,
     score_key: str = "trade_score",
     abstain_threshold: float = 0.0,
+    asset_edges: dict | None = None,
 ) -> tuple[list[TradeCandidate], list[TradeCandidate]]:
     """Select up to N longs and N shorts from scored themes (ADR-0029).
 
@@ -232,6 +233,29 @@ def rank_trade_candidates(
             picks = picks + backfill[: min_side - len(picks)]
         return picks
 
+    if asset_edges:
+        # Per-asset direction (ADR-0038). Themes still gate what is in scope — the
+        # attention premise is untouched — but an asset takes the side its own
+        # EdgeScore implies, which means a "long" theme can contribute a short.
+        # Union both selected pools, dedupe, then partition by the ASSET's sign.
+        pool = _select(positive=True) + _select(positive=False)
+        seen_t: set[str] = set()
+        themes_in_scope = [r for r in pool if not (r["theme_id"] in seen_t or seen_t.add(r["theme_id"]))]
+        expanded = _expand(themes_in_scope, theme_assets_map, direction="long",
+                           asset_edges=asset_edges, abstain_threshold=abstain_threshold)
+        # The same ticker can express several themes; keep its strongest conviction.
+        best: dict[str, TradeCandidate] = {}
+        for c in expanded:
+            cur = best.get(c.asset)
+            if cur is None or abs(c.edge_score) > abs(cur.edge_score):
+                best[c.asset] = c
+        deduped = list(best.values())
+        longs = sorted([c for c in deduped if c.direction == "long"],
+                       key=lambda c: -c.edge_score)
+        shorts = sorted([c for c in deduped if c.direction == "short"],
+                        key=lambda c: c.edge_score)
+        return longs, shorts
+
     longs = _expand(_select(positive=True), theme_assets_map, direction="long")
     shorts = _expand(_select(positive=False), theme_assets_map, direction="short")
 
@@ -242,27 +266,45 @@ def _expand(
     themes: list[dict],
     theme_assets_map: dict[str, list[str]],
     direction: str,
+    asset_edges: dict | None = None,
+    abstain_threshold: float = 0.0,
 ) -> list[TradeCandidate]:
+    """Expand selected themes into per-asset candidates.
+
+    With ``asset_edges`` supplied (ADR-0038) each asset carries its OWN EdgeScore
+    and therefore its OWN side, and is dropped when its own |edge| falls inside the
+    abstention band. The theme decides what is in scope; the asset decides which way
+    it goes. Without it, every asset inherits the theme's direction — the legacy
+    behaviour, kept so existing callers and tests are unaffected.
+    """
     out: list[TradeCandidate] = []
     for r in themes:
         theme_id = r["theme_id"]
         for asset in theme_assets_map.get(theme_id, []):
+            ae = (asset_edges or {}).get((theme_id, asset))
+            if ae is None:
+                comp, side = r, direction
+            else:
+                edge = ae.get("edge_score") or 0.0
+                if abs(edge) < max(abstain_threshold, 1e-12):
+                    continue          # this asset has no view of its own
+                comp, side = ae, ("long" if edge > 0 else "short")
             out.append(
                 TradeCandidate(
                     theme_id=theme_id,
                     asset=asset,
-                    direction=direction,
+                    direction=side,
                     trade_score=r["trade_score"],
                     hype_score=r["hype_score"],
                     avg_sentiment=r.get("avg_sentiment", 0.0),
-                    edge_score=r.get("edge_score", 0.0),
-                    trend_signal=r.get("trend_signal", 0.0),
-                    regime_bias=r.get("regime_bias", 0.0),
-                    carry_signal=r.get("carry_signal", 0.0),
-                    value_signal=r.get("value_signal", 0.0),
-                    sentiment_signal=r.get("sentiment_signal", 0.0),
-                    vol=r.get("vol", 0.0),
-                    conviction=r.get("conviction", 0.0),
+                    edge_score=comp.get("edge_score", 0.0),
+                    trend_signal=comp.get("trend_signal", 0.0),
+                    regime_bias=comp.get("regime_bias", 0.0),
+                    carry_signal=comp.get("carry_signal", 0.0),
+                    value_signal=comp.get("value_signal", 0.0),
+                    sentiment_signal=comp.get("sentiment_signal", 0.0),
+                    vol=comp.get("vol", 0.0),
+                    conviction=comp.get("conviction", 0.0),
                 )
             )
     return out

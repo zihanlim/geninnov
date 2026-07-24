@@ -71,6 +71,7 @@ from backend.services.regime_classifier import RegimeClassifier
 from backend.services.edge_signals import (
     theme_trend,
     theme_regime_bias,
+    regime_direction_bias,
     carry_signal,
     value_signal,
     sentiment_signal,
@@ -409,8 +410,13 @@ def compute_edge_scores(
     regime,
     cfg: ScoringConfig,
     macro_snapshot: dict | None = None,
+    asset_edges: dict | None = None,
 ) -> list[dict]:
     """Attach EdgeScore (direction signal) + conviction to each theme (ADR-0031/0032).
+
+    If ``asset_edges`` is passed (a dict), it is populated with
+    ``{(theme_id, asset): {edge_score, trend_signal, ...}}`` — the PER-ASSET score,
+    which is what actually sets each position's side (ADR-0038).
 
     EdgeScore = w_trend·Trend + w_regime·RegimeFit + w_carry·Carry + w_value·Value,
     every component in [-1, 1]:
@@ -425,6 +431,8 @@ def compute_edge_scores(
     cycle = getattr(regime, "cycle", None)
     sentiment = getattr(regime, "sentiment", None)
     macro_z = _macro_zscores()
+    if asset_edges is None:
+        asset_edges = {}
 
     # One price pull for every asset (6-month window) → trailing basket return
     # (Trend) and daily-return vol (inverse-vol sizing).
@@ -485,6 +493,50 @@ def compute_edge_scores(
         r["vol"] = theme_vol
         # Conviction for Stage-4 sizing: signal strength scaled by inverse vol.
         r["conviction"] = (abs(edge) / theme_vol) if theme_vol > 0 else abs(edge)
+
+        # ── Per-asset EdgeScore (ADR-0038) ───────────────────────────────────────
+        # Everything above is the THEME average. Four of the five components are
+        # natively per-asset or per-asset-class — trend and vol come from each
+        # ticker's own prices, and regime/carry/value from its own asset class — so
+        # averaging them across a theme destroys real, tradeable dispersion before
+        # anything gets to use it. Only sentiment is genuinely theme-wide.
+        #
+        # The cost was concrete: GLD was held LONG inside Fed Policy, Inflation, US
+        # Dollar AND Geopolitical Risk simultaneously, because each of those themes
+        # averaged to a positive edge — while GLD's own trend and regime scored it
+        # -0.44. The book was long an asset every asset-level signal said to short.
+        for a in assets:
+            if not is_classified(a):
+                continue
+            ac = classify(a)["asset_class"]
+            a_ret = ret_by_asset.get(a)
+            # Same squash theme_trend applies, on this one asset instead of the
+            # basket mean — a single-asset dict IS the per-asset case of it, so the
+            # two can never drift apart.
+            a_trend = None if a_ret is None else theme_trend({a: a_ret})
+            a_carry = carry_signal(ac, macro_snapshot)
+            a_value = value_signal(ac, macro_z)
+            a_edge = compute_edge_score(
+                a_trend,
+                regime_direction_bias(ac, cycle, sentiment),
+                a_carry,
+                a_value,
+                sentiment_tilt,      # theme-wide by construction — news is about the theme
+                w_trend=cfg.edge_trend_weight, w_regime=cfg.edge_regime_weight,
+                w_carry=cfg.edge_carry_weight, w_value=cfg.edge_value_weight,
+                w_sentiment=cfg.edge_sentiment_weight,
+            )
+            a_vol = vol_by_asset.get(a, 0.0)
+            asset_edges[(r["theme_id"], a)] = {
+                "edge_score": a_edge,
+                "trend_signal": a_trend if a_trend is not None else 0.0,
+                "regime_bias": regime_direction_bias(ac, cycle, sentiment),
+                "carry_signal": a_carry if a_carry is not None else 0.0,
+                "value_signal": a_value if a_value is not None else 0.0,
+                "sentiment_signal": sentiment_tilt,
+                "vol": a_vol,
+                "conviction": (abs(a_edge) / a_vol) if a_vol > 0 else abs(a_edge),
+            }
 
     if missing_trend:
         print(f"[compute_edge_scores] NOTE: no price data for "
@@ -748,6 +800,7 @@ def rank_and_persist_trade_candidates(
     scored: list[dict],
     run_date: date,
     cfg: ScoringConfig,
+    asset_edges: dict | None = None,
 ) -> tuple[list[TradeCandidate], list[TradeCandidate]]:
     theme_ids = [s["theme_id"] for s in scored]
     theme_assets_map = load_theme_assets_map(theme_ids, run_date)
@@ -759,10 +812,15 @@ def rank_and_persist_trade_candidates(
     # (trend + regime + carry + value), not sign(near-zero sentiment) (ADR-0031).
     # abstain_threshold: a theme with |EdgeScore| below it is dropped rather than
     # forced into a low-conviction position (Stage-4 abstention, ADR-0032).
+    # asset_edges (ADR-0038): the theme still gates what is in scope, but each asset
+    # takes the side its OWN EdgeScore implies. Without it every asset inherited the
+    # theme's direction, which is how GLD came to be held long inside four separate
+    # themes while its own trend and regime scored it -0.44.
     longs, shorts = rank_trade_candidates(
         scored, theme_assets_map, cfg.hype_score_threshold,
         top_n=5, min_side=1, score_key="edge_score",
         abstain_threshold=cfg.edge_abstain_threshold,
+        asset_edges=asset_edges,
     )
 
     # Drop any candidate whose ticker isn't in all three taxonomy maps before it
@@ -1316,13 +1374,19 @@ def main():
     # before persist/rank so the persisted signals AND the long/short direction
     # both use it, replacing sign(near-zero sentiment).
     theme_assets_map = load_theme_assets_map([s["theme_id"] for s in scored], run_date)
+    # asset_edges is filled in place with the PER-ASSET EdgeScore (ADR-0038), which
+    # is what sets each position's side. The theme-level score stays on `scored` for
+    # the heatmap and the abstention roster.
+    asset_edges: dict = {}
     scored = compute_edge_scores(scored, theme_assets_map, regime, cfg,
-                                 macro_snapshot=macro_snapshot)
+                                 macro_snapshot=macro_snapshot,
+                                 asset_edges=asset_edges)
     persist(run_date, scored)
     persist_theme_news(run_date, scored)
 
     # ── Phase 3: trade ranking + portfolio construction ─────────────────────
-    longs, shorts = rank_and_persist_trade_candidates(scored, run_date, cfg)
+    longs, shorts = rank_and_persist_trade_candidates(scored, run_date, cfg,
+                                                      asset_edges=asset_edges)
     candidates = longs + shorts
     if not candidates:
         print(f"[{run_date}] No qualifying trade candidates; skipping portfolio construction.")

@@ -85,17 +85,75 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
-- **Q1 book** — VERIFIED thesis w/ citations, conviction-sized, and genuinely
-  cap-bound as of iteration 7: the 20/30/35 limits now bind and whatever they refuse
-  is held in cash, so a thin book deploys less than $100M and says so. The L5
-  fallback that dogged iterations 3–5 is **fixed and closed** (iteration 6).
-  Long-only today: the universe is 5 long-capable themes, 0 short-capable.
+- **Q1 book** — **two-sided at last: 7 long / 2 short across 9 positions**
+  (iteration 8, ADR-0038 — direction moved from the theme to the asset). VERIFIED
+  thesis w/ citations, conviction-sized, and genuinely cap-bound since iteration 7:
+  the 20/30/35 limits bind and whatever they refuse is held in cash. The L5 fallback
+  that dogged iterations 3–5 is **fixed and closed** (iteration 6). Remaining Q1 gap
+  is depth on the short side — 2 shorts, not 5.
 - **Direction** EdgeScore = trend/regime/carry/value/sentiment, IC-weighted, with
   abstention + conviction sizing (ADR-0031/32/33).
 - **Q2 hype** HypeScore (volume/sentiment/|ρ|/momentum) + theme discovery
   (LDA ∩ embeddings, 6 two-method agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 8 (2026-07-24)
+
+**THE BOOK IS TWO-SIDED. Direction belonged to the theme, not the asset — that was
+the whole thing** ([ADR-0038](../docs/adrs/0038-per-asset-direction.md)).
+
+Three iterations attacked zero-shorts as a breadth problem: ticker breadth (24 → 37),
+theme discovery (all six candidates were rediscoveries), and single names, which this
+file named as the top gap. **Single names would not have worked either**, and the
+reason is the same one that defeated the other two:
+
+```python
+longs  = _expand(_select(positive=True),  theme_assets_map, direction="long")
+shorts = _expand(_select(positive=False), theme_assets_map, direction="short")
+```
+
+Direction was stamped on a **theme** and inherited by every asset in it. A single
+company added to a rising theme would have been marked long regardless of its own
+signal — exactly like the extra ETFs before it. The constraint was never the
+universe. The engine **averaged per-asset signal away and then asked why every asset
+agreed.**
+
+Four of EdgeScore's five components are natively per-asset or per-asset-class —
+trend from that ticker's own prices, regime/carry/value from its own asset class —
+**95% of the weight**, collapsed into a basket mean before use. `ret_by_asset` and
+`vol_by_asset` were already per-ticker and were thrown away by `theme_trend`.
+
+The cost was absurd once seen: **GLD was held LONG inside Fed Policy, Inflation, US
+Dollar and Geopolitical Risk at the same time** — four themes that each averaged
+positive — while GLD's own trend and regime scored it **−0.44**.
+
+Now the theme gates *scope* (hype threshold untouched, so the attention premise
+stands) and each asset takes `sign(its own edge)`, abstaining on its own |edge|; a
+ticker spanning several themes dedupes to its strongest conviction.
+
+**Live result — first two-sided book of the project:**
+
+| | before | after |
+|---|---|---|
+| positions | 3 | **9** |
+| long / short | 3 / **0** | **7 / 2** |
+| HHI | 1243 | **564** |
+| deployed | 60.0% | 66.5% |
+
+Shorts are **SLV −0.39 and GLD −0.26**; longs are QQQ/IWM/EWJ/SPY/EFA/XLV/XLF.
+**Nothing was loosened** — same abstention band, same hype gate, same caps, same
+universe. The shorts came from signal that was already in the data and was being
+destroyed before anything could use it.
+
+**Single names are now worth adding, and for the stated reason.** An asset's own
+trend can finally oppose its theme, which is exactly why idiosyncratic dispersion was
+supposed to help. Under theme-level direction it would have contributed nothing. This
+is the next Q1 step, and it is now correctly motivated rather than merely plausible.
+
+**Watch:** sentiment (0.05) is the one genuinely theme-wide component, so it applies
+uniformly to assets that now disagree with each other. Defensible — news really is
+about the theme — but an IC study should check whether it deserves to be per-asset.
 
 ### Loop iteration 7 (2026-07-24)
 
@@ -415,7 +473,15 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
 - ~~**L5 falls back because `reason_picks` never parses a response**~~ — **CLOSED,
   iteration 6.** It was a hardcoded 120s read timeout against a ~205s generation.
   `LLM_TIMEOUT_SECONDS` (default 420). Verified live: `verified=True`, 28 citations.
-- **SINGLE NAMES ARE THE TOP Q1 GAP — this is the next step.** Shorts are the last
+- **SINGLE NAMES — now correctly motivated, and the next step.** Iteration 8 found
+  that shorts were blocked by theme-level direction, not by the universe, and fixed
+  it (ADR-0038): the book is now **7 long / 2 short**. Single names are still the
+  right next move — an asset's own trend can now oppose its theme, which is the
+  dispersion argument actually working — but note the reasoning below was WRONG as
+  originally written: under theme-level direction single names would have inherited
+  their theme's side and added no shorts at all, exactly like the extra ETFs.
+  Historical text follows.
+- **[superseded reasoning] Shorts are the last
   thing standing between the book and the literal question. Two routes are now
   *excluded by evidence*, so do not re-spend iterations on them:
   (a) *ticker breadth* — done, 37 tickers, 4–8/theme, and positions on a side =

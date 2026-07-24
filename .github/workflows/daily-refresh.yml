@@ -23,11 +23,13 @@ jobs:
   refresh:
     name: L0–L5 daily pipeline
     runs-on: ubuntu-latest
-    # L5 alone can now legitimately take up to 3 x LLM_TIMEOUT_SECONDS (420s) = 21
-    # minutes if reason_picks needs both its retries, and L0-L4 (news, prices,
-    # factors) runs before it. 30 minutes would kill the job mid-book and leave the
-    # day with no thesis — the exact failure the timeout raise was fixing.
-    timeout-minutes: 50
+    # L5 alone can legitimately run long: reason_picks waits up to
+    # LLM_TIMEOUT_SECONDS (900s) per attempt and may use both its retries, and
+    # L0-L4 (news, prices, factors) runs before it. The old 30-minute ceiling would
+    # kill the job mid-book and leave the day with no thesis — the exact failure the
+    # timeout raise was fixing. A run that actually hits 60 minutes has a real
+    # problem and should fail rather than hang.
+    timeout-minutes: 60
     env:
       # ── Secrets (add these in repo Settings → Secrets → Actions) ──
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

@@ -86,11 +86,21 @@ MINIMAX_ENDPOINT = "https://api.minimax.io/v1/chat/completions"
 # runs which DID verify carried only 1-2 picks (small, fast books), and widening the
 # universe made the failure constant by enlarging the ask.
 #
-# 120s of thinking is not an error worth retrying — it is the model working. The
+# Time spent thinking is not an error worth retrying — it is the model working. The
 # retry loop made it worse: three attempts x 120s spent ~6 minutes to reach a
-# guaranteed fallback. A daily batch job can afford to wait; GitHub Actions allows
-# 30 minutes for the whole run.
-LLM_TIMEOUT_SECONDS = int(os.environ.get("LLM_TIMEOUT_SECONDS", "420"))
+# guaranteed fallback.
+#
+# 420 was the first estimate, taken from a standalone probe that produced a full
+# ten-pick book in 205s. The live pipeline then timed out at 420 on attempt 1 and
+# succeeded on attempt 2, which says the real prompt is materially heavier than the
+# probe's — it carries the full candidate list, macro snapshot, book metrics and
+# scenario table — and that generation time varies run to run. Burning 7 minutes on
+# a doomed first attempt is the same waste in a longer coat, so the ceiling is set
+# well clear of the observed range rather than just above it.
+#
+# A daily batch job can afford to wait: this is the single most important artefact
+# the pipeline produces and it runs once a day. The Actions job allows 60 minutes.
+LLM_TIMEOUT_SECONDS = int(os.environ.get("LLM_TIMEOUT_SECONDS", "900"))
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 DEFAULT_MODEL     = os.environ.get("ANTHROPIC_MODEL_ID", "claude-sonnet-4-20250514")

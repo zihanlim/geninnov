@@ -110,9 +110,18 @@ probes always worked, the runs that historically verified carried only 1–2 pic
 (small = fast), and iteration 4's universe widening made the failure constant by
 enlarging the ask. Retrying could never have helped: three attempts hit the same
 deterministic wall and burned ~6 minutes to reach a guaranteed fallback. Now
-`LLM_TIMEOUT_SECONDS`, default 420. Live proof: the 09:12 run persisted
-`verified=True` with **28 citations**; the 08:58 run before it, `verified=False`
-with 0. **Q1 has its "why" reliably, not intermittently.**
+`LLM_TIMEOUT_SECONDS`. Live proof: the 09:12 run persisted `verified=True` with
+**28 citations**; the 08:58 run before it, `verified=False` with 0. **Q1 has its
+"why" reliably, not intermittently.**
+
+*Follow-up from the same iteration:* 420 was too tight. The live pipeline then
+logged `LLM CALL FAILED (attempt 1): ReadTimeout … (read timeout=420)` and verified
+on attempt 2 — so the real prompt (full candidate list, macro, book metrics,
+scenarios) is materially heavier than the 205s probe, and generation time varies.
+Default is now **900s**, set clear of the observed range rather than just above it,
+with the Actions ceiling at 60 minutes. Note this also means the `retries=1` on that
+run was a **timeout** retry, not a citation rejection — the citation-feedback path
+built in iteration 3 still has not been observed firing live. Keep watching for it.
 
 **Zero shorts was never a breadth problem — carry could not be negative**
 ([ADR-0036](../docs/adrs/0036-carry-as-excess-yield-over-funding.md)). Three
@@ -139,6 +148,24 @@ book's basis — **Fed Policy, which was all four positions of the $100M book, f
 (+0.71) for the term premium duration earns (+0.33); Energy Prices (+0.176 →
 +0.372) and US Election (+0.165 → +0.340) rose, both equity themes that had been
 diluted by the silent zeros. The book is no longer one theme wearing five tickers.
+
+**A 3-name book deploys $100M and breaches its own single-name cap by 67% — fix
+this first.** `/book` now shows three positions at **33.3% each against a stated 20%
+single-name limit (167% utilisation, red)**. The sizer allocates the full $100M
+across whatever names clear, so the fewer the names, the harder it breaks its own
+limit. The honest portfolio answer is the opposite: if the pool cannot fill a book
+inside the caps, **deploy less than $100M and hold the rest in cash** — forcing full
+notional into three names to hit a target is precisely what position limits exist to
+prevent, and a reviewer will ask why the cap is published if it is overridden. This
+was masked before today (5 positions x 20% sat exactly at the cap) and became
+visible when the carry fix moved the book to three names. Ranks above single names:
+it is a credibility defect, not a breadth gap.
+
+**Then: L5 still builds the book from ONE theme.** Five themes are now long-capable, but the sized book is
+3 positions all from Geopolitical Risk (it was 4 all from Fed Policy). The signal
+layer now offers breadth the selection layer does not use — which is the `min_side`
+backfill cap diagnosed in iteration 2, not a signal problem. Worth a fresh look now
+that the pool behind it is genuinely wider than when that cap was last judged.
 
 **Theme discovery is ruled out as the route to shorts — it rediscovers the anchors.**
 All 6 Tier-2 candidates map onto existing themes (dollar→US Dollar, oil→Energy

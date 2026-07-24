@@ -32,6 +32,31 @@ and probes whether the picks survive being questioned. That sets the priority or
    size, why not this other name".
 4. Polish and breadth come after 1–3.
 
+## What kind of interface this is (ADR-0051 — read before proposing UI work)
+
+**A daily research publication. Not a scanner, not a screener.** A screener hands you
+candidates when you click; a scanner hands you the same candidates faster and without
+clicking; this hands you **a position, a size, and the reason it is not one of the other
+thirty names**. The defence apparatus — pool depth, cleared-not-taken, abstention
+roster, funnel, turnover, per-row derivation — is meaningless on a scanner, where the
+user does the deciding. It is the whole product here.
+
+**Do not build:** realtime subscriptions, polling timers, price tickers, alert rules,
+saved screens, filter panels. The inputs (daily news volume, Reddit sentiment, 252-day
+correlations, FF5 betas) do not move intraday; streaming them would be a lie told at
+60fps. If you want one of these, reopen [ADR-0051](adrs/0051-a-daily-publication-not-a-scanner.md)
+with an argument — do not just add it.
+
+**Do take these three from the scanner model**, which are about time-to-insight and do
+bind here:
+
+1. **The machine hunts, never the reader.** No query composition. Already true.
+2. **Change is shown, not searched for.** What moved since the last run is visible
+   without hand-diffing. Extending this is in scope; making it real-time is not.
+3. **Every scannable layer must differentiate.** Anything read without clicking has to
+   carry distinct information per row. *This is the one currently failed* — see the
+   recorded next step below.
+
 ## Standing mandate for each loop firing
 
 Re-derive — do not just take the backlog below on faith:
@@ -81,7 +106,7 @@ find, not just what you changed:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 449 backend + 52 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 452 backend + 52 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -113,6 +138,80 @@ Live at https://andromeda-analytics.vercel.app · 449 backend + 52 frontend test
   agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Recorded next step — the why-column says the same thing nine times
+
+Verified live on `/book` (2026-07-25, captures in `docs/captures/2026-07-25/`): the
+`ASSET · THEME · RATIONALE` column renders **"Long · a strong price uptrend" on all five
+longs and "Short · a price downtrend" on all four shorts**. Nine positions, two distinct
+strings.
+
+`plainRationale` (`frontend/lib/themeSignals.ts:264`) names the dominant EdgeScore
+component. Trend carries the largest raw magnitudes, so it wins on nearly every name and
+the output collapses. **The function is correct** — it does exactly what its docstring
+says — which makes this the recurring shape: *a correct calculation presented as if it
+meant something*. The call site's own comment states the intent it defeats: *"a reader
+gets the 'why' without decoding values."*
+
+It matters more than the other instances because **Q1 is literally "what are your top
+five long and short trades, and why"**, and this is the why, at the only layer a reader
+sees without clicking. The differentiated reasoning is not missing — it is in the thesis
+paragraph and behind each row's expander — so this is a **surfacing defect**, which is
+this repo's most common bug and the one it keeps re-learning.
+
+**Do not fix it by adding phrases.** A second templated string is the same bug with more
+words. The scannable line must carry something that differs per position — what
+distinguishes *this* name from the other twenty-nine that cleared the screen. Candidate
+material already computed and sitting unused at that layer: the position's closest held
+correlate and whether it is independent (`candidate_book_correlation`, ADR-0027-era
+work rendered in *Cleared the screen*), which independent-idea complex it was taken as
+the strongest member of (ADR-0048, in the pool-depth panel), and whether it arrived on
+edge conviction rather than attention (ADR-0046). Measure whether the chosen line
+actually differentiates across the live book before shipping it — a nine-row column with
+three distinct values is a smaller version of the same failure.
+
+[ADR-0051](adrs/0051-a-daily-publication-not-a-scanner.md) · found by the interface
+audit, not by a test, which is now true of every defect this project has found.
+
+**Also open, cheap:** `TopBar.tsx`'s `SECONDARY_NAV` (`/trades`, `/portfolio`,
+`/research`) is marked "legacy links (redirects)" in its own comment and shows a reader
+this project's migration state at ≥xl for no benefit. ADR-0040's consolidation is done.
+
+### Loop iteration 36 (2026-07-25)
+
+**The timeout that has been raised three times never bounded the call.**
+
+Iteration 35's replication measurement produced no number: the first of four samples
+never returned. Chasing that rather than shrugging at it found the cause, and it is
+not a slow model.
+
+`LLM_TIMEOUT_SECONDS` was passed straight to `requests.post(timeout=...)`. In
+`requests` a scalar timeout applies to the connect and to the **gap between bytes** —
+its own docs say it *"is not a time limit on the entire response download."* A
+provider that trickles data, or a reasoning model thinking slowly with the connection
+alive, never trips it. **The setting bounds silence, not duration.**
+
+Observed at 900s: one L5 call ran **23 minutes** and completed normally; a later one
+passed **45 minutes** still inside a single attempt and had to be killed by hand.
+
+**The consequence is not a slow local script.** `daily-refresh.yml` runs this every
+weekday. A stalled call there is a **hung workflow that produces nothing** and holds
+the runner toward its 6-hour ceiling, with the stale-book banner the only downstream
+sign. Every retry and fallback path in ADR-0012 sits downstream of a call that
+*returns*; none of it engages while a call simply never ends.
+
+A wall-clock deadline now wraps whichever provider runs, with the per-request timeout
+kept as the inner inter-byte guard it actually is. The worker is abandoned rather than
+awaited — it holds a socket and this is a batch process — and `TimeoutError` feeds the
+existing retry-then-fallback path. A fast provider error still surfaces as itself,
+pinned by a test, because the retry feedback depends on telling a 429 from a stall.
+
+**Three earlier raises of this value — 120 → 420 → 900 — were treating the wrong
+dial.** Not wasted: generation genuinely was slower than 120s. But "raise the timeout"
+was never going to fix a stall, and the fact that raising it *appeared* to work each
+time is exactly why the misreading survived this long.
+
+[ADR-0051](adrs/0051-llm-timeout-bounded-silence-not-the-call.md).
 
 ### Loop iteration 35 (2026-07-25)
 

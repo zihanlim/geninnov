@@ -179,6 +179,43 @@ Live at https://andromeda-analytics.vercel.app · 546 backend + 129 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 59 (2026-07-25)
+
+**Chased a wrong-looking factor tilt into the book-of-record divergence — and landed
+on the issue the other session had just written up as ADR-0070. No new fix; one
+net-new gap recorded.**
+
+The frontend deploy quota was still out, so I looked for a data/backend cross-check. The
+home's *FACTOR TILT OF BOOK* (last iteration MKT-RF **+1.05**, implausibly high for a
+long-short book) matched no computation. Tracing it: the home reads
+`portfolio_factor_exposure`, a **view over `portfolio_positions`**, and
+`portfolio_positions` held **38–40 names** (the L1 provisional pool, run_date 07-24)
+while the published book is **9** (run_date 07-25). The count oscillated 38→40 mid-look:
+a live pipeline run. The +1.05 was a transient artifact of that window; it now reads
+**+0.14**, matching the recomputed view.
+
+This is the same divergence the other session had **already diagnosed** while I was
+digging: [ADR-0070](adrs/0070-forward-dating-was-never-implemented.md) — *forward-dating
+was never implemented*, so the 07-25 book is an ad-hoc UTC+8 local run and the scheduled
+UTC runs stamp 07-24; the two never share a `run_date`. Their explicit decision — **do
+not rewrite rows** ("deleting a real book to tidy an identifier would be the larger
+error; `/risk`'s ADR-0040 reconciliation covers the page meanwhile") — is exactly right,
+and it is why I did **not** patch `portfolio_positions` despite building and backing up a
+reconcile: with a pipeline actively rewriting it, a manual write would have raced the run.
+No rows written.
+
+**Net-new, recorded for a home-page pass when the quota opens:** `/risk` fully discloses
+the window — *"38 held · 9 published … every figure on this page is computed on names the
+book does not hold"* — but the **home page does not**. It silently prints *Held tickers
+40* and a factor tilt on the un-reconciled pool, with no book-of-record banner. The home
+should carry the same ADR-0040 disclosure `/risk` has; it is a frontend change, unshippable
+while the deploy cap is exhausted, so it is flagged not built (per the quota-out rule:
+don't ship frontend you can't verify live).
+
+**UI/UX pass** — `/`, `/book`, `/risk`, `/method` at 1440 and 375: zero horizontal
+scroll, zero console errors. `/book` stable at the 9-name published book; `/risk`
+discloses the divergence; only the home under-discloses it. 546 backend + 129 frontend.
+
 ### Loop iteration 58 (2026-07-25)
 
 **A documented convention turned out to be a description of my own bug.**

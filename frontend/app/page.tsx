@@ -8,6 +8,7 @@ import Watchlist from "@/components/Watchlist";
 import ThemeDerivationDrawer from "@/components/ThemeDerivationDrawer";
 import ThemeHeatmap from "@/components/ThemeHeatmap";
 import DiscoveredThemes from "@/components/DiscoveredThemes";
+import PredictionMarkets from "@/components/PredictionMarkets";
 import MarketBar from "@/components/MarketBar";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
 import { StatusBadge } from "@/components/status/StatusBadge";
@@ -638,6 +639,14 @@ function ConvictionPageInner() {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* ── Prediction markets — forward macro odds (Polymarket) ─────── */}
+          <div className="mt-8">
+            <h2 className="text-[16px] font-semibold m-0 mb-3.5">
+              What the crowd is pricing
+            </h2>
+            <PredictionMarkets />
           </div>
 
           {/* ── Discovered themes — the Q2 discovery step made visible ────── */}

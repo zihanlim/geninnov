@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from dataclasses import asdict
 from datetime import date, datetime, time, timezone
@@ -968,6 +969,13 @@ capital — a three-name book deploys 60%. Any exposure figure you assert will b
 contradicted by the sized book shown directly beneath your text. Write about
 direction, rationale, catalysts and risk, and leave the arithmetic of size alone.
 
+DO NOT restate the independent-idea counts from POOL DEPTH. Use them to DECIDE how
+many picks to return; the page states the counts itself, directly beneath your text.
+A count you retype is a number the guardrail cannot check — every small integer
+grounds trivially against something in the inputs — so a miscount would reach the
+reader wearing a VERIFIED badge. Name WHICH complexes you collapsed and why; leave
+HOW MANY to the measurement.
+
 Output format (respond ONLY with valid JSON, no markdown):
 {
   "picks": [
@@ -1398,6 +1406,63 @@ CITATION_REL_TOL = 0.02   # 2% relative band
 CITATION_ABS_TOL = 0.01   # absolute floor (keeps small-magnitude scores checkable)
 
 
+_NUMBER_WORDS = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+
+
+def check_idea_count_claims(prose: str, idea_counts: dict) -> list[str]:
+    """Reject a thesis that restates the independent-idea count and gets it wrong.
+
+    The citation guardrail cannot catch this and no amount of grounding will fix it.
+    Measured against the live 2026-07-25 inputs, EVERY integer from 0 to 9 grounds:
+    each one sits within tolerance of some value among the 106 numbers the model was
+    shown. So "four independent ideas" is indistinguishable from "five" to
+    ``_value_is_grounded``, and the claim never appeared in the citation list at all
+    — it was prose, and ``verify_citations`` only inspects citations.
+
+    That is exactly what happened. The run published *"the SHORT pool yields only four
+    independent ideas"* when the measurement said five (it forgot ARKK), while the
+    Pool depth panel below it said five and the thesis carried a VERIFIED badge.
+
+    The prompt now tells the model not to restate these counts. A prompt is not a
+    guardrail, so this is the check: find a claim of the form "<n> independent ideas"
+    near a side, in digits or in words, and compare it with what was measured.
+
+    Returns a list of failure strings; empty means nothing to reject.
+    """
+    if not prose or not idea_counts:
+        return []
+
+    text = prose.lower()
+    failures: list[str] = []
+    # "four independent ideas", "5 independent ideas", "only four independent ideas"
+    for m in re.finditer(
+        r"(\d+|" + "|".join(_NUMBER_WORDS) + r")\s+(?:\w+\s+){0,3}?independent\s+idea",
+        text,
+    ):
+        token = m.group(1)
+        claimed = float(_NUMBER_WORDS.get(token, token)) if not token.isdigit() else float(token)
+        # Which side is being talked about? Look back a short way for the word.
+        window = text[max(0, m.start() - 120): m.start()]
+        side = "short" if "short" in window else "long" if "long" in window else None
+        candidates = (
+            [idea_counts.get(side, {}).get("count")]
+            if side
+            else [d.get("count") for d in idea_counts.values() if isinstance(d, dict)]
+        )
+        actual = [c for c in candidates if isinstance(c, (int, float))]
+        if actual and claimed not in actual:
+            failures.append(
+                f"thesis claims {int(claimed)} independent ideas"
+                f"{f' on the {side} side' if side else ''}, "
+                f"but the measurement is {', '.join(str(int(a)) for a in actual)}. "
+                "Do not restate POOL DEPTH counts — the page states them."
+            )
+    return failures
+
+
 def _citation_claimed_value(cit: dict) -> float | None:
     """
     The number a citation asserts about its source.
@@ -1596,6 +1661,19 @@ def verify_citations(state: Q1State) -> Q1State:
     # computed from grounded inputs (a term structure, a spread) is not a
     # hallucination, so a small ungrounded minority is tolerated; a book where a
     # large share of numbers appear nowhere in the inputs is rejected (ADR-0027).
+    # A restated POOL DEPTH count is checked EXACTLY, and is NOT subject to the
+    # tolerance below. Grounding cannot help here — every integer 0-9 matched
+    # something among the 106 live inputs — and the claim lives in prose the
+    # citation loop never inspects, so without this a miscount reaches the reader
+    # wearing a VERIFIED badge (ADR-0049).
+    count_failures = check_idea_count_claims(
+        state.get("book_view") or "", state.get("independent_ideas") or {}
+    )
+    if count_failures:
+        state["verified"] = False
+        state["error"] = "Pool-depth claim wrong: " + "; ".join(count_failures[:3])
+        return state
+
     grounded_ratio = ((checked - len(failures)) / checked) if checked else 1.0
     if failures and grounded_ratio < 0.8:
         state["verified"] = False

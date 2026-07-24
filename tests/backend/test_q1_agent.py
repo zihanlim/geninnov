@@ -1209,3 +1209,93 @@ def test_screening_funnel_reports_the_conviction_override():
     assert "1 of these 2" in stage["reason"]
     # It adds rather than removes, so it must not claim attrition.
     assert stage["removed"] == 0
+
+
+# ─── Pool-depth claim check (ADR-0049) ───────────────────────────────────────
+
+def test_grounding_cannot_distinguish_a_wrong_count_from_a_right_one():
+    """Why the count needs its own check rather than a citation source.
+
+    Measured against the live 2026-07-25 inputs, every integer 0-9 grounds: each
+    sits within tolerance of some value among the 106 numbers the model was shown.
+    So "four independent ideas" and "five" are indistinguishable to the grounding
+    rule, and no amount of exposing the count as a citable source fixes that.
+    """
+    from backend.services.q1_agent import _value_is_grounded
+
+    known = [4.0, 5.0, 18.64, 2.77, 65.0]     # a realistic slice
+    assert _value_is_grounded(4.0, known)
+    assert _value_is_grounded(5.0, known)     # both "verify" — that is the problem
+
+
+def test_idea_count_check_rejects_the_live_miscount():
+    """The published 2026-07-25 thesis said the SHORT pool yielded four independent
+    ideas. The measurement said five — it forgot ARKK — while the panel below it
+    said five and the thesis carried a VERIFIED badge."""
+    from backend.services.q1_agent import check_idea_count_claims
+
+    prose = (
+        "Five longs and four shorts are returned — the SHORT pool yields only four "
+        "independent ideas because GDX/NEM collapse into SLV and KWEB into BABA."
+    )
+    fails = check_idea_count_claims(prose, {"long": {"count": 9}, "short": {"count": 5}})
+    assert len(fails) == 1
+    assert "claims 4" in fails[0] and "measurement is 5" in fails[0]
+
+
+def test_idea_count_check_accepts_a_correct_restatement():
+    from backend.services.q1_agent import check_idea_count_claims
+
+    counts = {"long": {"count": 9}, "short": {"count": 5}}
+    assert check_idea_count_claims("the short side held five independent ideas", counts) == []
+    assert check_idea_count_claims("9 independent ideas on the long side", counts) == []
+
+
+def test_idea_count_check_reads_words_and_digits():
+    """The live miscount was spelled out. A digit-only scan would have missed it
+    entirely, which is why a numeric-extraction guardrail was not the fix."""
+    from backend.services.q1_agent import check_idea_count_claims
+
+    counts = {"short": {"count": 5}}
+    assert check_idea_count_claims("only three independent ideas short", counts)
+    assert check_idea_count_claims("only 3 independent ideas short", counts)
+
+
+def test_idea_count_check_is_silent_with_nothing_to_compare():
+    """No measurement is not a licence to reject — and prose making no claim must
+    pass untouched, or every run fails on a panel that did not render."""
+    from backend.services.q1_agent import check_idea_count_claims
+
+    assert check_idea_count_claims("four independent ideas", {}) == []
+    assert check_idea_count_claims("", {"short": {"count": 5}}) == []
+    assert check_idea_count_claims("a book of energy and defence", {"short": {"count": 5}}) == []
+
+
+def test_verify_citations_rejects_a_wrong_count_even_when_citations_pass():
+    """The check must not be swallowed by the 80%-grounded tolerance: a citation set
+    can be perfect while the prose miscounts."""
+    from backend.services.q1_agent import verify_citations
+
+    state = {
+        "citations": [{"text": "VIX at 18.64", "source": "^VIX", "value": 18.64}],
+        "macro_snapshot": {"^VIX": {"value": 18.64}},
+        "theme_scores": [], "risk_metrics": {}, "regime": {},
+        "book_view": "the SHORT pool yields only four independent ideas",
+        "independent_ideas": {"short": {"count": 5}},
+    }
+    out = verify_citations(state)
+    assert out["verified"] is False
+    assert "Pool-depth claim wrong" in out["error"]
+
+
+def test_verify_citations_still_passes_a_clean_book():
+    from backend.services.q1_agent import verify_citations
+
+    state = {
+        "citations": [{"text": "VIX at 18.64", "source": "^VIX", "value": 18.64}],
+        "macro_snapshot": {"^VIX": {"value": 18.64}},
+        "theme_scores": [], "risk_metrics": {}, "regime": {},
+        "book_view": "fading crowded late-cycle trades",
+        "independent_ideas": {"short": {"count": 5}},
+    }
+    assert verify_citations(state)["verified"] is True

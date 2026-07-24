@@ -54,6 +54,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0046](0046-attention-chooses-what-we-look-at-not-what-is-tradable.md) | Attention chooses what we look at; a sub-attention theme holding a decisive name is admitted anyway | accepted | 2026-07-24 |
 | [0047](0047-conviction-needs-a-vol-floor.md) | Conviction needs a vol floor, and the floor must be absolute rather than a percentile of the day | accepted | 2026-07-25 |
 | [0048](0048-count-independent-ideas-not-candidates.md) | Count independent ideas, not candidates — the pool holds 13 long and 5 short, so five-and-five is no longer a universe problem | accepted | 2026-07-25 |
+| [0049](0049-the-guardrail-does-not-read-the-prose.md) | The citation guardrail never inspects the thesis prose, and grounding cannot verify a count — every integer 0-9 grounds | accepted | 2026-07-25 |
 
 ## When to write an ADR
 

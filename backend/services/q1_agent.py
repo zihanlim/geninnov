@@ -1194,14 +1194,41 @@ def reason_picks(state: Q1State) -> Q1State:
             state["error"] = None
             return state
 
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            # Log the SHAPE of what came back. This branch was invisible: on
+            # failure it falls through to fallback_picks, which sets citations=[],
+            # and verify_citations then reports the generic "No citations provided"
+            # — describing the FALLBACK, not the model. Two iterations were spent
+            # treating that symptom as if the model were omitting citations, when
+            # the real failure is that its response never parsed. MiniMax-M3 is a
+            # reasoning model whose internal reasoning has eaten the token budget
+            # before, which truncates the JSON mid-object.
+            head = (raw or "")[:300].replace("\n", "\\n")
+            tail = (raw or "")[-200:].replace("\n", "\\n")
+            print(
+                f"[reason_picks] JSON DECODE FAILED (attempt {retries + 1}): "
+                f"{exc.__class__.__name__}: {exc} | raw={len(raw or '')} chars"
+            )
+            print(f"[reason_picks]   head: {head}")
+            print(f"[reason_picks]   tail: {tail}")
             retries += 1
             if retries > max_retries:
-                state["error"] = "JSON decode error after 2 retries — using fallback"
+                state["error"] = (
+                    f"JSON decode error after {max_retries} retries "
+                    f"({exc.__class__.__name__}: {exc}; raw={len(raw or '')} chars) — using fallback"
+                )
                 return fallback_picks(state)
         except Exception as exc:
+            # Same masking problem as the decode branch above: this falls through
+            # to a fallback whose empty citations get reported as "No citations
+            # provided", hiding the real cause (auth, rate limit, timeout, HTTP
+            # error from the provider).
+            print(
+                f"[reason_picks] LLM CALL FAILED (attempt {retries + 1}): "
+                f"{exc.__class__.__name__}: {exc}"
+            )
             retries += 1
-            state["error"] = f"LLM error after {retries} retries: {exc}"
+            state["error"] = f"LLM error after {retries} retries: {exc.__class__.__name__}: {exc}"
             if retries > max_retries:
                 return fallback_picks(state)
 
@@ -1352,9 +1379,19 @@ def verify_citations(state: Q1State) -> Q1State:
     Any failure → reject → retry reason_picks (max 2).
     """
     if not state.get("citations"):
-        # No citations means the LLM skipped the citation requirement
         state["verified"] = False
-        state["error"] = "No citations provided — rejecting output"
+        # Do NOT clobber a more specific upstream cause. reason_picks falls back on
+        # a JSON-decode or LLM error, and fallback_picks sets citations=[] — so this
+        # branch would overwrite "JSON decode error ..." with the generic
+        # "No citations provided" and report a fallback's empty list as though the
+        # MODEL had skipped the requirement. That masking sent two iterations
+        # chasing citation formatting when the response was never parsing. Keep the
+        # real reason and say the citations were empty as a consequence.
+        prior = state.get("error")
+        if prior and state.get("fallback_used"):
+            state["error"] = f"{prior} (citations empty as a result)"
+        else:
+            state["error"] = "No citations provided — rejecting output"
         return state
 
     macro = state.get("macro_snapshot") or {}

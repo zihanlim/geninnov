@@ -45,6 +45,9 @@ from backend.services.hype_calculator import (
     ScoringConfig,
     rescale_vader,
     minmax_norm,
+    volume_subscore,
+    corr_subscore,
+    momentum_subscore,
     crowding_label,
     robust_momentum,
     volume_base,
@@ -561,30 +564,24 @@ def persist(run_date: date, scored: list[dict]):
 
     for r in scored:
         theme_id = r["theme_id"]
-        # Volume = min-max of the 7-day average mentions (ADR-0035), NOT the
-        # 1-day count. Must match compute_hype_scores' `volume` exactly or the
-        # persisted sub-scores can't reproduce hype_score — both call volume_base.
-        vol_norm = minmax_norm(volume_base(r), [volume_base(s) for s in scored])
+        # The four persisted sub-scores MUST be the exact values hype_score() was
+        # computed from, or they cannot reproduce the persisted score and the
+        # derivation drawer silently disagrees with itself. As of ADR-0042 all four
+        # are ABSOLUTE — each a function of this theme's own signal against a
+        # documented anchor — so they are computed with the same helpers
+        # compute_hype_scores uses, not re-derived here.
+        vol_norm = volume_subscore(volume_base(r))
 
         # Update themes table. The SIGN of correlation is preserved on the
         # history row below as signed_corr + crowding for the trade/risk layer.
         #
-        # corr_score MUST equal the value hype_score() was computed from, or the
-        # four persisted sub-scores can't reproduce the persisted score and the
-        # derivation drawer silently disagrees with itself. As of ADR-0028,
-        # hype_score consumes min-max'd |corr| (consistent with volume/momentum),
-        # so the display persists the SAME min-max value — not the bare abs()
-        # used before. (When all |corr| are identical — e.g. every theme at 0.0
-        # on sparse data — min-max returns its 0.5 neutral fallback for BOTH the
-        # score and the display, so they still agree; the neutral is a documented
-        # placeholder until correlation carries real signal, not a phantom.)
-        corr_score = minmax_norm(abs(r["price_corr"]), [abs(s["price_corr"]) for s in scored])
+        corr_score = corr_subscore(r["price_corr"])
         supabase.table("themes").update({
             "hype_score": r["hype_score"],
             "volume_score": vol_norm,
             "sentiment_score": rescale_vader(r["avg_sentiment"]),
             "corr_score": corr_score,
-            "momentum_score": minmax_norm(r["momentum_raw"], [s["momentum_raw"] for s in scored]),
+            "momentum_score": momentum_subscore(r["momentum_raw"]),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", theme_id).execute()
 

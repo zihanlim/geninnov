@@ -291,3 +291,33 @@ def test_trade_score_normalizes_momentum_by_elapsed_days():
     assert abs(same_diff_one_day) > abs(same_diff_five_days)
     # And specifically the 5-day one should be a 5th of the 1-day one (all else equal).
     assert pytest.approx(abs(same_diff_one_day) / abs(same_diff_five_days), rel=0.01) == 5.0
+
+
+def test_persisted_subscores_reproduce_the_persisted_hype_score():
+    """The four sub-scores shown on / and in the derivation drawer must recompose
+    to the HypeScore stored beside them.
+
+    This invariant lived only in a comment in daily_refresh.persist(), and ADR-0042
+    broke it: compute_hype_scores moved to absolute sub-scores while persist() still
+    wrote min-maxed ones, so the heatmap showed VOL 0 for a theme whose HypeScore
+    was 35 and nothing could reconcile the two.
+    """
+    from backend.services.hype_calculator import (
+        volume_subscore, corr_subscore, momentum_subscore, rescale_vader, volume_base,
+    )
+    cfg = ScoringConfig(0.30, 0.20, 0.30, 0.20, 0.0, 0.0)
+    raw = [
+        {"mention_count_1d": 0, "mention_count_7d_avg": 5.29,
+         "avg_sentiment": 0.04, "price_corr": 0.42, "momentum_raw": 1.1},
+        {"mention_count_1d": 0, "mention_count_7d_avg": 0.43,
+         "avg_sentiment": -0.02, "price_corr": -0.31, "momentum_raw": -0.6},
+    ]
+    for scored_row, r in zip(compute_hype_scores(raw, cfg), raw):
+        # Recompose exactly the way persist() stores them.
+        recomposed = 100 * (
+            cfg.hype_volume_weight * volume_subscore(volume_base(r))
+            + cfg.hype_sentiment_weight * rescale_vader(r["avg_sentiment"])
+            + cfg.hype_corr_weight * corr_subscore(r["price_corr"])
+            + cfg.hype_momentum_weight * momentum_subscore(r["momentum_raw"])
+        )
+        assert scored_row["hype_score"] == pytest.approx(recomposed)

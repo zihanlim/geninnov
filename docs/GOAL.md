@@ -180,6 +180,13 @@ measured-thin. The verdict logic is extracted to `lib/method/hypeValidation.ts` 
 unit-tested, including the trap directly — 500 observations on one date is still not
 validated, because breadth is not stability.
 
+One honest wrinkle from ordering: I persisted the real IC row *before* the frontend
+fix deployed, so for the deploy window the OLD `validated = some(ic != null)` logic saw
+the non-null −0.2275 and showed the green *"a stable non-zero IC is what makes
+HypeScore a signal"* copy — the exact overclaim, briefly live. The corrected build
+replaces it with the measured-thin / not-yet-validated state. Next time: deploy the
+guard before writing the data it guards.
+
 Also closed last iteration's loose end: the debug `data-` attributes are gone from the
 deployed `/book`, and the per-position stability marker renders correctly (nine
 positions, XLE/UNH the coin flips).

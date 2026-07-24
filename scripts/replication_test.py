@@ -214,6 +214,10 @@ def main() -> int:
             "test_name": "book_replication",
             "metric_name": name,
             "realized_value": value,
+            # backtest_results.start_date is NOT NULL. This test has no lookback
+            # window — every sample is the same instant — so start_date == end_date
+            # rather than a made-up range.
+            "start_date": run_date.isoformat(),
             "end_date": run_date.isoformat(),
             "pass": None,
             "notes": json.dumps(

@@ -196,6 +196,22 @@ export interface SizingChain {
   steps: SizingStep[];
   /** The single-line headline, e.g. "conviction 9.5× → 6.0% weight → -$6.0M". */
   headline: string;
+  /**
+   * Set when the steps do not compose into the final weight.
+   *
+   * The chain mixes two provenances: the normalised-conviction step is RECOMPUTED
+   * here from persisted edge/vol, while the cap and final steps are the weight the
+   * sizer actually produced. Rendered in sequence they read as one derivation, and
+   * for a long time they were not one: `size_positions` sized the published book by
+   * HypeScore while this panel showed the conviction path (ADR-0053). The live
+   * 2026-07-25 book displayed "normalised 19.0% → single-name cap 20% → final 6.4%",
+   * which no cap can do — 19.0% is already under 20%.
+   *
+   * So the panel now checks its own arithmetic instead of trusting it. A note here
+   * means the displayed model did not produce the displayed weight, and the number
+   * to believe is the final one.
+   */
+  reconciliation: string | null;
 }
 
 const pctStr = (v: number | null | undefined, dp = 1): string =>
@@ -334,7 +350,38 @@ export function buildSizingChain(args: {
     ? `conviction ${(conviction as number).toFixed(1)}× → ${pctStr(weight)} → ${headlineNotional}`
     : `HypeScore ${hypeScore?.toFixed(0) ?? "—"} → ${pctStr(weight)} → ${headlineNotional}`;
 
-  return { convictionBased, steps, headline };
+  // Do the displayed steps actually compose into the displayed weight?
+  //
+  // Under the documented model the normalised-conviction weight is the final weight
+  // unless a cap clamps it DOWN. So a final weight materially below the normalised
+  // one with no cap binding means something other than the shown model set the size,
+  // and the panel should say so rather than let the reader join the steps up.
+  //
+  // Only flags a SHORTFALL: caps can only reduce, and a final weight above the
+  // normalised one is a different (louder) bug that the cap step already shows.
+  let reconciliation: string | null = null;
+  if (convictionBased && conviction !== null && conviction !== undefined) {
+    const normalised =
+      convictionSum !== null && convictionSum !== undefined && convictionSum > 0
+        ? conviction / convictionSum
+        : null;
+    const capBinding = cap ? cap.utilisation >= 1 || cap.breached : false;
+    if (
+      normalised !== null &&
+      weight !== null &&
+      weight !== undefined &&
+      !capBinding &&
+      normalised - weight > 0.005          // half a point of capital
+    ) {
+      reconciliation =
+        `These steps do not compose: ${pctStr(normalised, 1)} normalised, ` +
+        `no cap binding, yet the book holds ${pctStr(weight, 1)}. ` +
+        `The weight was set by something other than the model shown above — ` +
+        `trust the final weight, not the derivation.`;
+    }
+  }
+
+  return { convictionBased, steps, headline, reconciliation };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

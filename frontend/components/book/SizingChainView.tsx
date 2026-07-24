@@ -56,6 +56,25 @@ export default function SizingChainView({ chain }: { chain: SizingChain }) {
           EdgeScore.
         </div>
       )}
+      {/* The banner above only catches a MISSING conviction. This catches the
+          harder case: conviction present, the chain rendered in full, and the
+          steps still not composing into the weight the book holds — which is what
+          the published book looked like for as long as it was hype-sized while
+          this panel drew the conviction path (ADR-0053). */}
+      {chain.reconciliation && (
+        <div
+          className="rounded-md px-3 py-2 mb-2.5 border text-[11.5px] leading-[1.5]"
+          style={{
+            borderColor: "var(--warning)",
+            background: "rgba(210, 153, 34, 0.08)",
+            color: "var(--warning)",
+          }}
+          data-testid="sizing-reconciliation"
+          role="alert"
+        >
+          {chain.reconciliation}
+        </div>
+      )}
       <div className="rounded-[8px] border border-border overflow-hidden">
         {chain.steps.map((s, i) => (
           <StepRow key={s.key} step={s} last={i === chain.steps.length - 1} />

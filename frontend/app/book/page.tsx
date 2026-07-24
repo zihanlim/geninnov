@@ -23,6 +23,7 @@ import EdgeBars from "@/components/book/EdgeBars";
 import SizingChainView from "@/components/book/SizingChainView";
 import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import AbstentionRoster from "@/components/book/AbstentionRoster";
+import { ScrollArea } from "@/components/ScrollArea";
 import {
   buildSizingChain,
   edgeWeightsFromConfig,
@@ -674,7 +675,7 @@ function BookPageInner() {
             }
           >
             {rec.screening_funnel && rec.screening_funnel.length > 0 ? (
-              <div className="overflow-x-auto">
+              <ScrollArea hint={false}>
                 <table className="w-full border-collapse text-[13px]">
                   <caption className="sr-only">
                     Candidate attrition by screening stage.
@@ -717,7 +718,7 @@ function BookPageInner() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </ScrollArea>
             ) : (
               <EmptyState
                 title="No funnel recorded for this run"
@@ -857,7 +858,7 @@ function PositionSection({
           />
         </div>
       ) : (
-        <div className="card overflow-x-auto">
+        <ScrollArea className="card" frameClassName="rounded-[10px]">
           {/* Column legend for the dense row grid below. */}
           <div
             className="min-w-[640px] px-[18px] py-2 grid items-center gap-3 border-b border-border bg-bg-elevated text-[10px] uppercase tracking-[0.08em] text-text-tertiary"
@@ -895,7 +896,7 @@ function PositionSection({
               scenarios={scenarios}
             />
           ))}
-        </div>
+        </ScrollArea>
       )}
     </section>
   );

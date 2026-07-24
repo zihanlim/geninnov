@@ -14,6 +14,7 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { abstainedThemes, type ThemeEdge } from "@/lib/themeSignals";
+import { ScrollArea } from "@/components/ScrollArea";
 
 const fmtSigned = (v: number | null, dp = 2): string =>
   v === null || v === undefined || Number.isNaN(v)
@@ -119,7 +120,7 @@ export default function AbstentionRoster({
           the engine took a directional view on all {scored} themes it scored.
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <ScrollArea>
           <table className="w-full border-collapse text-[12.5px]">
             <caption className="sr-only">
               Themes scored but not traded because |EdgeScore| fell below the
@@ -194,7 +195,7 @@ export default function AbstentionRoster({
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollArea>
       )}
     </section>
   );

@@ -31,11 +31,28 @@ export interface IdeaComplex {
   strongest: string;
 }
 
+/**
+ * Whether the agent accounted for the ideas it declined (ADR-0056).
+ *
+ * Present only on a side that came back under Q1's five with ideas still available.
+ * `unexplained` is the list of declined ideas the thesis never names — computed in
+ * `shortfall_accounting`, not inferred here, so the panel and the backend cannot
+ * disagree about what "explained" means.
+ */
+export interface Shortfall {
+  held: number;
+  available: number;
+  passed_over: string[];
+  named: string[];
+  unexplained: string[];
+}
+
 export interface SideDepth {
   count: number;
   names: number;
   complexes?: IdeaComplex[];
   standalone?: string[];
+  shortfall?: Shortfall;
 }
 
 export type IndependentIdeas = Partial<Record<"long" | "short", SideDepth>>;
@@ -53,12 +70,19 @@ function Side({
   held: number;
 }) {
   if (!depth || depth.names === 0) return null;
-  const { count, names, complexes = [], standalone = [] } = depth;
+  const { count, names, complexes = [], standalone = [], shortfall } = depth;
   // Short of Q1's five because the pool genuinely had fewer ideas, or because the
   // book left some on the table? Those are different answers and must read
   // differently.
   const poolLimited = count < Q1_TARGET;
   const underPicked = held < Math.min(count, Q1_TARGET);
+  // This panel used to end "the agent's reasoning is in the thesis above" whenever a
+  // side was under-picked. On the live 2026-07-25 run that was FALSE: the book took
+  // four shorts against five ideas and the thesis never mentioned ARKK, the one it
+  // declined. The single panel built to expose the shortfall was sending the reader
+  // somewhere that did not answer it. It now says which case this is (ADR-0056).
+  const unexplained = shortfall?.unexplained ?? [];
+  const explained = shortfall?.named ?? [];
 
   return (
     <div className="mb-4 last:mb-0">
@@ -77,11 +101,26 @@ function Side({
             The pool held fewer than the {Q1_TARGET} Q1 asks for, so this side is
             limited by what the market offered, not by the selection.
           </span>
+        ) : underPicked && unexplained.length > 0 ? (
+          <span style={{ color: "var(--warning)" }}>
+            The pool held {count} independent ideas and the book took {held}. This
+            side is short of {Q1_TARGET} by choice, not by constraint —{" "}
+            <strong>and the thesis does not say why</strong>: it never names{" "}
+            <span className="num">{unexplained.join(", ")}</span>. Q1 asks for five a
+            side with reasons, so an unexplained omission is the gap, not the count.
+          </span>
+        ) : underPicked && explained.length > 0 ? (
+          <span className="text-text-secondary">
+            The pool held {count} independent ideas and the book took {held}. This
+            side is short of {Q1_TARGET} by choice, not by constraint, and the thesis
+            accounts for what it declined —{" "}
+            <span className="num">{explained.join(", ")}</span>.
+          </span>
         ) : underPicked ? (
           <span style={{ color: "var(--warning)" }}>
             The pool held {count} independent ideas and the book took {held}. This
-            side is short of {Q1_TARGET} by choice, not by constraint — the
-            agent&apos;s reasoning is in the thesis above.
+            side is short of {Q1_TARGET} by choice, not by constraint. Whether the
+            thesis accounts for the difference was not measured on this run.
           </span>
         ) : (
           <span className="text-text-secondary">

@@ -1118,6 +1118,12 @@ POOL DEPTH above says how thin it actually is: it counts INDEPENDENT ideas, havi
 already collapsed each group of mutually-correlated names into one. Returning fewer
 picks than that count needs a reason stated in book_view; returning fewer than five
 per side when five independent ideas exist is a choice, not a constraint.
+If you take fewer than five on a side, book_view MUST NAME each independent idea you
+declined — by its ticker, the one shown in POOL DEPTH — and say why in a clause each.
+"Net bias is long given 5 long vs 4 short" restates the shortfall; it does not explain
+it. A reason is specific: it would net against a position already on, its edge is too
+close to the abstention band, it would breach a sector cap. This is checked against the
+measurement after you answer, and an unnamed declined idea is reported on the page.
 Check the correlation warnings — do not add picks that compound existing high-correlation exposures.
 Check the cap violations — avoid picks that worsen sector/geo concentration.
 Reference the scenario analysis in your book_risks.
@@ -1474,6 +1480,11 @@ _NUMBER_WORDS = {
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
 }
 
+# What Q1 asks for per side. Not a threshold to tune — it is the question, and it is
+# the same 5 `PoolDepth.tsx` renders. Kept as a named constant so the backend check and
+# the panel cannot drift to different definitions of "short of target".
+Q1_TARGET_PER_SIDE = 5
+
 
 def check_idea_count_claims(prose: str, idea_counts: dict) -> list[str]:
     """Reject a thesis that restates the independent-idea count and gets it wrong.
@@ -1524,6 +1535,124 @@ def check_idea_count_claims(prose: str, idea_counts: dict) -> list[str]:
                 "Do not restate POOL DEPTH counts — the page states them."
             )
     return failures
+
+
+def shortfall_accounting(
+    picks: list[dict],
+    idea_counts: dict,
+    prose: str,
+    target: int = Q1_TARGET_PER_SIDE,
+) -> dict:
+    """Did the book fall short of Q1's five with ideas still on the table — and if so,
+    did the thesis account for the ones it declined?
+
+    The prompt has told the agent since ADR-0048 that *"returning fewer than five per
+    side when five independent ideas exist is a choice, not a constraint"* and that the
+    choice *"needs a reason stated in book_view"*. On the live 2026-07-25 run it
+    returned four shorts against five independent short ideas and gave no reason: the
+    published thesis never mentions ARKK, the one idea it passed over, and says only
+    *"Net directional bias is long given 5 long picks vs 4 short picks"* — which
+    restates the shortfall rather than explaining it.
+
+    **An instruction with no check is not a guarantee.** That is ADR-0049's lesson
+    generalised from a number to a piece of reasoning, and it matters more here because
+    Q1 asks for five and five *"and why"*: the shortfall IS the question a reviewer
+    asks first.
+
+    It matters doubly because `/book`'s Pool depth panel tells the reader *"the agent's
+    reasoning is in the thesis above"*. When the thesis is silent that pointer is false,
+    and the one panel built to expose the shortfall sends the reader somewhere that does
+    not answer it. This function is what lets the panel stop asserting that.
+
+    A passed-over idea is named by its representative ticker: the strongest member of a
+    correlated complex none of whose members are held, or a standalone candidate not
+    held. Those are exactly the names the agent was shown in POOL DEPTH, so it is being
+    asked about something it saw.
+
+    Returns ``{side: {...}}`` containing only sides that ARE short, each with::
+
+        held         positions taken on that side
+        available    min(independent ideas, target) — what was reachable
+        passed_over  representative ticker per declined idea
+        named        those the thesis mentions
+        unexplained  those it does not
+
+    A side that met its target is omitted rather than reported as empty: silence means
+    there was nothing to explain, which is different from an explanation of nothing.
+    Silent too when there is no measurement or no prose — absence of evidence is not a
+    finding, and inventing one would be the fabrication GOAL.md warns about.
+    """
+    if not idea_counts or not picks:
+        return {}
+
+    out: dict = {}
+    for side in ("long", "short"):
+        depth = idea_counts.get(side)
+        if not isinstance(depth, dict):
+            continue
+        count = depth.get("count")
+        if not isinstance(count, int) or count <= 0:
+            continue
+
+        held_assets = {
+            p.get("asset") for p in picks if p.get("direction") == side and p.get("asset")
+        }
+        available = min(count, target)
+        if len(held_assets) >= available:
+            continue  # met what was reachable — nothing to account for
+
+        passed_over: list[str] = []
+        for cx in depth.get("complexes") or []:
+            members = cx.get("members") or []
+            # A complex is ONE idea. It is declined only if NOTHING in it is held —
+            # holding the second-strongest still expresses the bet, so representing it
+            # by `strongest` alone would report a phantom omission.
+            if members and not (set(members) & held_assets):
+                rep = cx.get("strongest") or members[0]
+                passed_over.append(rep)
+        for name in depth.get("standalone") or []:
+            if name and name not in held_assets:
+                passed_over.append(name)
+
+        if not passed_over:
+            continue
+
+        text = prose or ""
+        named = [t for t in passed_over if re.search(rf"\b{re.escape(t)}\b", text)]
+        out[side] = {
+            "held": len(held_assets),
+            "available": available,
+            "passed_over": passed_over,
+            "named": named,
+            "unexplained": [t for t in passed_over if t not in named],
+        }
+    return out
+
+
+def _with_shortfall(state: dict) -> dict:
+    """`independent_ideas` plus a per-side `shortfall` block, for persistence.
+
+    Never lets an explanatory measurement break the book: on any failure the untouched
+    pool-depth dict is returned, the same rule the candidate-correlation computation
+    follows. A missing panel is a smaller problem than a lost run.
+    """
+    ideas = state.get("independent_ideas") or {}
+    if not ideas:
+        return {}
+    try:
+        gaps = shortfall_accounting(
+            state.get("picks") or [], ideas, state.get("book_view") or ""
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        print(f"[shortfall_accounting] skipped ({exc.__class__.__name__}): {exc}")
+        return ideas
+    if not gaps:
+        return ideas
+    merged = {k: (dict(v) if isinstance(v, dict) else v) for k, v in ideas.items()}
+    for side, block in gaps.items():
+        if isinstance(merged.get(side), dict):
+            merged[side]["shortfall"] = block
+    return merged
 
 
 def _citation_claimed_value(cit: dict) -> float | None:
@@ -2252,7 +2381,13 @@ def _persist_to_supabase(state: Q1State) -> bool:
             # ADR-0048: the same pool-depth measurement the agent reasoned over, so
             # /book answers "why not five and five?" with that number rather than
             # re-deriving it and risking a different answer on the same day.
-            "independent_ideas": state.get("independent_ideas") or {},
+            #
+            # Carries a `shortfall` key when a side came back under Q1's five with
+            # ideas still available, recording which ones were declined and whether
+            # the thesis names them. Computed HERE rather than in verify_citations
+            # because that node returns early on failure, and a book that failed
+            # verification is exactly the one whose reasoning gap matters most.
+            "independent_ideas": _with_shortfall(state),
             "lens": state.get("lens", "multi_asset"),
         }
 

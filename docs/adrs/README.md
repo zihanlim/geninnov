@@ -59,6 +59,8 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0051](0051-llm-timeout-bounded-silence-not-the-call.md) | LLM_TIMEOUT_SECONDS bounded the gap between bytes, not the call | accepted (**cause corrected by [0052](0052-a-stall-cost-three-attempts-not-one.md)**) | 2026-07-25 |
 | [0052](0052-a-stall-cost-three-attempts-not-one.md) | A stall cost three attempts, not one — reason_picks retried timeouts; corrects 0051 | accepted | 2026-07-25 |
 | [0054](0054-a-daily-publication-not-a-scanner.md) | The interface is a daily research publication, not a scanner — no streaming, no alerts, no filters; but the scannable layer must differentiate | accepted | 2026-07-25 |
+| [0055](0055-an-acceptance-battery-for-the-model-that-writes-the-book.md) | An acceptance battery for the model that writes the book — frozen fixtures with a written-down right answer; structural checks gate, directional ones report | accepted | 2026-07-25 |
+| [0056](0056-an-instruction-is-not-a-guardrail.md) | An instruction is not a guardrail — measure whether the thesis explains the independent ideas it declined, and let the panel say which case it is | accepted | 2026-07-25 |
 
 ## When to write an ADR
 

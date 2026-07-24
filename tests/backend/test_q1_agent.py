@@ -1524,3 +1524,140 @@ def test_size_positions_still_degrades_to_hype_with_no_conviction():
 
     assert all(w > 0 for w in by.values())
     assert by["SPY"] / by["EEM"] == pytest.approx(2.0, rel=0.05)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# shortfall_accounting — did the book explain the ideas it declined? (ADR-0056)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# The live 2026-07-25 pool depth, transcribed from the deployed /book panel. The
+# regression this pins was only visible on a real book: the short side held four
+# against five independent ideas and the thesis never mentioned the fifth.
+_LIVE_IDEAS = {
+    "long": {
+        "count": 10,
+        "names": 19,
+        "complexes": [
+            {"members": ["AGG", "IEF", "SHY", "TLT"], "strongest": "SHY"},
+            {"members": ["EEM", "IWM", "QQQ", "SVXY"], "strongest": "SVXY"},
+            {"members": ["CVX", "XLE", "XOM"], "strongest": "XLE"},
+            {"members": ["OIH", "SLB"], "strongest": "OIH"},
+        ],
+        "standalone": ["NUE", "UNH", "JPM", "BIL", "GS", "JD"],
+    },
+    "short": {
+        "count": 5,
+        "names": 11,
+        "complexes": [
+            {"members": ["GDX", "GLD", "IAU", "NEM", "SLV"], "strongest": "SLV"},
+            {"members": ["BABA", "KWEB", "MCHI"], "strongest": "BABA"},
+        ],
+        "standalone": ["PDD", "NOC", "ARKK"],
+    },
+}
+
+_LIVE_PICKS = [
+    {"direction": "long", "asset": a} for a in ("XLE", "JPM", "SVXY", "NUE", "UNH")
+] + [{"direction": "short", "asset": a} for a in ("SLV", "BABA", "PDD", "NOC")]
+
+# The thesis actually published on 2026-07-25, abridged. It restates the shortfall
+# and never names ARKK.
+_LIVE_PROSE = (
+    "Central scenario is a late-cycle risk-on with mild curve steepening: long book "
+    "captures energy/materials momentum (XLE, NUE), bank NIM expansion (JPM), and "
+    "tactical vol carry (SVXY), while long UNH monetizes US-election optionality. "
+    "Short book fades crowded trades - precious-metals extreme (SLV), China "
+    "structural headwinds (BABA, PDD), and defense bubble (NOC). Net directional "
+    "bias is long given 5 long picks vs 4 short picks."
+)
+
+
+def test_shortfall_flags_the_declined_idea_the_thesis_never_named():
+    from backend.services.q1_agent import shortfall_accounting
+
+    gaps = shortfall_accounting(_LIVE_PICKS, _LIVE_IDEAS, _LIVE_PROSE)
+
+    # The long side took 5 of 5 reachable — nothing to account for, so it is absent.
+    assert "long" not in gaps
+    assert gaps["short"]["held"] == 4
+    assert gaps["short"]["available"] == 5
+    assert gaps["short"]["passed_over"] == ["ARKK"]
+    assert gaps["short"]["unexplained"] == ["ARKK"]
+    assert gaps["short"]["named"] == []
+
+
+def test_shortfall_is_satisfied_when_the_thesis_names_the_declined_idea():
+    from backend.services.q1_agent import shortfall_accounting
+
+    prose = _LIVE_PROSE + " ARKK was declined: short ARKK would net against long SVXY."
+    gaps = shortfall_accounting(_LIVE_PICKS, _LIVE_IDEAS, prose)
+
+    assert gaps["short"]["named"] == ["ARKK"]
+    assert gaps["short"]["unexplained"] == []
+
+
+def test_a_complex_is_declined_only_when_NOTHING_in_it_is_held():
+    """Holding the second-strongest still expresses the bet.
+
+    Representing a complex by `strongest` alone would report a phantom omission the
+    moment the agent picked any other member of it — the panel would then demand an
+    explanation for an idea the book actually holds.
+    """
+    from backend.services.q1_agent import shortfall_accounting
+
+    # Hold GDX (not SLV, the strongest) out of the metals complex; drop NOC so the
+    # side is genuinely short of target.
+    picks = [
+        {"direction": "short", "asset": a} for a in ("GDX", "BABA", "PDD")
+    ]
+    gaps = shortfall_accounting(picks, _LIVE_IDEAS, "")
+    # metals is held via GDX, China via BABA, PDD held -> only NOC and ARKK declined.
+    assert gaps["short"]["passed_over"] == ["NOC", "ARKK"]
+
+
+def test_shortfall_is_silent_when_the_side_met_what_was_reachable():
+    from backend.services.q1_agent import shortfall_accounting
+
+    # A side with only 3 independent ideas that holds 3 is NOT short of target —
+    # target is min(ideas, 5), so the pool is the constraint and there is nothing
+    # for the agent to explain.
+    ideas = {"short": {"count": 3, "names": 6, "complexes": [], "standalone": ["A", "B", "C"]}}
+    picks = [{"direction": "short", "asset": a} for a in ("A", "B", "C")]
+    assert shortfall_accounting(picks, ideas, "") == {}
+
+
+def test_shortfall_is_silent_without_a_measurement_or_picks():
+    from backend.services.q1_agent import shortfall_accounting
+
+    assert shortfall_accounting(_LIVE_PICKS, {}, _LIVE_PROSE) == {}
+    assert shortfall_accounting([], _LIVE_IDEAS, _LIVE_PROSE) == {}
+
+
+def test_ticker_match_is_word_bounded():
+    """A substring hit must not count as naming the idea.
+
+    'BILL' contains 'BIL'; without a word boundary a thesis discussing a T-bill ETF
+    it did NOT take would be credited with explaining it.
+    """
+    from backend.services.q1_agent import shortfall_accounting
+
+    ideas = {
+        "long": {"count": 5, "names": 5, "complexes": [],
+                 "standalone": ["BIL", "GS", "JD", "NUE", "UNH"]}
+    }
+    picks = [{"direction": "long", "asset": a} for a in ("GS", "JD", "NUE")]
+    gaps = shortfall_accounting(picks, ideas, "We avoided BILL and similar names.")
+    assert "BIL" in gaps["long"]["unexplained"]
+
+
+def test_shortfall_merges_into_independent_ideas_without_losing_the_measurement():
+    from backend.services.q1_agent import _with_shortfall
+
+    merged = _with_shortfall(
+        {"independent_ideas": _LIVE_IDEAS, "picks": _LIVE_PICKS, "book_view": _LIVE_PROSE}
+    )
+    # The pool-depth measurement itself must survive untouched — /book renders it.
+    assert merged["short"]["count"] == 5
+    assert merged["short"]["complexes"] == _LIVE_IDEAS["short"]["complexes"]
+    assert merged["short"]["shortfall"]["unexplained"] == ["ARKK"]
+    assert "shortfall" not in merged["long"]

@@ -407,18 +407,82 @@ def compute_correlation_matrix(
     return high_corr
 
 
+def correlation_clusters(
+    pairs: list[tuple[str, str, float]],
+) -> list[list[str]]:
+    """Group high-correlation pairs into clusters of mutually-similar names.
+
+    Connected components over the positively-correlated pairs. Two names land in the
+    same cluster when a chain of high correlations links them, which is how a desk
+    actually thinks about redundancy: "the duration complex", not "TLT-IEF, TLT-AGG,
+    IEF-AGG, IEF-SHY, ...".
+
+    Inverse pairs are deliberately excluded. A -0.8 correlation is a HEDGE, not a
+    duplicated bet, and folding it into a "these are the same" cluster would invert
+    the meaning.
+    """
+    adj: dict[str, set[str]] = {}
+    for a, b, corr in pairs:
+        if corr <= 0:
+            continue
+        adj.setdefault(a, set()).add(b)
+        adj.setdefault(b, set()).add(a)
+
+    seen: set[str] = set()
+    clusters: list[list[str]] = []
+    for node in adj:
+        if node in seen:
+            continue
+        stack, comp = [node], []
+        seen.add(node)
+        while stack:
+            cur = stack.pop()
+            comp.append(cur)
+            for nxt in adj[cur]:
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append(nxt)
+        if len(comp) > 1:
+            clusters.append(sorted(comp))
+    # Biggest bets first — the ones most likely to be accidentally doubled.
+    clusters.sort(key=lambda c: (-len(c), c[0]))
+    return clusters
+
+
 def correlation_warning(pairs: list[tuple[str, str, float]]) -> list[str]:
-    """Convert high-corr pairs into human-readable warnings."""
+    """High-corr pairs as warnings a reader — or an LLM — can act on.
+
+    This emitted ONE VERBOSE SENTENCE PER PAIR, each ending with the same
+    "verify this is intentional, not accidental doubling of the same bet". On a
+    23-name candidate pool that is 31 near-identical lines in the reasoning prompt:
+    a wall of text where the useful content is which names form ONE bet. Pairwise is
+    also the wrong shape — nobody reasons about TLT-IEF, TLT-AGG, IEF-AGG and
+    IEF-SHY separately; they reason about the duration complex.
+
+    Clusters come first, then the individually strongest pairs for detail, capped so
+    the section stays readable. Inverse pairs are reported separately and NOT as
+    duplication — a negative correlation is a hedge.
+    """
     if not pairs:
         return []
-    warnings = []
-    for a, b, corr in pairs:
-        direction = "same-direction" if corr > 0 else "inverse/hedge"
-        warnings.append(
-            f"{a} and {b} are {direction} correlated ({corr:+.2f}) — "
-            "verify this is intentional, not accidental doubling of the same bet."
+
+    out: list[str] = []
+    for comp in correlation_clusters(pairs):
+        out.append(
+            f"ONE BET: {', '.join(comp)} move together — holding several is "
+            f"concentration, not diversification."
         )
-    return warnings
+
+    inverse = sorted(
+        [(a, b, c) for a, b, c in pairs if c < 0], key=lambda t: t[2]
+    )[:3]
+    for a, b, corr in inverse:
+        out.append(f"HEDGE: {a} and {b} are inversely correlated ({corr:+.2f}).")
+
+    strongest = sorted(pairs, key=lambda t: -abs(t[2]))[:5]
+    for a, b, corr in strongest:
+        out.append(f"  {a}/{b} {corr:+.2f}")
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────

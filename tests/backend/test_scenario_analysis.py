@@ -437,3 +437,51 @@ def test_candidate_correlation_omits_a_name_with_no_returns():
     with patch("backend.services.book_metrics.fetch_pick_returns", return_value=df):
         out = candidate_book_correlation(["NOPRICE"], ["SLV"])
     assert "NOPRICE" not in out
+
+
+# ─── Correlation clusters, not pairwise spam (2026-07-24) ────────────────────
+
+def test_correlation_warnings_cluster_instead_of_listing_every_pair():
+    """correlation_warning emitted ONE VERBOSE SENTENCE PER PAIR.
+
+    On the live 23-name candidate pool that was 31 near-identical lines in the
+    reasoning prompt, each ending with the same "verify this is intentional, not
+    accidental doubling of the same bet" — a wall of text where the useful content is
+    WHICH NAMES FORM ONE BET. Pairwise is also the wrong shape: nobody reasons about
+    TLT-IEF, TLT-AGG, IEF-AGG and IEF-SHY separately, they reason about the duration
+    complex.
+    """
+    from backend.services.book_metrics import correlation_warning, correlation_clusters
+
+    pairs = [
+        ("IEF", "AGG", 0.97), ("TLT", "AGG", 0.91), ("IEF", "TLT", 0.91),
+        ("IEF", "SHY", 0.87),                      # one duration complex
+        ("GDX", "SLV", 0.82), ("GLD", "SLV", 0.84),  # one metals complex
+    ]
+    clusters = correlation_clusters(pairs)
+    assert ["AGG", "IEF", "SHY", "TLT"] in clusters
+    assert ["GDX", "GLD", "SLV"] in clusters
+
+    lines = correlation_warning(pairs)
+    one_bet = [l for l in lines if l.startswith("ONE BET")]
+    assert len(one_bet) == 2, "six pairs are two bets, and should read as two"
+    assert len(lines) < len(pairs) + 6      # far tighter than one line per pair
+
+
+def test_inverse_correlation_is_a_hedge_not_a_duplicated_bet():
+    """A -0.8 pair is a HEDGE. Folding it into a "these are the same" cluster would
+    invert the meaning — the most damaging thing this panel could say."""
+    from backend.services.book_metrics import correlation_warning, correlation_clusters
+
+    pairs = [("SPY", "VIXY", -0.85), ("QQQ", "SPY", 0.93)]
+    clusters = correlation_clusters(pairs)
+    assert clusters == [["QQQ", "SPY"]], "the inverse pair must not form a cluster"
+
+    lines = correlation_warning(pairs)
+    assert any(l.startswith("HEDGE") and "VIXY" in l for l in lines)
+    assert not any(l.startswith("ONE BET") and "VIXY" in l for l in lines)
+
+
+def test_no_pairs_means_no_warnings():
+    from backend.services.book_metrics import correlation_warning
+    assert correlation_warning([]) == []

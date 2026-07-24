@@ -192,20 +192,27 @@ def test_correlation_matrix_warns_high_corr():
     # Test the pair-detection logic with a mock
     # We can't easily mock yfinance in a unit test without breaking the real function,
     # so we test the correlation_warning formatting logic directly with known pairs
+    # Two independent pairs -> two distinct bets. Asserted as PROPERTIES, not as a
+    # line count: the formatter used to emit one verbose sentence per pair (31 of
+    # them on the live candidate pool) and now clusters, so counting lines pinned
+    # the old shape rather than the meaning.
     pairs = [("SPY", "QQQ", 0.95), ("GLD", "SLV", 0.88)]
     warnings = correlation_warning(pairs)
-    assert len(warnings) == 2
-    assert "SPY" in warnings[0]
-    assert "QQQ" in warnings[0]
-    assert "same-direction" in warnings[0]
-    assert "0.95" in warnings[0]
+    one_bet = [w for w in warnings if w.startswith("ONE BET")]
+    assert len(one_bet) == 2
+    assert any("SPY" in w and "QQQ" in w for w in one_bet)
+    assert any("GLD" in w and "SLV" in w for w in one_bet)
+    # The strongest pair is still reported with its coefficient, for detail.
+    assert any("0.95" in w for w in warnings)
 
 
 def test_correlation_warning_inverse_hedge():
+    # An inverse pair is a HEDGE, never a duplicated bet — folding it into a
+    # "these are the same" cluster would invert the meaning.
     pairs = [("SPY", "TLT", -0.72)]
     warnings = correlation_warning(pairs)
-    assert len(warnings) == 1
-    assert "inverse/hedge" in warnings[0]
+    assert any(w.startswith("HEDGE") for w in warnings)
+    assert not any(w.startswith("ONE BET") for w in warnings)
 
 
 def test_correlation_warning_empty():

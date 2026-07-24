@@ -24,6 +24,7 @@ import {
 } from "@/components/method/primitives";
 import SignalValidation from "@/components/method/SignalValidation";
 import FactorReconciliation from "@/components/method/FactorReconciliation";
+import EdgeValidation from "@/components/method/EdgeValidation";
 
 /* ══ Row types ═══════════════════════════════════════════════════════════════ */
 
@@ -1849,6 +1850,15 @@ export default function MethodPage() {
             </div>
           </div>
         )}
+
+        {/* Does the signal that decides the trades actually predict returns?
+            Sits inside the EdgeScore section on purpose: a reader who has just
+            read what the components ARE should immediately see what they are
+            WORTH, rather than meeting the claim and the evidence on separate
+            pages. */}
+        <div className="mt-6">
+          <EdgeValidation />
+        </div>
       </Section>
 
       {/* ═══ 5. Factor model ═══════════════════════════════════════════════ */}

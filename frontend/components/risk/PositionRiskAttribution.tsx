@@ -8,7 +8,7 @@
 // beta, never a zero that would understate its risk.
 
 "use client";
-import type { PositionAttribution } from "@/lib/risk/riskBoard";
+import { netShareIsMeaningful, type PositionAttribution } from "@/lib/risk/riskBoard";
 import { isNum } from "@/lib/risk/analytics";
 import { Ident, SectionSkeleton } from "./SectionGap";
 
@@ -80,6 +80,18 @@ export function PositionRiskAttribution({
     (r) => isNum(r.signedWeight) && !isNum(r.betaContribution),
   );
 
+  // Whether "net share" is a share for this book. The predicate is imported rather
+  // than re-derived here so the column and the note explaining its absence cannot
+  // disagree — the drift ADR-0058 hit when a verdict was recomputed at the render
+  // layer. The two figures below are only for the explanation's wording.
+  const signedWeights = rows.map((r) => r.signedWeight);
+  const netShareMeaningful = netShareIsMeaningful(signedWeights);
+  const netExposure = signedWeights.reduce<number>((s, w) => s + (w ?? 0), 0);
+  const maxAbsWeight = signedWeights.reduce<number>(
+    (m, w) => Math.max(m, w === null ? 0 : Math.abs(w)),
+    0,
+  );
+
   return (
     <section className="card mb-6" aria-labelledby="risk-attrib-heading">
       <div className="card-header">
@@ -128,6 +140,23 @@ export function PositionRiskAttribution({
             show how much of the book&apos;s leverage and directional tilt the name owns;
             avg |ρ| is its mean flagged correlation to the rest of the book.
           </p>
+
+          {!netShareMeaningful && (
+            <p
+              className="m-0 px-[18px] pt-2 text-[12px] leading-[1.6] max-w-[92ch]"
+              style={{ color: "var(--warning)" }}
+              role="note"
+            >
+              <strong>Net share is withheld for this book.</strong> Net exposure is{" "}
+              <span className="num">{fmtSignedPct(netExposure)}</span> against a largest
+              single position of <span className="num">{fmtPct(maxAbsWeight)}</span>, so
+              a &ldquo;share of net&rdquo; would exceed 100% — and a share cannot exceed
+              the whole it is a share of. A long-short book is built to run close to
+              market-neutral, so this is the normal state, not a fault: the directional
+              tilt is too small to decompose. Gross share is unaffected and is the
+              column to read.
+            </p>
+          )}
 
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[13px] min-w-[860px]">

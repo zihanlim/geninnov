@@ -435,6 +435,28 @@ export function countByStatus(rows: LimitRow[]): Record<LimitStatus, number> {
 // Per-position risk attribution
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Is "share of net exposure" a share at all for this book?
+ *
+ * A share is a part of a whole and cannot exceed the whole. If the largest single
+ * position is bigger than the entire net tilt, `signedWeight / |net|` stops being a
+ * decomposition and starts being a ratio against a near-zero denominator — which is
+ * the normal state of a long-short book, not an edge case. The live 2026-07-25 book
+ * ran net +0.90% on 59.6% gross and the column rendered -1071.4% and +975.7%.
+ *
+ * Exported and used by BOTH the computation and the panel that explains the blank, so
+ * the rule cannot drift into two different definitions of "meaningful" — the failure
+ * ADR-0058 hit when a verdict was re-derived at the render layer.
+ */
+export function netShareIsMeaningful(signedWeights: (number | null)[]): boolean {
+  const net = signedWeights.reduce<number>((s, w) => s + (w ?? 0), 0);
+  const maxAbs = signedWeights.reduce<number>(
+    (m, w) => Math.max(m, w === null ? 0 : Math.abs(w)),
+    0,
+  );
+  return Math.abs(net) > 0 && maxAbs <= Math.abs(net);
+}
+
 export interface PositionAttribution {
   id: string;
   asset: string;
@@ -450,6 +472,8 @@ export interface PositionAttribution {
   /** Contribution to gross: |signed_weight| / gross. */
   grossShare: number | null;
   /** Contribution to net: signed_weight / |net| (can exceed 1 / flip sign). */
+  /** Signed weight / |net exposure|, or null when that ratio is not a share —
+   *  see {@link netShareIsMeaningful}. */
   netShare: number | null;
   /** Mean |ρ| to the rest of the book across flagged correlation pairs, or null. */
   avgCorr: number | null;
@@ -499,6 +523,24 @@ export function buildPositionAttribution(
   const gross = raw.reduce((s, r) => s + (r.sw !== null ? Math.abs(r.sw) : 0), 0);
   const net = raw.reduce((s, r) => s + (r.sw ?? 0), 0);
   const netAbs = Math.abs(net);
+  // "Net share" divides a position's signed weight by the book's NET exposure, and
+  // the only guard was netAbs > 0. A long-short book is BUILT to run near
+  // market-neutral, so that denominator is near zero by design — and the column then
+  // reports numbers like -1071.4% and +975.7%, which is what the live 2026-07-25 book
+  // showed: net +0.90% against positions of ~9%.
+  //
+  // The rule is not a fitted threshold, it is what the word means. A share is a part
+  // of a whole, so it cannot exceed the whole. If the largest single position is
+  // bigger than the entire net tilt, the ratios are not shares of anything and
+  // rendering them as percentages invites a reader to conclude the book is levered
+  // ten times over.
+  //
+  // Withheld rather than clamped: the honest statement is "this book is close to
+  // market-neutral, so its directional tilt does not decompose", not a capped number
+  // that still implies the decomposition exists. Same treatment VaR/Sharpe get below
+  // their minimum sample — "we do not know" and "we know, and it is X" must look
+  // different (ADR-0060).
+  const netShareIsAShare = netShareIsMeaningful(raw.map((r) => r.sw));
   const totalBetaAbs = raw.reduce(
     (s, r) => s + (r.betaContribution !== null ? Math.abs(r.betaContribution) : 0),
     0,
@@ -517,7 +559,7 @@ export function buildPositionAttribution(
         ? Math.abs(r.betaContribution) / totalBetaAbs
         : null,
     grossShare: r.sw !== null && gross > 0 ? Math.abs(r.sw) / gross : null,
-    netShare: r.sw !== null && netAbs > 0 ? r.sw / netAbs : null,
+    netShare: r.sw !== null && netShareIsAShare ? r.sw / netAbs : null,
     avgCorr: r.avgCorr,
     corrPairCount: r.count,
   }));

@@ -190,12 +190,35 @@ container reveals other *columns*, not more of this one.
 **Both were found by measuring the rendered result, not by reading the diff**, which is
 now true of every defect this project has found.
 
-**Verified live at 1440px:** 7 distinct lines across 9 rows, no truncation, no
-horizontal page scroll. **At 375px the reorder is confirmed live and the wrap was still
-deploying when this was written** — recorded as pending rather than claimed, per the rule
-at the top of this file.
+**Verified live, both widths, asserting the DOM rather than the rendered text** (the
+iteration-19 lesson):
 
-**Two process notes worth keeping.**
+| | 1440px | 375px |
+|---|---|---|
+| distinct lines / rows | **7 / 9** | **7 / 9** |
+| clipped | none | **none** |
+| computed `white-space` | `normal` | `normal` |
+| line box height | 17px (one line) | 52–69px (wraps) |
+| horizontal page scroll | none | none |
+| console errors | 0 | 0 |
+
+The wrap is width-sensitive in exactly the intended direction: it costs nothing on
+desktop and costs row height on mobile instead of hiding content.
+
+**A third process note, and it cost most of this iteration's wall clock: Vercel
+coalesces pushes, so "my commit is pushed and a deployment went Ready" does not mean
+my commit is live.** The Ready deployment 17 minutes after the wrap fix was pushed had
+been created *two and a half minutes before it* and built the other session's commit;
+mine was folded into the next build. Three separate detection attempts were wrong before
+that was understood — polling the served HTML for rendered text (`/book` is a client
+component, so the text is never in the HTML), polling `buildId` (the app router does not
+emit one), and polling the page chunk hash (CDN-cached, and coalescing breaks the
+mapping anyway). **The reliable check is `vercel inspect <url>` for the deployment's
+creation time against `git log --date=format:%H:%M:%S`**, and then re-reading the DOM.
+Asserting the class name and computed `white-space` — not just whether the text
+overflowed — is what proved the old bundle was still being served.
+
+**Two more process notes worth keeping.**
 
 *Concurrent sessions collide on ADR numbers.* Another session was writing ADRs against
 this repo at the same time; both claimed **0051**, then both claimed **0053**. Theirs is

@@ -88,13 +88,14 @@ Live at https://andromeda-analytics.vercel.app · 436 backend + 45 frontend test
   **All six stages report to `pipeline_runs`** since iteration 14 — L1 and L4 were
   silent, so `/method` said "not instrumented" while the status bar said "4/4
   succeeded".
-- **Q1 book** — **5 long / 3 short across 8 positions** (JPM, EWZ, EMB, EWJ, TLT
-  long; GDX, ARKK, NOC short), VERIFIED against 44 evidence sources, +26.8% net at
-  87.7% gross, $12.3M held back by position limits, and **two positions are single
-  companies** as `task.md` asks for. Long side is at the five Q1 asks for; the short
-  side is at three. **One portfolio everywhere** since iteration 10
+- **Q1 book** — **5 long / 3 short across 8 positions** (SVXY, EEM, BIL, UNH, NUE
+  long; GLD, KWEB, NOC short) on the 2026-07-25 run, +11.5% net at 64.0% gross, and
+  **7 of the 8 came from themes below the attention gate** (ADR-0046) — under the old
+  rule this book would have been six US Election names. Long side is at the five Q1
+  asks for; the short side is at three. **One portfolio everywhere** since iteration 10
   (ADR-0040) — `/book` and `/risk` describe the same names and every risk number is
-  computed on them — and direction no longer inverts on a regime label flip since
+  computed on them, and since iteration 32 `/risk` *checks* that rather than assuming
+  it — and direction no longer inverts on a regime label flip since
   iteration 11 (ADR-0041).
   Two-sided since iteration 8 (ADR-0038, direction per asset) and deeper since
   iteration 9 (ADR-0039, scope by attention). Genuinely cap-bound since iteration 7
@@ -109,6 +110,45 @@ Live at https://andromeda-analytics.vercel.app · 436 backend + 45 frontend test
   agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 32 (2026-07-25)
+
+**Executed the step iteration 31 recorded and deliberately did not take: the
+conviction vol floor.**
+
+`conviction = |EdgeScore| / vol` is both the Stage-4 sizing weight and the Conv.
+column on `/book`. Unfloored, the ratio stops describing the idea and starts
+describing the denominator: **BIL, a 0–3 month T-bill ETF at 0.19% annualised
+realised vol, scored 2375.2× — 109× the next name and 260× SLV at 74.6%.** Thirty-five
+of thirty-nine names sat in a 9–30× band and the four that broke out were exactly the
+four below ~5% annualised vol. Not only display: `allocate_portfolio(size_by=
+"conviction")` weights by it, so a cash-like instrument absorbs the book until the
+single-name cap stops it.
+
+Now `|EdgeScore| / max(vol, 0.00315)`. **The number has a stated basis rather than a
+fitted one** — 5% annualised is the conventional line between a cash-like instrument
+and a risk position, and today's universe corroborates it rather than defines it. **It
+is absolute, never a percentile of the day's names**: a relative floor would make a
+*sizing weight* a statement about whatever was scored alongside it, the exact defect
+ADR-0042 removed from HypeScore, and would rebalance the book on days nothing about
+the book changed.
+
+**Verified on a live run: BIL 2375.2 → 92.8, SHY 292.1 → 87.7, AGG 99.2 → 82.8, IEF
+unchanged at 79.6**, every above-floor name untouched — a floor, not a rescaling.
+Book-wide max/median **148× → under 6×**. The resulting book is 5 long / 3 short
+(SVXY, EEM, BIL, UNH, NUE long; GLD, KWEB, NOC short), with **7 of 8 positions from
+themes below the attention gate** and BIL sized at $6.9M instead of cap-bound.
+
+**The UI pass then caught the provisional-window defect in the act** — `/risk`
+reporting *"39 positions"* and HHI 138 while the published book held 8. Both numbers
+real, neither describing the book. `/risk` now checks ADR-0040's invariant instead of
+assuming it: it compares its positions against the published picks and leads with a
+warning naming both counts and the extra tickers. **The check is the disagreement
+itself, not a pipeline status flag** — a status field says what the telemetry
+believes; comparing the two tables says what is actually on the page, and it catches a
+run where L5 failed outright too. The window is still open; the silence is not.
+
+[ADR-0047](adrs/0047-conviction-needs-a-vol-floor.md) · migration 035 applied to prod.
 
 ### Loop iteration 31 (2026-07-25)
 
@@ -1713,7 +1753,12 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   Verified on a live run: **BIL 2375.2× → 92.8×**, SHY 292.1 → 87.7, AGG 99.2 → 82.8,
   IEF unchanged at 79.6, every above-floor name untouched — a floor, not a rescaling.
   Book-wide max/median **148× → under 6×**.
-- **`/risk` publishes a provisional book for the minutes L5 takes** — found
+- **`/risk` publishes a provisional book for the minutes L5 takes** — **the silence
+  is fixed, the window is not.** Since iteration 32 `/risk` compares its positions
+  against `research_recommendations.picks` and, when they disagree, leads with a
+  warning naming both counts and the extra tickers — so the numbers are never
+  presented as the book when they are not. Closing the window itself still needs a
+  pipeline change. Found
   2026-07-25 by reading the abstention roster against the positions table above it.
   L1 writes its **full candidate set** to `portfolio_positions` (39 rows today) and
   computes VaR/HHI on it; only after the agent picks does

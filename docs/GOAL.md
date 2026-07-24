@@ -250,14 +250,15 @@ long and a short of the same asset cannot inherit each other's stability.
 
 Also refreshed the standing facts above, which had drifted two books behind.
 
-**NOT YET CONFIRMED LIVE — and the reason is probably plain deploy lag, not a bug.**
-The previous iteration concluded "it's a real bug, not deploy lag" and that was
-premature. `positionRationale` has exactly one renderer (`page.tsx:1158`), so the
-`<span>` carrying the marker *is* the one on screen; when a debug `data-` attribute
-added to that same span also failed to appear, the only consistent explanation is that
-the commit had not deployed. The earlier "not deploy lag" call rested on finding
-`bookRunDate` in the bundle — a prop name that predated the fix and could never have
-distinguished the two builds. The
+**VERIFIED LIVE 2026-07-25 — it was deploy lag the whole time.** Read off the deployed
+DOM, all nine rows classify correctly (7 *stable*, 2 *coinflip* — XLE, UNH — matching
+the harness) and the marker renders visibly. The one real fix was the prop-chain bug
+below (the `<PositionRow>` call site never passed `repl`); every "renders zero times"
+reading after it was taken against the build that predated the fix. The earlier "not
+deploy lag" ruling rested on finding `bookRunDate` in the bundle — a prop name that
+predated the fix and could never have distinguished the two builds. **A distinguishing
+check must key on something the new build introduced**; a debug `data-` attribute did,
+and confirmed the classifier had been correct all along. The
 classifier is unit-tested (7 tests), typechecks and builds; the page's own fetch of
 `backtest_results` fires on the deployed site and returns 200 with the right shape
 (`notes` is a text column that parses, `end_date` 2026-07-25 equals the book's

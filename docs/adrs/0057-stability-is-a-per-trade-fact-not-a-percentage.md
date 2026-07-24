@@ -1,14 +1,14 @@
 # ADR-0057 — Stability is a per-trade fact, not a book-level percentage
 
 **Date:** 2026-07-25
-**Status:** Accepted — **implemented and unit-tested; live rendering not yet
-confirmed.** One prop-chain bug was found and fixed (the `<PositionRow>` call site
-never passed `repl`). The marker had still not appeared at the time of writing, which
-looks like **deploy lag rather than a defect**: `positionRationale` has a single
-renderer, so the `<span>` carrying the marker is demonstrably the one on screen, and a
-debug `data-` attribute added to that same span was also absent — consistent only with
-the build not being live. Treat the behaviour described below as designed and tested,
-not as observed on the deployed page.
+**Status:** Accepted — **verified live 2026-07-25.** All nine positions classify
+correctly on the deployed page (7 *stable*, 2 *coinflip* — XLE and UNH — matching the
+harness), and the marker renders visibly (*"in all 3 reruns"* / *"in some of 3
+reruns"*). The single real fix was a prop-chain bug — the `<PositionRow>` call site
+never passed `repl`. Everything after it was **deploy lag mistaken for a defect** for
+most of two iterations: the "renders zero times" readings were taken against the build
+that predated the fix. A debug `data-` attribute finally settled it by reading the
+computed value off the live DOM once the correct build had deployed.
 **Relates to:** [0045](0045-turnover-on-names-without-a-verdict.md), [0048](0048-count-independent-ideas-not-candidates.md), [0050](0050-separate-agent-churn-from-market-churn.md)
 
 ## Context

@@ -110,6 +110,38 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 18 (2026-07-24)
+
+**The trade signal now says what it is worth.** Last iteration measured and persisted
+the EdgeScore ICs; nothing rendered them. HypeScore had a validation panel and
+**EdgeScore did not** — the wrong way round, since HypeScore selects what we *look
+at* while EdgeScore picks the side and the size.
+
+New `EdgeValidation` panel, placed **inside** the EdgeScore section rather than in a
+separate validation area: a reader who has just been told what the components are
+should meet what they are worth on the same screen, not another page. Each IC sits
+beside **the weight it actually buys**, so *"carry is the largest weight and its p is
+0.22"* is one glance instead of two documents.
+
+It renders the uncomfortable parts as they are:
+- every testable component reads **"right sign, not significant"**;
+- Regime and Sentiment read **"not testable — needs per-theme history"**, not zero —
+  a component we cannot test is not one that scored nothing;
+- the footer states outright that the weights are **deliberately not re-fitted** on
+  p≈0.2 evidence.
+
+**Weights are read live from `scoring_config`, not mirrored.** I wrote a hardcoded
+lookup first and it was wrong: a stale copy drifts the moment anyone tunes the config,
+and would misstate precisely the thing this panel exists to expose.
+
+**Deploy not confirmed at time of writing.** `npm run build` succeeds and `/method`
+grew 23.3 → **24.7 kB**, so the panel compiles in, but Vercel had not published it
+after ~5 minutes — the same lag seen in iterations 16–17, where it eventually
+appeared. Verify `/method` shows "EdgeScore component IC" first thing next iteration.
+
+Verified live meanwhile: `/book` at 1440px — **0 contrast failures of 188 checked**,
+zero console errors, no horizontal scroll, book reading 5 long / 3 short.
+
 ### Loop iteration 17 (2026-07-24)
 
 **First job from last iteration: closed.** `/method#factors` renders live —
@@ -1047,9 +1079,10 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   improvement; the limit board stamps OK on statistics whose own tiles say the
   sample is too small; three routes are unreachable at 375px; tertiary text and
   the orange accent sit at 2.8:1 contrast; two `/method` callouts at 2.09:1.
-- **RENDER THE EDGESCORE IC — next step.** `backtest_results` now holds it
-  (`test_name='edge_ic'`) but no panel reads it. `/method` should say EdgeScore is
-  measured-and-unvalidated in the same breath as HypeScore.
+- ~~**Render the EdgeScore IC**~~ — **DONE, iteration 18** (`EdgeValidation`, inside
+  `/method` §04). Shows IC beside the live `scoring_config` weight, with "right sign,
+  not significant" stated plainly. **Confirm it deployed** — build verified locally,
+  Vercel lagging at time of writing.
 - ~~**L2 factor betas never reconciled**~~ — **DONE, iteration 16, verified live in
   17 (8/8 within band).** SPY +0.99 at
   R2 1.00, BIL -0.00, ARKK +1.49 — the model is sound; the gap was that nobody had

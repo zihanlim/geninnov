@@ -1660,11 +1660,25 @@ def _build_advisory_derivation(state: Q1State) -> AdvisoryDerivation:
 
     citation_status: CitationStatus = "not_attempted"   # default — never crash on absent key
 
+    # An empty citations array is itself a failure — silence is not compliance.
+    # /method publishes exactly that contract, but nothing enforced it here: any
+    # path that set state["verified"]=True produced citation_status="all_verified"
+    # -> display_status="verified" -> a green VERIFIED chip on /book, even with
+    # zero citations. research_agent_runs holds a live 2026-07-24 row with
+    # verified=True and citations=[], i.e. a rule-built book presenting as
+    # model-verified. Verification now requires evidence to exist.
+    _citations = state.get("citations") or []
+    has_citations = isinstance(_citations, list) and len(_citations) > 0
+
     if fallback_used:
         # Heuristic fallback path — citations were never attempted by an LLM
         citation_status = "not_attempted"
-    elif state.get("verified"):
+    elif state.get("verified") and has_citations:
         citation_status = "all_verified"
+    elif state.get("verified") and not has_citations:
+        # Claimed verified with nothing to verify against — treat as un-attempted
+        # so display_status cannot reach "verified".
+        citation_status = "not_attempted"
     elif state.get("retries", 0) > 0 and state.get("verified"):
         # Retry-then-succeed path: citations had some failures but eventually passed
         citation_status = "some_failed_retry_ok"

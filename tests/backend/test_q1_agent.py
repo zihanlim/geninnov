@@ -674,6 +674,47 @@ def test_fallback_picks_does_not_invent_citations():
 
 # ─── Test 4 (T18): stub LLM that returns fallback-shaped body is NOT verified ─
 
+def test_advisory_cannot_be_verified_with_zero_citations():
+    """An empty citations array is itself a failure — silence is not compliance.
+
+    /method publishes that contract, but nothing enforced it: any path setting
+    state["verified"]=True yielded citation_status="all_verified" ->
+    display_status="verified" -> a green VERIFIED chip on /book with no evidence
+    behind it. research_agent_runs holds a live 2026-07-24 row with verified=True
+    and citations=[] — a rule-built book presenting as model-verified.
+    """
+    from backend.services.q1_agent import _build_advisory_derivation
+
+    state = _make_state(
+        picks=[{"asset": "TLT", "direction": "long", "theme": "Fed Policy"}],
+        book_view="A specific, non-templated macro view about duration.",
+        citations=[],          # nothing to verify against
+        verified=True,         # but the run claims it verified
+        fallback_used=False,
+    )
+    adv = _build_advisory_derivation(state)
+    assert adv.display_status != "verified", (
+        "verified=True with zero citations must not reach display_status 'verified'"
+    )
+    assert adv.citation_status != "all_verified"
+
+
+def test_advisory_stays_verified_when_citations_exist():
+    """The guard must not break the genuine path: real citations still verify."""
+    from backend.services.q1_agent import _build_advisory_derivation
+
+    state = _make_state(
+        picks=[{"asset": "TLT", "direction": "long", "theme": "Fed Policy"}],
+        book_view="A specific, non-templated macro view about duration.",
+        citations=[{"text": "HY OAS at 268bps", "source": "BAMLH0A0HYM2", "value": 268.0}],
+        verified=True,
+        fallback_used=False,
+    )
+    adv = _build_advisory_derivation(state)
+    assert adv.citation_status == "all_verified"
+    assert adv.display_status == "verified"
+
+
 def test_q1_advisory_downgrades_when_llm_returns_fallback_body(monkeypatch):
     """
     T18 strict policy: if the LLM endpoint is alive but its response text

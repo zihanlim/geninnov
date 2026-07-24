@@ -40,6 +40,10 @@ export function DeltaChip({
   const worse = higherIsWorse ? d > 0 : d < 0;
   const cls = worse ? "bg-short-dim text-short" : "bg-long-dim text-long";
   const arrow = d > 0 ? "▲" : "▼";
+  // Pass the SIGNED delta to the formatter. It used to receive Math.abs(d), and
+  // since every deltaFormat prefixes a sign from the value it is given, a fall of
+  // 2.44 rendered as "▼ +2.44" — arrow and number contradicting each other on the
+  // same chip. The arrow and colour were right; only the printed sign lied.
   return (
     <span
       className={`num text-[10px] px-1.5 py-px rounded ${cls}`}
@@ -51,7 +55,7 @@ export function DeltaChip({
           : "Δ vs prior run"
       }
     >
-      {arrow} {format(Math.abs(d))}
+      {arrow} {format(d)}
     </span>
   );
 }

@@ -100,14 +100,14 @@ class Q1State(dict):
 
 Every numeric claim in LLM output must cite a source key. The `verify_citations` node validates this. If a number is used without a citation, or the cited value doesn't match `macro_snapshot`, the output is rejected and `reason_picks` is re-invoked with explicit error feedback. Max 2 retries; then deterministic fallback. This is the primary defense against LLM hallucination of macro data.
 
-**Reproducibility:** `temperature=0`, `max_tokens=4096`, prompt version (`PROMPT_VERSION = "v2.0.0"`) stored in `q1_agent_runs`. `input_snapshot` freezes all L0–L4 inputs at run time for full reproducibility.
+**Reproducibility:** `temperature=0`, prompt version (`PROMPT_VERSION`) stored in `research_agent_runs`. `input_snapshot` freezes all L0–L4 inputs at run time for full reproducibility.
 
-**LLM choice:** Claude Sonnet via Anthropic messages API. `ANTHROPIC_API_KEY` env var. `DEFAULT_MODEL = "claude-sonnet-4-20250514"`. Falls back to `KeyError` if key not set (safe — deterministic fallback kicks in).
+**LLM choice:** provider priority is **MiniMax → Anthropic Claude → Gemini** (`_llm_complete`), selected by whichever `*_API_KEY` is set, overridable with `LLM_PROVIDER`. No key set → deterministic fallback (safe).
 
-**Storage schema (`q1_agent_runs` and `q1_recommendations` tables):**
+**Storage schema (`research_agent_runs` and `research_recommendations` tables — renamed from `q1_agent_runs`/`q1_recommendations` in migration 008):**
 
 ```sql
-CREATE TABLE q1_agent_runs (
+CREATE TABLE research_agent_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_date DATE NOT NULL,
     prompt_version TEXT NOT NULL DEFAULT 'v2.0.0',
@@ -121,17 +121,17 @@ CREATE TABLE q1_agent_runs (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE q1_recommendations (
+CREATE TABLE research_recommendations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_date DATE NOT NULL UNIQUE,
-    picks JSONB,                  -- [{direction, asset, theme_id, notional, weight,
+    picks JSONB,                  -- [{direction, asset, theme, theme_id, notional, weight,
                                     --  thesis, catalysts, risk, counter_thesis,
                                     --  time_horizon, factor_tilts}]
     book_view TEXT,                -- 3-5 sentence macro view
     book_risks JSONB,             -- list of risk strings
     book_metrics_summary TEXT,     -- v2: computed FF5+UMD tilts + violations
     scenario_table TEXT,           -- v2: 4-scenario stress table
-    agent_run_id UUID REFERENCES q1_agent_runs(id)
+    agent_run_id UUID REFERENCES research_agent_runs(id)
 );
 ```
 

@@ -64,3 +64,14 @@ ADRs 0012–0014 form a coherent design group for the L5 Q1 reasoning agent. The
 - **[0014](0014-candidate-set-hard-filter.md)** — the *which*: the LLM can only pick names that survived `screen_candidates`. It cannot invent tickers or break theme-asset coherence.
 
 Together: the L5 agent is auditable (L0–L4 are pure), constrained (candidate filter), and self-checking (citation guardrail). See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the data flow and [spec §14](../superpowers/specs/2026-07-21-andromeda-market-theme-platform-design.md) for the full design.
+
+### Naming note — L5 storage tables (read before grepping the ADRs)
+
+ADRs **0011, 0012, 0013 and 0015** were written before migration **008** and name the L5 storage tables by their **original** names. Those tables were renamed in place and are the authoritative names everywhere in the live schema and code today:
+
+| As written in the ADRs (pre-008) | Current table (post-008, live) |
+|---|---|
+| `q1_agent_runs` | `research_agent_runs` |
+| `q1_recommendations` | `research_recommendations` |
+
+The rename (migration `008_rename_q1_tables.sql`, [PROGRESS 2026-07-21](../../PROGRESS.md)) was label-only — it changed no schema, guardrail, or decision, so the ADR bodies are left intact as the historical record. When a doc, query, or grep needs the live name, use the right-hand column. Only the **tables** were renamed; the L5 module and its entry point kept their names — `backend/services/q1_agent.py::run_q1_agent`.

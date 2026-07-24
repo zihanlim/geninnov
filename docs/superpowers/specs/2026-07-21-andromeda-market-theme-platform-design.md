@@ -589,7 +589,7 @@ architecture.
 
 ## 14. Q1 Reasoning Pipeline (Book Construction Layer)
 
-> **Status: implemented.** This section describes the design; the implementation lives in `backend/services/q1_agent.py` (8-node pipeline), `backend/services/book_metrics.py`, and `backend/services/scenario_analysis.py`. The pipeline runs once per day from `scripts/daily_refresh.py` after the L1–L4 batch completes. Output: `q1_recommendations` + `q1_agent_runs` tables. Frontend render: `frontend/app/research/page.tsx`.
+> **Status: implemented.** This section describes the design; the implementation lives in `backend/services/q1_agent.py` (8-node pipeline), `backend/services/book_metrics.py`, and `backend/services/scenario_analysis.py`. The pipeline runs once per day from `scripts/daily_refresh.py` after the L1–L4 batch completes. Output: `research_recommendations` + `research_agent_runs` tables (renamed from `q1_recommendations`/`q1_agent_runs` in migration 008). Frontend render: `frontend/app/book/page.tsx` (the legacy `/research` page now redirects to `/book`).
 >
 > **Design rationale:** ADRs [0012](../adrs/0012-citation-guardrail-llm-defense.md), [0013](../adrs/0013-deterministic-stochastic-split.md), and [0014](../adrs/0014-candidate-set-hard-filter.md).
 
@@ -835,14 +835,14 @@ class Q1State(dict):
 
 Every numeric claim in LLM output must cite a source key. The `verify_citations` node validates this. If a number is used without a citation, or the cited value doesn't match `macro_snapshot`, the output is rejected and `reason_picks` is re-invoked with explicit error feedback. Max 2 retries; then deterministic fallback. This is the primary defense against LLM hallucination of macro data.
 
-**Reproducibility:** `temperature=0`, `max_tokens=4096`, prompt version (`PROMPT_VERSION = "v2.0.0"`) stored in `q1_agent_runs`. `input_snapshot` freezes all L0–L4 inputs at run time for full reproducibility.
+**Reproducibility:** `temperature=0`, prompt version (`PROMPT_VERSION`) stored in `research_agent_runs`. `input_snapshot` freezes all L0–L4 inputs at run time for full reproducibility.
 
-**LLM choice:** Claude Sonnet via Anthropic messages API. `ANTHROPIC_API_KEY` env var. `DEFAULT_MODEL = "claude-sonnet-4-20250514"`. Falls back to `KeyError` if key not set (safe — deterministic fallback kicks in).
+**LLM choice:** provider priority is **MiniMax → Anthropic Claude → Gemini** (`backend/services/q1_agent.py::_llm_complete`), selected by whichever `*_API_KEY` is set (`MINIMAX_API_KEY` > `ANTHROPIC_API_KEY` > `GEMINI_API_KEY`), overridable with `LLM_PROVIDER`. If no key is set the deterministic fallback kicks in (safe).
 
-**Storage schema (`q1_agent_runs` and `q1_recommendations` tables):**
+**Storage schema (`research_agent_runs` and `research_recommendations` tables — renamed from `q1_agent_runs`/`q1_recommendations` in migration 008):**
 
 ```sql
-CREATE TABLE q1_agent_runs (
+CREATE TABLE research_agent_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_date DATE NOT NULL,
     prompt_version TEXT NOT NULL DEFAULT 'v2.0.0',
@@ -856,17 +856,17 @@ CREATE TABLE q1_agent_runs (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE q1_recommendations (
+CREATE TABLE research_recommendations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_date DATE NOT NULL UNIQUE,
-    picks JSONB,                  -- [{direction, asset, theme_id, notional, weight,
+    picks JSONB,                  -- [{direction, asset, theme, theme_id, notional, weight,
                                     --  thesis, catalysts, risk, counter_thesis,
                                     --  time_horizon, factor_tilts}]
     book_view TEXT,                -- 3-5 sentence macro view
     book_risks JSONB,             -- list of risk strings
     book_metrics_summary TEXT,     -- v2: computed FF5+UMD tilts + violations
     scenario_table TEXT,           -- v2: 4-scenario stress table
-    agent_run_id UUID REFERENCES q1_agent_runs(id)
+    agent_run_id UUID REFERENCES research_agent_runs(id)
 );
 ```
 
@@ -973,5 +973,5 @@ The Q2 system is the **systematic engine** (always-on, daily). The Q1 reasoning 
 - **What if the regime classifier says recession but the LLM disagrees?** The LLM should defer to the regime classifier (deterministic, auditable) and explain its reasoning. Or the LLM can override with explicit "despite recession classification" framing. Not yet decided.
 - **How often does Q1 run?** Default: daily after the daily batch. But a weekly "deeper think" run (with longer context, more news) is also worth considering. Phase 5 ships daily-only.
 - **How do we validate the picks?** Spec §7.3's post-prototype validation framework applies: did top-ranked theme outperform bottom-ranked over the next 5/10/20 trading days? Backtest on synthetic L0 data before any live deployment.
-- **Where does the `q1_recommendations` table fit in the schema?** New table; needs a new migration (`005_q1_recommendations.sql`).
+- **Where does the recommendations table fit in the schema?** New table (shipped as `research_recommendations`, originally `q1_recommendations`; renamed in migration 008).
 

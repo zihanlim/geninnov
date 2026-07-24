@@ -95,13 +95,32 @@ describe("distinctionClause", () => {
 });
 
 describe("positionRationale", () => {
-  it("joins the driver phrase to the distinction", () => {
+  it("puts the distinction BEFORE the driver phrase", () => {
+    // Order is load-bearing: the cell truncates at 375px, and truncation eats the
+    // end. With the distinction appended, the only differentiating half is the half
+    // a mobile reader never sees.
     expect(
       positionRationale("Long · a strong price uptrend", {
         kind: "strongest",
         over: ["CVX", "XOM"],
       })
-    ).toBe("Long · a strong price uptrend · taken over CVX, XOM");
+    ).toBe("Long · taken over CVX, XOM · a strong price uptrend");
+  });
+
+  it("splits only on the first separator, so a phrase with commas survives", () => {
+    expect(
+      positionRationale("Short · a price downtrend, outweighing negative carry", {
+        kind: "standalone",
+      })
+    ).toBe(
+      "Short · no correlated alternative · a price downtrend, outweighing negative carry"
+    );
+  });
+
+  it("appends rather than dropping the clause when there is no separator", () => {
+    expect(positionRationale("Long", { kind: "standalone" })).toBe(
+      "Long · no correlated alternative"
+    );
   });
 
   it("falls back to the driver phrase alone when nothing was measured", () => {
@@ -149,10 +168,25 @@ describe("the regression this exists to prevent", () => {
     // with a larger constant. Every position on a side that the map covers should be
     // separable from its side-mates.
     expect(distinctLineCount(lines)).toBeGreaterThanOrEqual(7);
-    expect(lines).toContain("Long · a strong price uptrend · taken over CVX, XOM");
+    expect(lines).toContain("Long · taken over CVX, XOM · a strong price uptrend");
     expect(lines).toContain(
-      "Short · a price downtrend · taken over GDX, GLD, IAU, NEM"
+      "Short · taken over GDX, GLD, IAU, NEM · a price downtrend"
     );
+  });
+
+  it("survives truncation: the differentiator precedes the degenerate phrase", () => {
+    // The row cell truncates at 375px (verified live on all nine rows), and an
+    // ellipsis eats the end. If the distinction ever drifts back to the tail, the
+    // line differentiates only for readers on a wide screen — which is the bug,
+    // half-fixed. Pinned as a property so no future edit can reintroduce it.
+    for (const p of BOOK) {
+      const d = distinguishPosition(p.asset, p.direction, LIVE);
+      const line = positionRationale(plainFor(p.direction), d);
+      const clause = distinctionClause(d);
+      if (!line || !clause) continue;
+      const driver = p.direction === "long" ? "uptrend" : "downtrend";
+      expect(line.indexOf(clause)).toBeLessThan(line.indexOf(driver));
+    }
   });
 
   it("does not manufacture difference where the measurement has none", () => {

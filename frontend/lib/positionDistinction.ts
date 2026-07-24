@@ -96,7 +96,18 @@ export function distinctionClause(d: Distinction): string | null {
 }
 
 /**
- * The full scannable line: the driver phrase, then what the name was taken instead of.
+ * The full scannable line: side, then what the name was taken instead of, then the
+ * driver phrase.
+ *
+ * **The order is load-bearing, and appending the distinction was wrong.** The row grid
+ * is `min-w-[640px]`, so at 375px the rationale cell is ~150px and the line truncates
+ * with an ellipsis — verified live, all nine rows. Truncation eats the END, so with the
+ * distinction last, the half that differentiates is exactly the half a mobile reader
+ * never sees, while the half that reads identically on every row survives. Leading with
+ * it inverts that: what gets cut is the redundant clause.
+ *
+ * The side stays in front because it is the one word that orients the row, and it costs
+ * five characters.
  *
  * Both halves are optional and the line degrades rather than inventing: with no edge
  * the caller's fallback shows, with no measurement only the driver phrase shows.
@@ -107,7 +118,16 @@ export function positionRationale(
 ): string | null {
   const clause = distinctionClause(d);
   if (!plain) return clause ? clause[0].toUpperCase() + clause.slice(1) : null;
-  return clause ? `${plain} · ${clause}` : plain;
+  if (!clause) return plain;
+
+  // plainRationale renders "‹Side› · ‹phrase›", where the phrase may itself contain
+  // commas ("...outweighing negative carry") but no further " · ". Split once so the
+  // distinction lands between the side and the phrase.
+  const sep = plain.indexOf(" · ");
+  if (sep === -1) return `${plain} · ${clause}`;
+  const side = plain.slice(0, sep);
+  const phrase = plain.slice(sep + 3);
+  return `${side} · ${clause} · ${phrase}`;
 }
 
 /**

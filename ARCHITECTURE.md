@@ -474,7 +474,7 @@ pytest tests/backend/ -v
 - [x] Supabase migrations applied locally (001–009, 012–015)
 - [x] 198+ tests passing (lens mode tests added); 227+ backend tests passing post-T9/T20/T22
 - [ ] Migrations 010/011 (`market_assets`, `prediction_markets`) deployed to live Supabase — pending (Polymarket feed on local only)
-- [ ] Migrations 018–021 (`theme_news`, `theme_signals_history.signed_corr`/`crowding`/`data_source`, `discovered_themes`) deployed to live Supabase — pending (needs user authorization; guarded fallbacks keep the pipeline running until applied)
+- [x] Migrations 018–021 (`theme_news`, `theme_signals_history.signed_corr`/`crowding`/`data_source`, `discovered_themes`) deployed to live Supabase
 - [ ] R0 fix: re-run `daily_refresh.py` against real data to overwrite the fabricated `portfolio_risk`/`portfolio_returns` seed rows — pending (needs live credentials; detectable now via `scripts/check_data_integrity.py`)
 - [ ] Cron (`cron-job.org`) owned externally and triggered daily against the live Vercel deployment — pending (scripts run on-demand locally)
-- [ ] Theme discovery shadow mode (`theme_discovery.py` running against live DB and diffed against the curated theme registry) — pending
+- [x] Theme discovery shadow mode — `theme_discovery.py` runs against the live DB (corpus sourced from `theme_news`), persists LDA∩embedding candidates to `discovered_themes`, and is surfaced on `/` via `DiscoveredThemes` ("What the engine is discovering"). Latest run: 6 Tier-2 (two-method agreement) + 5 Tier-3. Candidates stay `shadow` until an operator promotes them.

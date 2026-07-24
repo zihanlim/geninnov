@@ -7,8 +7,9 @@
      Andromeda "Ledger" — a warm-paper, ledger-inspired quant identity.
      Cream paper + ink instead of the generic near-black dashboard. Direction is
      ledger ink: forest-green = long, crimson = short (like red/green in an old
-     ledger). Brand pink (#E11048) is interactive/emphasis, orange (#F97316) is
-     attention. Every figure is JetBrains Mono — the "tape". Prose is Hanken
+     ledger). Brand pink (#D40E43) is interactive/emphasis, orange (#C2410C) is
+     attention. Both were darkened from #E11048 / #F97316 on 2026-07-24 to clear
+     WCAG AA 4.5:1 on the paper background — same hues, deeper ink. Every figure is JetBrains Mono — the "tape". Prose is Hanken
      Grotesk. This palette (crimson / pink / orange on warm paper) is the app's
      personality; it is deliberately NOT the interchangeable dark-neon default.
      ───────────────────────────────────────────────────────────────────────── */
@@ -23,11 +24,22 @@
     /* Ink */
     --text-primary: #1c1815; /* warm near-black */
     --text-secondary: #6b6156;
-    --text-tertiary: #9c9182;
+    /* Darkened from #9c9182 (2.80:1 on paper) — WCAG AA needs 4.5:1 for body
+       text and this token carries table headers, timestamps and source labels
+       across every page. #756b5e keeps the warm-grey Ledger character at
+       4.72:1 on paper / 5.22:1 on card. */
+    --text-tertiary: #756b5e;
     /* Brand + attention (your palette) */
-    --accent: #e11048;       /* interactive / links / active nav (bright crimson-pink) */
+    /* 4.34:1 on paper at #e11048 — just under AA for link-sized text. #d40e43
+       is the same crimson a shade deeper, at 4.81:1 / 5.33:1. */
+    --accent: #d40e43;       /* interactive / links / active nav (crimson-pink) */
     --brand: #9f172a;        /* primary crimson — emphasis, brand marks */
-    --warning: #f97316;      /* tertiary orange — attention / near-limit */
+    /* Was #f97316 at 2.53:1 — the worst offender on the site, and it labels the
+       things a reader most needs to read ("Not yet validated", near-limit
+       chips, HypeScore caveats). #c2410c is 4.68:1 / 5.18:1 and still reads as
+       orange against the crimson accent. Also used for bars and borders, where
+       a deeper tone is no loss. */
+    --warning: #c2410c;      /* tertiary orange — attention / near-limit */
     /* Direction — ledger ink */
     --long: #147a5c;         /* forest-emerald — up / long */
     --short: #9f172a;        /* crimson — down / short */
@@ -45,7 +57,7 @@
     line-height: 1.5;
   }
 
-  ::selection { background: rgba(225, 16, 72, 0.16); }
+  ::selection { background: rgba(212, 14, 67, 0.16); }   /* --accent at 16% */
 }
 
 @layer components {

@@ -110,6 +110,62 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 15 (2026-07-24)
+
+**Three colour tokens failed WCAG AA, and the fix took two commits because Tailwind
+keeps its own palette.**
+
+Measured on the deployed pages — computing each rendered foreground against its
+resolved background, not trusting the backlog:
+
+| token | was | needed |
+|---|---|---|
+| `--text-tertiary` | **2.80:1** paper / 3.09 card | 4.5 |
+| `--warning` | **2.53:1** / 2.80 | 4.5 |
+| `--accent` | **4.34:1** / 4.81 | 4.5 |
+
+`text-tertiary` is the pervasive one — table headers, timestamps and source labels on
+every page. `--warning` was the worst ratio on the site *and* it labels exactly what a
+reader most needs to read: *"Not yet validated — and we say so."*, near-limit chips,
+the HypeScore caveats. **A caveat nobody can read is not a caveat.**
+
+Darkened in place to `#756b5e` / `#c2410c` / `#d40e43` (4.72 / 4.68 / 4.81). Same
+hues — warm paper, forest-green long, crimson short — the Ledger identity is
+deliberately preserved, these are the same colours a shade deeper.
+`text-secondary` (5.47), `long` (4.78) and `short` (7.21) already passed.
+
+**The first commit changed only `globals.css` and moved nothing visible.** Verifying
+live caught it: the `:root` variables read back correctly while **106 elements still
+rendered the old RGB**, because Tailwind compiles its palette to literal values at
+build time —
+
+```
+.text-text-tertiary { color: rgb(156 145 130 / var(--tw-text-opacity)) }
+```
+
+— so the utility classes never read the variables. `tailwind.config.ts` needed the
+same three values plus `accent-dim`/`warning-dim`, whose rgba() literals still
+encoded the old colours. **Silent failure mode: the tokens look right and the pixels
+do not.** A comment in the config now records that the two files move together.
+
+**Verified after:** 470 elements checked on `/method` → **0 failing**; 188 on
+`/book` → **0 failing**; zero console errors; no horizontal scroll.
+
+**Two more backlog claims re-derived and found stale**, in the same spirit as
+iteration 14's Q2-narrative correction:
+- *"Three routes unreachable at 375px"* — they are `/trades`, `/portfolio` and
+  `/research`, **retired routes that server-redirect to `/book`**. Hiding them on
+  mobile is correct, not a defect. All four live routes are reachable.
+- *"L5 under-picks the short side"* — it does not. Of the 5 short candidates, SLV,
+  GDX and GLD are all the precious-metals complex; L5 took GDX and skipped the other
+  two. **The short side has 5 candidates but only 3 independent bets**, and forcing
+  five would be concentration dressed as breadth. Q1's five-and-five is limited by
+  the *diversity* of short ideas, not by L5's willingness to hold them.
+
+**Process note for future iterations:** do not poll the deployed site with `curl` in
+a loop to wait for a Vercel build — 40 requests tripped a bot-protection checkpoint
+and returned 403 for a few minutes. Drive it through the browser, or wait once.
+
 ### Loop iteration 14 (2026-07-24)
 
 **Two of six pipeline stages never reported, so "4/4 succeeded" counted the wrong
@@ -859,7 +915,13 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   more expressions per theme (`004_bootstrap_live.sql` + `_theme_default_assets`),
   more themes, or single names — each needs `SECTOR_MAP`/`GEO_MAP`/`_ASSET_CLASS_MAP`
   entries too, or `is_classified` drops them silently.
-- **UI audit backlog** — a full Playwright audit ran 2026-07-24 and found no
+- ~~**Contrast failures**~~ — **FIXED, iteration 15.** Three tokens were below AA
+  (2.80 / 2.53 / 4.34); now 4.72 / 4.68 / 4.81, verified live at 0 failing elements
+  across `/method` (470 checked) and `/book` (188). Note the fix needs BOTH
+  `globals.css` and `tailwind.config.ts` — Tailwind compiles literals.
+- ~~**Three routes unreachable at 375px**~~ — **not a defect.** They are the retired
+  `/trades`, `/portfolio`, `/research` redirects; hiding them on mobile is right.
+- **[historic] UI audit backlog** — a full Playwright audit ran 2026-07-24 and found no
   horizontal scroll and no console errors at either viewport, but a long list of
   real defects beyond the ones fixed: `verified=true` with 0 citations still
   presents as VERIFIED on `/book`; Sharpe's delta chip shows ▼-red for an

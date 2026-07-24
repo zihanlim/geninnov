@@ -139,6 +139,30 @@ max weight 16.7%, 85% deployed** — previously it would have been forced to 100
 in cash: at 3 names the book cannot take more without breaching its own position
 limits"*, and the Deployed card carries the same in its hint.
 
+**Correcting myself on the LLM timeout — it is NOT generation time.** I raised it
+420 → 900 on the theory that "the real prompt is heavier than the probe". The 900s
+run then logged `LLM CALL FAILED (attempt 1): ReadTimeout … (read timeout=900)` and
+**again succeeded on attempt 2**. That kills the theory: if generation genuinely
+needed >900s, the retry would have exceeded it too. The pattern across three runs is
+that **attempt 1 hangs for the entire budget, whatever the budget is, and attempt 2
+succeeds** — 420s → hang → retry OK; 900s → hang → retry OK. So something about the
+*first* request stalls, and the retry is not "more time" but "a fresh request".
+
+Do not raise the timeout again — that only buys a longer hang. Next investigation:
+whether the first call is stalling on connection setup or a server-side queue (try a
+short connect-timeout with a long read-timeout as separate values, a warm-up ping, a
+fresh `requests.Session` per attempt, or streaming so bytes arrive early). Cheap
+tell: log elapsed time for attempt 2 — if it returns in ~200s, the budget was never
+the constraint. The book still lands verified, so this costs ~15 wasted minutes per
+run, not correctness.
+
+**Known contradiction, fix committed but NOT yet verified live:** the thesis prose
+asserted "Net/gross exposure +100%/+100%" directly above cards reading 60.0%, because
+`reason_picks` (node 6) runs before `size_positions` (node 8) and cannot know the
+final weights. The system prompt now forbids it from stating sizes, weights,
+notionals or exposure at all — it picks names and sides, the deterministic step
+decides magnitude. Verify on the next pipeline run.
+
 **This raises the value of the single-names gap rather than substituting for it.**
 More genuinely independent ideas is now the only way to deploy more capital *without*
 relaxing a limit — which is the honest lever, and still the top Q1 gap.

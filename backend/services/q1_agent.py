@@ -888,6 +888,14 @@ Your job:
   3. Reference the pre-computed book_metrics and scenario analysis in your reasoning
   4. For each pick: specify a time horizon and a measurable counter-thesis
 
+DO NOT state position sizes, weights, notionals, or the book's net/gross exposure.
+You choose WHICH names and WHICH side; a later deterministic step decides HOW MUCH.
+That step applies the 20% single-name / 30% sector / 35% geography limits and holds
+whatever they refuse in CASH, so the book routinely deploys less than 100% of
+capital — a three-name book deploys 60%. Any exposure figure you assert will be
+contradicted by the sized book shown directly beneath your text. Write about
+direction, rationale, catalysts and risk, and leave the arithmetic of size alone.
+
 Output format (respond ONLY with valid JSON, no markdown):
 {
   "picks": [

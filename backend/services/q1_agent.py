@@ -1786,6 +1786,25 @@ def size_positions(state: Q1State) -> Q1State:
     # (no silent fallback), so drop unmappable picks loudly rather than crash the
     # whole run — the LLM is constrained to the candidate set, but a fallback
     # path or a hand-edited pick could still introduce one.
+    # Conviction and vol come from the L1 CANDIDATE, not from the pick.
+    #
+    # state["picks"] are the model's own dicts — asset, direction, thesis, catalysts —
+    # enriched downstream only with theme_id and citations. They have never carried
+    # conviction or vol, so reading them off the pick yields None -> 0.0 and
+    # allocate_portfolio falls back to HypeScore. That is how the published book came
+    # to be hype-sized while every surface said conviction (ADR-0053), and threading
+    # the fields into state["candidates"] alone did NOT fix it: the first attempt
+    # passed its unit test only because the test hand-supplied conviction on the
+    # picks, pinning this function's contract rather than its caller's reality.
+    #
+    # The candidate is authoritative: L1 computed conviction there from per-asset edge
+    # and vol, and the LLM is constrained to that candidate set.
+    edge_by_asset: dict[str, dict] = {}
+    for c in (state.get("candidates") or []):
+        a = c.get("asset")
+        if a and a not in edge_by_asset:
+            edge_by_asset[a] = c
+
     sizable: list[TradeCandidate] = []
     kept: list[dict] = []
     dropped: list[str] = []
@@ -1794,6 +1813,7 @@ def size_positions(state: Q1State) -> Q1State:
         if asset not in SECTOR_MAP or asset not in GEO_MAP:
             dropped.append(asset or "<blank>")
             continue
+        src = edge_by_asset.get(asset, {})
         sizable.append(TradeCandidate(
             theme_id=p.get("theme_id") or "",
             asset=asset,
@@ -1801,12 +1821,13 @@ def size_positions(state: Q1State) -> Q1State:
             trade_score=float(p.get("trade_score") or 0.0),
             hype_score=float(p.get("hype_score") or 0.0),
             avg_sentiment=float(p.get("avg_sentiment") or 0.0),
-            # Without these the dataclass defaults them to 0.0, allocate_portfolio
-            # sees no conviction anywhere, and it falls back to HypeScore weighting —
-            # which is what the published book was actually sized by. ADR-0053.
-            edge_score=float(p.get("edge_score") or 0.0),
-            vol=float(p.get("vol") or 0.0),
-            conviction=float(p.get("conviction") or 0.0),
+            # Candidate first, pick as a fallback. Without these the dataclass
+            # defaults them to 0.0, allocate_portfolio sees no conviction anywhere,
+            # and it falls back to HypeScore weighting — which is what the published
+            # book was actually sized by. ADR-0053.
+            edge_score=float(src.get("edge_score") or p.get("edge_score") or 0.0),
+            vol=float(src.get("vol") or p.get("vol") or 0.0),
+            conviction=float(src.get("conviction") or p.get("conviction") or 0.0),
         ))
         kept.append(p)
 

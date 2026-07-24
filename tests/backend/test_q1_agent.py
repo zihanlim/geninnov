@@ -1451,6 +1451,41 @@ def _spread_picks(convictions=None, hypes=None):
     return out
 
 
+def test_size_positions_reads_conviction_from_candidates_not_picks():
+    """The seam that mattered, and that the first fix's test missed.
+
+    state["picks"] are the MODEL's dicts — asset, direction, thesis — enriched only
+    with theme_id and citations. They never carry conviction or vol. The first attempt
+    at ADR-0053 threaded those fields into state["candidates"] and read them off the
+    PICK, so it changed nothing; its unit test passed only because the test itself
+    hand-supplied conviction on the picks. The live book after that "fix" was still
+    hype-sized: |weight|/hype constant at 0.00158 and 0.00326.
+
+    So this test supplies picks the way reason_picks really does — WITHOUT conviction —
+    and puts it only on the candidates.
+    """
+    from backend.services.q1_agent import size_positions
+
+    convs = [20.0] + [10.0] * 9
+    picks = [
+        {"asset": a, "direction": "long", "theme_id": f"t{i}", "hype_score": 40.0,
+         "trade_score": 0.2, "avg_sentiment": 0.0}          # no conviction, no vol
+        for i, a in enumerate(_SPREAD)
+    ]
+    candidates = [
+        {"asset": a, "direction": "long", "theme_id": f"t{i}", "hype_score": 40.0,
+         "edge_score": 0.2, "vol": 0.01, "conviction": convs[i]}
+        for i, a in enumerate(_SPREAD)
+    ]
+    out = size_positions({"picks": picks, "candidates": candidates, "cfg": MOCK_CFG})
+    by = {p["asset"]: p["weight"] for p in out["picks"]}
+
+    assert by["SPY"] / by["EEM"] == pytest.approx(2.0, rel=0.05), (
+        f"conviction on the candidate must reach the sizer — got "
+        f"{by['SPY'] / by['EEM']:.2f}x"
+    )
+
+
 def test_size_positions_weights_by_conviction_not_hype():
     """The published book was sized by HypeScore while every surface said conviction.
 

@@ -225,7 +225,34 @@ export interface LimitBoardInputs {
   singleNameWeight: number | null;
   sectorWeight: number | null;
   geoWeight: number | null;
+  /**
+   * Sessions of realised return history (`portfolio_returns` row count).
+   *
+   * The board must not stamp OK on a statistic whose sample cannot support it.
+   * It did: VaR read "1.7% of a 6.0% limit — OK" while the metrics tile on the
+   * same page said "Not shown: 2 sessions of history, needs 30. A VaR from this
+   * sample is noise, so we do not publish one." Same number, same page, opposite
+   * claims — and an OK against a governing limit is the stronger of the two,
+   * because it reads as a risk check that passed.
+   */
+  returnSessions?: number | null;
 }
+
+/**
+ * Sessions of return history each ESTIMATED statistic needs before the board will
+ * score it. Mirrors MIN_DAYS_FOR_* in backend/services/risk_engine.py and the
+ * minSessions in RiskMetricsGrid, so the tile and the board cannot disagree.
+ *
+ * Deliberately limited to statistical estimates. Max drawdown is a REALISED fact —
+ * "no drawdown has occurred yet" is true on two sessions, merely uninformative — and
+ * the cap/exposure rows are computed from today's weights and need no history at
+ * all. Gating those would replace a real number with a blank.
+ */
+export const MIN_SESSIONS: Partial<Record<keyof typeof DEFAULT_LIMITS, number>> = {
+  var_95_pct: 30,   // MIN_DAYS_FOR_VAR
+  cvar_95_pct: 30,  // MIN_DAYS_FOR_VAR
+  beta_abs: 60,     // MIN_DAYS_FOR_BETA
+};
 
 /**
  * Build the risk-limit board, breached-first. Every input that is null yields a
@@ -235,12 +262,28 @@ export interface LimitBoardInputs {
 export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
   const cap = isNum(inp.totalCapital) && inp.totalCapital > 0 ? inp.totalCapital : null;
 
-  const varPct = cap !== null && isNum(inp.var95Usd) ? Math.abs(inp.var95Usd) / cap : null;
-  const cvarPct = cap !== null && isNum(inp.cvar95Usd) ? Math.abs(inp.cvar95Usd) / cap : null;
+  // Below its declared minimum a statistic is withheld, not scored — the row still
+  // renders (a limit a PM cannot see is a limit they cannot manage) but as "unknown"
+  // rather than a green OK on noise.
+  const enough = (k: keyof typeof DEFAULT_LIMITS): boolean => {
+    const need = MIN_SESSIONS[k];
+    if (need === undefined) return true;
+    if (!isNum(inp.returnSessions)) return true;   // unknown sample: do not withhold
+    return (inp.returnSessions as number) >= need;
+  };
+
+  const varPct =
+    enough("var_95_pct") && cap !== null && isNum(inp.var95Usd)
+      ? Math.abs(inp.var95Usd) / cap
+      : null;
+  const cvarPct =
+    enough("cvar_95_pct") && cap !== null && isNum(inp.cvar95Usd)
+      ? Math.abs(inp.cvar95Usd) / cap
+      : null;
   const ddAbs = isNum(inp.maxDrawdown) ? Math.abs(inp.maxDrawdown) : null;
   const netAbs = isNum(inp.netExposure) ? Math.abs(inp.netExposure) : null;
   const grossAbs = isNum(inp.grossExposure) ? Math.abs(inp.grossExposure) : null;
-  const betaAbs = isNum(inp.beta) ? Math.abs(inp.beta) : null;
+  const betaAbs = enough("beta_abs") && isNum(inp.beta) ? Math.abs(inp.beta) : null;
 
   const defs: Array<{
     def: LimitDef;

@@ -431,9 +431,13 @@ function RiskPageInner() {
       singleNameWeight: peakCap(capData?.single_name),
       sectorWeight: peakCap(capData?.sector),
       geoWeight: peakCap(capData?.geo),
+      // So the board withholds VaR/CVaR/beta on a sample too small to support
+      // them, instead of stamping OK on a number the metrics tile refuses to
+      // publish.
+      returnSessions: data.returns.length,
     };
     return buildLimitBoard(inputs);
-  }, [cfgMap, data.risk, bookMetrics, drawdown, capData]);
+  }, [cfgMap, data.risk, data.returns.length, bookMetrics, drawdown, capData]);
 
   const limitCoverageNote = useMemo(() => {
     const missing: string[] = [];

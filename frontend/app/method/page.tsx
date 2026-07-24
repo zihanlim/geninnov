@@ -414,6 +414,9 @@ export default function MethodPage() {
   // ADR-0046. Read live like every other parameter; a missing row means the
   // override is off, which is a real state and is described as such below.
   const convictionOverride = cfgNum("edge_conviction_override");
+  // ADR-0047. Read live like every other parameter; 0 or missing means the
+  // floor is off, and the formula then shows a bare division as it used to.
+  const volFloor = cfgNum("conviction_vol_floor") ?? 0;
   const lookback7 = cfgNum("lookback_momentum_7d");
   const hypeWeightsOk =
     wVol !== null && wSent !== null && wCorr !== null && wMom !== null;
@@ -1592,7 +1595,9 @@ export default function MethodPage() {
                 `            short   if EdgeScore ≤ −${dec(edgeAbstain ?? 0, 2)}`,
                 `            abstain if |EdgeScore| <  ${dec(edgeAbstain ?? 0, 2)}   (edge_abstain_threshold)`,
                 ``,
-                `conviction = |EdgeScore| / vol      →  sizing weight ∝ conviction (conviction × inverse-vol)`,
+                `conviction = |EdgeScore| / max(vol, ${dec(volFloor, 5)})   →  sizing weight ∝ conviction`,
+                `             the floor (conviction_vol_floor, ~${dec((volFloor ?? 0) * Math.sqrt(252) * 100, 1)}% annualised) keeps the`,
+                `             ratio describing the IDEA and not the denominator — ADR-0047`,
               ].join("\n")}
             </Formula>
 

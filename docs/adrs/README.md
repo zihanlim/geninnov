@@ -52,6 +52,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0044](0044-carry-ic-was-measured-on-a-superseded-signal.md) | The carry IC justifying its 0.34 weight was measured on a superseded signal — corrects 0033 | accepted | 2026-07-24 |
 | [0045](0045-turnover-on-names-without-a-verdict.md) | Turnover is measured on names without a verdict; candidate overlap is signed by both directions before thresholding | accepted | 2026-07-24 |
 | [0046](0046-attention-chooses-what-we-look-at-not-what-is-tradable.md) | Attention chooses what we look at; a sub-attention theme holding a decisive name is admitted anyway | accepted | 2026-07-24 |
+| [0047](0047-conviction-needs-a-vol-floor.md) | Conviction needs a vol floor, and the floor must be absolute rather than a percentile of the day | accepted | 2026-07-25 |
 
 ## When to write an ADR
 

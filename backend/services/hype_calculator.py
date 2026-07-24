@@ -33,6 +33,12 @@ class ScoringConfig:
     # band by design: a name has to be decisive to earn a look its theme's
     # attention did not. 0 disables the override.
     edge_conviction_override: float = 0.25
+    # Conviction vol floor (ADR-0047). conviction = |EdgeScore| / max(vol, floor).
+    # 0.00315 daily ~= 5% annualised: the conventional boundary between a cash-like
+    # instrument and a risk position. Without it the ratio measures the denominator
+    # rather than the idea — BIL at 0.19% annualised vol scored 2375x conviction
+    # against a 16x book median on 2026-07-25. 0 disables the floor.
+    conviction_vol_floor: float = 0.00315
 
     @classmethod
     def from_db_rows(cls, rows: list[dict]) -> "ScoringConfig":
@@ -54,6 +60,7 @@ class ScoringConfig:
             edge_sentiment_weight=vals.get("edge_sentiment_weight", 0.05),
             edge_abstain_threshold=vals.get("edge_abstain_threshold", 0.15),
             edge_conviction_override=vals.get("edge_conviction_override", 0.25),
+            conviction_vol_floor=vals.get("conviction_vol_floor", 0.00315),
         )
 
 # ─── Absolute sub-score scales (ADR-0042) ────────────────────────────────────

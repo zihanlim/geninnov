@@ -406,6 +406,37 @@ def _macro_zscores() -> dict[str, float]:
     return z
 
 
+def _conviction(edge: float, vol: float, vol_floor: float) -> float:
+    """Signal strength per unit of risk, with the risk floored (ADR-0047).
+
+    conviction = |EdgeScore| / max(vol, floor), and the floor is the whole point.
+    Unfloored, the ratio stops describing the idea and starts describing the
+    denominator: on 2026-07-25 BIL — a 0-3 month T-bill ETF with 0.19% ANNUALISED
+    realised vol — scored 2375x against a book median of 16x, 109x the next name,
+    while SLV at 74.6% annualised scored 9.1x. That does not say BIL was 260x the
+    better idea than SLV; it says BIL barely moves.
+
+    It is not only a display artefact. allocate_portfolio(size_by="conviction")
+    weights by this number, so a cash-like instrument absorbs the book until the
+    single-name cap stops it — inverse-vol sizing pushed past the point where it
+    scales risk and into simply seeking the least volatile thing available.
+
+    The floor is ABSOLUTE, not a percentile of the day's names. A relative floor
+    would make conviction a statement about the day's peer group rather than about
+    the asset, which is exactly what ADR-0042 removed from HypeScore.
+
+    A zero or missing vol falls back to |edge| / floor rather than to |edge| — the
+    old fallback silently put an unpriceable name at the BOTTOM of the conviction
+    ranking (|edge| <= 1 against a book of 9-30), which reads as low conviction
+    when the truth is no measurement.
+    """
+    floor = max(vol_floor, 0.0)
+    denom = max(vol, floor)
+    if denom <= 0:
+        return abs(edge)     # floor disabled AND no vol: nothing left to scale by
+    return abs(edge) / denom
+
+
 # ─── Step 6: Persist themes + signals history ─────────────────────────────────
 def compute_edge_scores(
     scored: list[dict],
@@ -506,8 +537,10 @@ def compute_edge_scores(
         r["sentiment_signal"] = sentiment_tilt
         r["edge_score"] = edge
         r["vol"] = theme_vol
-        # Conviction for Stage-4 sizing: signal strength scaled by inverse vol.
-        r["conviction"] = (abs(edge) / theme_vol) if theme_vol > 0 else abs(edge)
+        # Conviction for Stage-4 sizing: signal strength scaled by inverse vol,
+        # with vol floored (ADR-0047) so the ratio measures the idea, not the
+        # denominator.
+        r["conviction"] = _conviction(edge, theme_vol, cfg.conviction_vol_floor)
 
         # ── Per-asset EdgeScore (ADR-0038) ───────────────────────────────────────
         # Everything above is the THEME average. Four of the five components are
@@ -550,7 +583,7 @@ def compute_edge_scores(
                 "value_signal": a_value if a_value is not None else 0.0,
                 "sentiment_signal": sentiment_tilt,
                 "vol": a_vol,
-                "conviction": (abs(a_edge) / a_vol) if a_vol > 0 else abs(a_edge),
+                "conviction": _conviction(a_edge, a_vol, cfg.conviction_vol_floor),
             }
 
     if missing_trend:

@@ -1127,3 +1127,77 @@ def test_daily_return_still_aborts_when_a_ticker_is_genuinely_absent():
          patch("daily_refresh.fetch_price_data", return_value=only_tlt), \
          pytest.raises(RuntimeError, match="missing prices"):
         compute_and_persist_daily_return(positioned, date(2026, 7, 21), 100_000_000.0)
+
+
+# ─── Conviction vol floor (ADR-0047) ─────────────────────────────────────────
+
+def test_conviction_floor_stops_a_cash_proxy_dominating_the_ranking():
+    """The measured case. BIL is a 0-3 month T-bill ETF: 0.19% ANNUALISED realised
+    vol, 0.000123 daily. Unfloored it scored 2375x conviction against a book median
+    of 16x — 109x the next name — while SLV at 74.6% annualised scored 9.1x.
+
+    That is not a claim that BIL was 260x the better idea. It is the denominator
+    talking. And allocate_portfolio(size_by="conviction") weights by this number.
+    """
+    from scripts.daily_refresh import _conviction
+
+    FLOOR = 0.00315   # ~5% annualised
+    bil = _conviction(0.292, 0.000123, FLOOR)
+    slv = _conviction(-0.429, 0.046984, FLOOR)
+    unh = _conviction(0.414, 0.026343, FLOOR)
+
+    # Unfloored, BIL is 260x SLV. Floored, it is inside one order of magnitude.
+    assert 0.292 / 0.000123 > 2000            # the defect, pinned
+    assert bil / slv < 12
+    # The floor binds only on the cash proxy; genuine risk positions are untouched.
+    assert slv == pytest.approx(0.429 / 0.046984)
+    assert unh == pytest.approx(0.414 / 0.026343)
+
+
+def test_conviction_floor_leaves_every_real_position_unchanged():
+    """It is a floor, not a rescaling — above it nothing moves. The live 2026-07-25
+    universe put 35 of 39 names above 5% annualised vol."""
+    from scripts.daily_refresh import _conviction
+
+    for vol in (0.00316, 0.006004, 0.018019, 0.046984):
+        assert _conviction(0.30, vol, 0.00315) == pytest.approx(0.30 / vol)
+
+
+def test_conviction_floor_binds_below_the_threshold():
+    from scripts.daily_refresh import _conviction
+
+    # Anything under the floor is divided by the floor, so conviction is bounded by
+    # |edge| / floor no matter how still the asset is.
+    assert _conviction(0.30, 0.000001, 0.00315) == pytest.approx(0.30 / 0.00315)
+    assert _conviction(0.30, 0.0, 0.00315) == pytest.approx(0.30 / 0.00315)
+
+
+def test_conviction_with_no_vol_is_not_ranked_at_the_bottom():
+    """The old fallback returned |edge| when vol was 0 — which put an unpriceable
+    name BELOW every priced one (|edge| <= 1 against a book of 9-30), reading as low
+    conviction when the truth is no measurement."""
+    from scripts.daily_refresh import _conviction
+
+    unpriced = _conviction(0.30, 0.0, 0.00315)
+    typical = _conviction(0.30, 0.018019, 0.00315)
+    assert unpriced > typical
+    assert unpriced > 1.0
+
+
+def test_conviction_floor_of_zero_restores_the_old_behaviour():
+    """The parameter is a scoring_config row; 0 must be a clean off switch."""
+    from scripts.daily_refresh import _conviction
+
+    assert _conviction(0.292, 0.000123, 0.0) == pytest.approx(0.292 / 0.000123)
+    assert _conviction(0.292, 0.0, 0.0) == pytest.approx(0.292)
+
+
+def test_conviction_floor_is_absolute_not_a_percentile():
+    """ADR-0042's rule: a score must describe the asset, not the day's peer group.
+    The same asset must score the same conviction whatever else was scored with it.
+    """
+    from scripts.daily_refresh import _conviction
+
+    quiet_day = [_conviction(0.30, v, 0.00315) for v in (0.004, 0.005, 0.006)]
+    wild_day = [_conviction(0.30, v, 0.00315) for v in (0.004, 0.040, 0.060)]
+    assert quiet_day[0] == pytest.approx(wild_day[0])

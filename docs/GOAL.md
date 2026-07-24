@@ -141,11 +141,22 @@ history. Gating those would replace a real number with a blank. An unknown sessi
 count also does not withhold: not knowing the sample size is not evidence it is
 short. Five tests pin all of it, including both boundaries.
 
+**Verified live.** The board went from **"1 breached · 0 near · 8 ok · 1 no-data"**
+to **"1 breached · 0 near · 6 ok · 3 no-data"**, and the VaR row now reads
+`— / 6.0% / — / NO DATA` — limit still visible, value withheld. Everything the board
+still scores is computed from today's weights (caps, gross/net exposure, HHI) and is
+genuinely knowable; every statistical estimate is withheld. Tile and board agree.
+
 **This is the third consecutive iteration on the same theme, and the theme is the
 point:** a correct calculation presented as if it meant something. Each fix exposed
 the next surface making the same claim — tile, then board. Worth checking whether
 anything else asserts a risk number: the what-if shock estimator and the scenario
 table both consume the same statistics.
+
+**Minor, noted not fixed:** the geography cap reads BREACHED at exactly 35.0% vs a
+35.0% limit, headroom `−0.0%` — a floating-point boundary. Flagging a position
+sitting exactly on its cap is the conservative reading and defensible, but the
+`−0.0%` headroom is an artefact worth tidying if that row is ever touched.
 
 ### Loop iteration 20 (2026-07-24)
 

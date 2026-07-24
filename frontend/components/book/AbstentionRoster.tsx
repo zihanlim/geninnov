@@ -74,6 +74,25 @@ export default function AbstentionRoster({
   const scored = Object.values(edgeByTheme).filter(
     (e) => e.edge_score !== null,
   ).length;
+  // Themes that sit BELOW the bar and traded anyway, on a decisive asset. The
+  // roster excludes them (correctly — they are not "scored, not traded"), which is
+  // why the empty state has to name them rather than imply they cleared.
+  const tradedBelowBar = Object.entries(edgeByTheme)
+    .filter(
+      ([theme_id, e]) =>
+        e.edge_score !== null &&
+        Math.abs(e.edge_score) < abstainThreshold &&
+        tradedThemeIds?.has(theme_id),
+    )
+    .map(([theme_id, e]) => ({
+      theme_id,
+      name: themeNames[theme_id] ?? theme_id,
+      edge_score: e.edge_score,
+    }))
+    .sort((a, b) => Math.abs(b.edge_score ?? 0) - Math.abs(a.edge_score ?? 0));
+  const clearedBar = Object.values(edgeByTheme).filter(
+    (e) => e.edge_score !== null && Math.abs(e.edge_score) >= abstainThreshold,
+  ).length;
 
   // Scroll the focused (held-out) theme's row into view once it renders.
   const focusRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -118,10 +137,35 @@ export default function AbstentionRoster({
         </div>
       ) : roster.length === 0 ? (
         <div className="p-[18px] text-[12.5px] text-text-secondary leading-[1.6]">
-          Every scored theme cleared the{" "}
+          {/* "Nothing was held out" and "every theme cleared the bar" are NOT the
+              same statement, and this panel used to print the second while meaning
+              the first. They diverge exactly when a theme below the band trades
+              anyway on one decisive asset — which ADR-0039 made possible and
+              ADR-0046 made common. Live on 2026-07-25 it claimed all 8 themes had
+              cleared a 0.15 bar while /method showed Inflation at +0.117. */}
+          No theme was held out this run.{" "}
+          <span className="num">{clearedBar}</span> of{" "}
+          <span className="num">{scored}</span> scored themes cleared the{" "}
           <span className="num">|Edge| ≥ {abstainThreshold.toFixed(2)}</span>{" "}
-          conviction bar — none were held out this run. That is unusual: it means
-          the engine took a directional view on all {scored} themes it scored.
+          conviction bar
+          {tradedBelowBar.length > 0 ? (
+            <>
+              , and{" "}
+              {tradedBelowBar.map((t, i) => (
+                <span key={t.theme_id}>
+                  {i > 0 ? ", " : ""}
+                  <span className="text-text-primary">{t.name}</span>{" "}
+                  <span className="num">({fmtSigned(t.edge_score)})</span>
+                </span>
+              ))}{" "}
+              {tradedBelowBar.length === 1 ? "sits" : "sit"} below it and still
+              traded — direction and abstention are decided per <em>asset</em>, and a
+              theme&apos;s average edge is smallest exactly when its assets disagree
+              (ADR-0039).
+            </>
+          ) : (
+            <>. Every scored theme carried a directional view.</>
+          )}
         </div>
       ) : (
         <ScrollArea>

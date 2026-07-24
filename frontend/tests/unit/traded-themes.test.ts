@@ -44,3 +44,41 @@ describe("abstention roster membership", () => {
     ]);
   });
 });
+
+describe("empty-roster wording", () => {
+  // The two counts the empty state has to keep apart. "Nothing was held out" and
+  // "every theme cleared the bar" are different claims; conflating them is what the
+  // panel did on 2026-07-25.
+  const cleared = (byTheme: Record<string, ThemeEdge>, bar: number) =>
+    Object.values(byTheme).filter(
+      (e) => e.edge_score !== null && Math.abs(e.edge_score) >= bar,
+    ).length;
+  const belowBarButTraded = (
+    byTheme: Record<string, ThemeEdge>,
+    bar: number,
+    traded: Set<string>,
+  ) =>
+    Object.entries(byTheme)
+      .filter(
+        ([id, e]) =>
+          e.edge_score !== null && Math.abs(e.edge_score) < bar && traded.has(id),
+      )
+      .map(([id]) => id);
+
+  const byTheme = { infl: edge(0.117), china: edge(-0.254), fed: edge(0.298) };
+
+  it("counts a sub-band theme that traded as NOT having cleared the bar", () => {
+    expect(cleared(byTheme, 0.15)).toBe(2);
+    expect(belowBarButTraded(byTheme, 0.15, new Set(["infl", "fed"]))).toEqual([
+      "infl",
+    ]);
+    // ...and the roster is still empty, which is the case that used to lie.
+    expect(abstainedThemes(byTheme, {}, 0.15, new Set(["infl", "fed"]))).toEqual([]);
+  });
+
+  it("names nothing when every theme genuinely cleared the bar", () => {
+    const strong = { a: edge(0.4), b: edge(-0.3) };
+    expect(cleared(strong, 0.15)).toBe(2);
+    expect(belowBarButTraded(strong, 0.15, new Set(["a", "b"]))).toEqual([]);
+  });
+});

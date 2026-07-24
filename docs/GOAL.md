@@ -88,11 +88,14 @@ Live at https://andromeda-analytics.vercel.app · 436 backend + 45 frontend test
   **All six stages report to `pipeline_runs`** since iteration 14 — L1 and L4 were
   silent, so `/method` said "not instrumented" while the status bar said "4/4
   succeeded".
-- **Q1 book** — **5 long / 3 short across 8 positions** (SVXY, EEM, BIL, UNH, NUE
-  long; GLD, KWEB, NOC short) on the 2026-07-25 run, +11.5% net at 64.0% gross, and
-  **7 of the 8 came from themes below the attention gate** (ADR-0046) — under the old
-  rule this book would have been six US Election names. Long side is at the five Q1
-  asks for; the short side is at three. **One portfolio everywhere** since iteration 10
+- **Q1 book** — **4 long / 3 short across 7 positions** (XLE, JPM, EEM, UNH long;
+  GLD, KWEB, NOC short) on the last 2026-07-25 run, +1.4% net at 71.8% gross, $28.2M
+  held back by position limits. Almost every name comes from a theme **below** the
+  attention gate (ADR-0046) — under the old rule the pool would have been six US
+  Election names. **Both sides are short of the five Q1 asks for**, and the
+  composition moves run to run: this is one draw from a 39-name pool, not a fixed
+  answer, and `/book`'s turnover panel says so. Conviction now reads **13.6×–30.2×
+  across every position** (ADR-0047) rather than one name at 2375×. **One portfolio everywhere** since iteration 10
   (ADR-0040) — `/book` and `/risk` describe the same names and every risk number is
   computed on them, and since iteration 32 `/risk` *checks* that rather than assuming
   it — and direction no longer inverts on a regime label flip since
@@ -135,9 +138,10 @@ the book changed.
 
 **Verified on a live run: BIL 2375.2 → 92.8, SHY 292.1 → 87.7, AGG 99.2 → 82.8, IEF
 unchanged at 79.6**, every above-floor name untouched — a floor, not a rescaling.
-Book-wide max/median **148× → under 6×**. The resulting book is 5 long / 3 short
-(SVXY, EEM, BIL, UNH, NUE long; GLD, KWEB, NOC short), with **7 of 8 positions from
-themes below the attention gate** and BIL sized at $6.9M instead of cap-bound.
+Book-wide max/median **148× → under 6×**, and the live Conv. column now reads
+**13.6×–30.2× across every position**. Two runs under the floor produced 5 long / 3
+short and then 4 long / 3 short — **the composition moves run to run**, which is worth
+stating plainly: the book is one draw from a 39-name pool, not a fixed answer.
 
 **The UI pass then caught the provisional-window defect in the act** — `/risk`
 reporting *"39 positions"* and HHI 138 while the published book held 8. Both numbers

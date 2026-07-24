@@ -28,12 +28,17 @@ export function SectionGap({
       >
         <p className="m-0 mb-1.5 font-medium text-text-primary">{copy.headline}</p>
         <p className="m-0 mb-2.5 text-text-secondary leading-[1.6]">{copy.detail}</p>
+        {/* min-w-0 on each dd, and overflow-wrap on the code: a `1fr` grid track
+            keeps a min-content floor, so an unbreakable identifier like
+            `research_recommendations.correlation_pairs` widens the whole grid past
+            the card, which clips rather than scrolls. Both are needed — wrapping
+            alone cannot help if the track refuses to shrink. */}
         <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 items-baseline">
           <dt className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary">
             Source
           </dt>
-          <dd className="m-0">
-            <code className="num text-[12px] text-text-secondary bg-bg-elevated border border-border rounded px-1.5 py-0.5">
+          <dd className="m-0 min-w-0">
+            <code className="num text-[12px] text-text-secondary bg-bg-elevated border border-border rounded px-1.5 py-0.5 [overflow-wrap:anywhere]">
               {copy.source}
             </code>
           </dd>
@@ -42,8 +47,8 @@ export function SectionGap({
               <dt className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary">
                 Remedy
               </dt>
-              <dd className="m-0">
-                <code className="num text-[12px] text-accent bg-bg-elevated border border-border rounded px-1.5 py-0.5">
+              <dd className="m-0 min-w-0">
+                <code className="num text-[12px] text-accent bg-bg-elevated border border-border rounded px-1.5 py-0.5 [overflow-wrap:anywhere]">
                   {copy.command}
                 </code>
               </dd>

@@ -1,7 +1,7 @@
 # ADR-0056 — An instruction is not a guardrail: check that the declined idea was explained
 
 **Date:** 2026-07-25
-**Status:** Accepted
+**Status:** Accepted (**count owed corrected by [0058](0058-explanations-are-owed-per-empty-slot.md)** — explanations are owed per EMPTY SLOT, not per declined idea)
 **Relates to:** [0048](0048-count-independent-ideas-not-candidates.md), [0049](0049-the-guardrail-does-not-read-the-prose.md), [0045](0045-turnover-on-names-without-a-verdict.md), [0054](0054-a-daily-publication-not-a-scanner.md)
 
 ## Context

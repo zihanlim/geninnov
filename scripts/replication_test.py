@@ -52,6 +52,7 @@ from backend.services.q1_agent import (  # noqa: E402
     reason_picks,
     run_scenario_analysis_node,
     screen_candidates,
+    shortfall_accounting,
 )
 from backend.services.hype_calculator import ScoringConfig  # noqa: E402
 
@@ -153,6 +154,7 @@ def main() -> int:
           f"{(pool.get('short') or {}).get('count')} short ideas")
 
     books: list[set[str]] = []
+    shortfalls: list[dict] = []
     fell_back = 0
     for i in range(args.samples):
         s = copy.deepcopy(state)
@@ -180,6 +182,27 @@ def main() -> int:
         print(f"[replication] sample {i + 1}/{args.samples}: {len(names)} picks — "
               f"{', '.join(sorted(names)) or '(none)'}")
 
+        # Does this sample EXPLAIN what it declined? (ADR-0056)
+        #
+        # The prompt was strengthened to require naming each declined independent
+        # idea, and `shortfall_accounting` was added to check it — but the check only
+        # reports that the model failed; it cannot make it succeed. Nothing had ever
+        # measured whether the instruction works, and the published book predates it.
+        #
+        # This is the right harness for that question and it costs nothing extra: the
+        # samples are already being drawn on frozen inputs, so the explanation rate is
+        # measured over the same draws as the turnover, against one identical pool.
+        gaps = shortfall_accounting(picks, pool, s.get("book_view") or "")
+        shortfalls.append(gaps)
+        if not gaps:
+            print("           shortfall: none — every side took what was reachable")
+        for side, block in gaps.items():
+            verdict = "EXPLAINED" if block["satisfied"] else "UNEXPLAINED"
+            print(f"           shortfall {side}: held {block['held']}/"
+                  f"{block['available']} ({block['empty_slots']} slot(s) empty), "
+                  f"declined {', '.join(block['passed_over'])} — {verdict}"
+                  + (f" (named {', '.join(block['named'])})" if block["named"] else ""))
+
     usable = [b for b in books if b]
     if len(usable) < 2:
         print(f"[replication] {len(usable)} model sample(s) usable "
@@ -205,6 +228,26 @@ def main() -> int:
     print(f"  mean turnover SHORT    : {mean(shorts):.0%}")
     print(f"  in every sample        : {', '.join(sorted(every)) or '(none)'}")
     print(f"  in some but not all    : {', '.join(sorted(any_ - every)) or '(none)'}")
+
+    # Explanation rate — how often the agent accounts for what it declined.
+    #
+    # Reported as "of the samples that WERE short", never as a share of all samples:
+    # a sample that took everything reachable has nothing to explain, and counting it
+    # as a pass would inflate the rate with draws that never faced the question.
+    with_shortfall = [g for g in shortfalls if g]
+    explained = [
+        g for g in with_shortfall if all(b["satisfied"] for b in g.values())
+    ]
+    if not with_shortfall:
+        print("  shortfall explained    : n/a — no sample fell short of a reachable idea")
+    else:
+        print(f"  shortfall explained    : {len(explained)}/{len(with_shortfall)} "
+              f"of the samples that fell short")
+        declined_unnamed = sorted({
+            t for g in with_shortfall for b in g.values() for t in b["unexplained"]
+        })
+        if declined_unnamed:
+            print(f"  declined and unnamed   : {', '.join(declined_unnamed)}")
 
     if args.no_persist:
         return 0

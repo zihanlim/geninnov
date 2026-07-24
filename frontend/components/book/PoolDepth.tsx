@@ -42,9 +42,13 @@ export interface IdeaComplex {
 export interface Shortfall {
   held: number;
   available: number;
+  /** available − held. How many explanations are owed (ADR-0058). */
+  empty_slots?: number;
   passed_over: string[];
   named: string[];
   unexplained: string[];
+  /** named.length >= empty_slots. The verdict; do not re-derive it here. */
+  satisfied?: boolean;
 }
 
 export interface SideDepth {
@@ -81,8 +85,18 @@ function Side({
   // four shorts against five ideas and the thesis never mentioned ARKK, the one it
   // declined. The single panel built to expose the shortfall was sending the reader
   // somewhere that did not answer it. It now says which case this is (ADR-0056).
+  //
+  // The verdict is `satisfied`, computed in shortfall_accounting: the thesis owes one
+  // named idea per EMPTY SLOT, not one per declined idea (ADR-0058). Re-deriving it
+  // from `unexplained.length` here would resurrect the rule the harness disproved —
+  // on a side with ten ideas and five slots, five declines are forced by arithmetic
+  // and mean nothing. Older rows carry no `satisfied`, so fall back to the original
+  // all-or-nothing reading for them rather than inventing a verdict.
   const unexplained = shortfall?.unexplained ?? [];
   const explained = shortfall?.named ?? [];
+  const satisfied = shortfall
+    ? (shortfall.satisfied ?? unexplained.length === 0)
+    : null;
 
   return (
     <div className="mb-4 last:mb-0">
@@ -101,7 +115,7 @@ function Side({
             The pool held fewer than the {Q1_TARGET} Q1 asks for, so this side is
             limited by what the market offered, not by the selection.
           </span>
-        ) : underPicked && unexplained.length > 0 ? (
+        ) : underPicked && satisfied === false ? (
           <span style={{ color: "var(--warning)" }}>
             The pool held {count} independent ideas and the book took {held}. This
             side is short of {Q1_TARGET} by choice, not by constraint —{" "}
@@ -109,7 +123,7 @@ function Side({
             <span className="num">{unexplained.join(", ")}</span>. Q1 asks for five a
             side with reasons, so an unexplained omission is the gap, not the count.
           </span>
-        ) : underPicked && explained.length > 0 ? (
+        ) : underPicked && satisfied === true ? (
           <span className="text-text-secondary">
             The pool held {count} independent ideas and the book took {held}. This
             side is short of {Q1_TARGET} by choice, not by constraint, and the thesis

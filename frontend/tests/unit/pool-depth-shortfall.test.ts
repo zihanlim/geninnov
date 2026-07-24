@@ -22,10 +22,12 @@ function branchFor(depth: SideDepth, held: number): Branch {
   const poolLimited = depth.count < Q1_TARGET;
   const underPicked = held < Math.min(depth.count, Q1_TARGET);
   const unexplained = depth.shortfall?.unexplained ?? [];
-  const explained = depth.shortfall?.named ?? [];
+  const satisfied = depth.shortfall
+    ? (depth.shortfall.satisfied ?? unexplained.length === 0)
+    : null;
   if (poolLimited) return "pool-limited";
-  if (underPicked && unexplained.length > 0) return "unexplained";
-  if (underPicked && explained.length > 0) return "explained";
+  if (underPicked && satisfied === false) return "unexplained";
+  if (underPicked && satisfied === true) return "explained";
   if (underPicked) return "unmeasured";
   return "complete";
 }
@@ -47,9 +49,11 @@ describe("PoolDepth shortfall branch", () => {
       shortfall: {
         held: 4,
         available: 5,
+        empty_slots: 1,
         passed_over: ["ARKK"],
         named: [],
         unexplained: ["ARKK"],
+        satisfied: false,
       },
     };
     expect(branchFor(depth, 4)).toBe("unexplained");
@@ -61,9 +65,11 @@ describe("PoolDepth shortfall branch", () => {
       shortfall: {
         held: 4,
         available: 5,
+        empty_slots: 1,
         passed_over: ["ARKK"],
         named: ["ARKK"],
         unexplained: [],
+        satisfied: true,
       },
     };
     expect(branchFor(depth, 4)).toBe("explained");
@@ -90,8 +96,51 @@ describe("PoolDepth shortfall branch", () => {
   it("never shows the warning branch when the shortfall block is empty", () => {
     const depth: SideDepth = {
       ...LIVE_SHORT,
-      shortfall: { held: 5, available: 5, passed_over: [], named: [], unexplained: [] },
+      shortfall: {
+        held: 5, available: 5, empty_slots: 0,
+        passed_over: [], named: [], unexplained: [], satisfied: true,
+      },
     };
     expect(branchFor(depth, 5)).toBe("complete");
+  });
+});
+
+describe("ADR-0058 — the verdict is empty slots, not declined ideas", () => {
+  it("credits a side that named one idea per empty slot, though others went untaken", () => {
+    // The real sample-1 long side from the frozen-input run: 3 held of 5 reachable,
+    // SEVEN independent ideas untaken, FOUR of them named. Two slots empty, four
+    // named — satisfied. The old all-or-nothing rule called this a failure.
+    const depth: SideDepth = {
+      count: 10,
+      names: 19,
+      complexes: [],
+      standalone: ["SHY", "NUE", "UNH", "JPM", "BIL", "GS", "JD"],
+      shortfall: {
+        held: 3,
+        available: 5,
+        empty_slots: 2,
+        passed_over: ["SHY", "NUE", "UNH", "JPM", "BIL", "GS", "JD"],
+        named: ["NUE", "UNH", "JPM", "BIL"],
+        unexplained: ["SHY", "GS", "JD"],
+        satisfied: true,
+      },
+    };
+    expect(branchFor(depth, 3)).toBe("explained");
+  });
+
+  it("falls back to all-or-nothing for rows written before the verdict existed", () => {
+    // Pre-ADR-0058 rows carry `unexplained` but no `satisfied`. Inventing a lenient
+    // verdict for them would silently clear warnings that were correct when written.
+    const depth: SideDepth = {
+      ...LIVE_SHORT,
+      shortfall: {
+        held: 4,
+        available: 5,
+        passed_over: ["ARKK"],
+        named: [],
+        unexplained: ["ARKK"],
+      },
+    };
+    expect(branchFor(depth, 4)).toBe("unexplained");
   });
 });

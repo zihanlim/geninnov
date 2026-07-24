@@ -1569,13 +1569,28 @@ def shortfall_accounting(
     held. Those are exactly the names the agent was shown in POOL DEPTH, so it is being
     asked about something it saw.
 
+    **How many explanations are owed — corrected by measurement (ADR-0058).** The first
+    version required EVERY declined idea to be named. Running the frozen-input harness
+    showed why that is incoherent. A sample that held 3 longs against **10** independent
+    long ideas was asked to account for **seven** names; the short side, holding 4
+    against **5**, was asked for one. Both books were short by a comparable amount, and
+    the burden differed sevenfold — because where ideas exceed the five slots, most
+    declines are forced by arithmetic and mean nothing.
+
+    The number owed is the number of **empty slots**: ``available - held``. Leave two
+    slots unfilled, name at least two of the ideas that could have filled them. On a
+    side where ideas exactly fill the book that reduces to the old rule, which is why
+    the short side's behaviour is unchanged.
+
     Returns ``{side: {...}}`` containing only sides that ARE short, each with::
 
         held         positions taken on that side
         available    min(independent ideas, target) — what was reachable
-        passed_over  representative ticker per declined idea
+        empty_slots  available - held — how many explanations are owed
+        passed_over  representative ticker per declined idea (informational)
         named        those the thesis mentions
-        unexplained  those it does not
+        unexplained  those it does not (informational)
+        satisfied    len(named) >= empty_slots — the verdict the page branches on
 
     A side that met its target is omitted rather than reported as empty: silence means
     there was nothing to explain, which is different from an explanation of nothing.
@@ -1619,12 +1634,15 @@ def shortfall_accounting(
 
         text = prose or ""
         named = [t for t in passed_over if re.search(rf"\b{re.escape(t)}\b", text)]
+        empty_slots = available - len(held_assets)
         out[side] = {
             "held": len(held_assets),
             "available": available,
+            "empty_slots": empty_slots,
             "passed_over": passed_over,
             "named": named,
             "unexplained": [t for t in passed_over if t not in named],
+            "satisfied": len(named) >= empty_slots,
         }
     return out
 

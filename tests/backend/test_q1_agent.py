@@ -1584,6 +1584,9 @@ def test_shortfall_flags_the_declined_idea_the_thesis_never_named():
     assert gaps["short"]["passed_over"] == ["ARKK"]
     assert gaps["short"]["unexplained"] == ["ARKK"]
     assert gaps["short"]["named"] == []
+    # One empty slot, nothing named -> not satisfied.
+    assert gaps["short"]["empty_slots"] == 1
+    assert gaps["short"]["satisfied"] is False
 
 
 def test_shortfall_is_satisfied_when_the_thesis_names_the_declined_idea():
@@ -1594,6 +1597,7 @@ def test_shortfall_is_satisfied_when_the_thesis_names_the_declined_idea():
 
     assert gaps["short"]["named"] == ["ARKK"]
     assert gaps["short"]["unexplained"] == []
+    assert gaps["short"]["satisfied"] is True
 
 
 def test_a_complex_is_declined_only_when_NOTHING_in_it_is_held():
@@ -1661,3 +1665,49 @@ def test_shortfall_merges_into_independent_ideas_without_losing_the_measurement(
     assert merged["short"]["complexes"] == _LIVE_IDEAS["short"]["complexes"]
     assert merged["short"]["shortfall"]["unexplained"] == ["ARKK"]
     assert "shortfall" not in merged["long"]
+
+
+def test_explanations_owed_equals_empty_slots_not_declined_ideas():
+    """ADR-0058 — the correction the frozen-input harness forced.
+
+    A sample that held 3 longs against TEN independent long ideas was asked to
+    account for SEVEN names, while the short side holding 4 against FIVE was asked
+    for one. Both were short by a comparable amount and the burden differed
+    sevenfold, because where ideas exceed the five slots most declines are forced by
+    arithmetic and mean nothing.
+
+    This is the real sample-1 book from that run: 3 longs held, 4 declined ideas
+    named. Two slots empty, four named -> satisfied.
+    """
+    from backend.services.q1_agent import shortfall_accounting
+
+    picks = [{"direction": "long", "asset": a} for a in ("OIH", "SVXY", "XLE")]
+    prose = (
+        "Long book is concentrated in energy and vol carry. NUE, UNH, JPM and BIL "
+        "were considered and passed: each would add beta without adding a distinct bet."
+    )
+    gaps = shortfall_accounting(picks, _LIVE_IDEAS, prose)
+
+    assert gaps["long"]["held"] == 3
+    assert gaps["long"]["available"] == 5
+    assert gaps["long"]["empty_slots"] == 2
+    assert set(gaps["long"]["named"]) == {"NUE", "UNH", "JPM", "BIL"}
+    # Seven ideas went untaken, but only two slots were left empty. Four named
+    # covers it — demanding all seven would be a burden no book could discharge.
+    assert len(gaps["long"]["passed_over"]) == 7
+    assert gaps["long"]["satisfied"] is True
+    # The unnamed ones are still reported, as information rather than as a verdict.
+    assert set(gaps["long"]["unexplained"]) == {"SHY", "GS", "JD"}
+
+
+def test_where_ideas_exactly_fill_the_book_the_rule_is_unchanged():
+    """On a side with 5 ideas and 5 slots, every decline IS a shortfall.
+
+    That is the case the original all-or-nothing rule got right, and the correction
+    must not weaken it — one empty slot still demands one name.
+    """
+    from backend.services.q1_agent import shortfall_accounting
+
+    picks = [{"direction": "short", "asset": a} for a in ("SLV", "BABA", "PDD", "NOC")]
+    assert shortfall_accounting(picks, _LIVE_IDEAS, "no mention")["short"]["satisfied"] is False
+    assert shortfall_accounting(picks, _LIVE_IDEAS, "ARKK passed")["short"]["satisfied"] is True

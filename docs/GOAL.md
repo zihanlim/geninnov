@@ -130,7 +130,7 @@ block:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 546 backend + 129 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 546 backend + 134 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -178,6 +178,36 @@ Live at https://andromeda-analytics.vercel.app · 546 backend + 129 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 60 (2026-07-25)
+
+**Shipped the home book-of-record disclosure I flagged last iteration, then a second
+factor-tilt cross-check exposed a sign bug in the SQL that computes it — the home was
+showing a full unit of market beta for a book that is net short beta.**
+
+Two fixes, one shippable now and one not:
+
+- **Shipped + verified live (`f082e3a4`):** `/`'s footer read **"Held tickers 40"**
+  (or a different 9 than the book) while `/book` published 9 — it counted
+  `portfolio_positions`, which the pipeline fills with L1's provisional pool before
+  reconciling to L5's picks. Now it counts the **published book** (the ADR-0040 source
+  `/book` renders) and, when positions still disagree, discloses it — *"9 · 9 in
+  positions, reconciling"* — the way `/risk` does rather than hiding it. Reuses the
+  shared `reconcileToBook`; new `bookPicks` helper is unit-tested. Live: footer reads
+  the published 9, zero console errors, no horizontal scroll at 1440/375.
+- **Found + fixed, cannot apply from here (migration `037`):** chasing the factor tilt
+  (still implausible at **MKT-RF +1.00**) into `portfolio_factor_exposure` (the view
+  the home reads) found it signs each beta with `CASE short THEN -p.weight`. But
+  `reconcile_positions_to_book` writes the pick's **signed** weight, so a short's
+  `-p.weight` = `-(-0.08)` = **+0.08** — the view **double-negates shorts, adding their
+  beta as if long**. The buggy formula reproduces the live +1.0022 to the digit; the
+  **true book beta is −0.35** (net short — the China shorts BABA/PDD carry ~1.3 beta),
+  and every factor was wrong, most sign-flipped. A market-neutral book was showing a
+  full unit of market beta. Fix signs by **direction over |weight|**
+  (`-ABS(p.weight)`), robust to either stored convention. It is a view (DDL) change and
+  **this session has no SQL/DDL access** (no Supabase MCP, no `DATABASE_URL`) — so it is
+  a committed migration awaiting apply by whoever holds the MCP, not a claim of live.
+  546 backend + 134 frontend.
 
 ### Loop iteration 59 (2026-07-25)
 

@@ -66,7 +66,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0059](0059-a-single-date-ic-is-not-validation.md) | A single-date IC is measured, not validated — the IC harness crashed before persist, and the panel would have flipped green on one day | accepted | 2026-07-25 |
 | [0060](0060-a-share-cannot-exceed-the-whole.md) | A share cannot exceed the whole — net share is withheld on a market-neutral book instead of rendering ±1000% | accepted | 2026-07-25 |
 | [0061](0061-a-false-excuse-is-worse-than-none.md) | A false excuse is worse than none — reject an availability claim about a name that was in the pool; ADR-0049's rule extended from numbers to facts | accepted | 2026-07-25 |
-| [0062](0062-run-date-is-not-a-write-timestamp.md) | A run's date is its run_date, not a write timestamp — the landing page dated the 07-25 run 07-24 by reading themes.updated_at | accepted | 2026-07-25 |
+| [0062](0062-run-date-is-not-a-write-timestamp.md) | A run's date is its run_date, not a write timestamp — the landing page dated the 07-25 run 07-24 by reading themes.updated_at | accepted (**description corrected by [0070](0070-forward-dating-was-never-implemented.md)**) | 2026-07-25 |
 | [0063](0063-one-beta-bar-across-every-surface.md) | One sample bar for beta across every surface — and the recorded beta-direction guardrail is NOT built, because the claim is ambiguous rather than false | accepted | 2026-07-25 |
 | [0064](0064-the-audit-page-blamed-the-pipeline-for-its-own-arithmetic.md) | The audit page blamed the pipeline for its own arithmetic — /method recomputed EdgeScore without ADR-0036's renormalisation and published a RECONCILIATION FAILURE against a correct pipeline | accepted | 2026-07-25 |
 | [0065](0065-check-the-published-book-not-only-the-generation.md) | Check the published book, not only the generation that produced it — the thesis guardrails now re-run daily against the persisted book_view | accepted | 2026-07-25 |
@@ -74,6 +74,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0067](0067-a-column-must-name-the-subset-it-measures.md) | A column must name the subset it measures — "Avg |rho| to book" averaged only pairs flagged at 0.70, so an empty column read as uncorrelated | accepted | 2026-07-25 |
 | [0068](0068-a-cap-breach-is-not-decided-by-float-error.md) | A cap breach is not decided by floating-point error — a book clamped exactly to its 35% cap reported "US (35.0% > 35%)" | accepted | 2026-07-25 |
 | [0069](0069-run-date-is-utc-not-the-local-clock.md) | `run_date` is UTC, not the local clock — a UTC+8 local run stamped a day ahead of the scheduled job, splitting positions from the published book | accepted | 2026-07-25 |
+| [0070](0070-forward-dating-was-never-implemented.md) | Forward-dating was never implemented — the convention in 0062 was inferred from an artifact of a UTC+8 local run; corrects 0062's description | accepted | 2026-07-25 |
 
 ## When to write an ADR
 

@@ -1,7 +1,7 @@
 # ADR-0062 — A run's date is its run_date, not the timestamp a row was written
 
 **Date:** 2026-07-25
-**Status:** Accepted
+**Status:** Accepted (the FIX stands; the **forward-dating description is corrected by [0070](0070-forward-dating-was-never-implemented.md)** — run_date is the UTC date of the run and was never forward-dated)
 **Relates to:** [0040](0040-published-book-is-the-book-of-record.md), [0041](0041-regime-as-a-dial-not-a-cliff.md)
 
 ## Context

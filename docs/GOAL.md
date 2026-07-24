@@ -179,6 +179,56 @@ Live at https://andromeda-analytics.vercel.app · 546 backend + 129 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 58 (2026-07-25)
+
+**A documented convention turned out to be a description of my own bug.**
+
+Last iteration I changed `run_date` from `date.today()` to the UTC date
+([ADR-0069](adrs/0069-run-date-is-utc-not-the-local-clock.md)). Re-reading
+[ADR-0062](adrs/0062-run-date-is-not-a-write-timestamp.md) — written by the other session
+— that change **contradicts** its stated convention:
+
+> `run_date` … is **forward-dated**: the job that runs on the evening of 2026-07-24 (UTC)
+> produces the book *for* 2026-07-25.
+
+Contradicting an accepted ADR without noticing is reason enough to check which one the
+code has actually been doing. Every `L0` run on record, against the UTC date of its own
+start:
+
+| started (UTC) | UTC date | `run_date` | |
+|---|---|---|---|
+| 2026-07-23T22:30:15 | 2026-07-23 | **2026-07-23** | == UTC date |
+| 2026-07-24T21:43:05 | 2026-07-24 | **2026-07-25** | forward +1 |
+| 2026-07-24T22:34:08 | 2026-07-24 | **2026-07-24** | == UTC date |
+
+**The only forward-dated run in the entire history is the middle one — my own local run
+from a UTC+8 machine.** The scheduled job has always stamped its own UTC date. There was
+never any code that added a day.
+
+**So the convention was inferred from a bug.** ADR-0062 was written while the artifact
+rows my local runs had just created were the freshest data in the table, and `run_date`
+2026-07-25 on data written at 2026-07-24T20:13Z is *exactly* what forward-dating would
+look like — and also exactly what `date.today()` on a UTC+8 machine looks like. The
+reading was reasonable and wrong.
+
+**ADR-0062's fix is untouched and still correct**: sourcing the landing header from
+`pipeline_runs.run_date` rather than `themes.updated_at` was right because a write
+timestamp is not a run identifier, which has nothing to do with forward-dating. Only the
+*description* is corrected, by annotating its status line rather than rewriting its body
+— the [ADR-0052](adrs/0052-a-stall-cost-three-attempts-not-one.md) precedent.
+
+**Nothing renamed, no rows rewritten.** The single artifact row stays until the scheduled
+run of 07-25 overwrites it by upsert; deleting a real book to tidy an identifier would be
+the larger error, and `/risk`'s ADR-0040 reconciliation covers the page meanwhile.
+
+**The sharp lesson: a convention read off live data is only as trustworthy as the data.**
+Two agents working one repo produced an artifact, and the artifact was written down as
+intent in an accepted ADR. What caught it was comparing every historical `run_date`
+against the UTC clock of its own run — three rows, one query, and the story reversed.
+**Derive a convention from the code and its history, not from the newest row.**
+
+[ADR-0070](adrs/0070-forward-dating-was-never-implemented.md).
+
 ### Loop iteration 57 (2026-07-25)
 
 **A verification pass: every number I poked on the live book held, and the one

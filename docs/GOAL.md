@@ -106,7 +106,7 @@ find, not just what you changed:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 502 backend + 87 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 509 backend + 95 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -139,8 +139,53 @@ Live at https://andromeda-analytics.vercel.app · 502 backend + 87 frontend test
   comparable over time** since iteration 12 (ADR-0042) — which is what "support risk
   monitoring" requires — plus theme discovery (LDA ∩ embeddings, 6 two-method
   agreements) surfaced on `/`.
-- **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
-  their sample size; `/method` renders every formula from live `scoring_config`.
+- **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED — and since
+  iteration 42 (ADR-0059) it is honest at a finer grain: the IC harness had been
+  crashing before it could persist (a Unicode arrow on a cp1252 stdout, ahead of the
+  write), which froze the panel in a false all-null "no data" state; and its
+  `validated` verdict would have flipped green on a **single date's** IC. It now shows
+  the first measurable reading (h1 IC −0.23, one date) labelled *"measured · 1 date —
+  not yet stable"* and keys "validated" on the IC information ratio (stability across
+  ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
+  `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 42 (2026-07-25)
+
+**Fixed the Q2 validation spine where it was quietly broken: the IC harness crashed
+before it could write, and the panel would have called one day a signal.**
+
+`/method`'s **Does HypeScore actually predict returns?** panel is the site's one
+NOT-YET-VALIDATED surface, and GOAL.md ranks validation second only to the answer
+existing. Two coupled defects lived under it.
+
+The harness (`scripts/backtest_hype.py`) printed its legend with a Unicode `→` and
+`≈`, which raise `UnicodeEncodeError` on a cp1252 stdout — and that print runs *before*
+the persist step. So a crash there aborted the run with nothing written, and the panel
+showed **all-null** `hype_ic` rows (n_obs 0 everywhere), reading as *"the harness
+produces nothing"*. It was not true: with the forward-price window that had since
+accrued, the harness could compute a real h1 IC. ASCII fixes it; persist is now
+idempotent.
+
+And the panel's verdict was `validated = some(ic != null)` — *any* non-null IC turned
+it green. The first IC the harness yields is a **single date's** cross-section across
+~8 themes (live: h1 IC **−0.2275**, `n_dates=1`, `ic_ir=null`). One cross-section says
+nothing about stability, and stability is the whole difference between a signal and a
+lucky draw. `validated` now keys on the **IC information ratio** (mean/σ across dates),
+undefined below two dates — the exactly-right boundary. A one-day reading shows as
+*"measured · 1 date — not yet stable"* and the footer names it a point estimate.
+
+Verified end to end: re-ran the fixed harness on this machine (proving the crash fix —
+it reached persist), it wrote a genuine 2026-07-25 row, and the panel reads it as
+measured-thin. The verdict logic is extracted to `lib/method/hypeValidation.ts` and
+unit-tested, including the trap directly — 500 observations on one date is still not
+validated, because breadth is not stability.
+
+Also closed last iteration's loose end: the debug `data-` attributes are gone from the
+deployed `/book`, and the per-position stability marker renders correctly (nine
+positions, XLE/UNH the coin flips).
+
+[ADR-0059](adrs/0059-a-single-date-ic-is-not-validation.md).
+
 
 ### Loop iteration 41 (2026-07-25)
 

@@ -95,6 +95,37 @@ Live at https://andromeda-analytics.vercel.app · 380 backend tests green.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 5 (2026-07-24)
+
+**"No citations provided" was never the real error — it was masking one.** Two
+iterations were spent treating it as the model skipping citations. It isn't:
+
+  `reason_picks` fails (JSONDecodeError / LLM exception) → returns
+  `fallback_picks` → which sets `citations = []` → `verify_citations` sees an empty
+  list and **overwrites** the specific cause ("JSON decode error after 2 retries…")
+  with the generic "No citations provided".
+
+The proof was the iteration-4 diagnostic: it logs on the empty-citations path
+*inside `reason_picks`' success branch*, and on a run that printed "No citations
+provided" it **never fired** — so `reason_picks` never reached the success path,
+and citations were never the failure. A negative result from an instrument is
+still a result; that is what identified this.
+
+Fixed (all diagnostic, no behaviour change): `verify_citations` now preserves a
+specific upstream error when `fallback_used` is set; the JSON-decode branch logs
+the exception plus the response length and the **head and tail of the raw body**
+(so a truncated object is obvious — MiniMax-M3's reasoning has eaten the token
+budget before); the generic branch logs the exception type, so auth/rate-limit/
+timeout can no longer masquerade as missing citations.
+
+**Next run's log now names the actual cause. Read it before changing anything.**
+
+Also fixed: `/` showed "LONG / SHORT CANDIDATES 8 / 0" captioned "Above the
+HypeScore 50 threshold" — those are sized `trade_candidates` rows and had nothing
+to do with the gate. Today all 8 came from a theme that did *not* clear 50, while
+2 of 8 themes did. Caption now reads "Sized names in the book · N of M themes
+cleared HypeScore 50".
+
 ### Loop iteration 4 (2026-07-24)
 
 **Universe widened 24 → 37 tickers (migration 030); the long side now reaches 8.**
@@ -210,16 +241,17 @@ damaging thing this app could get wrong); and `DeltaChip` printed "▼ +2.44" fo
   claimed 50% (L5's 2-pick book). Iteration 1 fixed same-day *duplication* within
   `portfolio_positions`; it did not make L1 and L5 agree. Either have `/risk` read
   one source, or have L5 size the L1 book rather than re-pick it.
-- **L5 empty citations — READ THE NEW LOG FIRST.** Iteration 4 added shape-logging
-  (`[reason_picks] EMPTY CITATIONS ...`) that prints response length, top-level
-  keys, pick count and per-pick citation count at the moment it happens. Run the
-  pipeline, read that line, and let it pick the fix. The live hypotheses, in order:
-  (a) MiniMax-M3's internal reasoning eats `max_tokens` before it emits the
-  citations array — the code already notes this failure mode and set max_tokens to
-  24000; (b) JSON-mode returns picks but silently drops `citations`; (c) it emits
-  no picks at all. Each implies a *different* fix, so do not guess. **This is the
-  highest-value Q1 step** — Q1 asks for the trades *and why*, and a fallback book
-  has no why.
+- **L5 falls back because `reason_picks` never parses a response — READ THE LOG.**
+  Iteration 5 established the failure is upstream of citations and unmasked it. The
+  next run prints one of:
+  `[reason_picks] JSON DECODE FAILED … raw=N chars` + head/tail, or
+  `[reason_picks] LLM CALL FAILED … <ExceptionType>`, or
+  `[reason_picks] EMPTY CITATIONS …` (only if it genuinely parsed).
+  **Run the pipeline, read that line, then fix what it says** — the likely one is a
+  truncated body (raise `MINIMAX_MAX_TOKENS`, or drop `response_format` json_object
+  which can interact badly with a reasoning model), but do not assume. This remains
+  the **highest-value Q1 step**: Q1 asks for the trades *and why*, and a fallback
+  book has no why.
 - **Theme breadth (not ticker breadth) is what produces shorts.** Ticker breadth is
   done (37 tickers, 4–8 per theme). Positions on a side = (themes selected) ×
   (their tickers), so tickers deepen a side that already has a theme but cannot

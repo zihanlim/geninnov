@@ -85,18 +85,80 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
-- **Q1 book** — **two-sided at last: 7 long / 2 short across 9 positions**
-  (iteration 8, ADR-0038 — direction moved from the theme to the asset). VERIFIED
-  thesis w/ citations, conviction-sized, and genuinely cap-bound since iteration 7:
-  the 20/30/35 limits bind and whatever they refuse is held in cash. The L5 fallback
+- **Q1 book** — **4 long / 2 short**, gross 98.9%, net +26.7%, VERIFIED with 26
+  citations (L5); the L1 book beneath it is 12 positions, 9L/3S, 92.2% deployed.
+  Two-sided since iteration 8 (ADR-0038, direction per asset) and deeper since
+  iteration 9 (ADR-0039, scope by attention). Genuinely cap-bound since iteration 7
+  — **`/risk` now shows 0 breached limits**, down from 6 violations. The L5 fallback
   that dogged iterations 3–5 is **fixed and closed** (iteration 6). Remaining Q1 gap
-  is depth on the short side — 2 shorts, not 5.
+  is depth: the ask is five and five.
 - **Direction** EdgeScore = trend/regime/carry/value/sentiment, IC-weighted, with
   abstention + conviction sizing (ADR-0031/32/33).
 - **Q2 hype** HypeScore (volume/sentiment/|ρ|/momentum) + theme discovery
   (LDA ∩ embeddings, 6 two-method agreements) surfaced on `/`.
 - **Honesty surfaces** HypeScore IC panel says NOT YET VALIDATED; risk cards state
   their sample size; `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 9 (2026-07-24)
+
+**The short side was gated by a test that iteration 8 had made obsolete**
+([ADR-0039](../docs/adrs/0039-scope-by-attention-abstain-by-asset.md)). Moving
+direction to the asset made the book two-sided, but `_select` still filtered themes
+by `|theme EdgeScore| >= 0.15` **before any asset was looked at** — so only two
+themes contributed anything at all.
+
+Once direction is per-asset that gate is actively harmful: **a theme's average edge
+is smallest exactly when its assets disagree**, which is precisely when it has most
+to offer a long-short book. The three themes it rejected were the three richest in
+shorts:
+
+| theme | hype | theme edge | short-capable assets |
+|---|---|---|---|
+| **US Dollar** | **73.4 — the day's highest attention** | +0.144 | **3** |
+| China Growth | 40.8 | −0.080 | 2 |
+| **Inflation** | 28.7 | +0.086 | **4 of 4** |
+
+Inflation was *entirely* short-capable and still abstained. Its +0.086 is an
+artefact — under ADR-0036 it inherits the **rates** leg's carry (+0.33) and value
+(+0.99) while its trend comes from the **commodity** basket. The number blends two
+legs and **describes no asset that exists**, and it was gating four genuine shorts.
+
+Scope is now hype-ranked; the theme's own edge filters nothing. **Abstention is not
+weakened — it is applied once instead of twice**, on the unit where the position is
+actually taken. Every candidate still clears `|its own edge| >= 0.15`, and a test
+pins that a theme below the attention gate stays out.
+
+**Live result:**
+
+| | iter 8 | iter 9 |
+|---|---|---|
+| L1 book | 9 pos, 7L/2S, 66.5% | **12 pos, 9L/3S, 92.2%** |
+| L5 book | 3L/1S | **4L/2S**, gross 98.9%, net +26.7% |
+| `/risk` breached limits | 1 | **0** |
+
+US Dollar — the theme the old gate discarded — now supplies **EEM and EMB long
+against GLD and FXE short**, and L5 reasons about it as a pair: *"Long
+underperformers (EEM, EMB, EWJ, XLF) paired with short overextended safe-havens
+(GLD, FXE) creates a USD-hedged relative-value book rather than a pure directional
+dollar bet."* Verified, 26 citations.
+
+**Q1 arc across this session:** fallback book with no thesis → 3L/0S → 3L/1S →
+**4L/2S**. The ask is five and five; every step came from removing something that
+was destroying signal, never from loosening a threshold.
+
+**Fixed a page-level contradiction this exposed.** `/book`'s abstention roster
+listed every theme under the band, so it would have shown **US Dollar as "SCORED,
+NOT TRADED" directly above the four positions it contributed**. Traded themes are
+now excluded. Verified live: US Dollar is gone from the roster, Inflation and China
+Growth remain.
+
+**Follow-up, precise:** the roster's stated reason is now secondary rather than
+wrong. It says "|Edge| < 0.15", which is true of Inflation (0.086) and China Growth
+(0.080) — but the *binding* filter for both is now the attention gate (hype 28.7 and
+40.8 against a threshold of 50). The roster should name the operative reason, and
+ideally list held-out **assets** (the unit that now decides) rather than themes.
+Doing that properly needs the per-asset abstentions persisted; they are computed in
+`asset_edges` and currently discarded for anything that does not make the book.
 
 ### Loop iteration 8 (2026-07-24)
 

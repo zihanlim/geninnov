@@ -22,8 +22,14 @@ const CATEGORY_COLORS: Record<string, string> = {
   Inflation: "var(--warning)",
   Recession: "var(--short)",
   Oil: "var(--warning)",
-  Bitcoin: "#f7931a",
-  Crypto: "#f7931a",
+  // Bitcoin orange darkened from the brand #f7931a, which renders at 2.20:1 on the
+  // elevated surface — these are 9.5px uppercase labels, so it was the least legible
+  // text on the site. #a85c08 is 4.80:1 and still unmistakably Bitcoin orange. Every
+  // other entry here is a token, so the AA pass over globals.css/tailwind.config.ts
+  // fixed those and silently missed this one: a hardcoded hex is invisible to a
+  // token sweep.
+  Bitcoin: "#a85c08",
+  Crypto: "#a85c08",
   Equities: "var(--long)",
   Geopolitics: "var(--short)",
   Tariffs: "var(--warning)",

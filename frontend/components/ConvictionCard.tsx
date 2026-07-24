@@ -78,7 +78,15 @@ export default function ConvictionCard({
 }: Props) {
   const score = Math.round(theme.hype_score ?? 0);
   const delta = theme.delta_1d ?? 0;
-  const color = score >= 70 ? "#e11048" : score >= 50 ? "#147a5c" : "#9f172a";
+  // Read the tokens rather than copying their hexes. This held "#e11048", the
+  // PRE-AA accent — so it kept the old 4.34:1 crimson after the token moved to
+  // #d40e43, and would drift again on any future palette change.
+  const color =
+    score >= 70
+      ? "var(--accent)"
+      : score >= 50
+        ? "var(--long)"
+        : "var(--short)";
   const synthetic = isSynthetic(provenance?.data_source ?? null);
   const pct = theme.crowding_pct;
   const hasPct = typeof pct === "number";

@@ -54,9 +54,12 @@ function StatusBadge({
         className="badge"
         style={{
           fontSize: 10,
-          background: "rgba(240, 136, 62, 0.12)",
-          color: "#f0883e",
-          borderColor: "rgba(240, 136, 62, 0.4)",
+          // #f0883e read 2.53:1 on the card. This badge says the thesis is only
+          // PARTIAL — a caveat nobody can read is not a caveat, so it takes the
+          // AA-compliant warning token like every other caution on the site.
+          background: "rgba(194, 65, 12, 0.12)",
+          color: "var(--warning)",
+          borderColor: "rgba(194, 65, 12, 0.4)",
         }}
         aria-label="Partial"
       >

@@ -22,6 +22,19 @@ import { ScrollArea } from "@/components/ScrollArea";
  * and whether the book already holds something from the same theme. It does NOT
  * attribute a reason to L5 — the agent's rationale lives in the thesis, and inventing
  * one here would be the kind of confident narration this codebase keeps removing.
+ *
+ * The first version of this panel DID invent one. It labelled every theme overlap
+ * "would largely duplicate a held bet", which the data does not support: the
+ * Geopolitical Risk theme alone holds TLT long (Rates), EFA long (Developed
+ * Equities), SLV short (Metals) and NOC short (Defense) — four sectors, both
+ * directions. So GDX was called a duplicate of a theme whose holdings are mostly
+ * long, and QQQ long a duplicate of a theme held via UNH long and ARKK SHORT.
+ * Occasionally right, for a reason that was wrong.
+ *
+ * Real redundancy is correlation with a held position, and correlation_pairs is
+ * computed for the BOOK only — there is no candidate-vs-held figure to render. So
+ * the column now states the overlap as the bare fact it is and says what it does
+ * not prove. Showing a weak signal honestly beats dressing it as a strong one.
  */
 
 export interface CandidateRow {
@@ -68,10 +81,14 @@ export default function ClearedNotTaken({
       </div>
 
       <p className="m-0 px-[18px] py-3 text-[12.5px] text-text-secondary leading-[1.6] max-w-[92ch]">
-        These names passed every screen and still did not make the book. A name whose
-        theme is <em>already held</em> would mostly duplicate a bet the book has — the
-        usual reason a strong candidate is left out. The agent&apos;s own reasoning is
-        in the thesis above; this table states only what the data shows.
+        These names passed every screen and still did not make the book. The theme
+        column shows whether the book already has exposure to that theme — a hint,
+        not a verdict: one theme can hold four positions across four sectors and both
+        directions, so overlap here does <em>not</em> establish that a name would
+        duplicate a held bet. Redundancy is properly a question of correlation, and
+        correlation is only computed for positions actually held. The agent&apos;s
+        reasoning is in the thesis above; this table states what the data shows and
+        no more.
       </p>
 
       <ScrollArea hint={false}>
@@ -95,7 +112,7 @@ export default function ClearedNotTaken({
                 Theme
               </th>
               <th className="text-left font-medium px-3 py-2 text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
-                Book already has this theme?
+                Theme also held?
               </th>
             </tr>
           </thead>
@@ -127,9 +144,7 @@ export default function ClearedNotTaken({
                   </td>
                   <td className="px-3 py-2.5 text-text-secondary">
                     {dup ? (
-                      <span style={{ color: "var(--warning)" }}>
-                        yes — would largely duplicate a held bet
-                      </span>
+                      <span className="text-text-secondary">yes</span>
                     ) : (
                       <span className="text-text-tertiary">no</span>
                     )}

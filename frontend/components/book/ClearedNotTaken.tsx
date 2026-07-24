@@ -1,6 +1,11 @@
 "use client";
 
 import { ScrollArea } from "@/components/ScrollArea";
+import {
+  classifyOverlap,
+  overlapLabel,
+  HIGH_CORR_THRESHOLD,
+} from "@/lib/candidateOverlap";
 
 /**
  * Names that cleared the screen and did NOT make the book.
@@ -49,6 +54,15 @@ import { ScrollArea } from "@/components/ScrollArea";
  * and only +0.20 correlation to anything held, is INDEPENDENT and was still passed
  * over. So the short side is not capped by redundancy — a claim made one iteration
  * earlier and disproved by this very measurement.
+ *
+ * And the Read column itself was wrong for three rows until 2026-07-24. It compared
+ * raw PRICE correlation and ignored both positions' directions, so with the book
+ * SHORT ARKK it labelled long QQQ (+0.77), long IWM (+0.80) and long SPY (+0.80)
+ * "largely already held" — each is nearer the REVERSE of a held bet than a duplicate
+ * of one. classifyOverlap now signs the correlation by both directions before
+ * thresholding it (lib/candidateOverlap.ts). Three rows flipped, and the new
+ * "would net against ARKK" is a better reason to pass a name over than the one the
+ * page had been giving.
  */
 
 export interface CandidateRow {
@@ -57,11 +71,6 @@ export interface CandidateRow {
   edge_score: number | null;
   theme_id: string | null;
 }
-
-/** |rho| at or above which a candidate is largely the same bet as something held.
- *  Matches book_metrics.HIGH_CORR_THRESHOLD, the level /risk already uses to flag
- *  a correlated pair inside the book — one threshold, one meaning. */
-const DUPLICATE_RHO = 0.7;
 
 /** {asset: {closest, corr}} from research_recommendations.candidate_correlations. */
 export type CandidateCorrelations = Record<
@@ -72,12 +81,16 @@ export type CandidateCorrelations = Record<
 export default function ClearedNotTaken({
   candidates,
   heldAssets,
+  heldDirections = {},
   themeNames,
   correlations = {},
 }: {
   candidates: CandidateRow[];
   /** Assets in today's book. */
   heldAssets: Set<string>;
+  /** Side of each held asset — without it, a correlation cannot say whether a
+   *  candidate duplicates a held bet or offsets it. */
+  heldDirections?: Record<string, "long" | "short">;
   themeNames: Record<string, string>;
   correlations?: CandidateCorrelations;
 }) {
@@ -107,11 +120,14 @@ export default function ClearedNotTaken({
       <p className="m-0 px-[18px] py-3 text-[12.5px] text-text-secondary leading-[1.6] max-w-[92ch]">
         These names passed every screen and still did not make the book.{" "}
         <strong>Closest held</strong> is the position each is most correlated with
-        over 252 days. At or above &rho;&nbsp;{DUPLICATE_RHO.toFixed(2)} the idea is
-        largely in the book already, which is the usual reason a strong candidate is
-        left out. Below it the name is a genuinely independent idea that was passed
-        over — worth asking about, and the agent&apos;s reasoning is in the thesis
-        above.
+        over 252 days, shown with the side the book holds it on. The read is taken on
+        the correlation <em>signed by both directions</em> — a long candidate against
+        a short holding is not a duplicate of that bet but its reverse. At or above{" "}
+        {HIGH_CORR_THRESHOLD.toFixed(2)} the idea is largely in the book already;
+        at or below &minus;{HIGH_CORR_THRESHOLD.toFixed(2)} taking it would net
+        against a position already on. Between the two the name is a genuinely
+        independent idea that was passed over — worth asking about, and the
+        agent&apos;s reasoning is in the thesis above.
       </p>
 
       <ScrollArea hint={false}>
@@ -145,6 +161,12 @@ export default function ClearedNotTaken({
           <tbody>
             {notTaken.map((c) => {
               const corr = correlations[c.asset];
+              const heldSide = corr ? heldDirections[corr.closest] : undefined;
+              const { aligned, kind } = classifyOverlap(
+                c.direction,
+                heldSide,
+                corr?.corr,
+              );
               return (
                 <tr
                   key={`${c.asset}-${c.direction}`}
@@ -172,16 +194,33 @@ export default function ClearedNotTaken({
                   <td className="px-3 py-2.5">
                     {corr ? (
                       <>
-                        <span className="num">{corr.closest}</span>{" "}
+                        <span className="num">{corr.closest}</span>
+                        {/* The side matters as much as the ticker: the same rho reads
+                            as a duplicate against one side and a hedge against the
+                            other, so it is never shown without it. */}
+                        {heldSide && (
+                          <span
+                            className="text-[11px]"
+                            style={{
+                              color:
+                                heldSide === "short"
+                                  ? "var(--short)"
+                                  : "var(--long)",
+                            }}
+                          >
+                            {" "}
+                            {heldSide === "short" ? "short" : "long"}
+                          </span>
+                        )}{" "}
                         <span
                           className="num"
                           style={{
                             color:
-                              Math.abs(corr.corr) >= 0.7
+                              kind === "same-bet" || kind === "offsets"
                                 ? "var(--warning)"
                                 : "var(--text-secondary)",
                           }}
->
+                        >
                           {corr.corr >= 0 ? "+" : ""}
                           {corr.corr.toFixed(2)}
                         </span>
@@ -192,15 +231,27 @@ export default function ClearedNotTaken({
                     )}
                   </td>
                   <td className="px-3 py-2.5">
-                    {!corr ? (
-                      <span className="text-text-tertiary">unmeasured</span>
-                    ) : Math.abs(corr.corr) >= DUPLICATE_RHO ? (
-                      <span style={{ color: "var(--warning)" }}>
-                        largely already held
+                    {kind === "unmeasured" ? (
+                      <span className="text-text-tertiary">
+                        {overlapLabel(kind, null)}
                       </span>
                     ) : (
-                      <span style={{ color: "var(--short)" }}>
-                        independent — passed over
+                      <span
+                        style={{
+                          color:
+                            kind === "independent"
+                              ? "var(--short)"
+                              : "var(--warning)",
+                        }}
+                      >
+                        {overlapLabel(kind, corr?.closest ?? null)}
+                        {kind !== "independent" && aligned !== null && (
+                          <span className="num text-text-tertiary">
+                            {" "}
+                            ({aligned >= 0 ? "+" : ""}
+                            {aligned.toFixed(2)})
+                          </span>
+                        )}
                       </span>
                     )}
                   </td>

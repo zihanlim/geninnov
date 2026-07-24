@@ -331,14 +331,27 @@ def candidate_book_correlation(
     holds four positions across four sectors and both directions, so overlap says
     little about whether a name duplicates a held bet.
 
-    Correlation says it directly. On 2026-07-24 the two shorts the agent passed over
-    scored GDX -> SLV +0.82 and GLD -> SLV +0.84 — they are the same precious-metals
-    bet the book already holds through SLV, which is exactly why the short side is
-    three ideas rather than five. Compare BIL -> TLT -0.18, genuinely independent.
+    Correlation says it directly. On the 2026-07-24 book the two precious-metals
+    shorts the agent passed over scored SLV -> GDX +0.82 and GLD -> GDX +0.85 — the
+    same bet it already holds through GDX. Compare BIL -> TLT -0.18, genuinely
+    independent. (It does NOT follow that redundancy caps the short side: NOC scored
+    only +0.20 against anything held and was passed over anyway on the day before it
+    was picked up. That correction is ADR-0039's, not this function's.)
 
     Returns {candidate: {"closest": held_ticker, "corr": float}}. A candidate with no
     usable return history is OMITTED rather than given a 0.0 — an unmeasurable
     correlation is not an absent one.
+
+    The correlation is between PRICES and is returned unsigned by position side, which
+    is deliberate: this is a measurement, not a verdict. Whether a candidate DUPLICATES
+    a held bet or would NET AGAINST it needs both directions, and the frontend applies
+    them (`lib/candidateOverlap.ts`: aligned = rho * sign(candidate) * sign(held)).
+    Choosing the closest holding by |corr| is unaffected — signing cannot change a
+    magnitude, so the holding selected here is the same one either way.
+
+    Reading this number without those two signs is how /book came to label long QQQ
+    (+0.77 against a SHORT ARKK) "largely already held" on 2026-07-24, when it is
+    nearer the reverse of that bet than a duplicate of it. See ADR-0045.
     """
     cands = [a for a in dict.fromkeys(candidate_assets) if a]
     held = [a for a in dict.fromkeys(held_assets) if a]

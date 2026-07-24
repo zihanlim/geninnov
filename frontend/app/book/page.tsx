@@ -756,6 +756,9 @@ function BookPageInner() {
           <ClearedNotTaken
             candidates={candidates}
             heldAssets={new Set((rec?.picks ?? []).map((p) => p.asset))}
+            heldDirections={Object.fromEntries(
+              (rec?.picks ?? []).map((p) => [p.asset, p.direction])
+            )}
             themeNames={themeNames}
             correlations={rec?.candidate_correlations ?? {}}
           />

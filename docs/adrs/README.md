@@ -50,6 +50,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0042](0042-absolute-hype-subscores.md) | HypeScore sub-scores are absolute, not relative to the day's peer group (supersedes 0006, 0028) | accepted | 2026-07-24 |
 | [0043](0043-single-company-universe.md) | Single companies enter the universe (only meaningful once direction became per-asset) | accepted | 2026-07-24 |
 | [0044](0044-carry-ic-was-measured-on-a-superseded-signal.md) | The carry IC justifying its 0.34 weight was measured on a superseded signal — corrects 0033 | accepted | 2026-07-24 |
+| [0045](0045-turnover-on-names-without-a-verdict.md) | Turnover is measured on names without a verdict; candidate overlap is signed by both directions before thresholding | accepted | 2026-07-24 |
 
 ## When to write an ADR
 

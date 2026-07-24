@@ -23,7 +23,10 @@ import EdgeBars from "@/components/book/EdgeBars";
 import SizingChainView from "@/components/book/SizingChainView";
 import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import AbstentionRoster from "@/components/book/AbstentionRoster";
-import ClearedNotTaken, { type CandidateRow } from "@/components/book/ClearedNotTaken";
+import ClearedNotTaken, {
+  type CandidateRow,
+  type CandidateCorrelations,
+} from "@/components/book/ClearedNotTaken";
 import { ScrollArea } from "@/components/ScrollArea";
 import { assessStaleness } from "@/lib/freshness";
 import {
@@ -120,6 +123,7 @@ interface Recommendation {
   } | null;
   screening_funnel?: FunnelStage[] | null;
   correlation_pairs?: CorrelationPairLite[] | null;
+  candidate_correlations?: CandidateCorrelations | null;
   lens?: string | null;
 }
 
@@ -187,7 +191,7 @@ function BookPageInner() {
         supabase
           .from("research_recommendations")
           .select(
-            "run_date, picks, book_view, book_risks, agent_run_id, advisory_derivation, book_metrics, scenario_results, cap_utilisation, screening_funnel, correlation_pairs, lens"
+            "run_date, picks, book_view, book_risks, agent_run_id, advisory_derivation, book_metrics, scenario_results, cap_utilisation, screening_funnel, correlation_pairs, candidate_correlations, lens"
           )
           .order("run_date", { ascending: false })
           .limit(1)
@@ -729,6 +733,7 @@ function BookPageInner() {
               )
             }
             themeNames={themeNames}
+            correlations={rec?.candidate_correlations ?? {}}
           />
 
           <AbstentionRoster

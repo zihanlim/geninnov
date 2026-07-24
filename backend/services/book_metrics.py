@@ -319,6 +319,53 @@ def fetch_pick_returns(
         return pd.DataFrame()
 
 
+def candidate_book_correlation(
+    candidate_assets: list[str],
+    held_assets: list[str],
+    lookback_days: int = 252,
+) -> dict[str, dict]:
+    """For each candidate NOT held, its closest held position by |correlation|.
+
+    Answers "why isn't X in the book?" with evidence instead of a proxy. /book used
+    to answer it with theme overlap, which is nearly worthless: one theme routinely
+    holds four positions across four sectors and both directions, so overlap says
+    little about whether a name duplicates a held bet.
+
+    Correlation says it directly. On 2026-07-24 the two shorts the agent passed over
+    scored GDX -> SLV +0.82 and GLD -> SLV +0.84 — they are the same precious-metals
+    bet the book already holds through SLV, which is exactly why the short side is
+    three ideas rather than five. Compare BIL -> TLT -0.18, genuinely independent.
+
+    Returns {candidate: {"closest": held_ticker, "corr": float}}. A candidate with no
+    usable return history is OMITTED rather than given a 0.0 — an unmeasurable
+    correlation is not an absent one.
+    """
+    cands = [a for a in dict.fromkeys(candidate_assets) if a]
+    held = [a for a in dict.fromkeys(held_assets) if a]
+    if not cands or not held:
+        return {}
+
+    returns = fetch_pick_returns(sorted(set(cands) | set(held)), lookback_days)
+    if returns.empty:
+        return {}
+
+    out: dict[str, dict] = {}
+    for c in cands:
+        if c not in returns.columns:
+            continue
+        best_t, best_v = None, None
+        for h in held:
+            if h not in returns.columns or h == c:
+                continue
+            v = returns[c].corr(returns[h])
+            if pd.isna(v):
+                continue
+            if best_v is None or abs(v) > abs(best_v):
+                best_t, best_v = h, float(v)
+        if best_t is not None:
+            out[c] = {"closest": best_t, "corr": round(best_v, 4)}
+    return out
+
 def compute_correlation_matrix(
     picks: list[dict],
     lookback_days: int = 252,

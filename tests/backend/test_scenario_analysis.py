@@ -384,3 +384,56 @@ def test_missing_beta_for_an_asset_contributes_nothing_rather_than_zero_beta():
     a = estimate_scenario_pnl(_vix(), picks, _bm_for(picks, with_beta), 1e8, with_beta)
     b = estimate_scenario_pnl(_vix(), picks, _bm_for(picks, with_beta), 1e8, {})
     assert a.estimated_book_return < b.estimated_book_return
+
+
+# ─── Candidate-vs-book correlation (2026-07-24) ───────────────────────────────
+
+def test_candidate_correlation_finds_the_closest_held_position():
+    """Answers "why isn't X in the book?" with evidence rather than a proxy.
+
+    /book first answered it with theme overlap, which is close to worthless: one
+    theme routinely holds four positions across four sectors and both directions.
+    Measured on the live book, the two shorts the agent passed over scored
+    GDX -> SLV +0.82 and GLD -> SLV +0.84 — the same precious-metals bet already held
+    — while BIL -> TLT -0.18 is genuinely independent.
+    """
+    import numpy as np
+    import pandas as pd
+    from unittest.mock import patch
+    from backend.services.book_metrics import candidate_book_correlation
+
+    rng = np.random.default_rng(3)
+    base = rng.normal(0, 0.01, 300)
+    idx = pd.bdate_range("2025-01-01", periods=300)
+    df = pd.DataFrame(
+        {
+            "SLV": base,
+            "GDX": base * 0.95 + rng.normal(0, 0.002, 300),   # near-duplicate of SLV
+            "TLT": rng.normal(0, 0.01, 300),                  # unrelated
+            "BIL": rng.normal(0, 0.0005, 300),                # unrelated, tiny vol
+        },
+        index=idx,
+    )
+    with patch("backend.services.book_metrics.fetch_pick_returns", return_value=df):
+        out = candidate_book_correlation(["GDX", "BIL"], ["SLV", "TLT"])
+
+    assert out["GDX"]["closest"] == "SLV"
+    assert out["GDX"]["corr"] > 0.9
+    # BIL matches something, but weakly — the point is the MAGNITUDE separates a
+    # duplicate from an independent idea.
+    assert abs(out["BIL"]["corr"]) < 0.3
+
+
+def test_candidate_correlation_omits_a_name_with_no_returns():
+    """A candidate with no usable history is OMITTED, not given 0.0. An unmeasurable
+    correlation is not an absent one — silent zeros are the recurring bug here."""
+    import numpy as np
+    import pandas as pd
+    from unittest.mock import patch
+    from backend.services.book_metrics import candidate_book_correlation
+
+    idx = pd.bdate_range("2025-01-01", periods=100)
+    df = pd.DataFrame({"SLV": np.random.default_rng(1).normal(0, 0.01, 100)}, index=idx)
+    with patch("backend.services.book_metrics.fetch_pick_returns", return_value=df):
+        out = candidate_book_correlation(["NOPRICE"], ["SLV"])
+    assert "NOPRICE" not in out

@@ -1617,6 +1617,7 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
         state["book_metrics_final"] = None
         state["scenario_results_final"] = []
         state["correlation_pairs_final"] = []
+        state["candidate_correlations_final"] = {}
         state["cap_utilisation_final"] = None
         return state
 
@@ -1639,6 +1640,27 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
     state["book_metrics_final"] = book_metrics_to_dict(bm)
     state["scenario_results_final"] = scenario_results_to_dict(scenarios)
     state["correlation_pairs_final"] = correlation_pairs_to_dict(corr_pairs)
+
+    # How correlated is each candidate we did NOT take with the closest thing we did?
+    # /book answers "why isn't X in the book?" and had only theme overlap to answer
+    # with — nearly worthless, since one theme routinely holds four positions across
+    # four sectors and both directions. Correlation answers it directly.
+    try:
+        from .book_metrics import candidate_book_correlation
+        held_assets = [p.get("asset") for p in picks if p.get("asset")]
+        pool = state.get("candidates") or []
+        cand_assets = [
+            c.get("asset") for c in pool
+            if c.get("asset") and c.get("asset") not in set(held_assets)
+        ]
+        state["candidate_correlations_final"] = candidate_book_correlation(
+            cand_assets, held_assets, lookback_days=252
+        )
+    except Exception as exc:
+        # Never fail the book over an explanatory panel.
+        print(f"[finalise] candidate correlation skipped "
+              f"({exc.__class__.__name__}): {exc}")
+        state["candidate_correlations_final"] = {}
     state["cap_utilisation_final"] = cap_utilisation(bm, picks)
 
     # Guard against a None scenario return (a pick with no factor beta AND no
@@ -1953,6 +1975,7 @@ def _persist_to_supabase(state: Q1State) -> bool:
             "book_metrics": state.get("book_metrics_final"),
             "scenario_results": state.get("scenario_results_final") or [],
             "correlation_pairs": state.get("correlation_pairs_final") or [],
+            "candidate_correlations": state.get("candidate_correlations_final") or {},
             "cap_utilisation": state.get("cap_utilisation_final"),
             "screening_funnel": state.get("screening_funnel") or [],
             "lens": state.get("lens", "multi_asset"),

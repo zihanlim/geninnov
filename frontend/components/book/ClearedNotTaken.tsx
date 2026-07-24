@@ -31,10 +31,16 @@ import { ScrollArea } from "@/components/ScrollArea";
  * long, and QQQ long a duplicate of a theme held via UNH long and ARKK SHORT.
  * Occasionally right, for a reason that was wrong.
  *
- * Real redundancy is correlation with a held position, and correlation_pairs is
- * computed for the BOOK only — there is no candidate-vs-held figure to render. So
- * the column now states the overlap as the bare fact it is and says what it does
- * not prove. Showing a weak signal honestly beats dressing it as a strong one.
+ * That hedge is no longer needed. candidate_book_correlation (migration 033) now
+ * computes each unheld candidate's correlation with its CLOSEST held position over
+ * 252 days, so the column states evidence rather than a proxy: GDX -> SLV +0.82 and
+ * GLD -> SLV +0.84 are demonstrably the same precious-metals bet the book already
+ * holds, which is exactly why the short side is three ideas and not five. Against
+ * that, BIL -> TLT -0.18 is genuinely independent and its absence needs a different
+ * explanation.
+ *
+ * A candidate with no usable return history shows as an em dash, never 0.00: an
+ * unmeasurable correlation is not an absent one.
  */
 
 export interface CandidateRow {
@@ -44,11 +50,18 @@ export interface CandidateRow {
   theme_id: string | null;
 }
 
+/** {asset: {closest, corr}} from research_recommendations.candidate_correlations. */
+export type CandidateCorrelations = Record<
+  string,
+  { closest: string; corr: number }
+>;
+
 export default function ClearedNotTaken({
   candidates,
   heldAssets,
   heldThemeIds,
   themeNames,
+  correlations = {},
 }: {
   candidates: CandidateRow[];
   /** Assets in today's book. */
@@ -56,6 +69,7 @@ export default function ClearedNotTaken({
   /** Themes the book already has exposure to. */
   heldThemeIds: Set<string>;
   themeNames: Record<string, string>;
+  correlations?: CandidateCorrelations;
 }) {
   const notTaken = candidates
     .filter((c) => !heldAssets.has(c.asset))
@@ -81,18 +95,17 @@ export default function ClearedNotTaken({
       </div>
 
       <p className="m-0 px-[18px] py-3 text-[12.5px] text-text-secondary leading-[1.6] max-w-[92ch]">
-        These names passed every screen and still did not make the book. The theme
-        column shows whether the book already has exposure to that theme — a hint,
-        not a verdict: one theme can hold four positions across four sectors and both
-        directions, so overlap here does <em>not</em> establish that a name would
-        duplicate a held bet. Redundancy is properly a question of correlation, and
-        correlation is only computed for positions actually held. The agent&apos;s
-        reasoning is in the thesis above; this table states what the data shows and
-        no more.
+        These names passed every screen and still did not make the book.{" "}
+        <strong>Closest held</strong> is the position each is most correlated with
+        over 252 days — a high reading means the idea is largely already in the book,
+        which is the usual reason a strong candidate is left out. Theme overlap is
+        shown too but is only a hint: one theme can hold four positions across four
+        sectors and both directions. The agent&apos;s own reasoning is in the thesis
+        above.
       </p>
 
       <ScrollArea hint={false}>
-        <table className="w-full border-collapse text-[12.5px] min-w-[520px]">
+        <table className="w-full border-collapse text-[12.5px] min-w-[680px]">
           <caption className="sr-only">
             Candidates that cleared screening but are not held, with EdgeScore and
             whether their theme is already represented in the book.
@@ -114,11 +127,15 @@ export default function ClearedNotTaken({
               <th className="text-left font-medium px-3 py-2 text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
                 Theme also held?
               </th>
+              <th className="text-left font-medium px-3 py-2 text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
+                Closest held (252d)
+              </th>
             </tr>
           </thead>
           <tbody>
             {notTaken.map((c) => {
               const dup = c.theme_id ? heldThemeIds.has(c.theme_id) : false;
+              const corr = correlations[c.asset];
               return (
                 <tr
                   key={`${c.asset}-${c.direction}`}
@@ -147,6 +164,28 @@ export default function ClearedNotTaken({
                       <span className="text-text-secondary">yes</span>
                     ) : (
                       <span className="text-text-tertiary">no</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {corr ? (
+                      <>
+                        <span className="num">{corr.closest}</span>{" "}
+                        <span
+                          className="num"
+                          style={{
+                            color:
+                              Math.abs(corr.corr) >= 0.7
+                                ? "var(--warning)"
+                                : "var(--text-secondary)",
+                          }}
+>
+                          {corr.corr >= 0 ? "+" : ""}
+                          {corr.corr.toFixed(2)}
+                        </span>
+                      </>
+                    ) : (
+                      /* No return history: an unmeasurable correlation is not 0.00. */
+                      <span className="text-text-tertiary">—</span>
                     )}
                   </td>
                 </tr>

@@ -11,7 +11,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0003](0003-daily-cron-over-fastapi.md) | Daily cron over real-time FastAPI backend | accepted | 2026-07-21 |
 | [0004](0004-no-redis-in-phase1.md) | No Redis for caching | accepted | 2026-07-21 |
 | [0005](0005-vader-over-paid-sentiment.md) | VADER over paid sentiment API | accepted | 2026-07-21 |
-| [0006](0006-minmax-over-zscore-hypescore.md) | Min-max normalization over z-scores for HypeScore | accepted | 2026-07-21 |
+| [0006](0006-minmax-over-zscore-hypescore.md) | Min-max normalization over z-scores for HypeScore | **superseded by [0042](0042-absolute-hype-subscores.md)** | 2026-07-21 |
 | [0007](0007-two-method-theme-discovery.md) | Two-method theme discovery (LDA + embedding clustering) | accepted | 2026-07-21 |
 | [0008](0008-tier1-macro-anchors-practitioner.md) | Tier 1 macro anchors defined by practitioner judgment | accepted | 2026-07-21 |
 | [0009](0009-research-first-design-philosophy.md) | Research-first design philosophy (vs Bloomberg-terminal aesthetic) | accepted | 2026-07-21 |
@@ -33,7 +33,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0025](0025-book-centric-information-architecture.md) | Book-centric information architecture (`/book`, `/risk`, `/method`) | accepted | 2026-07-23 |
 | [0026](0026-gemini-third-l5-provider.md) | Google Gemini as a third L5 LLM provider | accepted | 2026-07-23 |
 | [0027](0027-citation-value-grounding.md) | Citation guardrail grounds on value, not source-label exactness | accepted | 2026-07-23 |
-| [0028](0028-minmax-correlation-consistency.md) | Min-max \|corr\| across themes (supersedes T22 raw-abs) | accepted | 2026-07-23 |
+| [0028](0028-minmax-correlation-consistency.md) | Min-max \|corr\| across themes (supersedes T22 raw-abs) | **superseded by [0042](0042-absolute-hype-subscores.md)** | 2026-07-23 |
 | [0029](0029-two-sided-book-decouple-direction-revive-momentum.md) | Two-sided book: decouple direction from the hype gate + revive momentum | accepted | 2026-07-23 |
 | [0030](0030-unify-l5-candidate-pool-with-l1.md) | Unify the L5 candidate pool with L1 (screen_candidates consumes rank_trade_candidates) | accepted | 2026-07-23 |
 | [0031](0031-edge-score-direction-signal.md) | EdgeScore: anchor long/short direction to trend + regime, not sentiment | accepted | 2026-07-23 |
@@ -47,6 +47,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0039](0039-scope-by-attention-abstain-by-asset.md) | Scope is chosen by attention; abstention is decided per asset (completes ADR-0038) | accepted | 2026-07-24 |
 | [0040](0040-published-book-is-the-book-of-record.md) | The published book is the book of record (positions/returns/risk recomputed on L5 output) | accepted | 2026-07-24 |
 | [0041](0041-regime-as-a-dial-not-a-cliff.md) | The regime is a dial, not a cliff — continuous risk appetite drives direction, the label is display only | accepted | 2026-07-24 |
+| [0042](0042-absolute-hype-subscores.md) | HypeScore sub-scores are absolute, not relative to the day's peer group (supersedes 0006, 0028) | accepted | 2026-07-24 |
 
 ## When to write an ADR
 

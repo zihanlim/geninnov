@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 
 @dataclass
@@ -42,6 +43,50 @@ class ScoringConfig:
             edge_sentiment_weight=vals.get("edge_sentiment_weight", 0.05),
             edge_abstain_threshold=vals.get("edge_abstain_threshold", 0.15),
         )
+
+# ─── Absolute sub-score scales (ADR-0042) ────────────────────────────────────
+# Each is a documented anchor on the signal's OWN scale, so a theme's HypeScore
+# depends only on that theme's signals. Cross-sectional min-max made a score a
+# statement about the day's peer group rather than about the theme: on 2026-07-24
+# China Growth's mention count was byte-identical to the day before (1.14286) and
+# its HypeScore still fell 60.6 -> 36.6, and Corporate Credit's was identical
+# (0.857143) while its score fell 45.7 -> 34.2.
+VOLUME_BUSY_MENTIONS = 3.0   # 7d-avg mentions/day that counts as a busy theme
+CORR_FULL = 0.50             # |corr| at which the correlation sub-score saturates
+MOMENTUM_SCALE = 2.0         # robust-momentum z at which momentum is ~0.88
+
+
+def volume_subscore(mentions_7d_avg: float) -> float:
+    """Attention volume on an ABSOLUTE scale, [0, 1]. Saturating, never relative.
+
+    ``tanh(m / 3.0)`` — a theme averaging 3 mentions/day scores 0.76, one averaging
+    0.4 scores 0.13, and the number means the same thing tomorrow.
+    """
+    return math.tanh(max(0.0, mentions_7d_avg) / VOLUME_BUSY_MENTIONS)
+
+
+def corr_subscore(price_corr: float) -> float:
+    """|corr| against a fixed anchor, [0, 1].
+
+    ADR-0028 min-maxed |corr| across themes because a raw 0.1-0.4 "structurally
+    under-delivered" against a 30% weight. That was a CALIBRATION complaint and
+    min-max was the wrong remedy: it fixed the scale by making the score relative,
+    so a theme's correlation reading moved when OTHER themes' correlations moved.
+    Dividing by a documented full-credit level fixes the calibration without
+    surrendering time-comparability.
+    """
+    return min(1.0, abs(price_corr) / CORR_FULL)
+
+
+def momentum_subscore(momentum_raw: float) -> float:
+    """Robust-momentum z mapped to [0, 1] with 0.5 at "no change".
+
+    ``robust_momentum`` already returns a MAD-scaled z clipped to [-4, 4], which is
+    self-referenced by construction — it compares a theme to its OWN history. Only
+    the final squash was cross-sectional, and this replaces it.
+    """
+    return (math.tanh(momentum_raw / MOMENTUM_SCALE) + 1.0) / 2.0
+
 
 def minmax_norm(value: float, values: list[float]) -> float:
     """Min-max normalize a value across a list. Returns 0.5 if all values identical."""
@@ -194,21 +239,15 @@ def compute_hype_scores(raw_signals: list[dict], cfg: ScoringConfig) -> list[dic
     """
     if not raw_signals:
         return []
-    all_counts = [volume_base(r) for r in raw_signals]
-    all_momenta = [r["momentum_raw"] for r in raw_signals]
-    all_abscorr = [abs(r["price_corr"]) for r in raw_signals]
 
     scored = []
     for r in raw_signals:
-        volume = minmax_norm(volume_base(r), all_counts)
-        momentum = minmax_norm(r["momentum_raw"], all_momenta)
-        # ADR-0028: min-max |corr| across themes, consistent with volume/momentum.
-        # T22 fed a RAW abs(corr) (~0.1–0.4 on a noisy short window), so the 30%
-        # corr weight structurally under-delivered — it added a near-constant to
-        # every theme and compressed the distribution below the 50 threshold.
-        # Min-max lets the top-corr theme claim the full corr weight. Keeps the
-        # abs() fold (attention is direction-agnostic).
-        corr = minmax_norm(abs(r["price_corr"]), all_abscorr)
+        # ABSOLUTE sub-scores (ADR-0042). Each depends only on this theme's own
+        # signal, so the number means the same thing tomorrow — which is what Q2's
+        # "support risk monitoring" requires and cross-sectional min-max cannot do.
+        volume = volume_subscore(volume_base(r))
+        momentum = momentum_subscore(r["momentum_raw"])
+        corr = corr_subscore(r["price_corr"])
         score = hype_score(
             volume=volume,
             sentiment=r["avg_sentiment"],

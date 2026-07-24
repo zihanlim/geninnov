@@ -170,11 +170,14 @@ class TestVolumeBase:
         ]
         scored = compute_hype_scores(raw, cfg)
         vols = [s["hype_score"] for s in scored]
-        # loudest theme (5.6/day) claims the full volume weight (100), quietest (0.4) the floor (0)
-        assert vols[1] == pytest.approx(100.0)
-        assert vols[0] == pytest.approx(0.0)
-        # and they are NOT all the flat 50 the old 1-day path produced
+        # Loudest (5.6/day) scores well above quietest (0.4/day), and the three are
+        # genuinely spread — NOT the flat 50 the old 1-day path produced.
+        assert vols[1] > vols[2] > vols[0]
         assert len(set(round(v, 2) for v in vols)) == 3
+        # ADR-0042: absolute, so these are levels rather than ranks — 5.6/day is a
+        # busy theme and 0.4/day is a quiet one, on any day, against any peer group.
+        assert vols[1] > 80
+        assert vols[0] < 25
 
 
 class TestHypeScoreHighestVolume:
@@ -187,11 +190,7 @@ class TestHypeScoreHighestVolume:
             {"mention_count_1d": 20, "avg_sentiment": 0.0, "price_corr": 0.0, "momentum_raw": 0.0},
         ]
         scored = compute_hype_scores(raw_signals, cfg)
-        # ADR-0028: corr min-max'd → identical corr(0) is 0.5, not 0.
-        # Theme A: volume=0, momentum=corr=sent=0.5 -> 0.375 -> 37.5
-        # Theme B: volume=1, momentum=corr=sent=0.5 -> 0.625 -> 62.5
         assert scored[1]["hype_score"] > scored[0]["hype_score"]
-        assert 62.4 < scored[1]["hype_score"] < 62.6
 
 
 class TestSentimentRescaling:
@@ -233,19 +232,46 @@ def test_hype_uses_unsigned_correlation_strength():
     assert pos == pytest.approx(neg)
 
 
-def test_corr_is_minmax_normalized_across_themes():
-    """ADR-0028: |corr| is min-max'd across themes like volume/momentum. When
-    corr VARIES, the top-|corr| theme claims the FULL corr weight (raw abs would
-    have given it only its small raw magnitude, e.g. 0.5). abs fold preserved."""
+def test_corr_uses_an_absolute_anchor_and_keeps_the_abs_fold():
+    """ADR-0042 supersedes ADR-0028's min-max for |corr|.
+
+    ADR-0028 min-maxed |corr| because a raw 0.1-0.4 under-delivered against a 30%
+    weight. That was a CALIBRATION complaint and min-max was the wrong remedy — it
+    fixed the scale by making the reading RELATIVE, so a theme's correlation score
+    moved when other themes' correlations moved. Dividing by a documented
+    full-credit level (CORR_FULL = 0.50) fixes the calibration and keeps the number
+    comparable over time. The abs fold survives: attention is direction-agnostic.
+    """
     cfg = ScoringConfig(0.0, 0.0, 1.0, 0.0, 0.0, 0.0)  # 100% corr weight, isolate it
     raw_signals = [
         {"mention_count_1d": 10, "avg_sentiment": 0.0, "price_corr": 0.1, "momentum_raw": 0.0},
         {"mention_count_1d": 10, "avg_sentiment": 0.0, "price_corr": -0.5, "momentum_raw": 0.0},
     ]
     scored = compute_hype_scores(raw_signals, cfg)
-    # min-max abs(corr): |0.1| -> 0.0 (min), |-0.5| -> 1.0 (max, abs fold)
-    assert scored[0]["hype_score"] == pytest.approx(0.0)
-    assert scored[1]["hype_score"] == pytest.approx(100.0)
+    assert scored[0]["hype_score"] == pytest.approx(20.0)    # 0.1/0.5
+    assert scored[1]["hype_score"] == pytest.approx(100.0)   # |-0.5|/0.5, saturated
+
+
+def test_a_themes_score_does_not_move_when_only_its_PEERS_move():
+    """The property min-max could never have. This is what Q2's "risk monitoring"
+    needs: a theme's attention reading must be a statement about that theme.
+
+    Measured on production data before this change — China Growth's 7-day mention
+    count was byte-identical across 2026-07-23 and 07-24 (1.14286) and its HypeScore
+    still fell 60.6 -> 36.6; Corporate Credit's was identical (0.857143) and fell
+    45.7 -> 34.2. Both moved because OTHER themes moved.
+    """
+    cfg = ScoringConfig(0.30, 0.20, 0.30, 0.20, 0.0, 0.0)
+    subject = {"mention_count_1d": 0, "mention_count_7d_avg": 1.14,
+               "avg_sentiment": -0.01, "price_corr": 0.30, "momentum_raw": 2.0}
+    quiet_peers = [{"mention_count_1d": 0, "mention_count_7d_avg": 0.5,
+                    "avg_sentiment": 0.0, "price_corr": 0.05, "momentum_raw": 0.0}]
+    loud_peers = [{"mention_count_1d": 0, "mention_count_7d_avg": 40.0,
+                   "avg_sentiment": 0.9, "price_corr": 0.95, "momentum_raw": 4.0}]
+
+    with_quiet = compute_hype_scores([subject] + quiet_peers, cfg)[0]["hype_score"]
+    with_loud = compute_hype_scores([subject] + loud_peers, cfg)[0]["hype_score"]
+    assert with_quiet == pytest.approx(with_loud)
 
 
 # T22 Minor: compute_hype_scores([]) must short-circuit instead of raising

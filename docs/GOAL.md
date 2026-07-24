@@ -88,9 +88,11 @@ Live at https://andromeda-analytics.vercel.app · 385 backend tests green.
   **All six stages report to `pipeline_runs`** since iteration 14 — L1 and L4 were
   silent, so `/method` said "not instrumented" while the status bar said "4/4
   succeeded".
-- **Q1 book** — **4 long / 2 short**, gross 69.2%, net +17.7%, VERIFIED, $30.8M in
-  cash, 0 cap violations, and **three of the six positions are single companies**
-  (JPM, UNH long; NOC short) as `task.md` asks for. **One portfolio everywhere** since iteration 10
+- **Q1 book** — **5 long / 3 short across 8 positions**, VERIFIED with 38 citations,
+  close to market-neutral, $51.3M in cash, and **four positions are single
+  companies** as `task.md` asks for — including RTX long against NOC short, two
+  defence primes on opposite sides. Long side is at the five Q1 asks for; the short
+  side is at three. **One portfolio everywhere** since iteration 10
   (ADR-0040) — `/book` and `/risk` describe the same names and every risk number is
   computed on them — and direction no longer inverts on a regime label flip since
   iteration 11 (ADR-0041).
@@ -131,7 +133,13 @@ actually produced — `themes_scored`, `positions_priced` — because "it return
 not the same as "it did something".
 
 **Live: all six green** — L0 12.4s · **L1 21.9s (themes_scored 8)** · L2 4.5s ·
-L3 1.7s · **L4 1.3s (positions_priced 23)** · L5.
+L3 1.7s · **L4 1.3s (positions_priced 23)** · L5. The status bar now reads
+**"All stages complete · 6/6 succeeded"**, and while L5 was still running it read
+"6/6 stages recorded · L5 incomplete" rather than the old "All stages complete".
+
+**Book on this run: 8 positions, 5 long / 3 short, four of them single companies** —
+and **RTX long at 5.5% alongside NOC short at 5.5%**, two defence primes held on
+opposite sides at once. Verified, 38 citations, close to market-neutral, $51.3M cash.
 
 Two claims on `/method` went stale with the change and were corrected rather than
 left: the `STAGES` comment asserting *"Only L0, L2, L3 and L5 do"*, and the reader

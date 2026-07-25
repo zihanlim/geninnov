@@ -149,7 +149,7 @@ block:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 626 backend tests green (frontend suite is in the other session's active rewrite).
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -203,6 +203,25 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 91 (2026-07-25) — confirmed green, doc-synced the count, and a plain statement of the block
+
+Two full backend runs completed **626 passed / exit 0**, so iteration 90's one-per-complex fix is
+verified across the whole suite (last iteration's "green" was correct but the run hadn't reported
+when I committed — now confirmed). Doc-synced the stale header (`564` → `626`).
+
+**A plain statement, because the loop has been circling it for a week of iterations:** the two
+deliverables are *done and live*. Q1 is a correct 5/5 book with per-trade theses, restored and
+cross-checked to the last number; Q2's HypeScore reconciles on fresh data and the discovery
+engine runs. The backend carries everything a future run needs — the Euler decomposition wired and
+persisted, the LLM-down fallback now diversifying exactly as the LLM would — all green and on
+origin. **What remains is genuinely blocked, none of it on the backend:** Step 4's Euler *render*
+(and the beta-column decision, the EdgeScore formula) is inside the other session's frontend
+rewrite, which has grown to 69 WIP files and shows no sign of settling; the MiniMax token quota is
+exhausted so no pipeline can run; the Playwright MCP server has been disconnected for four firings
+so no UI/UX pass or deploy-verification is possible. Autonomous iterations can only verify and hold
+until one of those clears — reconnecting Playwright, the frontend landing, or the quota resetting is
+what unblocks real forward motion. `PROGRESS.md` remains corrupted in the shared tree.
 
 ### Loop iteration 90 (2026-07-25) — completed the fallback fix: real one-per-complex, not a per-theme proxy
 

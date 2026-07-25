@@ -204,6 +204,31 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 80 (2026-07-25) — a stress breakdown that didn't add up to its own total
+
+**Cross-checking the /risk stress scenarios: the per-scenario "Breakdown" listed legs that
+summed to a different number than the scenario's own book return, for 4 of the 5 scenarios.**
+VIX Spike showed direct-shock legs totalling **+1.8%** under a **+3.4%** header; only the
+melt-up reconciled. A reviewer who totals a stress breakdown and finds it misses the headline
+loss stops trusting the stress test — the same priority-#2 risk as a mis-stated number.
+
+Root cause was in `scenario_analysis.py` (my file, committed — *not* the other session's live
+/risk WIP): `estimate_scenario_pnl` picks `best_estimate = direct_pnl` when ≥60% of gross is
+directly shocked, else `factor_pnl` — but the breakdown only ever carried the **direct-shock
+lines**. On a factor-driven scenario those lines describe `direct_pnl`, a number the estimate
+didn't use. Fix: accumulate the signed gross-weighted book beta per factor, and when the
+estimate is factor-driven rebuild the breakdown from the factor decomposition, each line
+`shock × book β = contribution`, computed from the displayed 2dp beta so the row multiplies to
+its own result (the self-consistency the direct rows already keep) and the lines sum to the
+book return within rounding. +3 tests (factor-branch and direct-branch reconciliation), 37 pass.
+
+Shipped **without a deploy** — recomputed `scenario_results` for the live book with the fixed
+code (validated every `estimated_book_return` matched the original to 1e-9, so only the
+breakdown changed) and PATCHed the row. Verified live at 1440 and 375: VIX now reads *"MKT
+shock −18% × book β −0.19 = +3.42%"*, reconciling, zero horizontal scroll, zero console errors.
+(Aside: `PROGRESS.md` is sitting uncommitted with a BOM + mojibaked em-dashes — an accidental
+re-encode from the other session's tree; left untouched so as not to commit the corruption.)
+
 ### Loop iteration 79 (2026-07-25) — UI audit: a beta the /risk page says reconciles, doesn't
 
 **Full visual pass of the live site (1440 + 375, all four pages) — clean except one real

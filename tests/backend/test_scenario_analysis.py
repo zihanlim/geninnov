@@ -137,19 +137,19 @@ def test_estimate_pnl_direct_shock_applied():
 
 
 def test_estimate_pnl_mixed_assets():
-    """Mixed portfolio — some direct-shock, some factor-only."""
+    """Mixed portfolio — some direct-shock, some factor-only. With only half the gross
+    directly shocked (covered_frac 0.5 < 0.6) the estimate is factor-driven, so the
+    breakdown is the factor decomposition and must sum to the book return — not the
+    stray TLT direct line that reconciles to nothing."""
     picks = [
-        _pick("TLT", "long",  0.10),   # direct shock: +0.04
-        _pick("SPY", "long",  0.10),   # factor-based: 0.10 * 1.0 * (-0.18) = -0.018
+        _pick("TLT", "long",  0.10),   # directly shocked in the VIX scenario
+        _pick("SPY", "long",  0.10),   # factor-only
     ]
     bm = _bm(gross=0.20, beta_mkt=1.0)
     scenario = SCENARIOS[0]
     result = estimate_scenario_pnl(scenario, picks, bm, 100_000_000.0)
-    # Direct for TLT: 0.10 * 0.04 = +0.004
-    # Factor for SPY: 0.10 * 1.0 * (-0.18) = -0.018
-    # Combined: ~ -0.014 (negative — vol spike hurts more than TLT helps)
     assert isinstance(result, ScenarioResult)
-    assert "TLT" in result.contribution_breakdown[0] or any("TLT" in c for c in result.contribution_breakdown)
+    assert abs(_breakdown_total(result) - result.estimated_book_return) < 1e-3
 
 
 def test_estimate_pnl_short_position_flips_sign():
@@ -180,6 +180,40 @@ def test_short_contribution_row_arithmetic_is_self_consistent():
     weight, shock, pnl = nums
     assert weight < 0, f"short weight should print negative in {row!r}"
     assert abs(weight * shock - pnl) < 1e-4, f"row arithmetic does not check out: {row!r}"
+
+
+def _breakdown_total(result):
+    """Sum the '= X%' result on each breakdown line — what a reviewer totalling the
+    displayed decomposition would get."""
+    import re
+    tot = 0.0
+    for line in result.contribution_breakdown:
+        m = re.search(r"=\s*([-+]?\d+\.?\d*)%\s*$", line)
+        if m:
+            tot += float(m.group(1)) / 100.0
+    return tot
+
+
+def test_breakdown_reconciles_on_factor_driven_scenario():
+    """When the estimate is factor-driven (few/no names directly shocked), the breakdown
+    must decompose factor_pnl — not list direct-shock legs that sum to a different number.
+    VIX Spike used to show legs summing to ~+1.8% under a +3.4% header (ADR-flagged)."""
+    vix = next(s for s in SCENARIOS if s.name == "S1_vix_spike")
+    picks = [_pick("MSFT", "long", 0.10), _pick("JPM", "short", 0.08)]  # not directly shocked
+    fe = {"MSFT": {"beta_mkt": 1.2, "beta_umd": 0.3},
+          "JPM": {"beta_mkt": 1.1, "beta_umd": -0.2}}
+    result = estimate_scenario_pnl(vix, picks, _bm(gross=0.18), 100_000_000.0, factor_exposures=fe)
+    assert any("shock" in c for c in result.contribution_breakdown), "expected factor lines"
+    assert abs(_breakdown_total(result) - result.estimated_book_return) < 1e-3
+
+
+def test_breakdown_reconciles_on_direct_driven_scenario():
+    """A scenario whose covered names dominate keeps its per-position breakdown, which
+    must still sum to the book return."""
+    melt = next(s for s in SCENARIOS if s.name == "S5_melt_up")
+    asset = next(iter(melt.base_asset_shocks))
+    result = estimate_scenario_pnl(melt, [_pick(asset, "short", 0.20)], _bm(gross=0.20), 100_000_000.0)
+    assert abs(_breakdown_total(result) - result.estimated_book_return) < 1e-3
 
 
 def test_estimate_pnl_dollar_pnl_scaled():

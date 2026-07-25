@@ -253,7 +253,12 @@ def estimate_scenario_pnl(
     # R^2 1.00) — so there is no reason to proxy them.
     fe = factor_exposures or {}
 
+    # Accumulate the signed, gross-weighted book beta per factor alongside the P&L, so
+    # the factor branch can print a breakdown that SUMS to factor_pnl. Without this the
+    # displayed breakdown (direct-shock lines below) described a different number for
+    # every factor-driven scenario — see the branch at `best_estimate = factor_pnl`.
     factor_pnl = 0.0
+    factor_book_beta: dict[str, float] = {}
     for p in picks:
         w = p.get("weight", 0.0)
         if w <= 0:
@@ -265,11 +270,13 @@ def estimate_scenario_pnl(
             if beta is None:
                 continue
             factor_pnl += sign * w * float(beta) * shock
+            factor_book_beta[factor] = factor_book_beta.get(factor, 0.0) + sign * w * float(beta)
 
     # Fallback: if book_metrics has near-zero factor weights (no live FF5 data),
     # use DEFAULT_TICKER_BETAS for known tickers. Direction applied per-pick.
     if abs(factor_pnl) < 1e-6:
         factor_pnl = 0.0
+        factor_book_beta = {}
         for p in picks:
             asset = p.get("asset", "")
             w = p.get("weight", 0.0)
@@ -280,6 +287,7 @@ def estimate_scenario_pnl(
             for factor, shock in scenario.factor_shocks.items():
                 beta = defaults.get(factor, 0.0)
                 factor_pnl += sign * w * beta * shock
+                factor_book_beta[factor] = factor_book_beta.get(factor, 0.0) + sign * w * beta
 
     # Direct asset shock estimate
     direct_pnl = 0.0
@@ -322,6 +330,23 @@ def estimate_scenario_pnl(
         best_estimate = direct_pnl
     else:
         best_estimate = factor_pnl
+        # The direct-shock lines built above sum to direct_pnl, NOT factor_pnl — so on a
+        # factor-driven scenario the breakdown a reviewer totals would miss the book
+        # return (VIX Spike showed legs summing to +1.8% under a +3.4% header). Rebuild it
+        # from the factor decomposition, which sums to factor_pnl exactly: each line is
+        # shock × the book's signed gross-weighted beta to that factor.
+        # Compute each line's result from the DISPLAYED (2dp) beta, so the row's own
+        # numbers multiply to its own result — the same self-consistency the direct rows
+        # keep. The per-line rounding leaves the sum within ~0.01pp of the header, exactly
+        # as the direct breakdown already does (melt-up sums to -1.98% under a -1.99% head).
+        contributions = []
+        for factor, shock in scenario.factor_shocks.items():
+            if factor not in factor_book_beta:
+                continue
+            bb = round(factor_book_beta[factor], 2)
+            contributions.append(
+                f"  {factor.upper()} shock {shock:+.0%} × book β {bb:+.2f} = {shock * bb:+.2%}"
+            )
 
     dollar_pnl = best_estimate * total_capital / 1_000_000  # convert to $M
 

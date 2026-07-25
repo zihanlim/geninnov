@@ -83,6 +83,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0076](0076-a-guard-reports-every-failure.md) | A guard reports every failure, not the first one — three defects sat in one thesis and surfaced one per run because main() returned at the first | accepted | 2026-07-25 |
 | [0077](0077-withhold-the-number-instead-of-forbidding-it.md) | Withhold the number instead of forbidding its use — the prompt block relabelled by ADR-0071 prepended its own `=== BOOK METRICS ===` header two lines below it | accepted | 2026-07-25 |
 | [0078](0078-a-disqualifier-you-cannot-locate.md) | A disqualifier you cannot locate is not falsifiable — six of ten counter-theses named the 200-day MA as the trigger and nothing said what it was | accepted | 2026-07-25 |
+| [0079](0079-adr-0078-described-a-book-that-had-been-replaced.md) | ADR-0078 described a book that had already been replaced — the evidence was read before a re-run launched in the same iteration, and written down after | accepted | 2026-07-25 |
 
 ## When to write an ADR
 

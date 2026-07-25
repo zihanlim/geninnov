@@ -204,6 +204,70 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 77 (2026-07-25) — corrected thesis confirmed live (one draw of it)
+
+Ran `daily_refresh` end-to-end to land the ADR-0073 fix on the live book. The reasoning: the
+07-25 thesis still closed *"market-neutral (Mkt −0.02)"* on a −0.50 book, the ADR-0073 guard
+was **red by design** until a run published under the corrected prompt, and the weekday-only
+cron (`30 21 * * 1-5`) does not fire on a Saturday — so the flaw and the red guard would have
+sat live all weekend. The run cleared it: the thesis now reads *"directionally balanced… lean
+value (positive HML via XLE and NUE)… away from low-quality growth (negative RMW via ARKK
+short)"* — direction in words, no restated numbers — and the factor-tilt guard scan comes back
+clean (zero factor-name-followed-by-a-number matches). **Verified live** at 1440/375: corrected
+thesis rendered under the VERIFIED badge, zero horizontal scroll, zero console errors.
+
+The concurrent L5 workstream landed the same fix in parallel (iteration 76 below, under its
+newer *withhold-the-numbers* prompt), so this run was partly redundant — it overwrote that
+entry's book with an equivalent draw. **Both produce the identical 10-name roster** (SHY, XLE,
+SVXY, NUE, UNH / GDX, BABA, NOC, ARKK, PDD) with per-pick betas, `counter_thesis`, `ma_context`
+and a 45-pair correlation summary all present; the live book is one draw of it — **gross 59.3%,
+net −5.4%, worst −1.99% (melt-up), 0 cap violations, guard green** — sized slightly tighter than
+that entry's 66.2% / −2.4%, which is the run-to-run turnover the pool already warns of.
+
+### Loop iteration 77 (2026-07-25) — **the previous iteration's evidence was stale**
+
+**Re-derived the counter-theses against the live book and found ADR-0078 was describing a
+book that no longer existed.** Its opening measurement — *"six of the ten name the same
+trigger, `wrong if X breaks its 200-day MA`"* — was read **before** the `daily_refresh`
+launched in that same iteration returned, and written down **after**. Both rows carry
+`run_date 2026-07-25`, so nothing on the page or in the row looked stale.
+
+The published book now reads quite differently. **Seven of ten name an external driver at a
+measurable level with the source series cited:**
+
+| pick | disqualifier |
+|---|---|
+| SHY | 2y yield (**DGS2**) above **4.75%**, 3+ closes |
+| XLE | WTI (**CL=F**) below **$80**, 5+ closes |
+| SVXY | VIX (**^VIX**) above **25** for 5+ sessions |
+| NUE | copper (**HG=F**) below **5.50 USD** |
+| GDX | gold (**GC=F**) above **4200 USD** |
+| BABA | China announces a **>500B USD** stimulus package |
+| NOC | US defense appropriations **>10% YoY** in markup |
+
+**Exactly one — ARKK — is self-referential** (*"breaks above its 200-DMA by >5%"*). UNH
+names a legislative mechanism and PDD an earnings mechanism; neither is a price.
+[ADR-0078](adrs/0078-a-disqualifier-you-cannot-locate.md)'s **decision stands** — ARKK still
+needs its distance stated — but its prevalence claim is corrected at all four doc surfaces.
+[ADR-0079](adrs/0079-adr-0078-described-a-book-that-had-been-replaced.md).
+
+**A counter-thesis quality guard was prototyped and deliberately not shipped.** A classifier
+separating *"names an external driver"* from *"restates the price going the other way"*
+flagged **UNH and PDD as false positives** — a legislative trigger and an earnings trigger
+both look self-referential to a pattern keying on the ticker appearing in the clause. What
+is wanted is *does this name a mechanism that could fail*, which is a judgement, not a
+pattern; a guard at that precision would train future work to make counter-theses **look**
+external rather than **be** falsifiable. The first attempt also mis-stripped the preamble
+(`"XLE long is wrong if"`, not `"Long XLE is wrong if"`) and reported **all ten** circular —
+caught only by printing the clauses instead of the verdict. **Third prose classifier in this
+project to nearly produce a wrong verdict**; the rule now is: *when a regex disagrees with
+the data, print the matches before believing the count.*
+
+**Still blocked, unchanged from the last firing:** the Vercel deploy cap
+(`api-deployments-free-per-day`) refuses, so `95f18d61`'s MA render is committed and not
+live — the *data* is live via the PATCH route. And Playwright is blocked for the **fifth**
+consecutive firing on the shared Chrome profile.
+
 ### Loop iteration 76 (2026-07-25) — **the corrected prompt is verified end-to-end**
 
 **A full `daily_refresh` ran against production and the guard passed all eight checks for
@@ -242,9 +306,13 @@ stated disqualifier fires, **except SHY at 0.4%**. That is the point: a reader n
 which position is near its line, which six identical sentences hid. Under 3% is coloured.
 [ADR-0078](adrs/0078-a-disqualifier-you-cannot-locate.md).
 
-**Honest about what this does not fix:** six picks choosing *"its 200-day MA"* is a generic
-answer, and stating the distance makes that visible rather than repairing it. Whether a
-trade whose disqualifier is a moving average has a thesis at all is the next question.
+**Correction, recorded the next firing:** the "six of ten" count came from the book *before*
+the run launched in this same iteration, and the ADR was written after it landed. The
+published book now has **seven of ten naming an external driver with its source series cited**
+(DGS2, CL=F, ^VIX, HG=F, GC=F) and **only ARKK self-referential**. The feature stands — ARKK
+still needs its distance stated — but the prevalence claim described a book that no longer
+existed. Both rows carry `run_date 2026-07-25`, which is why it was invisible.
+[ADR-0079](adrs/0079-adr-0078-described-a-book-that-had-been-replaced.md).
 
 **Blocked:** the Vercel deploy refused — `api-deployments-free-per-day`, more than 100 in
 24h. The **data** is live (all ten picks carry `ma_context` via the pure-function PATCH

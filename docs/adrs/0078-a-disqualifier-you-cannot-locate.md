@@ -1,7 +1,7 @@
 # ADR-0078 — A disqualifier you cannot locate is not falsifiable
 
 **Date:** 2026-07-25
-**Status:** Accepted
+**Status:** Accepted — **evidence superseded by [ADR-0079](0079-adr-0078-described-a-book-that-had-been-replaced.md)**: the "six of ten" count describes the *pre-run* 2026-07-25 book, replaced by a `daily_refresh` launched in the same iteration. The decision below stands; exactly one pick (ARKK) now carries a 200-DMA trigger.
 **Relates to:** [0054](0054-a-daily-publication-not-a-scanner.md), [0075](0075-per-pick-betas-are-joined-not-authored.md), [0066](0066-not-computable-must-persist-as-null.md), [0049](0049-the-guardrail-does-not-read-the-prose.md)
 
 ## Context

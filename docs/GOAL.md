@@ -204,6 +204,23 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 78 (2026-07-25) — the disqualifier-distance render is now live
+
+**Shipped `95f18d61` (the per-position "distance to your own disqualifier" render), which the
+prior firing logged as committed-but-deploy-blocked.** A Vercel slot had opened, so I deployed
+`HEAD` from the archive root (`git archive HEAD | tar -x`, `.vercel` copied in, `vercel deploy
+--prod` — *not* `frontend/`, the iteration-63 trap), which aliased cleanly to
+andromeda-analytics.vercel.app. **Verified live** by expanding a position at 1440 **and** 375:
+
+> SHY long is wrong if 2y yield (DGS2) breaks above 4.75%… · *SHY last 81.85 · 200-day MA 81.49
+> · **+0.4% — within 3% of the moving average, so an MA-based trigger is close.***
+
+Real numbers, the <3% proximity flag, no NaN. Full UI pass clean — /book, /risk, /method, home
+at both widths, zero horizontal scroll (1425/1425, 360/360), zero console errors. The counter-
+theses render as ADR-0079 describes (7 of 10 external drivers, only ARKK self-referential). The
+book itself is unchanged from iteration 77 (5/5, corrected thesis, guard green); this firing only
+moved a committed render onto the live alias.
+
 ### Loop iteration 77 (2026-07-25) — **the previous iteration's evidence was stale**
 
 **Re-derived the counter-theses against the live book and found ADR-0078 was describing a

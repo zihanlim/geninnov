@@ -204,6 +204,29 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 90 (2026-07-25) — completed the fallback fix: real one-per-complex, not a per-theme proxy
+
+**Turned iteration 89's honest limitation into the correct fix.** The per-theme cap I shipped was
+a proxy that could not see a correlated complex spread across themes — the 07-25 gold names
+(GDX/GLD/IAU/NEM/SLV) sit in three sectors and two themes, so a per-theme cap would still hold 3
+of them. `compute_book_metrics_node` already clusters the candidates into `independent_ideas`
+using the SAME 0.70-threshold correlation `/risk` and the LLM use, and it runs *before* the
+fallback — so `fallback_picks` now reuses those clusters (no extra fetch) and keeps at most ONE
+name per complex, exactly the LLM's one-per-complex judgement, with the per-theme cap kept only as
+a fallback when the clustering is unavailable.
+
+**Validated on the real 07-25 short pool, and the result is striking:** the actual complexes are
+gold `{GDX,GLD,IAU,NEM,SLV}` and China `{BABA,FXI,KWEB,MCHI}` with `PDD,ARKK,NOC` standalone. Raw
+`hype[:5]` gave `BABA·KWEB·PDD·MCHI·FXI` (4 China); one-per-complex gives `BABA·PDD·GDX·ARKK·NOC`
+— **the same five names the LLM's own book shorts** (`{GDX,BABA,NOC,ARKK,PDD}`). On a day the LLM
+is down, the fallback now reproduces the LLM's diversification, thesis aside. +1 test
+(`test_fallback_picks_one_per_complex_uses_correlation_clusters`, which pins the cross-theme gold
+case a per-theme cap misses); 128 directly-affected pass, full backend suite green.
+
+Playwright MCP is **still down** — the fix is test- and data-verified, not browser-verified. Step
+4 and the MiniMax quota remain blocked; `PROGRESS.md` still corrupted. Pushed to keep origin
+current for the scheduled run.
+
 ### Loop iteration 89 (2026-07-25) — the LLM-down fallback no longer hands back five correlated names
 
 **Turned last iteration's forensics into a fix.** The 2026-07-25 pipeline run's fallback book had

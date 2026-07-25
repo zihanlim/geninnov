@@ -2463,38 +2463,50 @@ def fallback_picks(state: Q1State) -> Q1State:
     longs.sort(key=lambda x: x["hype_score"], reverse=True)
     shorts.sort(key=lambda x: x["hype_score"])
 
-    # Diversify per theme before taking the top 5. Raw `hype_score[:5]` on a day the LLM is
-    # down produced a short side of FIVE China names (BABA/KWEB/PDD/MCHI/FXI, all one theme →
-    # 6 high-corr pairs) — the concentration the LLM's one-per-complex judgement exists to
-    # prevent, absent because that judgement never ran (2026-07-25). A per-theme cap of 2 is a
-    # cheap, LLM-free proxy: it matches what the real book holds (2 China shorts) and prefers a
-    # name from a fresh theme over a third correlated one. The cap is a PREFERENCE, not a hard
-    # limit — if a diverse book cannot reach five, we fill the rest by HypeScore rather than
-    # drop below Q1's five-a-side (the diverse pass reorders, it does not shrink the book).
-    def _diversify(cands: list[dict], n: int = 5, per_theme: int = 2) -> list[dict]:
-        out: list[dict] = []
-        seen: dict = {}
-        for c in cands:                      # already HypeScore-sorted
-            t = c.get("theme_id")
-            if seen.get(t, 0) >= per_theme:
-                continue
-            out.append(c)
-            seen[t] = seen.get(t, 0) + 1
-            if len(out) >= n:
-                break
-        if len(out) < n:                     # pool lacked diverse alternatives — fill to five
-            taken = {c["asset"] for c in out}
+    # Diversify before taking the top 5: keep at most ONE name from each correlated complex.
+    # On a day the LLM is down, raw `hype_score[:5]` took FIVE China shorts (BABA/KWEB/PDD/MCHI/
+    # FXI — one complex, 6 high-corr pairs), the compounded correlation the LLM's one-per-complex
+    # judgement exists to prevent (2026-07-25). `compute_book_metrics_node` already clustered the
+    # candidates into `independent_ideas` using the SAME 0.70-threshold correlation /risk and the
+    # LLM use, so the fallback reuses it — no extra fetch — and it catches a complex spread across
+    # themes (the gold names sit in three sectors and two themes) that a per-theme cap cannot.
+    # From each complex keep the best-ranked member (first in the fallback's own sort order); keep
+    # every standalone name. Falls back to a per-theme cap of 2 only when the clustering is
+    # unavailable. Diversity is a PREFERENCE — if it cannot reach five we fill by HypeScore rather
+    # than drop below Q1's five a side (the pass reorders, it never shrinks the book).
+    ideas = state.get("independent_ideas") or {}
+
+    def _diversify(cands: list[dict], side: str, n: int = 5) -> list[dict]:
+        complexes = (ideas.get(side) or {}).get("complexes") or []
+        if complexes:
+            drop: set = set()
+            for cx in complexes:
+                members = set(cx.get("members") or [])
+                in_complex = [c for c in cands if c["asset"] in members]  # sort order preserved
+                for c in in_complex[1:]:          # keep the best-ranked one, drop the rest
+                    drop.add(c["asset"])
+            out = [c for c in cands if c["asset"] not in drop]
+        else:                                     # no clustering available — per-theme proxy
+            out, seen = [], {}
             for c in cands:
-                if c["asset"] in taken:
+                t = c.get("theme_id")
+                if seen.get(t, 0) >= 2:
                     continue
                 out.append(c)
-                taken.add(c["asset"])
-                if len(out) >= n:
-                    break
+                seen[t] = seen.get(t, 0) + 1
+        out = out[:n]
+        if len(out) < n:                          # fill to five by HypeScore
+            taken = {c["asset"] for c in out}
+            for c in cands:
+                if c["asset"] not in taken:
+                    out.append(c)
+                    taken.add(c["asset"])
+                    if len(out) >= n:
+                        break
         return out
 
     picks = []
-    for c in _diversify(longs) + _diversify(shorts):
+    for c in _diversify(longs, "long") + _diversify(shorts, "short"):
         theme_name = themes.get(c["theme_id"], c.get("theme_name", "Unknown"))
         picks.append({
             "rank": len(picks) + 1,

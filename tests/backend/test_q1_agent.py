@@ -533,6 +533,35 @@ def test_fallback_picks_diversifies_per_theme():
     assert len(shorts) == 5, "should still fill to five from the diverse pool"
 
 
+def test_fallback_picks_one_per_complex_uses_correlation_clusters():
+    """When the correlation clustering is available (independent_ideas), the fallback keeps
+    at most ONE name per complex — including a correlated group spread ACROSS themes that a
+    per-theme cap cannot see (the 2026-07-25 gold names sat in Inflation + Fed Policy)."""
+    shorts = (
+        [{"asset": a, "direction": "short", "theme_id": "tid-chg", "theme_name": "China Growth",
+          "hype_score": h, "trade_score": -0.2, "avg_sentiment": -0.1}
+         for a, h in [("BABA", 80.0), ("KWEB", 81.0)]]
+        + [{"asset": a, "direction": "short", "theme_id": tid, "theme_name": nm,
+            "hype_score": h, "trade_score": -0.2, "avg_sentiment": -0.1}
+           for a, tid, nm, h in [("GDX", "tid-inf", "Inflation", 70.0),
+                                 ("GLD", "tid-fed", "Fed Policy", 71.0)]]   # gold, DIFFERENT themes
+        + [{"asset": a, "direction": "short", "theme_id": tid, "theme_name": nm,
+            "hype_score": h, "trade_score": -0.2, "avg_sentiment": -0.1}
+           for a, tid, nm, h in [("NOC", "tid-geo", "Geopolitical", 60.0),
+                                 ("ARKK", "tid-elc", "US Election", 61.0),
+                                 ("SLB", "tid-eng", "Energy", 62.0)]]
+    )
+    ideas = {"short": {"complexes": [
+        {"members": ["BABA", "KWEB"], "strongest": "BABA"},
+        {"members": ["GDX", "GLD"], "strongest": "GDX"},   # cross-theme gold complex
+    ], "standalone": ["NOC", "ARKK", "SLB"]}}
+    state = _make_state(candidates=shorts, independent_ideas=ideas)
+    state = q1_agent.fallback_picks(state)
+    held = {p["asset"] for p in state["picks"] if p["direction"] == "short"}
+    assert len(held & {"BABA", "KWEB"}) <= 1, f"two from the China complex: {held}"
+    assert len(held & {"GDX", "GLD"}) <= 1, f"two from the gold complex (per-theme misses this): {held}"
+
+
 def test_backfill_resolves_theme_id_from_llm_theme_name():
     """The LLM emits picks by theme NAME only; the backfill resolves the id
     (case-insensitively) so a stable theme_id travels with each pick."""

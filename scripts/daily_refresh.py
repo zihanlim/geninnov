@@ -1499,7 +1499,9 @@ def main():
         print(f"[{run_date}] [L0] FRED/yfinance fetch failed ({exc.__class__.__name__}): continuing without macro data.")
         macro_snapshot = {}
 
-    # Polymarket: prediction market odds for cited macro context
+    # Polymarket: forward macro odds for the homepage "what the crowd is pricing"
+    # panel. Stored only for display context — NOT added to macro_snapshot, so the
+    # L5 book neither reads nor cites them (the panel says as much).
     try:
         poly_fetcher = PolymarketFetcher(SUPABASE_URL, SUPABASE_KEY)
         poly_markets = poly_fetcher.fetch_macro_markets()

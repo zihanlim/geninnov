@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import date, datetime
 from typing import Any
 
@@ -54,7 +55,11 @@ def _categorize(title: str) -> str:
     t = title.lower()
     for cat, kws in MACRO_KEYWORDS:
         for kw in kws:
-            if kw in t:
+            # Whole-word (plural-tolerant) match, not substring: "eth" was matching
+            # inside "Ethiopia", filing "Next Prime Minister of Ethiopia?" under Crypto
+            # and — because a categorised event clears the Other filter — surfacing it
+            # on the homepage as a macro market the book supposedly cites.
+            if re.search(rf"\b{re.escape(kw)}s?\b", t):
                 return cat
     return "Other"
 

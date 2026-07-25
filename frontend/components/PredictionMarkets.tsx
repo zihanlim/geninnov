@@ -98,7 +98,7 @@ export default function PredictionMarkets() {
             Prediction markets
           </div>
           <div className="text-[12px] text-text-tertiary mt-0.5">
-            {markets.length} macro events · cited as evidence on the Q1 book
+            {markets.length} macro events · forward odds for context — not cited in the book
           </div>
         </div>
         <a

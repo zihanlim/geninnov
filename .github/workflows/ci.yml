@@ -14,9 +14,9 @@ permissions:
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
-  # Python: scripts/
-  # Runs if scripts/ exists and has Python files.
-  # Installs ruff, mypy, pytest; fails if lockfile drifts.
+  # Python: backend/ + scripts/
+  # Lint and typecheck are reports (`|| true`) while the lint debt is unpaid.
+  # pytest is a GATE — see the step comment.
   # ──────────────────────────────────────────────────────────────────────────
   backend:
     name: backend · lint/type/test
@@ -28,9 +28,12 @@ jobs:
       # modules import settings that expect these envs.
       SUPABASE_URL: https://ci.supabase.co
       SUPABASE_SERVICE_KEY: ci-service-key
-      REDDIT_CLIENT_ID: ci
-      REDDIT_CLIENT_SECRET: ci
       BRAVE_SEARCH_API_KEY: ci
+      # REDDIT_CLIENT_ID/SECRET are deliberately NOT set. reddit_client treats a
+      # present-but-fake credential as "use the live PRAW path", which then fails
+      # and returns []. That broke every test in
+      # TestFetchPostsForThemeNoCredentials — the dummy env was defeating the
+      # no-credentials branch those tests exist to cover.
     steps:
       - uses: actions/checkout@v4
 
@@ -38,23 +41,80 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
       - name: Install tools
         run: |
           python -m pip install --upgrade pip
           pip install ruff mypy pytest
+          # Runtime deps the tests import. Deliberately NOT backend/requirements.txt:
+          # that pulls sentence-transformers (and torch) for theme_discovery, which
+          # this job excludes. Same reasoning as the l5-eval job below.
+          pip install pandas numpy scipy supabase yfinance httpx requests python-dotenv nltk vaderSentiment praw
 
       - name: Check scripts/ exists
         run: test -d scripts && echo "exists=true" || echo "exists=false" | tee /dev/stderr | exit 1
 
       - name: ruff
-        run: ruff check scripts/ || true
+        run: ruff check backend/ scripts/ || true
 
       - name: mypy
-        run: mypy scripts/ || true
+        run: mypy backend/ scripts/ || true
 
+      # A GATE, not a report. This previously ran `pytest scripts/ || true`, which
+      # collected nothing at all — every test lives in tests/backend/ — so the
+      # whole suite was invisible to CI while appearing to be covered.
+      #
+      # test_theme_discovery.py is excluded: scripts/theme_discovery.py imports
+      # gensim / sentence_transformers / umap / hdbscan at module scope, and
+      # installing those to run 14 tests means pulling torch into every push.
+      # It stays covered by the monthly theme-discovery workflow actually running.
       - name: pytest
-        run: pytest scripts/ || true
+        run: pytest tests/backend/ --ignore=tests/backend/test_theme_discovery.py
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # L5 acceptance battery: backend/eval
+  # The one job here that can actually fail. Every other step in this file ends
+  # in `|| true`, which makes it a report rather than a gate — deliberate while
+  # the repo carries pre-existing lint debt, but it means nothing stops a
+  # regression reaching the daily book.
+  #
+  # This job runs the battery against the canned (no-LLM) agent, so it costs no
+  # tokens and needs no API key. That proves the harness and the guardrail
+  # delegation are intact. It does NOT prove the live model still reasons well —
+  # that is `python -m scripts.run_eval`, which needs a provider key and is run
+  # deliberately before a model or prompt change. See ADR-0055.
+  #
+  # The install list is deliberately narrow: backend.eval reaches q1_agent, which
+  # needs supabase + pandas + numpy + yfinance and nothing heavier. Installing
+  # backend/requirements.txt would pull sentence-transformers (and torch) for a
+  # module this job never imports.
+  # ──────────────────────────────────────────────────────────────────────────
+  l5-eval:
+    name: L5 · acceptance battery
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: https://ci.supabase.co
+      SUPABASE_SERVICE_KEY: ci-service-key
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pandas numpy supabase yfinance httpx
+
+      - name: Battery (canned agent — scorer round-trip + rejection)
+        run: pytest tests/backend/test_eval_battery.py -v
+
+      - name: CLI smoke
+        run: python -m scripts.run_eval --canned
 
   # ──────────────────────────────────────────────────────────────────────────
   # Frontend: frontend/

@@ -52,3 +52,9 @@ tests/backend/*.json
 .playwright-mcp/
 /*.png
 backend/data/factors_daily.csv
+
+# Local virtualenvs. No pattern existed here, so any venv made at the repo root
+# was a commit away from being tracked.
+.venv/
+.venv-*/
+venv/

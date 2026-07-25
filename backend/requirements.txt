@@ -1,6 +1,11 @@
 # Core
 pandas>=2.2.0
 numpy>=1.26.0
+scipy>=1.11.0          # scripts/backtest_{edge,hype}.py — spearmanr; sys.exit(1) without it
+
+# HTTP + config
+requests>=2.31.0       # backend/data/macro_fetcher.py (L0 critical path), polymarket_fetcher, q1_agent
+python-dotenv>=1.0.0   # scripts/check_data_integrity.py, scripts/backtest_hype.py
 
 # Data ingestion
 yfinance>=0.2.0

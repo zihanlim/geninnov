@@ -99,10 +99,10 @@ export default function DerivationDrawer({
         className="ml-auto h-full bg-bg-surface border-l border-border-strong overflow-y-auto relative animate-slide-in focus:outline-none"
         style={{ width }}
       >
-        <div
-          className="sticky top-0 z-10 flex items-start justify-between gap-3 p-6 border-b border-border"
-          style={{ background: "linear-gradient(180deg, #1a2230 0%, #131822 100%)" }}
-        >
+        {/* bg-bg-surface, not a literal: the old inline gradient was a leftover
+            from the superseded dark palette and left the unstyled <h2> below
+            rendering --text-primary (#1c1815) on #1a2230 — 1.10:1. */}
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 p-6 border-b border-border bg-bg-surface">
           <div className="flex-1 min-w-0">
             <h2 id={titleId} className="text-[18px] font-semibold m-0 leading-[1.3]">{title}</h2>
             {subtitle && (

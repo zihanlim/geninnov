@@ -72,6 +72,7 @@ All project documentation lives under `docs/`:
 | `docs/superpowers/specs/2026-07-21-andromeda-market-theme-platform-design.md` | Full design spec — architecture, scoring formulas, data model, frontend pages |
 | `docs/superpowers/plans/2026-07-21-andromeda-implementation-plan.md` | Implementation plan — task-by-task build guide |
 | `docs/adrs/` | Architecture Decision Records in im-Jarvis format |
+| `docs/design-goals.md` | **Read before evaluating any UI change or outside mockup.** Eight standing design goals, each with a test, plus the non-goals and a mockup-triage checklist. ADRs record decisions taken; this records the bar a proposal must clear |
 | `docs/captures/YYYY-MM-DD/` | Playwright screenshots — **one folder per capture date**. See [Screenshot convention](#screenshot-convention). |
 | `docs/baseline/screenshots/` | Frozen pre-refactor visual baselines. Read-only — never overwrite these with fresh captures |
 | `.playwright-mcp/` | Playwright MCP scratch output (page `.yml` snapshots, console `.log` files). Gitignored, safe to delete |
@@ -165,7 +166,10 @@ All weights and lookbacks are stored in the `scoring_config` Supabase table — 
 
 ## Q1 thesis pipeline (L0–L6)
 
-The L5 agent (`backend/services/q1_agent.py`) is a deterministic-then-stochastic pipeline. Layers L0–L4 are pure functions — auditable, reproducible. Layer L5 is the only place an LLM (Claude Sonnet) is invoked. Layers L6–L7 render the result with citation provenance.
+The L5 agent (`backend/services/q1_agent.py`) is a deterministic-then-stochastic pipeline. Layers L0–L4 are pure functions — auditable, reproducible. Layer L5 is the only place an LLM is invoked — **MiniMax-M3** in this deployment. The provider is
+chosen at import time by `_select_provider` (MiniMax → Anthropic → Gemini, first key present wins,
+pinnable with `LLM_PROVIDER`), and per ADR-0013 the citation guardrail and candidate hard-filter
+constrain whichever model answers, so the provider is swappable without weakening the L5 contract. Layers L6–L7 render the result with citation provenance.
 
 | Layer | Source | What it does |
 |-------|--------|--------------|

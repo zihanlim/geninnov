@@ -49,6 +49,7 @@ from .book_metrics import (
     format_book_metrics_summary,
     book_metrics_to_dict,
     correlation_pairs_to_dict,
+    correlation_summary,
     cap_utilisation,
     independent_ideas,
     MIN_ADV_Millions,
@@ -2152,6 +2153,29 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
     state["book_metrics_final"] = book_metrics_to_dict(bm)
     state["scenario_results_final"] = scenario_results_to_dict(scenarios)
     state["correlation_pairs_final"] = correlation_pairs_to_dict(corr_pairs)
+
+    # The book's correlation STRUCTURE, not just its flagged tail (ADR-0072).
+    #
+    # `correlation_pairs` holds only pairs at or above rho 0.70, so on a well-diversified
+    # book it is empty and every surface can say only "nothing crossed the flag" — an
+    # absence indistinguishable from missing data (ADR-0067). It also left the agent with
+    # no figure for a held pair below the flag: asked to justify BABA/PDD co-movement on
+    # 2026-07-25 the thesis cited MCHI/KWEB at +0.92, two names it does not hold, when the
+    # pair it was discussing is +0.4753.
+    #
+    # The data costs nothing — a 9-name book is 36 pairs and threshold=0.0 already
+    # returns them; only the filter threw them away. Summarised into the book_metrics
+    # dict rather than a new column, because they ARE book metrics and this needs no
+    # migration. `correlation_pairs` is untouched, so every existing consumer keeps its
+    # meaning.
+    try:
+        all_pairs = compute_correlation_matrix(picks, lookback_days=252, threshold=0.0)
+        state["book_metrics_final"]["correlation_summary"] = correlation_summary(all_pairs)
+    except Exception as exc:   # pragma: no cover - network/data
+        # An explanatory measurement must never break the book — the rule
+        # candidate_correlations already follows.
+        print(f"[finalise_book_analytics] correlation summary skipped "
+              f"({exc.__class__.__name__}): {exc}")
 
     # How correlated is each candidate we did NOT take with the closest thing we did?
     # /book answers "why isn't X in the book?" and had only theme overlap to answer

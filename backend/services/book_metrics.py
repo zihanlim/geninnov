@@ -550,6 +550,41 @@ def correlation_warning(pairs: list[tuple[str, str, float]]) -> list[str]:
 # Format helpers (for LLM prompt injection)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def correlation_summary(pairs: list[tuple[str, str, float]] | None) -> dict:
+    """The book's correlation structure as two numbers, not just the flagged tail.
+
+    ``correlation_pairs`` keeps only pairs at or above ``HIGH_CORR_THRESHOLD``, so on a
+    well-diversified book it is **empty** — and every surface can then say only
+    *"nothing crossed the flag"*, an absence indistinguishable from missing data
+    (ADR-0067). It also leaves the agent with no figure for a held pair below the flag:
+    asked to justify BABA/PDD co-movement on 2026-07-25, the thesis cited **MCHI/KWEB at
+    +0.92** — two names it does not hold — when the pair it was discussing is
+    **+0.4753**.
+
+    The data was always there and was thrown away by the filter. A 9-name book is 36
+    pairs; passing ``threshold=0.0`` returns all of them. This reduces them to what a
+    reader actually needs:
+
+        max_abs_pair   the most correlated pair in the book, signed, with both names
+        mean_abs_corr  the mean |rho| across every pair
+
+    so a page can say *"the highest pair in this book is BABA/PDD +0.48"* — a
+    measurement — instead of reporting that nothing crossed a line.
+
+    Returns ``{}`` when there is nothing to summarise. A book of one position has no
+    pairs, which is not a correlation of zero.
+    """
+    if not pairs:
+        return {}
+    a, b, corr = max(pairs, key=lambda p: abs(p[2]))
+    return {
+        "pair_count": len(pairs),
+        "max_abs_pair": {"asset_a": a, "asset_b": b, "corr": corr},
+        "mean_abs_corr": sum(abs(c) for _, _, c in pairs) / len(pairs),
+        "flag_threshold": HIGH_CORR_THRESHOLD,
+    }
+
+
 def book_metrics_to_dict(bm: BookMetrics) -> dict:
     """Structured BookMetrics for persistence and charting.
 

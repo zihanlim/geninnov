@@ -476,3 +476,50 @@ def test_violation_text_numbers_support_the_claim_they_make():
     assert "35% cap" in msg
     # No bare strict inequality between two rounded, equal-looking figures.
     assert ">" not in msg
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# correlation_summary — the structure, not just the flagged tail (ADR-0072)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_summarises_the_live_book_that_flagged_nothing():
+    """The 2026-07-25 book: every pair below 0.70, so correlation_pairs was empty.
+
+    The page could then say only "nothing crossed the flag" — an absence. The highest
+    pair was BABA/PDD +0.4753, which is a measurement.
+    """
+    from backend.services.book_metrics import correlation_summary
+
+    pairs = [("BABA", "PDD", 0.4753), ("JPM", "SVXY", 0.4559), ("JPM", "NUE", 0.3611)]
+    s = correlation_summary(pairs)
+    assert s["max_abs_pair"] == {"asset_a": "BABA", "asset_b": "PDD", "corr": 0.4753}
+    assert s["pair_count"] == 3
+    assert abs(s["mean_abs_corr"] - (0.4753 + 0.4559 + 0.3611) / 3) < 1e-12
+    assert s["flag_threshold"] == 0.70
+
+
+def test_the_strongest_pair_is_by_MAGNITUDE_not_sign():
+    """A −0.85 hedge is the most correlated pair in the book, and saying otherwise
+    would report a weaker positive pair as the extreme."""
+    from backend.services.book_metrics import correlation_summary
+
+    s = correlation_summary([("A", "B", 0.40), ("C", "D", -0.85)])
+    assert s["max_abs_pair"]["corr"] == -0.85
+    assert s["max_abs_pair"]["asset_a"] == "C"
+
+
+def test_no_pairs_is_not_a_correlation_of_zero():
+    """A one-position book has no pairs. Reporting 0.0 would claim it is uncorrelated."""
+    from backend.services.book_metrics import correlation_summary
+
+    assert correlation_summary([]) == {}
+    assert correlation_summary(None) == {}
+
+
+def test_mean_uses_absolute_values():
+    """+0.8 and −0.8 average to 0.0 signed, which would read as 'uncorrelated' for a
+    book that is strongly correlated in both directions."""
+    from backend.services.book_metrics import correlation_summary
+
+    s = correlation_summary([("A", "B", 0.8), ("C", "D", -0.8)])
+    assert abs(s["mean_abs_corr"] - 0.8) < 1e-12

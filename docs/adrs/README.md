@@ -76,6 +76,7 @@ One ADR per file. Immutable once accepted — superseded ADRs are marked `supers
 | [0069](0069-run-date-is-utc-not-the-local-clock.md) | `run_date` is UTC, not the local clock — a UTC+8 local run stamped a day ahead of the scheduled job, splitting positions from the published book | accepted | 2026-07-25 |
 | [0070](0070-forward-dating-was-never-implemented.md) | Forward-dating was never implemented — the convention in 0062 was inferred from an artifact of a UTC+8 local run; corrects 0062's description | accepted | 2026-07-25 |
 | [0071](0071-pool-metrics-are-not-book-metrics.md) | Pool metrics are not book metrics — the prompt labelled equal-weighted pre-selection pool figures "BOOK METRICS", and the thesis published a 31.67pp cap breach the book does not have | accepted | 2026-07-25 |
+| [0072](0072-persist-the-books-correlation-structure.md) | Persist the book's correlation structure, not just its flagged tail — an empty flagged list left every surface saying only "nothing crossed 0.70" | accepted | 2026-07-25 |
 
 ## When to write an ADR
 

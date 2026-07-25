@@ -275,13 +275,18 @@ def test_guard_runs_as_a_script_not_only_as_a_module():
     # A guard must not die formatting its own verdict, on any console encoding.
     assert "UnicodeEncodeError" not in combined, combined
     assert "Traceback" not in combined, combined
-    # Accept 0 or 2, deliberately. `load_dotenv()` searches from the SCRIPT's directory
-    # upward, so it finds the repo `.env` whatever cwd is and the creds cannot be
-    # stripped from a subprocess — locally this runs the real check and exits 0, while
-    # in CI (no .env, secrets as env vars) it exits 2. Pinning either number would make
-    # the test assert where it happens to run rather than what it is testing, which is
-    # that the entry point the workflow uses imports and completes without crashing.
-    assert proc.returncode in (0, 2), f"exit={proc.returncode}\n{combined}"
+    # Accept 0, 1 or 2, deliberately. This test verifies the ENTRY POINT imports and
+    # completes — not that production data is clean.
+    #
+    # `load_dotenv()` searches from the SCRIPT's directory upward, so it finds the repo
+    # `.env` whatever cwd is and the creds cannot be stripped from a subprocess: locally
+    # this runs the real check against live data, while in CI (no .env, secrets as env
+    # vars) it exits 2. It previously asserted `in (0, 2)` and broke the moment a check
+    # legitimately fired on production — a test that fails when a guard CORRECTLY
+    # reports a defect is testing the wrong thing.
+    #
+    # 1 is a guard doing its job. What must never appear is a crash, asserted above.
+    assert proc.returncode in (0, 1, 2), f"exit={proc.returncode}\n{combined}"
 
 
 def test_published_book_check_imports_cleanly_from_a_bare_process():
@@ -453,3 +458,75 @@ def test_a_naive_timestamp_is_read_as_utc():
     row = _stage(minutes_ago=200)
     row["started_at"] = (_NOW - timedelta(minutes=200)).replace(tzinfo=None).isoformat()
     assert len(check_stalled_stages([row], now=_NOW)) == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# check_cap_breach_claims — a thesis must not claim a breach the book lacks
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _caprow(**over):
+    row = {
+        "run_date": "2026-07-25",
+        "book_view": "Central scenario: late-cycle, risk-on.",
+        "book_risks": [],
+        "cap_utilisation": {"violations": []},
+    }
+    row.update(over)
+    return row
+
+
+def test_catches_the_live_false_cap_breach_claim():
+    """The exact sentence published on 2026-07-25.
+
+    compute_book_metrics_node runs BEFORE reason_picks over the screened pool with
+    EQUAL weights, and the prompt labelled that block "BOOK METRICS". The pool caps at
+    30 names, so 20/30 = 66.67% US — exactly the figure quoted. The book's own geo
+    weight was 35.00% with violations == [].
+    """
+    from scripts.check_data_integrity import check_cap_breach_claims
+
+    row = _caprow(book_risks=[
+        "US geographic concentration: pre-computed book metrics show US at 66.67% "
+        "versus the 35% cap (31.67pp over); UNH, JPM, NUE would worsen this breach."
+    ])
+    flags = check_cap_breach_claims(row)
+    assert len(flags) == 1
+    assert "book_risks[0]" in flags[0]
+    assert "violations is empty" in flags[0]
+
+
+def test_stays_silent_when_the_book_genuinely_breaches():
+    """A real breach SHOULD be discussed — the check must not suppress it."""
+    from scripts.check_data_integrity import check_cap_breach_claims
+
+    row = _caprow(
+        cap_utilisation={"violations": ["US 41.20% — 6.20pp over its 35% cap"]},
+        book_risks=["US geographic concentration: US is 6.2pp over the 35% cap."],
+    )
+    assert check_cap_breach_claims(row) == []
+
+
+def test_ordinary_risk_prose_is_not_flagged():
+    from scripts.check_data_integrity import check_cap_breach_claims
+
+    row = _caprow(book_risks=[
+        "China policy surprise invalidating both BABA and PDD simultaneously.",
+        "VIX spike to >30: SVXY long is directly short-vol and most exposed.",
+        "Precious-metals breakout: SLV short disqualified if gold breaks $4200/oz.",
+    ])
+    assert check_cap_breach_claims(row) == []
+
+
+def test_catches_the_claim_in_the_thesis_body_too():
+    from scripts.check_data_integrity import check_cap_breach_claims
+
+    row = _caprow(book_view="Sector concentration exceeds the 30% cap on Metals.")
+    assert len(check_cap_breach_claims(row)) == 1
+
+
+def test_is_silent_without_a_measurement_or_text():
+    from scripts.check_data_integrity import check_cap_breach_claims
+
+    assert check_cap_breach_claims(None) == []
+    assert check_cap_breach_claims(_caprow(cap_utilisation=None)) == []
+    assert check_cap_breach_claims(_caprow(book_view="", book_risks=[])) == []

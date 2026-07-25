@@ -1090,7 +1090,15 @@ Sentiment: {sentiment}
 === FACTOR EXPOSURES (L2, sample — FF5 + UMD) ===
 {factor_table}
 
-=== BOOK METRICS (computed, not estimated) ===
+=== CANDIDATE-POOL METRICS — EQUAL-WEIGHTED, BEFORE YOUR SELECTION ===
+These describe the SCREENED POOL you are choosing from, with every candidate weighted
+equally. They are NOT the book's metrics. Your picks are a subset, conviction-weighted
+and capped, so its sector, geography, exposure and cap figures WILL differ — the pool
+has 30 names, the book will have ~10.
+Use these to see which complexes are crowded and where a cap would bind. NEVER state
+them as the book's own composition, and never claim a cap breach from them: the sizer
+enforces every cap after you pick, and the page prints the book's real figures beside
+your text.
 {book_metrics_summary}
 
 === SCENARIO ANALYSIS ===

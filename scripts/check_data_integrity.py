@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 
 # The repo root, so `backend.*` imports resolve however this file is invoked.
@@ -241,6 +242,76 @@ def check_published_book_claims(
         for f in check_idea_count_claims(prose, rec_row.get("independent_ideas") or {})
     ]
     return failures
+
+
+_CAP_BREACH_CLAIM = re.compile(
+    r"(?:\b(?:over|above|exceed(?:s|ing)?|breach(?:es|ing|ed)?|versus|vs\.?)\b[^.]{0,60}?"
+    r"\bcap\b|\bcap\b[^.]{0,60}?\b(?:breach(?:ed|es)?|exceeded|violat\w*)\b|\bpp over\b)",
+    re.IGNORECASE,
+)
+
+
+def check_cap_breach_claims(rec_row: dict | None) -> list[str]:
+    """Reject a thesis claiming a cap breach when the book has none.
+
+    `compute_book_metrics_node` runs BEFORE `reason_picks` and computes sector, geo and
+    exposure figures over the **screened candidate pool, equal-weighted** — the prompt
+    used to label that block ``BOOK METRICS (computed, not estimated)``. The model
+    reported them as the book's own, which on 2026-07-25 published:
+
+        "US geographic concentration: pre-computed book metrics show US at 66.67%
+         versus the 35% cap (31.67pp over)"
+        "Gold Miners at 7% already in the book"
+
+    Both false of the book. `book_metrics.geo_weights` held **US 35.00%** with
+    ``cap_utilisation.violations == []``, and **no gold miner was held at all**. Both
+    figures are exactly the equal-weighted pool numbers — the screened pool caps at 30
+    names, so 20/30 = 66.67% and 2/30 = 6.67% — so the model was faithfully repeating
+    what it was handed under a label that said "book".
+
+    That matters more than a stray number: it appeared in **book_risks**, the panel a
+    reviewer reads to learn what could break the book, asserting a 31.67pp governance
+    breach on a portfolio that sits exactly at its cap and breaches nothing.
+
+    This checks the one falsifiable half — **a claimed cap breach against
+    `cap_utilisation.violations`**, which the sizer computes on the real book. It does
+    not judge composition figures in prose; that is the prompt's job now, and
+    over-reaching would be the unfalsifiable verdict ADR-0045 refused.
+
+    Silent when there is no thesis, no `cap_utilisation`, or when the book genuinely
+    breaches something — a real breach SHOULD be discussed.
+
+    Returns failure strings; empty means no false breach claim.
+    """
+    if not rec_row:
+        return []
+    prose = rec_row.get("book_view") or ""
+    risks = rec_row.get("book_risks") or []
+    cap = rec_row.get("cap_utilisation")
+    if not prose and not risks:
+        return []
+    if cap is None:
+        return []
+    violations = cap.get("violations")
+    if violations is None or violations:
+        # No measurement, or a genuine breach the thesis is right to raise.
+        return []
+
+    run = rec_row.get("run_date", "?")
+    out: list[str] = []
+    for label, text in [("thesis", prose)] + [
+        (f"book_risks[{i}]", str(x)) for i, x in enumerate(risks)
+    ]:
+        for sentence in re.split(r"(?<=[.;])\s+", text):
+            if _CAP_BREACH_CLAIM.search(sentence):
+                out.append(
+                    f"book {run}: {label} claims a cap breach — \"{sentence.strip()[:150]}\" "
+                    f"— but cap_utilisation.violations is empty. The pool metrics in the "
+                    f"prompt are equal-weighted and pre-selection; the book's caps are "
+                    f"enforced by the sizer."
+                )
+                break
+    return out
 
 
 def check_book_arithmetic(
@@ -538,6 +609,24 @@ def main() -> int:
             .execute()
             .data
         )
+        # A thesis must not claim a cap breach the book does not have.
+        cap_row = (
+            sb.table("research_recommendations")
+            .select("run_date, book_view, book_risks, cap_utilisation")
+            .eq("run_date", rec["run_date"])
+            .limit(1)
+            .execute()
+            .data
+        )
+        cap_flags = check_cap_breach_claims(cap_row[0] if cap_row else None)
+        if cap_flags:
+            print("✗ DATA INTEGRITY CHECK FAILED — the published thesis claims a cap "
+                  "breach the book does not have:")
+            for f in cap_flags:
+                print(f"  - {f}")
+            return 1
+        print(f"✓ No false cap-breach claim in the {rec['run_date']} thesis.")
+
         arith = check_book_arithmetic(book_row[0] if book_row else None)
         if arith:
             print("✗ DATA INTEGRITY CHECK FAILED — /book's headline does not describe "

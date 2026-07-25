@@ -204,6 +204,70 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 74 (2026-07-25)
+
+**Read the prompt that shipped iteration 73's fix and found the instruction that had
+caused it — then found the same block was lying to the model about the macro regime.**
+
+[ADR-0073](adrs/0073-a-factor-tilt-is-a-number-the-model-may-not-retype.md) stopped the
+model restating the pool's tilts as the book's. The line that licensed it was still there:
+
+```
+- factor_tilts: use the pre-computed book_metrics if available; set to {} if no data
+```
+
+`factor_tilts` is a **per-pick** field, rendered per row on `/book`. That told the model to
+fill it from an **aggregate**, and it complied exactly — all **ten** positions carried
+byte-identical tilts, `beta_mkt -0.02` for every one. **SHY** (1-3yr Treasuries) and
+**SVXY** (inverse VIX) were printed with the same market beta. The measured values were in
+`factor_exposures` all along, in the table the prompt prints two sections above:
+
+| asset | measured `beta_mkt` | R² |
+|---|---|---|
+| SVXY | **+2.08** | 0.68 |
+| ARKK | **+1.49** | 0.77 |
+| SHY | **+0.01** | 0.07 |
+| NOC | **−0.01** | 0.04 |
+
+Ten identical rows is the strongest possible failure of this file's own rule that **every
+scannable layer must differentiate**. `attach_asset_factor_tilts` now joins them in
+`size_positions`, and the field is no longer requested in the output schema at all — a
+model should not be asked to type numbers about to be overwritten. `r_squared` rides along
+and the page says *"a weak fit, so read these betas loosely"* below 0.30, which fires on
+six of ten names: an honest disclosure, not a display bug.
+
+**And the regime block was misstating its own units.** Three fields, against L3:
+
+| prompt printed | actually |
+|---|---|
+| `Yield curve slope (10y-2y): 0.34 bps` | stored in **percent** — the curve is **+34 bps** |
+| `HY credit OAS: 2.77 bps` | **277 bps** — a credit market ~100x too tight |
+| `VIX term structure: -1.93 (positive = backwardation)` | correct, but leaves the convention to be applied |
+
+This is the percent-vs-bps mismatch of iteration 72, surviving in the one place it reaches
+a reader. Told the curve was **0.34 basis points**, the agent opened the published thesis
+with *"an **inverted** curve"* while quoting levels that show an upward slope. Handed
+`-1.93`, it wrote *"term structure already in **backwardation** (VIX3M-VIX = +1.93)"* —
+flipping the subtraction order, then keeping the label belonging to the other order; under
+that order the market is in **contango**, the calm state, and the thesis used the opposite
+to argue a VIX-spike risk was underway. Every number was cited correctly, so
+`verify_citations` passed all of them — the gap ADR-0049 named. The block now names the
+shape: *"+34 bps (upward-sloping — the curve is NOT inverted)"*.
+
+**Two guards, negative-controlled against production before being trusted** — each fired on
+the live row naming the right numbers. `check_per_pick_tilts_differentiate` tests the
+fingerprint, not the prose; `check_regime_characterisation_claims` flags an inversion claim
+against a positive slope and a backwardation/contango claim against the opposite sign.
+
+**The live book was repaired with no pipeline run** — the join is pure, so the 07-25 picks
+were recomputed with the fixed code and PATCHed: ten distinct market betas, 2.08 down to
+−0.01. **The prose was deliberately not repaired.** *"An inverted curve"* and
+*"market-neutral (Mkt −0.02)"* stay until the next run writes under the corrected prompt;
+hand-editing it would make the page say something the agent did not conclude.
+
+[ADR-0075](adrs/0075-per-pick-betas-are-joined-not-authored.md). 140 backend tests across
+the affected modules.
+
 ### Loop iteration 73 (2026-07-25)
 
 **The book turned net short last iteration, and that exposed a one-sided stress test:

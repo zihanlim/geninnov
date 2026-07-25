@@ -149,7 +149,7 @@ block:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 563 backend + 144 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -203,6 +203,33 @@ Live at https://andromeda-analytics.vercel.app · 563 backend + 144 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 73 (2026-07-25)
+
+**The book turned net short last iteration, and that exposed a one-sided stress test:
+every scenario was a risk-off shock the book gains from, so `/book` read "WORST SCENARIO
+−0.0%" — a $100M book whose worst stress loses nothing.**
+
+All four scenarios (VIX, rates, USD, credit) carry a negative market shock — the right
+battery for the long-biased book the platform ran for most of its history. But the
+regime fix (iteration 72) turned the book **net short** (−5.3%, beta −0.50), and a
+net-short book *gains* in every risk-off shock: VIX +3.4%, Rate +2.0%, Credit +0.2%, USD
+−0.0%. The worst case reading ~0 is the first number a reviewer pokes — not because the
+book is riskless, but because the battery only tested the tail it is hedged against. The
+real risk of a short book is the **opposite** tail: a risk-on melt-up / short squeeze.
+
+Added a fifth scenario, **Melt-up / Squeeze (SPX +10%)** — market up, VIX collapse,
+ARKK/China squeeze, hedges unwind — a fixed calibration symmetric to the risk-off shocks
+([ADR-0074](adrs/0074-stress-both-tails-not-just-the-crash.md)). It reports **−2.0%** on
+the live book, so both `/book` ("WORST SCENARIO −2.0% Melt-up") and `/risk` ("5 calibrated
+shocks · WORST CASE Melt-up −1.99%") now show a genuine downside. Re-persisted
+`scenario_results` so it is live (frontend is deploy-quota-blocked but count-agnostic, so
+it rendered the 5th row automatically); committed so the next scheduled run keeps it. 35
+scenario tests pin both tails. UI/UX pass clean at 1440/375.
+
+Deferred to the concurrent session (their active ADRs): the thesis-tilt discrepancy is
+[ADR-0073](adrs/0073-a-factor-tilt-is-a-number-the-model-may-not-retype.md); the pending
+prediction-markets framing fix still awaits a deploy. 564 backend (+1) + 144 frontend.
 
 ### Loop iteration 72 (2026-07-25)
 

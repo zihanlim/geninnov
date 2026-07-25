@@ -56,7 +56,7 @@ flowchart TB
             N2["2. screen_candidates<br/><i>filter L1 pool: lens, R²≥0.10,<br/>dedupe, cap (hype + direction +<br/>two-sided inherited from L1, ADR-0030)</i>"]
             N3["3. classify_news<br/>🤖 <b>LLM</b> — tag headlines<br/>{category, sentiment, theme}"]
             N4["4. compute_book_metrics<br/><i>FF5+UMD tilts, caps,<br/>correlation matrix</i>"]
-            N5["5. run_scenario_analysis<br/><i>4 stress: VIX / rates / USD / credit</i>"]
+            N5["5. run_scenario_analysis<br/><i>5 stress: 4 risk-off (VIX/rates/USD/credit) + 1 melt-up</i>"]
             N6["6. reason_picks<br/>🤖 <b>LLM</b> — top-5L + top-5S<br/>+ thesis + counter-thesis"]
             N7["7. verify_citations<br/><i>pure-fn guardrail,<br/>max 2 retries</i>"]
             N7F["7b. fallback_picks<br/><i>deterministic if retries exhaust</i>"]
@@ -331,7 +331,7 @@ L5: q1_agent.py / run_q1_agent
     → L0–L4 outputs (aggregate_context)
     → screen_candidates: filter the L1 pool (lens, R² ≥ 0.10, dedupe, cap) — hype gate + direction + two-sided inherited from L1 (ADR-0030)
     → compute_book_metrics: FF5+UMD tilts, net/gross exposure, cap violations, corr matrix
-    → run_scenario_analysis: 4 stress scenarios (VIX/rates/USD/credit)
+    → run_scenario_analysis: 5 stress scenarios — 4 risk-off (VIX/rates/USD/credit) + 1 risk-on melt-up, so a net-short book is stressed on both tails (ADR-0074)
     → reason_picks: LLM (Claude Sonnet) → top 5 long + top 5 short + thesis + counter-thesis
     → verify_citations: citation guardrail (max 2 retries → fallback)
     → size_positions: HypeScore-weighted $100M allocation + 20%/30%/35% caps

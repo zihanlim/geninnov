@@ -276,6 +276,33 @@ betas. **Neither is a substitute for looking at the page** — the new block's l
 375px is unverified. First item for the next firing, and a second `--isolated` browser
 profile would stop this recurring.
 
+### Loop iteration 74 (2026-07-25)
+
+**A verification iteration: the regime unit bug (iteration 72) raised the question of
+whether the same percent-vs-bps class of error lurked in the other macro-derived
+EdgeScore signals. Audited them — carry, value, sentiment are all sound — and closed the
+doc-sync the scenario change left open.**
+
+- **`carry_signal`** divides `(ust10 + oas − funding)` by `_CARRY_SCALE_PCT` — inputs and
+  scale both in percent (the `_PCT` suffix names the unit), and the docstring's worked
+  example (268bp → +0.585) confirms percent throughout. No mismatch; the regime bug was
+  isolated, not systemic.
+- **`value_signal`** signs check out: +z(HY OAS) = wide spreads = cheap credit = long;
+  +z(real yield) = bonds cheap = long. **`sentiment_signal`** is correctly contrarian.
+- **Returns/risk** reconcile: the three daily returns compound to the +1.15% cumulative,
+  and the net-short book's −0.04% Saturday mark is sign-correct. The withheld n=3
+  regression beta is not user-facing.
+- **Q2 IC** is still one date — 07-25 is a Saturday, so the second forward-return
+  cross-section can't appear until Monday's trading day. Genuinely weekend-limited.
+
+Closed the ARCHITECTURE.md doc-sync the melt-up (ADR-0074) left open — the mermaid node
+and the pipeline prose both still said "4 stress scenarios"; now "5 (4 risk-off + 1
+melt-up)". UI/UX pass clean at 1440/375, zero horizontal scroll, zero console errors, no
+NaN. Two live items remain, both another workstream's: the thesis-tilt discrepancy
+(concurrent [ADR-0073](adrs/0073-a-factor-tilt-is-a-number-the-model-may-not-retype.md),
+committed, lands on its next pipeline run) and the prediction-markets framing fix
+(committed, awaiting a deploy). 564 backend + 144 frontend.
+
 ### Loop iteration 73 (2026-07-25)
 
 **The book turned net short last iteration, and that exposed a one-sided stress test:

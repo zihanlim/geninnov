@@ -105,7 +105,7 @@ export default function AbstentionRoster({
   return (
     <section
       id="abstention-roster"
-      className="card mb-6 scroll-mt-20"
+      className="card mb-5"
       aria-labelledby="abstention-heading"
     >
       <div className="card-header">
@@ -188,7 +188,7 @@ export default function AbstentionRoster({
                   <th
                     key={h}
                     scope="col"
-                    className={`px-[14px] py-2.5 text-[10.5px] uppercase tracking-[0.09em] text-text-tertiary font-medium border-b border-border bg-bg-elevated ${
+                    className={`px-[14px] py-[7px] text-[10.5px] uppercase tracking-[0.09em] text-text-tertiary font-medium border-b border-border bg-bg-elevated ${
                       i === 0 || i === 6 ? "text-left" : "text-right"
                     }`}
                   >
@@ -210,7 +210,7 @@ export default function AbstentionRoster({
                       : "hover:bg-bg-elevated"
                   }
                 >
-                  <td className="px-[14px] py-2.5 border-b border-border">
+                  <td className="px-[14px] py-[7px] border-b border-border">
                     <Link
                       href={`/?theme=${e.theme_id}`}
                       className={`hover:text-accent hover:underline ${focused ? "text-brand font-semibold" : "text-text-primary"}`}
@@ -218,24 +218,24 @@ export default function AbstentionRoster({
                       {e.name}
                     </Link>
                   </td>
-                  <td className="px-[14px] py-2.5 border-b border-border text-right num font-semibold">
+                  <td className="px-[14px] py-[7px] border-b border-border text-right num font-semibold">
                     {e.edge_score === null
                       ? "—"
                       : Math.abs(e.edge_score).toFixed(3)}
                   </td>
-                  <td className="px-[14px] py-2.5 border-b border-border text-right num text-text-secondary">
+                  <td className="px-[14px] py-[7px] border-b border-border text-right num text-text-secondary">
                     {fmtSigned(e.trend_signal)}
                   </td>
-                  <td className="px-[14px] py-2.5 border-b border-border text-right num text-text-secondary">
+                  <td className="px-[14px] py-[7px] border-b border-border text-right num text-text-secondary">
                     {fmtSigned(e.regime_bias)}
                   </td>
-                  <td className="px-[14px] py-2.5 border-b border-border text-right num text-text-secondary">
+                  <td className="px-[14px] py-[7px] border-b border-border text-right num text-text-secondary">
                     {fmtSigned(e.carry_signal)}
                   </td>
-                  <td className="px-[14px] py-2.5 border-b border-border text-right num text-text-secondary">
+                  <td className="px-[14px] py-[7px] border-b border-border text-right num text-text-secondary">
                     {fmtSigned(e.value_signal)}
                   </td>
-                  <td className="px-[14px] py-2.5 border-b border-border text-text-secondary text-[11.5px] leading-[1.5]">
+                  <td className="px-[14px] py-[7px] border-b border-border text-text-secondary text-[11.5px] leading-[1.5]">
                     {abstainReason(e)}
                   </td>
                 </tr>

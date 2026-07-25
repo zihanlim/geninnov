@@ -176,9 +176,9 @@ export default function ClearedNotTaken({
                   key={`${c.asset}-${c.direction}`}
                   className="border-b border-border last:border-b-0"
                 >
-                  <td className="px-[18px] py-2.5 num font-medium">{c.asset}</td>
+                  <td className="px-[18px] py-[7px] num font-medium">{c.asset}</td>
                   <td
-                    className="px-3 py-2.5"
+                    className="px-3 py-[7px]"
                     style={{
                       color:
                         c.direction === "short" ? "var(--short)" : "var(--long)",
@@ -186,12 +186,12 @@ export default function ClearedNotTaken({
                   >
                     {c.direction === "short" ? "Short" : "Long"}
                   </td>
-                  <td className="px-3 py-2.5 num text-right text-text-secondary">
+                  <td className="px-3 py-[7px] num text-right text-text-secondary">
                     {c.edge_score === null
                       ? "—"
                       : `${c.edge_score >= 0 ? "+" : ""}${c.edge_score.toFixed(3)}`}
                   </td>
-                  <td className="px-3 py-2.5 text-text-secondary">
+                  <td className="px-3 py-[7px] text-text-secondary">
                     {(c.theme_id && themeNames[c.theme_id]) || "—"}
                     {/* ADR-0046: which door this name came through. A candidate
                         whose theme cleared the attention gate and one admitted on
@@ -208,7 +208,7 @@ export default function ClearedNotTaken({
                     )}
                   </td>
 
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-[7px]">
                     {corr ? (
                       <>
                         <span className="num">{corr.closest}</span>
@@ -247,7 +247,7 @@ export default function ClearedNotTaken({
                       <span className="text-text-tertiary">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-[7px]">
                     {kind === "unmeasured" ? (
                       <span className="text-text-tertiary">
                         {overlapLabel(kind, null)}

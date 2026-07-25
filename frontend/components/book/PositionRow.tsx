@@ -213,7 +213,11 @@ export function PositionRow({
           }
         }}
         aria-expanded={open}
-        className={`w-full ${BOOK_ROW_MIN_W} ${BOOK_ROW_GRID} text-left px-[18px] py-3.5 hover:bg-bg-elevated transition-colors grid items-center gap-3 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent`}
+        // py-[9px], NOT the py-[7px] used on ordinary table cells. This row is the
+        // primary touch target on /book: 9px of padding either side of two lines of
+        // 13px text lands it at ~48px, above the 44px WCAG target-size floor.
+        // Goal 8 is a floor, so density stops here rather than at the cell value.
+        className={`w-full ${BOOK_ROW_MIN_W} ${BOOK_ROW_GRID} text-left px-4 py-[9px] hover:bg-bg-elevated transition-colors grid items-center gap-3 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent`}
       >
         <span className="num text-text-tertiary text-[12px]">#{rank}</span>
         <span className="flex flex-col min-w-0 gap-0.5">

@@ -25,14 +25,14 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <section id={id} aria-labelledby={`${id}-h`} className="mb-10 scroll-mt-20">
+    <section id={id} aria-labelledby={`${id}-h`} className="mb-7">
       <div className="flex items-baseline gap-3 mb-1.5">
         <span className="num text-[11px] text-text-tertiary tracking-[0.14em]">{index}</span>
         <h2 id={`${id}-h`} className="text-[16px] font-semibold tracking-[-0.01em] m-0">
           {title}
         </h2>
       </div>
-      <p className="m-0 mb-4 text-[13px] text-text-secondary max-w-[86ch]">{lede}</p>
+      <p className="m-0 mb-3 text-[13px] text-text-secondary max-w-[86ch]">{lede}</p>
       {children}
     </section>
   );
@@ -59,7 +59,7 @@ export function Formula({ children, label }: { children: ReactNode; label?: stri
           {label}
         </div>
       ) : null}
-      <pre className="num m-0 px-4 py-3 text-[13px] leading-[1.75] text-text-primary whitespace-pre">
+      <pre className="num m-0 px-4 py-2.5 text-[13px] leading-[1.6] text-text-primary whitespace-pre">
         {children}
       </pre>
     </div>
@@ -152,9 +152,9 @@ export function Stat({
             ? "text-text-tertiary"
             : "text-text-primary";
   return (
-    <div className="card p-3.5">
+    <div className="card p-3">
       <div className="text-[10px] uppercase tracking-[0.12em] text-text-tertiary mb-1">{label}</div>
-      <div className={`num text-[20px] font-semibold leading-[1.15] ${color}`}>{value}</div>
+      <div className={`num text-[19px] font-semibold leading-[1.15] ${color}`}>{value}</div>
       {sub ? <div className="text-[11px] text-text-tertiary mt-1 leading-[1.45]">{sub}</div> : null}
     </div>
   );
@@ -180,7 +180,7 @@ export function Th({
   return (
     <th
       scope="col"
-      className={`px-[14px] py-2.5 text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated whitespace-nowrap ${
+      className={`px-[14px] py-[7px] leading-[1.35] text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated whitespace-nowrap ${
         align === "right" ? "text-right" : "text-left"
       }`}
     >
@@ -202,7 +202,7 @@ export function Td({
 }) {
   return (
     <td
-      className={`px-[14px] py-2.5 border-b border-border align-top ${
+      className={`px-[14px] py-[7px] leading-[1.35] border-b border-border align-top ${
         align === "right" ? "text-right" : "text-left"
       } ${mono ? "num" : ""} ${className}`}
     >

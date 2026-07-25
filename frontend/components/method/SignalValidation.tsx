@@ -88,7 +88,7 @@ export default function SignalValidation() {
   const measuredThin = isMeasuredThin(stats ?? []);
 
   return (
-    <section className="mb-10 scroll-mt-20" id="signal-validation">
+    <section className="mb-7" id="signal-validation">
       <h2 className="text-[18px] font-semibold m-0 mb-1.5">
         Does HypeScore actually predict returns?
       </h2>

@@ -64,7 +64,7 @@ export function DailyPLHistory({ limit = 30 }: { limit?: number }) {
               {["Date", "Daily return", "Cumulative", "Portfolio value"].map((h, i) => (
                 <th
                   key={h}
-                  className={`px-[18px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated ${
+                  className={`px-[18px] py-[7px] text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated ${
                     i === 0 ? "text-left" : "text-right"
                   }`}
                 >
@@ -86,14 +86,14 @@ export function DailyPLHistory({ limit = 30 }: { limit?: number }) {
               const age = Math.max(0, Math.floor((Date.now() - new Date(r.run_date).getTime()) / 1000));
               return (
                 <tr key={r.run_date} className="hover:bg-bg-elevated">
-                  <td className="px-[18px] py-2.5 border-b border-border num text-text-secondary">{r.run_date}</td>
-                  <td className={`px-[14px] py-2.5 border-b border-border text-right num ${color}`}>
+                  <td className="px-[18px] py-[7px] border-b border-border num text-text-secondary">{r.run_date}</td>
+                  <td className={`px-[14px] py-[7px] border-b border-border text-right num ${color}`}>
                     {fmtPct(ret)}
                   </td>
-                  <td className="px-[14px] py-2.5 border-b border-border text-right num text-text-secondary">
+                  <td className="px-[14px] py-[7px] border-b border-border text-right num text-text-secondary">
                     {fmtPct(r.cumulative_return)}
                   </td>
-                  <td className="px-[18px] py-2.5 border-b border-border text-right num text-text-secondary">
+                  <td className="px-[18px] py-[7px] border-b border-border text-right num text-text-secondary">
                     {fmtUSD(r.portfolio_value)}
                   </td>
                 </tr>

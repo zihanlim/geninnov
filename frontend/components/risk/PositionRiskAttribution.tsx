@@ -255,7 +255,7 @@ export function PositionRiskAttribution({
                     <th
                       key={h}
                       scope="col"
-                      className={`px-[14px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-y border-border bg-bg-elevated ${
+                      className={`px-[14px] py-[7px] text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-y border-border bg-bg-elevated ${
                         i <= 1 ? "text-left" : i === 4 ? "text-left" : "text-right"
                       }`}
                     >
@@ -267,10 +267,10 @@ export function PositionRiskAttribution({
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className="hover:bg-bg-elevated">
-                    <td className="px-[14px] py-2.5 border-b border-border num text-text-primary">
+                    <td className="px-[14px] py-[7px] border-b border-border num text-text-primary">
                       {r.asset}
                     </td>
-                    <td className="px-[14px] py-2.5 border-b border-border">
+                    <td className="px-[14px] py-[7px] border-b border-border">
                       <span
                         className={`dir-pill ${
                           r.direction === "long" ? "dir-pill-long" : "dir-pill-short"
@@ -280,16 +280,16 @@ export function PositionRiskAttribution({
                       </span>
                     </td>
                     <td
-                      className={`px-[14px] py-2.5 border-b border-border text-right num ${
+                      className={`px-[14px] py-[7px] border-b border-border text-right num ${
                         r.direction === "long" ? "text-long" : "text-short"
                       }`}
                     >
                       {fmtSignedPct(r.signedWeight)}
                     </td>
-                    <td className="px-[14px] py-2.5 border-b border-border text-right num text-text-secondary">
+                    <td className="px-[14px] py-[7px] border-b border-border text-right num text-text-secondary">
                       {fmtSignedBeta(r.betaMkt)}
                     </td>
-                    <td className="px-[14px] py-2.5 border-b border-border">
+                    <td className="px-[14px] py-[7px] border-b border-border">
                       <div className="flex items-center gap-2">
                         <div className="flex-1 min-w-[80px]">
                           <ContribBar value={r.betaContribution} max={maxBeta} positiveIsRisk />
@@ -307,11 +307,11 @@ export function PositionRiskAttribution({
                         </span>
                       </div>
                     </td>
-                    <td className="px-[14px] py-2.5 border-b border-border text-right num text-text-secondary">
+                    <td className="px-[14px] py-[7px] border-b border-border text-right num text-text-secondary">
                       {fmtPct(r.grossShare)}
                     </td>
                     <td
-                      className={`px-[14px] py-2.5 border-b border-border text-right num ${
+                      className={`px-[14px] py-[7px] border-b border-border text-right num ${
                         !isNum(r.netShare)
                           ? "text-text-tertiary"
                           : r.netShare >= 0
@@ -322,7 +322,7 @@ export function PositionRiskAttribution({
                       {fmtSignedPct(r.netShare)}
                     </td>
                     <td
-                      className={`px-[14px] py-2.5 border-b border-border text-right num ${
+                      className={`px-[14px] py-[7px] border-b border-border text-right num ${
                         r.avgCorr === null ? "text-text-tertiary" : "text-text-primary"
                       }`}
                       title={
@@ -338,10 +338,10 @@ export function PositionRiskAttribution({
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={4} className="px-[14px] py-2.5 text-right num text-[11px] text-text-tertiary">
+                  <td colSpan={4} className="px-[14px] py-[7px] text-right num text-[11px] text-text-tertiary">
                     Σ β contribution ({measuredBeta} of {rows.length} measured)
                   </td>
-                  <td className="px-[14px] py-2.5 text-left num text-[12px] text-text-primary">
+                  <td className="px-[14px] py-[7px] text-left num text-[12px] text-text-primary">
                     {fmtSignedBeta(sumBeta)}
                     {isNum(bookBeta) && showBookBeta && (
                       <span className="text-text-tertiary">

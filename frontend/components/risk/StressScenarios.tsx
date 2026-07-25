@@ -200,7 +200,7 @@ export function StressScenarios({
                     <th
                       key={h || `col-${i}`}
                       scope="col"
-                      className={`px-[18px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated ${
+                      className={`px-[18px] py-[7px] text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated ${
                         i === 0 ? "text-left" : "text-right"
                       }`}
                     >

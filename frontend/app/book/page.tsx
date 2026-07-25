@@ -147,7 +147,7 @@ export default function BookPage() {
   return (
     <Suspense
       fallback={
-        <main className="max-w-[1320px] mx-auto px-8 pt-7 pb-20">
+        <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 pt-7 pb-20">
           <div className="skeleton h-[180px]" />
         </main>
       }
@@ -555,8 +555,15 @@ function BookPageInner() {
 
   const focusHeldOut = focusIsKnown && focusPicks.length === 0;
 
+  // No `overflow-x-hidden` on the <main> below. With overflow-x hidden and
+  // overflow-y visible, CSS computes overflow-y to `auto` — which makes <main> a
+  // scroll container, and a `position: sticky` child then pins to IT (as tall as
+  // the whole page) rather than to the viewport, so the section nav would
+  // silently never stick. Containment is already handled one level up:
+  // layout.tsx's grid-cols-[minmax(0,1fr)] track plus the min-w-0 item let wide
+  // tables scroll inside their own overflow-x-auto wrappers.
   return (
-    <main className="max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-8 pt-7 pb-20 overflow-x-hidden">
+    <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 pt-7 pb-20">
       <div className="flex justify-between items-end mb-7 gap-6 flex-wrap">
         <div className="min-w-0 flex-1">
           <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
@@ -806,6 +813,17 @@ function BookPageInner() {
             </div>
           ) : (
             <>
+              {/* Longs ‖ Shorts. The one pairing on this page where two panels
+                  are genuinely comparable rather than merely adjacent: same
+                  columns, same row shape, and the question "is this book
+                  lopsided?" is answered by seeing them side by side.
+                  Gated at `wide` (1440px), NOT `xl`: below that each pane is
+                  narrower than BOOK_ROW_MIN_W (640px) and every position row
+                  would open its own horizontal scroller. See tailwind.config.ts.
+                  items-start so a 5-row side is not stretched to match an 8-row
+                  side; [&>*]:mb-0 because each PositionSection carries its own
+                  bottom margin, which would otherwise double up inside the grid. */}
+              <div className="grid wide:grid-cols-2 gap-6 items-start [&>*]:mb-0 mb-6">
               <PositionSection
                 title="Longs"
                 glyph="â–²"
@@ -849,6 +867,7 @@ function BookPageInner() {
                 scenarios={rec.scenario_results ?? []}
                 emptyNote="This book has no short positions. A $100M long-short mandate with zero shorts carries full directional market exposure â€” check the screening funnel for why no theme produced a negative TradeScore."
               />
+              </div>
 
               {/* ADR-0081 — Worked example lineage panel. Additive, collapsed by default
                   (a native `<details>`), rendered only when there are picks. Same data
@@ -866,6 +885,12 @@ function BookPageInner() {
 
 
           {/* â”€â”€ Pool depth: the answer to "why not five and five?" â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* Three independent readings of one question — "how solid is this
+              book?" — that were stacked full-width across ~975px and read as a
+              sequence. Side by side they read as what they are: corroboration.
+              lg:2-up then wide:3-up, since none of the three carries a table
+              with a large min-width. */}
+          <div className="grid lg:grid-cols-2 wide:grid-cols-3 gap-6 items-start [&>*]:mb-0 mb-6">
           <PoolDepth
             ideas={rec?.independent_ideas ?? null}
             heldLongs={(rec?.picks ?? []).filter((p) => p.direction === "long").length}
@@ -881,6 +906,7 @@ function BookPageInner() {
 
           {/* â”€â”€ Same inputs, run again: agent churn as against market churn â”€ */}
           <Replication />
+          </div>
 
           {/* â”€â”€ Abstention roster â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <ClearedNotTaken

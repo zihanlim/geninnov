@@ -108,7 +108,7 @@ export default function CitationList({ text, citations }: Props) {
         </summary>
         <ul className="m-0 mt-2 p-0 flex flex-wrap gap-x-3 gap-y-1 text-text-secondary text-[11px] leading-[1.6] list-none">
           {sources.map((c) => (
-            <li key={`${c.source}-${c.n}`} id={`cite-${c.n}`} className="scroll-mt-20">
+            <li key={`${c.source}-${c.n}`} id={`cite-${c.n}`}>
               <span className="text-text-tertiary num mr-1">{c.n}</span>
               <span className="text-text-primary num">{c.source}</span>
               {c.detail && <span className="text-text-tertiary"> · {c.detail}</span>}

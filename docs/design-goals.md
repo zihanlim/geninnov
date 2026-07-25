@@ -132,8 +132,15 @@ Stated so nobody re-litigates them by accident:
   reverse.
 - **The Bloomberg terminal look.** See ADR-0009. The differentiator is the
   visible rigor of the derivation, not visual fidelity to a terminal.
-- **A sidebar icon rail.** Four pages. A four-item top bar is the correct answer;
-  unlabelled glyph rails trade clarity for the appearance of scale.
+- **A sidebar icon rail.** Four top-bar *destinations*. A destination may have
+  section sub-routes, and they never appear in the bar — `/method` is two
+  chapters (`/method` and `/method/evidence`) behind one header item, and the
+  repo has always served `/trades`, `/portfolio` and `/research` as redirects
+  behind that same four-item bar. The objection here is to the unlabelled glyph
+  rail, which trades clarity for the appearance of scale; it was never a count
+  of URLs. See [ADR-0084](adrs/0084-method-splits-by-reader-question-not-by-copy.md)
+  for the stop rules that keep this from becoming the rail by increments —
+  chiefly: **split by section, never by copy of the same data.**
 
 ## Evaluating an external mockup
 

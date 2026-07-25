@@ -207,7 +207,7 @@ export function CorrelationMatrix({
                     <th
                       key={h}
                       scope="col"
-                      className={`px-[18px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-y border-border bg-bg-elevated ${
+                      className={`px-[18px] py-[7px] text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-y border-border bg-bg-elevated ${
                         i === 0 ? "text-left" : "text-right"
                       }`}
                     >
@@ -221,20 +221,20 @@ export function CorrelationMatrix({
                   .sort((a, b) => Math.abs(b.corr) - Math.abs(a.corr))
                   .map((p, i) => (
                     <tr key={`${p.asset_a}-${p.asset_b}-${i}`} className="hover:bg-bg-elevated">
-                      <td className="px-[18px] py-2.5 border-b border-border num">
+                      <td className="px-[18px] py-[7px] border-b border-border num">
                         {p.asset_a} <span className="text-text-tertiary">×</span> {p.asset_b}
                       </td>
                       <td
-                        className={`px-[14px] py-2.5 border-b border-border text-right num ${
+                        className={`px-[14px] py-[7px] border-b border-border text-right num ${
                           p.corr >= 0 ? "text-short" : "text-long"
                         }`}
                       >
                         {fmtSignedBeta(p.corr)}
                       </td>
-                      <td className="px-[14px] py-2.5 border-b border-border text-right">
+                      <td className="px-[14px] py-[7px] border-b border-border text-right">
                         {relationshipBadge(p)}
                       </td>
-                      <td className="px-[18px] py-2.5 border-b border-border text-right num text-text-tertiary">
+                      <td className="px-[18px] py-[7px] border-b border-border text-right num text-text-tertiary">
                         {typeof p.threshold === "number" ? p.threshold.toFixed(2) : "—"}
                       </td>
                     </tr>

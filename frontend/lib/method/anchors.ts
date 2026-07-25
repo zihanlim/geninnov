@@ -1,0 +1,80 @@
+// frontend/lib/method/anchors.ts
+//
+// Which /method chapter owns which section anchor.
+//
+// This exists as DATA rather than as a pair of hardcoded route files because a
+// URL fragment is never sent to the server: `next.config` redirects(), edge
+// middleware and a server-side redirect() all receive a bare `/method` with the
+// `#guardrails` stripped by the browser. So the hop from a legacy anchor to its
+// new chapter has to happen client-side, and both the hop and the tests need to
+// read the same map — otherwise the map and the sections drift and a documented
+// deep link starts landing on a page that does not contain its target.
+//
+// Every one of these ids is referenced from somewhere outside the app: ADRs,
+// PROGRESS.md rows and the design docs all link to /method#<id>. Deleting a key
+// here is a broken inbound link, which is why method-anchors.test.ts asserts the
+// documented set by name rather than by count.
+
+/** The two chapters of /method. */
+export type MethodChapter = "build" | "evidence";
+
+export const CHAPTER_ROUTE: Record<MethodChapter, string> = {
+  build: "/method",
+  evidence: "/method/evidence",
+};
+
+/**
+ * Section id → the chapter that renders it.
+ *
+ * The split axis is the reader's question, not the pipeline's taxonomy:
+ *   build    — "how is this number built?"     formulas, weights, worked examples
+ *   evidence — "did it run, and who checked it?" pipeline status, feeds, guardrails
+ *
+ * The falsifier for that split: "why is HypeScore 62 for theme X?" must be
+ * answerable from /method alone. It is — the formula, the terms table, the
+ * worked example, SignalValidation and the reconciliation all live in `build`.
+ */
+export const METHOD_ANCHORS = {
+  hypescore: "build",
+  tradescore: "build",
+  edgescore: "build",
+  factors: "build",
+  // Rendered by SignalValidation, which sets this id itself. Live today and
+  // previously undocumented — it is in the map so a link to it cannot silently
+  // start resolving to the wrong chapter.
+  "signal-validation": "build",
+  pipeline: "evidence",
+  sources: "evidence",
+  guardrails: "evidence",
+} as const satisfies Record<string, MethodChapter>;
+
+export type MethodAnchor = keyof typeof METHOD_ANCHORS;
+
+/** Does `chapter` render the section with this id? */
+export function chapterOwns(chapter: MethodChapter, id: string): boolean {
+  return METHOD_ANCHORS[id as MethodAnchor] === chapter;
+}
+
+/** The route a legacy `/method#id` link should end up on, or null if `id` is
+ *  not a known anchor (in which case leave the reader where they are rather
+ *  than guessing at a destination). */
+export function routeForAnchor(id: string): string | null {
+  const chapter = METHOD_ANCHORS[id as MethodAnchor];
+  return chapter ? CHAPTER_ROUTE[chapter] : null;
+}
+
+/** Section nav items per chapter. Labels are nouns, never figures — see
+ *  SectionNav, which is tested for the absence of digits. */
+export const CHAPTER_NAV: Record<MethodChapter, Array<{ id: string; label: string }>> = {
+  build: [
+    { id: "hypescore", label: "HypeScore" },
+    { id: "tradescore", label: "TradeScore" },
+    { id: "edgescore", label: "EdgeScore" },
+    { id: "factors", label: "Factors" },
+  ],
+  evidence: [
+    { id: "pipeline", label: "Pipeline" },
+    { id: "sources", label: "Sources" },
+    { id: "guardrails", label: "Guardrails" },
+  ],
+};

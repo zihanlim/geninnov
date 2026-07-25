@@ -165,8 +165,12 @@ describe("StepNumbered carries a reconciliation", () => {
 });
 
 describe("/method still proves its arithmetic", () => {
+  // The body moved out of app/method/page.tsx when /method split into two
+  // chapters (ADR-0084) — the route file is now a four-line shell, so reading it
+  // here would make every assertion below vacuously pass against an empty
+  // string. The reconciliations live with the sections, in the shared body.
   const src = readFileSync(
-    path.resolve(__dirname, "../../app/method/page.tsx"),
+    path.resolve(__dirname, "../../components/method/MethodBody.tsx"),
     "utf8",
   );
 

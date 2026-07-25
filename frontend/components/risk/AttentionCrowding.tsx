@@ -133,7 +133,7 @@ export function AttentionCrowding({
                         <th
                           key={h}
                           scope="col"
-                          className={`px-[16px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-y border-border bg-bg-elevated ${
+                          className={`px-[16px] py-[7px] text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-y border-border bg-bg-elevated ${
                             i === 0 || i === 5 ? "text-left" : i === 3 ? "text-center" : "text-right"
                           }`}
                         >
@@ -156,14 +156,14 @@ export function AttentionCrowding({
                         key={r.themeId}
                         className={`hover:bg-bg-elevated ${crowded ? "bg-short-dim/20" : ""}`}
                       >
-                        <td className="px-[16px] py-2.5 border-b border-border text-text-primary">
+                        <td className="px-[16px] py-[7px] border-b border-border text-text-primary">
                           {r.themeName}
                         </td>
-                        <td className={`px-[14px] py-2.5 border-b border-border text-right num ${pb.cls}`}>
+                        <td className={`px-[14px] py-[7px] border-b border-border text-right num ${pb.cls}`}>
                           {pb.label}
                         </td>
                         <td
-                          className={`px-[14px] py-2.5 border-b border-border text-right num ${
+                          className={`px-[14px] py-[7px] border-b border-border text-right num ${
                             !isNum(r.delta1d)
                               ? "text-text-tertiary"
                               : r.delta1d > 0
@@ -177,13 +177,13 @@ export function AttentionCrowding({
                             ? `${r.delta1d >= 0 ? "+" : "−"}${Math.abs(r.delta1d).toFixed(1)}`
                             : "—"}
                         </td>
-                        <td className="px-[14px] py-2.5 border-b border-border text-center">
+                        <td className="px-[14px] py-[7px] border-b border-border text-center">
                           <span className={`badge ${dl.cls}`}>{dl.text}</span>
                         </td>
-                        <td className="px-[14px] py-2.5 border-b border-border text-right num text-text-secondary">
+                        <td className="px-[14px] py-[7px] border-b border-border text-right num text-text-secondary">
                           {isNum(r.bookWeight) ? `${(r.bookWeight * 100).toFixed(1)}%` : "—"}
                         </td>
-                        <td className="px-[16px] py-2.5 border-b border-border text-[12px] text-text-secondary leading-[1.5] max-w-[30ch]">
+                        <td className="px-[16px] py-[7px] border-b border-border text-[12px] text-text-secondary leading-[1.5] max-w-[30ch]">
                           {crowded ? (
                             <span className="text-short">crowded {r.bookDirection}</span>
                           ) : r.bookDirection !== null ? (

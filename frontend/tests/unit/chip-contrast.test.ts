@@ -172,7 +172,32 @@ const CHIPS: Array<[string, string]> = [
 describe("chip contrast", () => {
   it("found every chip definition", () => {
     // A silently-empty enumeration would make every assertion below vacuous.
-    expect(cssChipVariants().length).toBeGreaterThanOrEqual(6);
+    //
+    // Assert the NAMED set, not a count. `>= 6` was written when there were six
+    // variants and there are now eight, so the guard had two chips of slack: both
+    // `.dir-pill` fills could be deleted, or any badge renamed, and this test still
+    // passed while `it.each(CHIPS)` below quietly stopped measuring them. A floor
+    // that cannot see a removal is not a floor — which is the whole reason this
+    // file exists rather than a comment asserting the palette is AA-compliant.
+    //
+    // Subset, not equality: a NEW variant is picked up by `it.each(CHIPS)` and
+    // measured automatically, and must not need a test edit to be covered.
+    const found = cssChipVariants().map(([name]) => name);
+    for (const required of [
+      "badge-long",
+      "badge-short",
+      "badge-warning",
+      "badge-neutral",
+      "badge-tier-anchor",
+      "badge-tier-discovered",
+      "dir-pill-long",
+      "dir-pill-short",
+    ]) {
+      expect(
+        found,
+        `.${required} is no longer enumerated from globals.css — it was either renamed or deleted, and nothing below is measuring it`,
+      ).toContain(required);
+    }
     expect(CHIPS.length).toBeGreaterThanOrEqual(16);
   });
 

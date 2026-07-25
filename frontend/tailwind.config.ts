@@ -16,6 +16,19 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      // Two-pane gate. NOT a round number and NOT interchangeable with `xl` —
+      // it is derived from BOOK_ROW_MIN_W ("min-w-[640px]", lib/book/grid.ts),
+      // the width below which the seven position-row columns collide:
+      //
+      //   canvas 1400 − 64 (lg gutter, both sides) = 1336 content
+      //   (1336 − 24 gap) / 2                      =  656 per pane
+      //   656 − 640 required                       =   16px headroom
+      //
+      // At the old 1320px canvas the panes were 616px and every paired position
+      // table would have opened its own horizontal scroller — forever, at every
+      // viewport. If you "tidy" this into `xl` (1280px) that is exactly what
+      // happens again, silently. See ADR-0084.
+      screens: { wide: "1440px" },
       colors: {
         // "Ledger" light theme — see app/globals.css for the design rationale.
         // Surfaces (warm paper)

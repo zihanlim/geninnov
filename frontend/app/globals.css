@@ -82,11 +82,36 @@
     line-height: 1.5;
   }
 
+  /* Both sticky bars have to clear an anchored target: TopBar 56px (pinned by
+     layout.tsx's grid-rows-[56px_1fr]) + SectionNav 44px + 4px of air.
+     ONE rule covers every anchor on the site — the seven /method section ids,
+     #abstention-roster, and CitationList's #cite-N footnotes. That last group
+     is why this lives here rather than as a class: the footnote targets are
+     generated, so a per-site `scroll-mt-*` would have to be remembered at each
+     new call site. The four scroll-mt-20 classes that used to do this job were
+     REMOVED, not raised — keeping both would stack to a 184px gap. */
+  html {
+    scroll-padding-top: 104px;
+  }
+
+  /* Anchor jumps glide rather than teleport, so a reader can see they moved
+     within a document instead of being dropped somewhere new. Never for
+     readers who have asked the OS for less motion. */
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+
   ::selection { background: rgba(197, 12, 62, 0.16); }   /* --accent at 16% */
 }
 
 @layer components {
-  .num { @apply font-mono tabular-nums; }
+  /* leading is inert when .num sits inline — the line box takes the greater of
+     the parent's strut and this — but it bites the moment .num is the block or
+     the table cell, which is where the tall rows actually are. Applied here so
+     the two cases cannot drift apart. */
+  .num { @apply font-mono tabular-nums leading-[1.35]; }
 
   /*
    * Scroll, but don't draw a scrollbar.
@@ -119,15 +144,19 @@
      the tail of e.g. "2 sessions · portfolio_returns.cumulative_return" was cut
      off with no scrollbar to reveal it. Wraps only when it must. */
   .card-header {
-    @apply flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-[18px] py-[14px] border-b border-border;
+    @apply flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2.5 border-b border-border;
   }
   .card-title {
     @apply text-[11px] uppercase tracking-[0.12em] text-text-secondary font-medium;
   }
-  .card-body { @apply p-[18px]; }
+  /* 18px → 14px. EmptyState / QueryErrorState and the /method <Note> callouts
+     deliberately do NOT use .card-body and keep their own roomier padding: they
+     are the prose a reader most needs when the page is broken, and goal 7's own
+     caveat is that density is wrong when it hides the thing they came for. */
+  .card-body { @apply p-3.5; }
 
   .badge {
-    @apply inline-flex items-center gap-[6px] px-[10px] py-[3px] rounded text-[11px] font-medium;
+    @apply inline-flex items-center gap-[6px] px-[10px] py-[2px] rounded text-[11px] font-medium;
   }
   .badge-long { @apply bg-long-dim text-long; }
   .badge-short { @apply bg-short-dim text-short; }

@@ -204,6 +204,35 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 81 (2026-07-25) — the EdgeScore formula on /book and / is stale by two years of config
+
+**Reconciled the two headline scoring numbers against their own inputs. Both compute
+correctly; one is *described* wrong on the page.**
+
+- **Q2 HypeScore reconciles exactly.** `100 × (0.30·vol + 0.20·sent + 0.30·|ρ| + 0.20·mom)`
+  from live `scoring_config` reproduces every theme's persisted score to 4 dp (US Election
+  56.29, Geopolitical 55.44, …). The hype quantification survives a poke.
+- **Q1 EdgeScore values reconcile exactly** — `Σ(wᵢ·signalᵢ) / Σwᵢ_present` with the live
+  weights (trend 0.20, regime 0.23, carry 0.34, value 0.18, sentiment 0.05) reproduces all
+  ten positions' `edge_score` to **1e-6**, renormalised over present components (ADR-0036).
+- **But the EdgeScore *formula string* is hardcoded and stale.** `/book` (the per-row
+  EdgeScore tooltip) and `/`'s theme heatmap both display *"EdgeScore = 0.35·Trend +
+  0.25·Regime + 0.20·Carry + 0.20·Value"* — the **pre-2026-07-23 weights**, and it **omits
+  Sentiment** entirely. It is doubly wrong for the six equity names whose carry/value are n/a
+  and whose only third signal *is* sentiment: the tooltip shows two absent terms and hides the
+  one present one. A reviewer hovering to check the math computes a different number than the
+  page shows. `/method` already does this right — it builds the string from
+  `wEdge*` config (`method/page.tsx:1609`); `/book` (`page.tsx:1453,1605`) and
+  `ThemeHeatmap.tsx:138` are frozen literals.
+
+**Flagged, not fixed** — all three live in the other session's active frontend WIP (56 files;
+`book/page.tsx` is additionally mojibake-corrupted, `0.35Â·Trend`), so editing them collides and
+entangles their uncommitted work. The fix is theirs to land: read the weights from
+`scoring_config` as `/method` does, and include the sentiment term. Data is correct; no PATCH
+applies (this is a display literal, not persisted data). Also still open: `PROGRESS.md` remains
+BOM+mojibake corrupted in the shared tree (second iteration). UI pass clean — /book and / at
+1440/375, zero horizontal scroll, zero console errors, no NaN.
+
 ### Loop iteration 80 (2026-07-25) — a stress breakdown that didn't add up to its own total
 
 **Cross-checking the /risk stress scenarios: the per-scenario "Breakdown" listed legs that

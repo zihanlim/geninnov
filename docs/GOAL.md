@@ -204,6 +204,29 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 89 (2026-07-25) — the LLM-down fallback no longer hands back five correlated names
+
+**Turned last iteration's forensics into a fix.** The 2026-07-25 pipeline run's fallback book had
+a short side of five China names not by accident but by construction: `fallback_picks` took
+`shorts[:5]` by raw HypeScore, and the five highest-hype shorts were all China Growth — the
+one-per-complex judgement that would have stopped it lives only in the LLM, which had 429'd. This
+is the path that runs *whenever* the LLM is down, so it is worth getting right on its own terms.
+
+`fallback_picks` now diversifies per theme before filling: a cap of **2 per theme**, then a fill
+pass by HypeScore so the book still reaches five a side (the cap reorders, it never shrinks below
+Q1's five). **Verified on the exact 07-25 pool that caused the regression**: raw top-5 shorts were
+`BABA·KWEB·PDD·MCHI·FXI` (all China, 6 high-corr pairs); the fix returns `BABA·KWEB·GDX·IAU·GLD` —
+2 China + names from Inflation/Fed, the max same-theme cluster down from 5 to 2. +1 test
+(`test_fallback_picks_diversifies_per_theme`), 127 backend pass. **Honest limit:** it is a
+per-theme *proxy* for the LLM's correlation-based one-per-complex — a correlated complex spread
+across themes (the gold names sit in Gold Miners / Gold / Metals sectors *and* Inflation / Fed
+themes) is not fully caught. The LLM does that when it is up; the fallback just refuses the
+egregious single-theme case. q1_agent.py was clean, so this is non-colliding backend work.
+
+Playwright MCP is **still disconnected** — no UI pass again; the fix is test-verified and
+data-verified, not browser-verified. Step 4 and the MiniMax quota remain blocked; `PROGRESS.md`
+still corrupted. Commit pushed to keep origin current for the scheduled run.
+
 ### Loop iteration 88 (2026-07-25) — the restored book cross-checks whole, to the last number
 
 **A 10-point numeric cross-check of the restored book, all passing** — the strongest evidence yet

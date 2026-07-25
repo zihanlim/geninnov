@@ -509,6 +509,30 @@ def test_fallback_picks_preserves_two_sided_l1_pool():
     assert dirs == {"long", "short"}
 
 
+def test_fallback_picks_diversifies_per_theme():
+    """A day the LLM is down must not hand back a side of five correlated names. On
+    2026-07-25 raw HypeScore ranking took FIVE China shorts (one theme, 6 high-corr
+    pairs); the fallback now caps each theme at 2 and fills the rest from other themes."""
+    china = [
+        {"asset": a, "direction": "short", "theme_id": "tid-chg", "theme_name": "China Growth",
+         "hype_score": 90.0 - i, "trade_score": -0.2, "avg_sentiment": -0.1}
+        for i, a in enumerate(["BABA", "KWEB", "PDD", "MCHI", "FXI"])
+    ]
+    others = [
+        {"asset": a, "direction": "short", "theme_id": tid, "theme_name": nm,
+         "hype_score": 50.0, "trade_score": -0.2, "avg_sentiment": -0.1}
+        for a, tid, nm in [("GDX", "tid-inf", "Inflation"),
+                           ("NOC", "tid-geo", "Geopolitical"),
+                           ("ARKK", "tid-elc", "US Election")]
+    ]
+    state = _make_state(candidates=china + others)
+    state = q1_agent.fallback_picks(state)
+    shorts = [p for p in state["picks"] if p["direction"] == "short"]
+    china_shorts = [p for p in shorts if p["theme_id"] == "tid-chg"]
+    assert len(china_shorts) <= 2, f"per-theme cap breached: {[p['asset'] for p in china_shorts]}"
+    assert len(shorts) == 5, "should still fill to five from the diverse pool"
+
+
 def test_backfill_resolves_theme_id_from_llm_theme_name():
     """The LLM emits picks by theme NAME only; the backfill resolves the id
     (case-insensitively) so a stable theme_id travels with each pick."""

@@ -2463,8 +2463,38 @@ def fallback_picks(state: Q1State) -> Q1State:
     longs.sort(key=lambda x: x["hype_score"], reverse=True)
     shorts.sort(key=lambda x: x["hype_score"])
 
+    # Diversify per theme before taking the top 5. Raw `hype_score[:5]` on a day the LLM is
+    # down produced a short side of FIVE China names (BABA/KWEB/PDD/MCHI/FXI, all one theme →
+    # 6 high-corr pairs) — the concentration the LLM's one-per-complex judgement exists to
+    # prevent, absent because that judgement never ran (2026-07-25). A per-theme cap of 2 is a
+    # cheap, LLM-free proxy: it matches what the real book holds (2 China shorts) and prefers a
+    # name from a fresh theme over a third correlated one. The cap is a PREFERENCE, not a hard
+    # limit — if a diverse book cannot reach five, we fill the rest by HypeScore rather than
+    # drop below Q1's five-a-side (the diverse pass reorders, it does not shrink the book).
+    def _diversify(cands: list[dict], n: int = 5, per_theme: int = 2) -> list[dict]:
+        out: list[dict] = []
+        seen: dict = {}
+        for c in cands:                      # already HypeScore-sorted
+            t = c.get("theme_id")
+            if seen.get(t, 0) >= per_theme:
+                continue
+            out.append(c)
+            seen[t] = seen.get(t, 0) + 1
+            if len(out) >= n:
+                break
+        if len(out) < n:                     # pool lacked diverse alternatives — fill to five
+            taken = {c["asset"] for c in out}
+            for c in cands:
+                if c["asset"] in taken:
+                    continue
+                out.append(c)
+                taken.add(c["asset"])
+                if len(out) >= n:
+                    break
+        return out
+
     picks = []
-    for c in longs[:5] + shorts[:5]:
+    for c in _diversify(longs) + _diversify(shorts):
         theme_name = themes.get(c["theme_id"], c.get("theme_name", "Unknown"))
         picks.append({
             "rank": len(picks) + 1,

@@ -15,6 +15,7 @@ import {
   type CapRow,
   type CapUtilisation as CapUtilisationData,
 } from "@/lib/risk/analytics";
+import { breachedCapRows, capRowUtil, isCapBreached } from "@/lib/risk/capBreach";
 import { Ident, InlineGap, SectionGap, SectionSkeleton } from "./SectionGap";
 
 interface CapGroup {
@@ -65,12 +66,11 @@ const GROUPS: CapGroup[] = [
 ];
 
 function CapBar({ row }: { row: CapRow }) {
-  const util = isNum(row.utilisation)
-    ? row.utilisation
-    : isNum(row.weight) && isNum(row.cap) && row.cap !== 0
-      ? row.weight / row.cap
-      : null;
-  const breached = row.breached === true || (util !== null && util > 1);
+  const util = capRowUtil(row);
+  // Recomputed with the board's tolerance, not read from the persisted flag — a group
+  // resting exactly on its cap carries float dust (util 1.0000000000000002) that a bare
+  // `util > 1` misreads as a breach. See lib/risk/capBreach.ts.
+  const breached = isCapBreached(row);
   const warning = !breached && util !== null && util >= CAP_WARN_UTILISATION;
   const fillPct = util === null ? 0 : Math.min(Math.max(util, 0), 1) * 100;
   const overflowPct =
@@ -181,9 +181,11 @@ export function CapUtilisation({
   });
 
   const data = state.status === "ok" ? state.value : null;
-  const violations = (data?.violations ?? []).filter(
-    (v) => typeof v === "string" && v.trim().length > 0,
-  );
+  // Recompute breaches from utilisation with the board's tolerance rather than trusting
+  // data.violations — that list is written by the pipeline and can carry a float-dust
+  // "breach" (US at 35.0000000000003% > 35%) the board already discounts, which left the
+  // panel reading "1 breach" beside the board's "0 breached". See lib/risk/capBreach.ts.
+  const breaches = breachedCapRows(data);
   const totalRows =
     (data?.single_name?.length ?? 0) +
     (data?.sector?.length ?? 0) +
@@ -198,8 +200,8 @@ export function CapUtilisation({
         <span className="flex items-center gap-2">
           <span className="text-[11px] text-text-tertiary num">
             {state.status === "ok"
-              ? `${totalRows} limit${totalRows === 1 ? "" : "s"} monitored · ${violations.length} breach${
-                  violations.length === 1 ? "" : "es"
+              ? `${totalRows} limit${totalRows === 1 ? "" : "s"} monitored · ${breaches.length} breach${
+                  breaches.length === 1 ? "" : "es"
                 }`
               : "Single name · sector · geography"}
           </span>
@@ -215,19 +217,19 @@ export function CapUtilisation({
         ) : null
       ) : (
         <div className="card-body">
-          {violations.length > 0 && (
+          {breaches.length > 0 && (
             <div
               className="mb-5 pl-4 border-l-2 py-1"
               style={{ borderColor: "var(--short)" }}
               role="alert"
             >
               <p className="m-0 mb-1 text-[12px] font-medium text-short uppercase tracking-[0.1em]">
-                {violations.length} cap breach{violations.length === 1 ? "" : "es"}
+                {breaches.length} cap breach{breaches.length === 1 ? "" : "es"}
               </p>
               <ul className="m-0 pl-4 text-[12px] text-text-secondary">
-                {violations.map((v, i) => (
-                  <li key={`${v}-${i}`} className="num">
-                    {v}
+                {breaches.map((row, i) => (
+                  <li key={`${row.key}-${i}`} className="num">
+                    {row.key} — {fmtPct(row.weight)} vs {fmtPct(row.cap)} cap
                   </li>
                 ))}
               </ul>

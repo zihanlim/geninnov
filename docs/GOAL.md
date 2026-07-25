@@ -137,7 +137,7 @@ block:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 554 backend + 134 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 554 backend + 143 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -185,6 +185,30 @@ Live at https://andromeda-analytics.vercel.app · 554 backend + 134 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 63 (2026-07-25)
+
+**`/risk` contradicted itself: the RISK-LIMIT BOARD read "0 breached" while the CAP
+UTILISATION panel right below it read "1 breach". Same page, same limits, opposite
+verdicts — a reviewer's first poke and the number doesn't survive it.**
+
+The breach was float dust, not a real one. A fully-utilised group lands *exactly* on
+its cap by design (ADR-0037 clamps it), and re-summing the clamped per-position floats
+reintroduces representation error: US geography persists as weight
+`0.35000000000000003` against a `0.35` cap, utilisation `1.0000000000000002`. The
+RISK-LIMIT BOARD already discounts that with a tolerance (`CAP_UTIL_EPSILON`,
+iteration 55); the CAP UTILISATION panel did not — it read the persisted
+`violations` list and a bare `util > 1`, both of which count the dust as a governance
+breach. So the two panels disagreed on the same book.
+
+The fix ports the board's tolerance into the panel: a new `lib/risk/capBreach.ts`
+recomputes breaches from utilisation with `CAP_UTIL_EPSILON`, and `CapUtilisation`
+uses it for the per-row bar, the summary count, and the breach detail — dropping its
+reliance on the persisted `violations` list (which is written before the pipeline's own
+epsilon guard, ADR-0068, and so can carry a breach the pipeline itself no longer
+records). Nine unit tests pin the behaviour: float dust and a stale `breached=true`
+flag are *not* breaches; one basis point over — 10⁷× the tolerance — is. Both panels
+now read the same "0 breaches" live. Frontend suite 134 → 143.
 
 ### Loop iteration 62 (2026-07-25)
 

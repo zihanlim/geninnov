@@ -103,7 +103,15 @@
     }
   }
 
-  ::selection { background: rgba(197, 12, 62, 0.16); }   /* --accent at 16% */
+  /* Derived from --accent rather than restating it. This was
+     `rgba(197, 12, 62, 0.16)` — the accent at 16%, hand-expanded — which is
+     invisible to BOTH guards this repo relies on: the hex-literal sweep in
+     chip-contrast.test.ts only scans app/, components/ and lib/ for `#rrggbb`,
+     and a token rename greps for the variable name. The accent has already
+     moved twice for contrast (#e11048 → #d40e43 → #c50c3e); each time this
+     line silently kept the old hue. color-mix keeps it pinned to whatever
+     --accent currently is. */
+  ::selection { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 }
 
 @layer components {

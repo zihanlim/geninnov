@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 import type { ReactNode } from "react";
+import { DisclosureChevron } from "@/components/DisclosureChevron";
 
 /**
- * A card whose body collapses behind a one-line summary — the Perplexity pattern
+ * A card whose body collapses behind a one-line summary \u2014 the Perplexity pattern
  * of "headline first, detail on demand". Secondary/audit sections (screening
  * funnel, cross-cutting risks, dense risk tables) use this so a reader isn't
  * forced to scroll past everything at full density to reach the next primary
@@ -33,14 +34,14 @@ export default function CollapsibleSection({
           <span className="shrink-0">{title}</span>
           {summary && (
             <span className="normal-case tracking-normal font-normal text-text-tertiary text-[12px] truncate">
-              · {summary}
+              {"\u00b7 "} {summary}
             </span>
           )}
         </span>
         <span className="text-[11px] text-text-tertiary flex items-center gap-1.5 shrink-0">
           <span className="group-open:hidden">Show</span>
           <span className="hidden group-open:inline">Hide</span>
-          <span className="text-[10px] transition-transform group-open:rotate-90">▸</span>
+          <DisclosureChevron />
         </span>
       </summary>
       {children}

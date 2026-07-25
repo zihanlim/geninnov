@@ -7,6 +7,8 @@
 // page exists to eliminate.
 
 "use client";
+
+import { DisclosureChevron } from "@/components/DisclosureChevron";
 import {
   assetsFromPairs,
   correlationCellColor,
@@ -158,7 +160,7 @@ export function CorrelationMatrix({
                 }`
               : "252d lookback"}
           </span>
-          <span className="text-[10px] text-text-tertiary transition-transform group-open:rotate-90">▸</span>
+          <DisclosureChevron className="text-text-tertiary" />
         </span>
       </summary>
 

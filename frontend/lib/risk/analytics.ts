@@ -280,14 +280,27 @@ export function severityRank(severity: string): number {
   return SEVERITY_ORDER[severity?.toLowerCase()] ?? 99;
 }
 
-/** Tailwind classes for a severity chip. `high` uses the same orange as the
- *  `stale` StatusBadge so the palette stays closed. */
+/** Tailwind classes for a severity chip.
+ *
+ *  Four bands, escalating by FILL and not only by hue, because this chip's whole
+ *  job is answering "which shock hurts" from across the room. Every band used to
+ *  be a low-opacity tint of its hue, which on warm paper rendered four
+ *  near-identical faint pills — a table sorted worst-first whose severity column
+ *  carried no visual weight at all. Now: solid crimson → solid orange → orange
+ *  tint → grey outline.
+ *
+ *  White on --short is 8.0:1 and on --warning is 5.2:1, so both filled bands
+ *  clear AA. The `high` band previously returned bg-[#3a2615]/text-[#f0883e] — a
+ *  dark-theme leftover that painted a dark-brown chip on cream paper. See
+ *  docs/design-goals.md §4.
+ *
+ *  Backend bands: scenario_analysis.py assigns low | moderate | high | severe. */
 export function severityChipClass(severity: string): string {
   switch ((severity ?? "").toLowerCase()) {
     case "severe":
-      return "bg-short-dim text-short";
+      return "bg-short text-white font-semibold tracking-[0.04em]";
     case "high":
-      return "bg-[#3a2615] text-[#f0883e]";
+      return "bg-warning text-white font-semibold tracking-[0.04em]";
     case "moderate":
       return "bg-warning-dim text-warning";
     case "low":
@@ -361,9 +374,11 @@ export function thresholdFromPairs(pairs: CorrelationPair[]): number | null {
  */
 export function correlationCellColor(corr: number): string {
   const alpha = Math.min(Math.abs(corr), 1) * 0.55;
+  // --short / --long by hand: alpha varies with |rho|, which var() cannot do.
+  // Keep these triplets in step with globals.css.
   return corr >= 0
     ? `rgba(159, 23, 42, ${alpha.toFixed(3)})`
-    : `rgba(20, 122, 92, ${alpha.toFixed(3)})`;
+    : `rgba(18, 110, 83, ${alpha.toFixed(3)})`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

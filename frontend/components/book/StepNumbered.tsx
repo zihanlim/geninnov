@@ -12,6 +12,7 @@
 // after the first.
 
 import type { WorkedExampleStep } from "@/lib/book/workedExample";
+import { Reconciliation } from "@/components/Reconciliation";
 
 export function StepNumbered({ step }: { step: WorkedExampleStep }) {
   const isGap = !step.sourcePersisted || step.formula.startsWith("\u2014");
@@ -36,8 +37,12 @@ export function StepNumbered({ step }: { step: WorkedExampleStep }) {
         {step.prose}
       </p>
 
+      {/* whitespace-pre-wrap, not a bare div: a derivation is often several
+          aligned lines (a column of weighted terms, a Σ rule, then the result),
+          and a plain div collapses every newline so the arithmetic arrives as one
+          unreadable run. Single-line formulas are unaffected. */}
       <div
-        className={`num text-[12.5px] leading-[1.5] ${isGap ? "text-text-tertiary" : "text-text-primary"}`}
+        className={`num text-[12.5px] leading-[1.5] whitespace-pre-wrap ${isGap ? "text-text-tertiary" : "text-text-primary"}`}
       >
         {step.formula}
       </div>
@@ -45,6 +50,17 @@ export function StepNumbered({ step }: { step: WorkedExampleStep }) {
         <p className="m-0 mt-1 text-[11.5px] leading-[1.5] text-text-tertiary">
           {step.formulaGap}
         </p>
+      )}
+
+      {/* Does this step's arithmetic reproduce what the product reads? Only steps
+          that recompute something persisted have anything to answer. */}
+      {step.reconciliation && (
+        <Reconciliation
+          verdict={step.reconciliation.verdict}
+          labels={step.reconciliation.labels}
+          format={step.reconciliation.format}
+          compact
+        />
       )}
 
       <div className="mt-1 text-[11px] text-text-tertiary">

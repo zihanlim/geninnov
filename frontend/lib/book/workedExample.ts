@@ -5,13 +5,22 @@
 // these and renders them; the test imports these and asserts the eight fields
 // the row already surfaces are not silently dropped by the panel.
 //
-// Why a function and not a direct render: vitest is configured for Node with
-// no jsdom (frontend/vitest.config.ts), so React-component tests are not
-// available. Putting the shape in lib/ keeps the no-information-loss guarantee
-// machine-checkable under the existing test runner. The React wrapper is then
-// a one-line render and any future breakage localises to either the data
-// (tested) or the markup (visually inspected against the freeze at
-// docs/baseline/screenshots/).
+// Why a function and not a direct render: putting the shape in lib/ keeps the
+// no-information-loss guarantee machine-checkable, and any future breakage
+// localises to either the data (tested) or the markup.
+//
+// This header used to add "React-component tests are not available" — true when
+// it was written, no longer. vitest.config.ts now sets `oxc: { jsx: ... }`, so a
+// component can be rendered with react-dom/server and asserted directly; see
+// tests/unit/book-row-field-coverage.test.tsx. Both approaches are available, and
+// a pure data layer is still the better default for anything worth asserting
+// field-by-field.
+
+import type {
+  ReconciliationFormat,
+  ReconciliationLabels,
+} from "@/components/Reconciliation";
+import type { ReconciliationVerdict } from "@/lib/method/reconciliation";
 
 /**
  * The subset of a `research_recommendations.picks[]` row the panel needs.
@@ -62,6 +71,22 @@ export interface WorkedExampleStep {
   sourcePersisted: boolean;
   /** Why the source is not persisted, when it is not. */
   sourceGap?: string;
+  /**
+   * Optional proof that this step's arithmetic reproduces the value the product
+   * actually reads. A step that recomputes something persisted can show the gap;
+   * a step that merely reports a stored figure has nothing to reconcile and
+   * leaves this undefined.
+   *
+   * Present so a lineage step can carry the same Recomputed / Persisted / Δ claim
+   * /method makes, rather than /method needing a shape this primitive cannot
+   * express — which is what made an earlier attempt to share the primitive a
+   * regression rather than a refactor.
+   */
+  reconciliation?: {
+    verdict: ReconciliationVerdict;
+    labels: ReconciliationLabels;
+    format: ReconciliationFormat;
+  };
 }
 
 /** The lineage panel as a whole, per position. */

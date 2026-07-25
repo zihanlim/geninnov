@@ -5,6 +5,9 @@
 // "this is missing, here is why" state.
 
 import type { ReactNode } from "react";
+// Tone classes live in lib/ so the contrast test can import the real strings —
+// see lib/methodTones.ts for why the `/40` and `/50` modifiers came off.
+import { TONE_CLS, TONE_LABEL_CLS, type Tone } from "@/lib/methodTones";
 
 /* ── Section shell ────────────────────────────────────────────────────────── */
 
@@ -75,21 +78,6 @@ export function Code({ children }: { children: ReactNode }) {
 
 /* ── Notes: every one of these must name a table/column and a remedy ──────── */
 
-type Tone = "info" | "warn" | "bad" | "ok";
-
-const TONE_CLS: Record<Tone, string> = {
-  info: "border-border-strong bg-bg-elevated text-text-secondary",
-  ok: "border-long/30 bg-long-dim/40 text-text-secondary",
-  warn: "border-warning/35 bg-warning-dim/50 text-text-secondary",
-  bad: "border-short/35 bg-short-dim/50 text-text-secondary",
-};
-
-const TONE_LABEL_CLS: Record<Tone, string> = {
-  info: "text-text-primary",
-  ok: "text-long",
-  warn: "text-warning",
-  bad: "text-short",
-};
 
 export function Note({
   tone = "info",

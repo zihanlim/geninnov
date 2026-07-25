@@ -4,7 +4,12 @@ interface SparklineProps {
   height?: number;
 }
 
-export default function Sparkline({ points, color = "#e11048", height = 36 }: SparklineProps) {
+// The default read "#e11048" — the PRE-AA accent, two palette moves stale
+// (#e11048 → #d40e43 → #c50c3e), so every sparkline that did not pass an explicit
+// colour drew in a crimson nothing else on the page used. `stroke` resolves var()
+// like any other paint, so read the token instead of copying it. This is the exact
+// drift ConvictionCard's comment warned about, in a second file.
+export default function Sparkline({ points, color = "var(--accent)", height = 36 }: SparklineProps) {
   if (!points.length) return null;
   const width = 100;
   const min = Math.min(...points);

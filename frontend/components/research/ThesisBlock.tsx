@@ -57,9 +57,12 @@ function StatusBadge({
           // #f0883e read 2.53:1 on the card. This badge says the thesis is only
           // PARTIAL — a caveat nobody can read is not a caveat, so it takes the
           // AA-compliant warning token like every other caution on the site.
-          background: "rgba(194, 65, 12, 0.12)",
+          // --warning at 12% / 40%. Keep both in step with the token in
+          // globals.css: a stale triplet here renders the old, sub-AA orange
+          // while every tokenised caution on the site moves.
+          background: "rgba(168, 50, 9, 0.12)",
           color: "var(--warning)",
-          borderColor: "rgba(194, 65, 12, 0.4)",
+          borderColor: "rgba(168, 50, 9, 0.4)",
         }}
         aria-label="Partial"
       >

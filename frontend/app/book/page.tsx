@@ -1,5 +1,5 @@
-"use client";
-import { Suspense, useEffect, useMemo, useState } from "react";
+﻿"use client";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -25,6 +25,11 @@ import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import AbstentionRoster from "@/components/book/AbstentionRoster";
 import BookTurnover from "@/components/book/BookTurnover";
 import PoolDepth, { type IndependentIdeas } from "@/components/book/PoolDepth";
+import { WorkedExamplePanel } from "@/components/book/WorkedExamplePanel";
+import type {
+  PrimaryScenarioInput,
+  SizingFinalInput,
+} from "@/lib/book/workedExample";
 import {
   distinguishPosition,
   positionRationale,
@@ -40,6 +45,16 @@ import ClearedNotTaken, {
   type CandidateCorrelations,
 } from "@/components/book/ClearedNotTaken";
 import { ScrollArea } from "@/components/ScrollArea";
+import { PositionRow } from "@/components/book/PositionRow";
+import {
+  FACTOR_LABELS,
+  SEVERITY_COLOR,
+  fmtPct,
+  fmtSigned,
+  fmtUSD,
+} from "@/lib/book/format";
+import type { CapRow, Pick, ScenarioResult } from "@/lib/book/types";
+import { BOOK_ROW_GRID, BOOK_ROW_MIN_W } from "@/lib/book/grid";
 import { assessStaleness } from "@/lib/freshness";
 import {
   buildSizingChain,
@@ -53,44 +68,18 @@ import {
   type ResolvedEdge,
   type ScoringConfigRow,
 } from "@/lib/book/positionEdge";
+import { severityRank } from '@/lib/risk/analytics';
 
 /**
- * /book — the $100M long-short book, as ONE object.
+ * /book â€” the $100M long-short book, as ONE object.
  *
  * This replaces the split across /trades (TradeScore ranking), /portfolio
  * (sizes and risk scalars) and /research (thesis prose). Those were three
  * partial views of the same ten positions, drawn from three tables, with no
- * cross-links — so "why am I short KWEB at 8%?" could not be answered from any
+ * cross-links â€” so "why am I short KWEB at 8%?" could not be answered from any
  * single page. Everything a position claim depends on now lives in one row.
  */
 
-interface Pick {
-  direction: "long" | "short";
-  asset: string;
-  theme?: string;
-  theme_id?: string;
-  theme_name?: string;
-  thesis?: string;
-  catalysts?: string[];
-  risk?: string;
-  counter_thesis?: string;
-  time_horizon?: string;
-  factor_tilts?: Record<string, number>;
-  factor_r_squared?: number | null;
-  /** Where this name sits against its 200-day MA — ADR-0078. */
-  ma_context?: {
-    last: number;
-    ma: number;
-    pct_from_ma: number;
-    window: number;
-    observations: number;
-  } | null;
-  notional?: number;
-  weight?: number;
-  signed_weight?: number;
-  hype_score?: number;
-  trade_score?: number;
-}
 
 interface FunnelStage {
   stage: string;
@@ -99,14 +88,6 @@ interface FunnelStage {
   reason: string;
 }
 
-interface ScenarioResult {
-  scenario_name: string;
-  label: string;
-  estimated_book_return: number;
-  estimated_dollar_pnl: number;
-  severity: string;
-  contribution_breakdown: string[];
-}
 
 interface BookMetrics {
   computed: boolean;
@@ -119,13 +100,6 @@ interface BookMetrics {
   geo_weights: Record<string, number>;
 }
 
-interface CapRow {
-  key: string;
-  weight: number;
-  cap: number;
-  utilisation: number;
-  breached: boolean;
-}
 
 interface Recommendation {
   run_date: string;
@@ -166,35 +140,8 @@ function parsePicks(raw: Pick[] | string | null | undefined): Pick[] {
   return [];
 }
 
-const fmtUSD = (n?: number | null) =>
-  n === null || n === undefined || Number.isNaN(n)
-    ? "—"
-    : `$${(n / 1_000_000).toFixed(1)}M`;
-const fmtPct = (n?: number | null, dp = 1) =>
-  n === null || n === undefined || Number.isNaN(n)
-    ? "—"
-    : `${(n * 100).toFixed(dp)}%`;
-// beta_mkt -> Mkt. The raw column names leaked to the page as chip labels.
-const FACTOR_LABELS: Record<string, string> = {
-  beta_mkt: "Mkt",
-  beta_smb: "SMB",
-  beta_hml: "HML",
-  beta_rmw: "RMW",
-  beta_cma: "CMA",
-  beta_umd: "UMD",
-};
 
-const fmtSigned = (n?: number | null, dp = 2) =>
-  n === null || n === undefined || Number.isNaN(n)
-    ? "—"
-    : `${n >= 0 ? "+" : ""}${n.toFixed(dp)}`;
 
-const SEVERITY_COLOR: Record<string, string> = {
-  low: "var(--text-secondary)",
-  moderate: "var(--warning)",
-  high: "#e8833a",
-  severe: "var(--short)",
-};
 
 export default function BookPage() {
   return (
@@ -216,7 +163,7 @@ function BookPageInner() {
   const [citations, setCitations] = useState<Citation[] | undefined>();
   // Edge for positions' themes only (fast path when position rows lack columns).
   const [edgeByTheme, setEdgeByTheme] = useState<Record<string, ThemeEdge>>({});
-  // Edge for EVERY theme — drives the abstention roster.
+  // Edge for EVERY theme â€” drives the abstention roster.
   const [allEdgeByTheme, setAllEdgeByTheme] = useState<Record<string, ThemeEdge>>({});
   const [themeNames, setThemeNames] = useState<Record<string, string>>({});
   // Migration-025 edge columns on portfolio_positions, keyed by asset.
@@ -229,7 +176,7 @@ function BookPageInner() {
     Record<keyof EdgeWeights, boolean>
   >({ trend: false, regime: false, carry: false, value: false, sentiment: false, abstainThreshold: false });
   const [candidates, setCandidates] = useState<CandidateRow[]>([]);
-  // Per-position replication stability (ADR-0057) — which names the agent picked in
+  // Per-position replication stability (ADR-0057) â€” which names the agent picked in
   // every rerun on identical inputs. Read separately from the book because it is a
   // deliberate harness run, not part of the daily job.
   const [repl, setRepl] = useState<ReplicationNames | null>(null);
@@ -242,7 +189,7 @@ function BookPageInner() {
   useEffect(() => {
     async function load() {
       // The book row, the live scoring weights, the per-position edge columns,
-      // and the full theme roster are independent reads — fire them together.
+      // and the full theme roster are independent reads â€” fire them together.
       const [recRes, cfgRes, posRes, themesRes, candRes] = await Promise.all([
         supabase
           .from("research_recommendations")
@@ -261,7 +208,7 @@ function BookPageInner() {
           ),
         supabase.from("themes").select("id, name"),
         // The L1 pool, so the page can show what cleared the screen and was still
-        // not taken — the "why isn't X in the book?" question had no answer here.
+        // not taken â€” the "why isn't X in the book?" question had no answer here.
         supabase
           .from("trade_candidates")
           .select("asset, direction, edge_score, theme_id, run_date, via_conviction")
@@ -290,7 +237,7 @@ function BookPageInner() {
               samples: n.samples ?? 0,
             });
           } catch {
-            /* advisory only — a parse failure must not blank the book */
+            /* advisory only â€” a parse failure must not blank the book */
           }
         });
 
@@ -320,13 +267,13 @@ function BookPageInner() {
       }
       setPosEdgeByAsset(posMap);
 
-      // Latest run_date only — an older vintage would list names that were never
+      // Latest run_date only â€” an older vintage would list names that were never
       // candidates for today's book.
       const candRows = (candRes.data as (CandidateRow & { run_date: string })[] | null) ?? [];
       const latestCandDate = candRows[0]?.run_date ?? null;
       setCandidates(candRows.filter((c) => c.run_date === latestCandDate));
 
-      // Theme id → name, for the abstention roster and position links.
+      // Theme id â†’ name, for the abstention roster and position links.
       const names: Record<string, string> = {};
       const allThemeIds: string[] = [];
       for (const row of (themesRes.data as { id: string; name: string }[] | null) ??
@@ -359,7 +306,7 @@ function BookPageInner() {
         const picks = parsePicks(r.picks);
         setRec({ ...r, picks });
 
-        // EdgeScore per position theme — the theme-latest fallback when a
+        // EdgeScore per position theme â€” the theme-latest fallback when a
         // position row carries no edge columns (ADR-0031/0032).
         const themeIds = Array.from(
           new Set(picks.map((p) => p.theme_id).filter((x): x is string => !!x))
@@ -394,7 +341,7 @@ function BookPageInner() {
   );
 
   // Resolve the EdgeScore for every position once: position columns first, theme
-  // latest as fallback (positionEdge.resolvePositionEdge). Keyed by "asset" — the
+  // latest as fallback (positionEdge.resolvePositionEdge). Keyed by "asset" â€” the
   // stable identity a pick joins on.
   const edgeByAsset = useMemo(() => {
     const m: Record<string, ResolvedEdge> = {};
@@ -407,7 +354,7 @@ function BookPageInner() {
     return m;
   }, [rec, posEdgeByAsset, edgeByTheme]);
 
-  // Σ conviction across every sized position with a non-null conviction — the
+  // Î£ conviction across every sized position with a non-null conviction â€” the
   // normalisation denominator the sizing chain shows.
   const convictionSum = useMemo(() => {
     let sum = 0;
@@ -437,12 +384,12 @@ function BookPageInner() {
   const bm = rec?.book_metrics ?? null;
 
   // Plain-English lead. A reader should learn what this book SAYS before meeting
-  // any notation — the formula is method, not the headline.
+  // any notation â€” the formula is method, not the headline.
   const plainSummary = useMemo(() => {
     if (!rec) return "No book has been generated yet.";
     const n = longs.length + shorts.length;
     if (n === 0)
-      return "No positions cleared the screen today — every theme was scored but held out for weak or conflicting signal.";
+      return "No positions cleared the screen today â€” every theme was scored but held out for weak or conflicting signal.";
     const sides =
       shorts.length === 0
         ? `${longs.length} long position${longs.length === 1 ? "" : "s"} and no shorts`
@@ -459,7 +406,7 @@ function BookPageInner() {
           ? " It is close to market-neutral."
           : ` It leans net ${net > 0 ? "long" : "short"} at ${fmtPct(Math.abs(net), 0)} of capital.`;
     // Cash is a POSITION, not a rounding error. Once the caps genuinely bind, a
-    // book that cannot be filled inside its own limits deploys less than $100M —
+    // book that cannot be filled inside its own limits deploys less than $100M â€”
     // and a reader who is told "sized across $100M" while the notionals add to
     // $60M is owed the difference and the reason for it.
     const deployed = (rec.picks ?? []).reduce((s, p) => s + (p.notional ?? 0), 0);
@@ -491,7 +438,7 @@ function BookPageInner() {
     return m;
   }, [rec]);
 
-  // Group caps (geography, sector) sitting at their limit — the book's binding
+  // Group caps (geography, sector) sitting at their limit â€” the book's binding
   // constraint. A name scaled below its normalised conviction weight is inside one of
   // these (ADR-0037 clamps a capped group and banks the freed capital as cash), so the
   // sizing chain names them instead of the false "no cap binding".
@@ -507,15 +454,15 @@ function BookPageInner() {
     return out;
   }, [rec]);
 
-  // ── Theme focus (?theme=<id>) ────────────────────────────────────────────
-  // A "positions →" link from the heatmap/cards lands here. Honour the param so
+  // â”€â”€ Theme focus (?theme=<id>) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // A "positions â†’" link from the heatmap/cards lands here. Honour the param so
   // the deep-link is meaningful: name the theme's positions if it holds any, or
-  // — the case that used to dead-end silently on an abstained theme — say plainly
+  // â€” the case that used to dead-end silently on an abstained theme â€” say plainly
   // that it was held out and point at the abstention roster.
   const focusThemeId = useSearchParams().get("theme");
   const focusName = focusThemeId ? themeNames[focusThemeId] ?? null : null;
-  // Picks store the theme NAME (`theme`), not the theme_id — theme_id is null on
-  // L5 output — so match on the name resolved from the URL's id, with theme_id as
+  // Picks store the theme NAME (`theme`), not the theme_id â€” theme_id is null on
+  // L5 output â€” so match on the name resolved from the URL's id, with theme_id as
   // a forward-compatible fallback for when the agent starts populating it.
   const focusPicks = useMemo(() => {
     if (!focusThemeId) return [];
@@ -531,6 +478,81 @@ function BookPageInner() {
     (focusName !== null ||
       !!allEdgeByTheme[focusThemeId] ||
       !!edgeByTheme[focusThemeId]);
+  // ADR-0081 — Worked example lineage panel helpers. Three small lookups the panel
+  // calls by-asset. All three read from data the page already loaded; the panel is
+  // strictly additive (a read-only reordering of the same lineage).
+  const pickByAsset = useMemo(() => {
+    const m: Record<string, Pick> = {};
+    for (const p of rec?.picks ?? []) m[p.asset] = p;
+    return m;
+  }, [rec]);
+  const maContextForAsset = useCallback(
+    (asset: string): Pick["ma_context"] => pickByAsset[asset]?.ma_context ?? null,
+    [pickByAsset]
+  );
+  const sizingForAsset = useCallback(
+    (asset: string): SizingFinalInput => {
+      const pick = pickByAsset[asset];
+      const edge = edgeByAsset[asset] ?? {
+        edge_score: null,
+        trend_signal: null,
+        regime_bias: null,
+        carry_signal: null,
+        value_signal: null,
+        sentiment_signal: null,
+        conviction: null,
+        vol: null,
+        direction: null,
+        run_date: null,
+        source: "none",
+      };
+      const chain = pick
+        ? buildSizingChain({
+            direction: pick.direction,
+            edge,
+            weight: pick.weight,
+            signedWeight: pick.signed_weight,
+            notional: pick.notional,
+            hypeScore: pick.hype_score,
+            cap: capByAsset.get(asset),
+            bindingGroupCaps,
+          })
+        : null;
+      if (!chain) return { display: "—", convictionBased: false };
+      const finalStep = chain.steps[chain.steps.length - 1];
+      return {
+        display: finalStep?.display ?? "—",
+        convictionBased: chain.convictionBased,
+      };
+    },
+    [pickByAsset, edgeByAsset, capByAsset, bindingGroupCaps]
+  );
+  const primaryScenarioForAsset = useCallback(
+    (asset: string): PrimaryScenarioInput | null => {
+      const scenarios = rec?.scenario_results ?? [];
+      // The same parse the row uses (PickRow.perScenario) — worst severity first,
+      // then first scenario that names the asset in its contribution_breakdown.
+      const sorted = [...scenarios].sort(
+        (a, b) => severityRank(a.severity) - severityRank(b.severity)
+      );
+      for (const s of sorted) {
+        const line = s.contribution_breakdown.find((b) =>
+          b.trim().startsWith(`${asset} (`)
+        );
+        if (!line) continue;
+        // The backend emits e.g. "  TLT (long): +8.0% × +4% = +0.32%" — the
+        // final "= <value>%" is the per-position contribution.
+        const m = line.match(/=\s*([^\s=]+)\s*$/);
+        return {
+          label: s.label,
+          contribution: m ? m[1] : line.trim(),
+        };
+      }
+      return null;
+    },
+    [rec]
+  );
+
   const focusHeldOut = focusIsKnown && focusPicks.length === 0;
 
   return (
@@ -557,12 +579,12 @@ function BookPageInner() {
               className="num"
               style={staleness.stale ? { color: "var(--warning)" } : undefined}
             >
-              {rec?.run_date ?? "—"}
+              {rec?.run_date ?? "â€”"}
             </span>
           </div>
           <div className="mt-1">
             <span className="text-text-tertiary mr-1.5">LENS</span>
-            <span className="num">{rec?.lens ?? "—"}</span>
+            <span className="num">{rec?.lens ?? "â€”"}</span>
           </div>
         </div>
       </div>
@@ -582,7 +604,7 @@ function BookPageInner() {
           }}
         >
           <span className="font-semibold" style={{ color: "var(--warning)" }}>
-            Stale book —{" "}
+            Stale book â€”{" "}
           </span>
           <span className="text-text-secondary">{staleness.message}</span>
         </div>
@@ -612,7 +634,7 @@ function BookPageInner() {
         </div>
       ) : (
         <>
-          {/* ── Theme-focus banner (from a "positions →" deep link) ──────── */}
+          {/* â”€â”€ Theme-focus banner (from a "positions â†’" deep link) â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {focusThemeId && focusIsKnown && (
             <div
               className="card p-4 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2"
@@ -630,7 +652,7 @@ function BookPageInner() {
                       {focusName ?? "This theme"}
                     </span>{" "}
                     <span className="text-text-secondary">
-                      is held out of the current book — it produced no net-edge
+                      is held out of the current book â€” it produced no net-edge
                       position this run, so there is nothing to size. See the exact
                       component conflict in the abstention roster below.
                     </span>
@@ -657,7 +679,7 @@ function BookPageInner() {
                     href="#abstention-roster"
                     className="text-accent hover:underline whitespace-nowrap"
                   >
-                    See the roster ↓
+                    See the roster â†“
                   </a>
                 )}
                 <Link
@@ -670,7 +692,7 @@ function BookPageInner() {
             </div>
           )}
 
-          {/* ── Fallback banner ─────────────────────────────────────────── */}
+          {/* â”€â”€ Fallback banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {isFallback && (
             <div
               className="card p-4 mb-5 border"
@@ -696,7 +718,7 @@ function BookPageInner() {
             </div>
           )}
 
-          {/* ── Book header stats ───────────────────────────────────────── */}
+          {/* â”€â”€ Book header stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
             <Stat
               label="Positions"
@@ -713,16 +735,16 @@ function BookPageInner() {
             <Stat
               label="Gross"
               value={fmtPct(bm?.gross_exposure)}
-              hint="Long + short — total capital at risk"
+              hint="Long + short â€” total capital at risk"
             />
             <Stat
               label="Net"
               value={
                 bm?.net_exposure === undefined
-                  ? "—"
+                  ? "â€”"
                   : `${bm.net_exposure >= 0 ? "+" : ""}${fmtPct(bm.net_exposure)}`
               }
-              hint="Long − short — directional tilt"
+              hint="Long âˆ’ short â€” directional tilt"
             />
             <Stat
               label="Deployed"
@@ -733,7 +755,7 @@ function BookPageInner() {
                 const dep = rec.picks.reduce((s, p) => s + (p.notional ?? 0), 0);
                 const cash = 100_000_000 - dep;
                 return cash > 500_000
-                  ? `of $100M — ${fmtUSD(cash)} in cash, held back by position limits`
+                  ? `of $100M â€” ${fmtUSD(cash)} in cash, held back by position limits`
                   : "Capital allocated of $100M";
               })()}
             />
@@ -742,14 +764,14 @@ function BookPageInner() {
               value={
                 worstScenario
                   ? `${(worstScenario.estimated_book_return * 100).toFixed(1)}%`
-                  : "—"
+                  : "â€”"
               }
               hint={worstScenario?.label}
               color={worstScenario ? "var(--short)" : undefined}
             />
           </div>
 
-          {/* ── Book view ──────────────────────────────────────────────── */}
+          {/* â”€â”€ Book view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <div className="mb-6">
             <ThesisBlock
               advisory={
@@ -772,7 +794,7 @@ function BookPageInner() {
             />
           </div>
 
-          {/* ── Positions ──────────────────────────────────────────────── */}
+          {/* â”€â”€ Positions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {rec.picks.length === 0 ? (
             <div className="card mb-6">
               <EmptyState
@@ -786,7 +808,7 @@ function BookPageInner() {
             <>
               <PositionSection
                 title="Longs"
-                glyph="▲"
+                glyph="â–²"
                 color="var(--long)"
                 picks={longs}
                 openAsset={openAsset}
@@ -807,7 +829,7 @@ function BookPageInner() {
               />
               <PositionSection
                 title="Shorts"
-                glyph="▼"
+                glyph="â–¼"
                 color="var(--short)"
                 picks={shorts}
                 openAsset={openAsset}
@@ -825,29 +847,42 @@ function BookPageInner() {
                 correlationPairs={correlationPairs}
                 ideas={rec?.independent_ideas ?? null}
                 scenarios={rec.scenario_results ?? []}
-                emptyNote="This book has no short positions. A $100M long-short mandate with zero shorts carries full directional market exposure — check the screening funnel for why no theme produced a negative TradeScore."
+                emptyNote="This book has no short positions. A $100M long-short mandate with zero shorts carries full directional market exposure â€” check the screening funnel for why no theme produced a negative TradeScore."
+              />
+
+              {/* ADR-0081 — Worked example lineage panel. Additive, collapsed by default
+                  (a native `<details>`), rendered only when there are picks. Same data
+                  the rows above already show, in the order the pipeline performed it. */}
+              <WorkedExamplePanel
+                picks={rec.picks}
+                edgeByAsset={edgeByAsset}
+                edgeByTheme={edgeByTheme}
+                maContextForAsset={maContextForAsset}
+                sizingForAsset={sizingForAsset}
+                primaryScenarioForAsset={primaryScenarioForAsset}
               />
             </>
           )}
 
-          {/* ── Pool depth: the answer to "why not five and five?" ───────── */}
+
+          {/* â”€â”€ Pool depth: the answer to "why not five and five?" â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <PoolDepth
             ideas={rec?.independent_ideas ?? null}
             heldLongs={(rec?.picks ?? []).filter((p) => p.direction === "long").length}
             heldShorts={(rec?.picks ?? []).filter((p) => p.direction === "short").length}
           />
 
-          {/* ── Turnover vs the previous run ─────────────────────────────── */}
+          {/* â”€â”€ Turnover vs the previous run â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <BookTurnover
             current={(rec?.picks ?? []).map((p) => p.asset).filter(Boolean)}
             previous={prevBook?.assets ?? null}
             previousDate={prevBook?.date ?? null}
           />
 
-          {/* ── Same inputs, run again: agent churn as against market churn ─ */}
+          {/* â”€â”€ Same inputs, run again: agent churn as against market churn â”€ */}
           <Replication />
 
-          {/* ── Abstention roster ───────────────────────────────────────── */}
+          {/* â”€â”€ Abstention roster â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <ClearedNotTaken
             candidates={candidates}
             heldAssets={new Set((rec?.picks ?? []).map((p) => p.asset))}
@@ -863,14 +898,14 @@ function BookPageInner() {
             themeNames={themeNames}
             abstainThreshold={edgeWeights.abstainThreshold}
             thresholdIsLive={weightsResolved.abstainThreshold}
-            // Themes that traded, taken from the PUBLISHED BOOK — the same source
+            // Themes that traded, taken from the PUBLISHED BOOK â€” the same source
             // the positions table above renders (ADR-0040). It used to come from
             // portfolio_positions, which disagrees with the book for the several
             // minutes L5 takes: L1 writes its full candidate set there first and it
             // is only reconciled down after the agent picks. During that window
             // every theme looked traded, so this panel printed "Every scored theme
             // cleared the |Edge| >= 0.15 conviction bar" while /method showed
-            // Inflation at +0.117 — a confidently wrong sentence, on a page whose
+            // Inflation at +0.117 â€” a confidently wrong sentence, on a page whose
             // own positions table listed seven names from four themes.
             tradedThemeIds={
               new Set(
@@ -882,12 +917,12 @@ function BookPageInner() {
             focusThemeId={focusHeldOut ? focusThemeId : null}
           />
 
-          {/* ── Screening funnel (collapsed — audit detail) ────────────── */}
+          {/* â”€â”€ Screening funnel (collapsed â€” audit detail) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <CollapsibleSection
             title="Screening funnel"
             summary={
               rec.screening_funnel && rec.screening_funnel.length > 0
-                ? `${rec.screening_funnel[rec.screening_funnel.length - 1]?.remaining ?? "—"} names cleared ${rec.screening_funnel.length} filters`
+                ? `${rec.screening_funnel[rec.screening_funnel.length - 1]?.remaining ?? "â€”"} names cleared ${rec.screening_funnel.length} filters`
                 : "how the universe was filtered to the book"
             }
           >
@@ -926,7 +961,7 @@ function BookPageInner() {
                             color: s.removed > 0 ? "var(--short)" : "var(--text-tertiary)",
                           }}
                         >
-                          {s.removed > 0 ? `−${s.removed}` : "0"}
+                          {s.removed > 0 ? `âˆ’${s.removed}` : "0"}
                         </td>
                         <td className="px-[18px] py-2.5 border-b border-border text-text-secondary text-[12px]">
                           {s.reason}
@@ -947,7 +982,7 @@ function BookPageInner() {
             )}
           </CollapsibleSection>
 
-          {/* ── Book risks (collapsed — expand for the tail risks) ─────── */}
+          {/* â”€â”€ Book risks (collapsed â€” expand for the tail risks) â”€â”€â”€â”€â”€â”€â”€ */}
           {canRenderAdvisoryBody(advisory) &&
             rec.book_risks &&
             rec.book_risks.length > 0 && (
@@ -1086,12 +1121,11 @@ function PositionSection({
         <ScrollArea className="card" frameClassName="rounded-[10px]">
           {/* Column legend for the dense row grid below. */}
           <div
-            className="min-w-[640px] px-[18px] py-2 grid items-center gap-3 border-b border-border bg-bg-elevated text-[10px] uppercase tracking-[0.08em] text-text-tertiary"
-            style={{ gridTemplateColumns: "28px 1fr 132px 78px 78px 78px 24px" }}
+            className={`${BOOK_ROW_MIN_W} ${BOOK_ROW_GRID} px-[18px] py-2 grid items-center gap-3 border-b border-border bg-bg-elevated text-[10px] uppercase tracking-[0.08em] text-text-tertiary`}
           >
             <span>#</span>
-            <span>Asset · theme · rationale</span>
-            <span className="text-right">Weight · notional</span>
+            <span>Asset Â· theme Â· rationale</span>
+            <span className="text-right">Weight Â· notional</span>
             <span className="text-right">Edge</span>
             <span className="text-right">Conv.</span>
             <span className="text-right">Cap</span>
@@ -1128,490 +1162,5 @@ function PositionSection({
         </ScrollArea>
       )}
     </section>
-  );
-}
-
-function PositionRow({
-  pick,
-  rank,
-  open,
-  onToggle,
-  citations,
-  advisory,
-  cap,
-  bindingGroupCaps,
-  edge,
-  edgeWeights,
-  convictionSum,
-  allPicks,
-  correlationPairs,
-  ideas,
-  scenarios,
-  repl,
-  bookRunDate,
-}: {
-  pick: Pick;
-  rank: number;
-  open: boolean;
-  onToggle: () => void;
-  citations?: Citation[];
-  advisory: AdvisoryDerivation | null;
-  cap?: CapRow;
-  bindingGroupCaps?: BindingGroupCap[];
-  edge?: ResolvedEdge;
-  edgeWeights: EdgeWeights;
-  convictionSum: number | null;
-  allPicks: { asset: string; direction: "long" | "short"; notional?: number }[];
-  correlationPairs: CorrelationPairLite[] | null;
-  ideas: IndependentIdeas | null;
-  scenarios: ScenarioResult[];
-  repl?: ReplicationNames | null;
-  bookRunDate?: string | null;
-}) {
-  const isLong = pick.direction === "long";
-  const dirColor = isLong ? "var(--long)" : "var(--short)";
-  const showProse = canRenderAdvisoryBody(advisory);
-  const themeName = pick.theme_name ?? pick.theme ?? null;
-
-  const hasEdge =
-    !!edge &&
-    (edge.trend_signal !== null ||
-      edge.regime_bias !== null ||
-      edge.carry_signal !== null ||
-      edge.value_signal !== null);
-  const conviction = edge?.conviction ?? null;
-
-  // Always-visible plain-English rationale (never hidden behind expand). The
-  // numeric component breakdown (edgeRationale) becomes the hover title and the
-  // expanded EdgeScore bars — a reader gets the "why" without decoding values.
-  //
-  // The driver phrase ALONE does not differentiate: trend has the largest raw
-  // magnitudes and wins on nearly every name, so the live book rendered two strings
-  // across nine rows. It is joined to what the name was taken instead of — its
-  // independent-idea complex, the same rho 0.70 measurement PoolDepth renders — which
-  // is the sharpest available answer to "why this ticker". ADR-0054.
-  const plain = hasEdge && edge ? plainRationale(edge, edgeWeights) : null;
-  // Per-position replication stability (ADR-0057).
-  const stability = positionStability(
-    pick.direction,
-    pick.asset,
-    repl,
-    bookRunDate,
-  );
-  const stabilityNote = stabilityLabel(stability, repl?.samples ?? 0);
-  const rationale = positionRationale(
-    plain,
-    distinguishPosition(pick.asset, pick.direction, ideas)
-  );
-  const rationaleDetail = hasEdge && edge ? edgeRationale(edge) : undefined;
-
-  // The sizing derivation — conviction × inverse-vol → cap → notional.
-  const sizingChain = buildSizingChain({
-    direction: pick.direction,
-    edge:
-      edge ?? {
-        edge_score: null,
-        trend_signal: null,
-        regime_bias: null,
-        carry_signal: null,
-        value_signal: null,
-        sentiment_signal: null,
-        conviction: null,
-        vol: null,
-        direction: null,
-        run_date: null,
-        source: "none",
-      },
-    weight: pick.weight,
-    signedWeight: pick.signed_weight,
-    notional: pick.notional,
-    hypeScore: pick.hype_score,
-    cap: cap
-      ? {
-          weight: cap.weight,
-          cap: cap.cap,
-          utilisation: cap.utilisation,
-          breached: cap.breached,
-        }
-      : undefined,
-    convictionSum,
-    bindingGroupCaps,
-  });
-
-  const marginal = marginalContribution(
-    { asset: pick.asset, direction: pick.direction, notional: pick.notional },
-    allPicks
-  );
-  const sibling = topSibling(pick.asset, correlationPairs);
-
-  // Per-position scenario lines, parsed from the breakdown strings the backend
-  // already emits (e.g. "  TLT (long): +8.0% × +4% = +0.32%").
-  const perScenario = scenarios
-    .map((s) => ({
-      label: s.label,
-      severity: s.severity,
-      line: s.contribution_breakdown.find((b) =>
-        b.trim().startsWith(`${pick.asset} (`)
-      ),
-    }))
-    .filter((s) => s.line);
-
-  return (
-    <div className="border-b border-border last:border-b-0">
-      {/* A div, not a button: the theme name is an <a>, which cannot be nested
-          inside a <button>. Keyboard + ARIA are wired by hand to keep the row a
-          single toggle target while the inner link stays independently focusable. */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onToggle}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onToggle();
-          }
-        }}
-        aria-expanded={open}
-        className="w-full min-w-[640px] text-left px-[18px] py-3.5 hover:bg-bg-elevated transition-colors grid items-center gap-3 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-        style={{ gridTemplateColumns: "28px 1fr 132px 78px 78px 78px 24px" }}
-      >
-        <span className="num text-text-tertiary text-[12px]">#{rank}</span>
-        <span className="flex flex-col min-w-0 gap-0.5">
-          <span className="flex items-baseline gap-2 min-w-0">
-            <span
-              className="num font-semibold text-[14px]"
-              style={{ color: dirColor }}
-            >
-              {pick.asset}
-            </span>
-            {pick.theme_id && themeName ? (
-              <Link
-                href={`/?theme=${pick.theme_id}`}
-                onClick={(e) => e.stopPropagation()}
-                className="text-text-secondary text-[12px] truncate hover:text-accent hover:underline"
-                title={`Attention trend for ${themeName}`}
-              >
-                {themeName}
-              </Link>
-            ) : (
-              <span className="text-text-secondary text-[12px] truncate">
-                {themeName ?? "—"}
-              </span>
-            )}
-          </span>
-          {/* Always-visible PLAIN rationale — the "why this side". Numeric
-              component breakdown is the hover title + the expanded bars. */}
-          {/* WRAPS, never truncates. The grid is min-w-[640px] inside a horizontal
-              ScrollArea, so this cell is ~150px wide at EVERY viewport below desktop
-              — measured live at 375px, an ellipsis left exactly 18 characters, which
-              is "Long · a strong p…" on all five longs. No ordering of the clauses
-              fixes a cell that narrow; the truncation is the defect. Wrapping costs
-              row height on mobile and shows the whole line, which is the trade this
-              page should always make. At 1440px the cell is wide enough that nothing
-              wraps at all (verified: zero wrapped rows). */}
-          <span
-            className="text-text-secondary text-[11.5px] break-words"
-            title={rationaleDetail}
-          >
-            {rationale ?? "EdgeScore not persisted for this position"}
-          </span>
-          {/* Did the agent pick THIS name every time it was re-run on identical
-              inputs? The replication panel reports 33% long-side churn as an
-              aggregate, which taints the names that were in fact unanimous. Per
-              position it separates them. Silent when unmeasured — a replication
-              from another run_date says nothing about today's names. */}
-          {stabilityNote && (
-            <span
-              className="text-[10.5px] num"
-              style={{
-                color:
-                  stability === "coinflip"
-                    ? "var(--warning)"
-                    : "var(--text-tertiary)",
-              }}
-              title={
-                stability === "coinflip"
-                  ? "Re-running the reasoning step on identical inputs did not always produce this position — the agent rates several names here equally."
-                  : "Re-running the reasoning step on identical inputs produced this position every time."
-              }
-            >
-              {stabilityNote}
-            </span>
-          )}
-        </span>
-        <span className="text-right">
-          <span className="num text-[13px] font-semibold">
-            {fmtPct(pick.weight)}
-          </span>
-          <span className="text-text-tertiary text-[11px] num ml-1.5">
-            {fmtUSD(pick.notional)}
-          </span>
-        </span>
-        {/* EdgeScore — the number whose sign is the side. */}
-        <span
-          className="num text-right text-[12px] font-semibold"
-          style={{ color: hasEdge ? dirColor : "var(--text-tertiary)" }}
-          title="EdgeScore = 0.35·Trend + 0.25·Regime + 0.20·Carry + 0.20·Value"
-        >
-          {edge && edge.edge_score !== null ? fmtSigned(edge.edge_score) : "—"}
-        </span>
-        {/* Conviction chip — |Edge|/vol, always visible. */}
-        <span className="text-right">
-          {conviction !== null ? (
-            <span
-              className="num text-[11px] px-1.5 py-0.5 rounded"
-              style={{ background: "var(--bg-elevated)", color: "var(--text-secondary)" }}
-              title="Conviction = |EdgeScore| / vol — the inverse-vol sizing weight"
-            >
-              {conviction.toFixed(1)}×
-            </span>
-          ) : (
-            <span
-              className="text-text-tertiary text-[11px]"
-              title="No conviction persisted — this position was sized by HypeScore"
-            >
-              hype
-            </span>
-          )}
-        </span>
-        <span className="text-right">
-          {cap ? (
-            <span
-              className="num text-[11px]"
-              title={`${(cap.weight * 100).toFixed(1)}% of a ${(cap.cap * 100).toFixed(0)}% single-name cap`}
-              style={{
-                color: cap.breached
-                  ? "var(--short)"
-                  : cap.utilisation > 0.8
-                    ? "var(--warning)"
-                    : "var(--text-tertiary)",
-              }}
-            >
-              {(cap.utilisation * 100).toFixed(0)}% cap
-            </span>
-          ) : (
-            <span className="text-text-tertiary text-[11px]">—</span>
-          )}
-        </span>
-        <span className="text-text-tertiary text-[12px] text-right">
-          {open ? "−" : "+"}
-        </span>
-      </div>
-
-      {open && (
-        <div className="px-[18px] pb-5 pt-1 bg-bg-elevated/40">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div>
-              <SubHead>Thesis</SubHead>
-              {showProse && pick.thesis ? (
-                <CitationList text={pick.thesis} citations={citations} />
-              ) : (
-                <p className="m-0 text-[12.5px] text-text-tertiary leading-[1.6]">
-                  {pick.thesis
-                    ? "Withheld — this run's thesis did not pass citation verification, so it is not shown."
-                    : "No thesis persisted for this position."}
-                </p>
-              )}
-
-              {showProse && pick.counter_thesis && (
-                <>
-                  <SubHead className="mt-4">Counter-thesis</SubHead>
-                  <div
-                    className="rounded-md px-3 py-2.5 text-[12.5px] leading-[1.6] border"
-                    style={{
-                      background: "rgba(159, 23, 42, 0.06)",
-                      borderColor: "rgba(159, 23, 42, 0.3)",
-                    }}
-                  >
-                    {pick.counter_thesis}
-                  </div>
-                  {/* Six of ten counter-theses name the 200-day MA as the trigger and
-                      nothing said what it was, so the reader could not tell how close
-                      the trade was to being disqualified. ADR-0078. */}
-                  {pick.ma_context && (
-                    <p className="text-[11.5px] text-text-tertiary mt-1.5 mb-0">
-                      {pick.asset} last{" "}
-                      <span className="num">
-                        {pick.ma_context.last.toFixed(2)}
-                      </span>{" "}
-                      · {pick.ma_context.window}-day MA{" "}
-                      <span className="num">{pick.ma_context.ma.toFixed(2)}</span> ·{" "}
-                      <span
-                        className="num"
-                        style={{
-                          color:
-                            Math.abs(pick.ma_context.pct_from_ma) < 0.03
-                              ? "var(--warning)"
-                              : undefined,
-                        }}
-                      >
-                        {fmtSigned(pick.ma_context.pct_from_ma * 100, 1)}%
-                      </span>{" "}
-                      {Math.abs(pick.ma_context.pct_from_ma) < 0.03
-                        ? "— within 3% of the moving average, so an MA-based trigger is close."
-                        : "away from it."}
-                    </p>
-                  )}
-                </>
-              )}
-
-              {showProse && pick.catalysts && pick.catalysts.length > 0 && (
-                <>
-                  <SubHead className="mt-4">Catalysts</SubHead>
-                  <ul className="m-0 pl-[18px] leading-[1.7] text-[12.5px]">
-                    {pick.catalysts.map((c, i) => (
-                      <li key={i}>{c}</li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              {pick.time_horizon && (
-                <div className="text-[11px] text-text-tertiary mt-3">
-                  Horizon:{" "}
-                  <span className="num text-text-secondary">
-                    {pick.time_horizon}
-                  </span>
-                </div>
-              )}
-
-              {/* P1 — marginal contribution to the whole book. */}
-              <SubHead className="mt-4">Contribution to book</SubHead>
-              <PositionMarginalRisk marginal={marginal} sibling={sibling} />
-            </div>
-
-            <div>
-              <SubHead>
-                Why {isLong ? "long" : "short"} — EdgeScore decomposition
-              </SubHead>
-              {hasEdge && edge ? (
-                <div className="mb-4">
-                  <EdgeBars
-                    edge={edge}
-                    weights={edgeWeights}
-                    direction={pick.direction}
-                  />
-                  {edge.source === "theme_latest" && (
-                    <p className="m-0 mt-2 text-[10.5px] text-text-tertiary leading-[1.5]">
-                      From the theme&apos;s latest{" "}
-                      <code className="num">theme_signals_history</code> row — the
-                      position row carried no edge columns, so this is the theme
-                      signal, not necessarily the one that sized this book.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className="m-0 mb-4 text-[12px] text-text-tertiary leading-[1.6]">
-                  Direction is <code className="num">sign(EdgeScore)</code>, where{" "}
-                  <code className="num">
-                    EdgeScore = 0.35·Trend + 0.25·Regime + 0.20·Carry +
-                    0.20·Value
-                  </code>
-                  . No component was persisted for this position or its
-                  theme&apos;s latest run. See{" "}
-                  <Link href="/method#edgescore" className="text-accent">
-                    Method §4
-                  </Link>
-                  .
-                </p>
-              )}
-
-              <SubHead>Sizing — conviction × inverse-vol</SubHead>
-              <div className="mb-1">
-                <SizingChainView chain={sizingChain} />
-              </div>
-
-              {pick.factor_tilts && Object.keys(pick.factor_tilts).length > 0 && (
-                <>
-                  {/* These are THIS ASSET's own betas, joined from the L2
-                      factor_exposures table — not the book's. Until ADR-0075 the model
-                      was asked to fill this field and copied one aggregate row into all
-                      ten positions, so SHY and ARKK printed the same market beta. */}
-                  <SubHead className="mt-4">
-                    Factor exposure — {pick.asset}&rsquo;s own betas
-                  </SubHead>
-                  <div className="flex flex-wrap gap-1.5">
-                    {Object.entries(pick.factor_tilts).map(([k, v]) => (
-                      <span
-                        key={k}
-                        className="text-[11.5px] num bg-bg-elevated text-text-secondary px-2 py-1 rounded border border-border"
-                      >
-                        {FACTOR_LABELS[k] ?? k} {fmtSigned(v)}
-                      </span>
-                    ))}
-                  </div>
-                  <p className="text-[11.5px] text-text-tertiary mt-1.5 mb-0">
-                    FF5 + UMD, 252-day regression against {pick.asset}&rsquo;s own returns.{" "}
-                    {typeof pick.factor_r_squared === "number" ? (
-                      <>
-                        R<sup>2</sup> <span className="num">{pick.factor_r_squared.toFixed(2)}</span>
-                        {pick.factor_r_squared < 0.3
-                          ? " — a weak fit, so read these betas loosely."
-                          : "."}
-                      </>
-                    ) : (
-                      <>Fit quality not recorded.</>
-                    )}
-                  </p>
-                </>
-              )}
-
-              <SubHead className="mt-4">Under stress</SubHead>
-              {perScenario.length > 0 ? (
-                <ul className="m-0 pl-0 list-none space-y-1">
-                  {perScenario.map((s) => (
-                    <li
-                      key={s.label}
-                      className="text-[12px] num flex justify-between gap-3"
-                    >
-                      <span className="text-text-secondary">{s.label}</span>
-                      <span
-                        style={{
-                          color:
-                            SEVERITY_COLOR[s.severity] ?? "var(--text-secondary)",
-                        }}
-                      >
-                        {s.line?.split("=").pop()?.trim() ?? "—"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="m-0 text-[12px] text-text-tertiary leading-[1.6]">
-                  No per-position stress contribution recorded. Scenario results
-                  are written to{" "}
-                  <code className="num">
-                    research_recommendations.scenario_results
-                  </code>
-                  ; see <Link href="/risk" className="text-accent">Risk</Link>.
-                </p>
-              )}
-
-              {showProse && pick.risk && (
-                <>
-                  <SubHead className="mt-4">Risk</SubHead>
-                  <p className="m-0 text-[12.5px] leading-[1.7]">{pick.risk}</p>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SubHead({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={`text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2 ${className}`}
-    >
-      {children}
-    </div>
   );
 }

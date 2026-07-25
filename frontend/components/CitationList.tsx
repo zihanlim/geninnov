@@ -1,5 +1,7 @@
 "use client";
 
+import { DisclosureChevron } from "@/components/DisclosureChevron";
+
 /**
  * Inline citation footnotes on a thesis paragraph, plus a footnotes panel.
  *
@@ -102,7 +104,7 @@ export default function CitationList({ text, citations }: Props) {
       <details className="mt-3 group">
         <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none text-[11.5px] text-text-secondary hover:text-text-primary select-none">
           <span className="num font-medium">{sources.length}</span> verified sources
-          <span className="text-text-tertiary text-[10px] group-open:rotate-90 transition-transform">▸</span>
+          <DisclosureChevron className="text-text-tertiary" />
         </summary>
         <ul className="m-0 mt-2 p-0 flex flex-wrap gap-x-3 gap-y-1 text-text-secondary text-[11px] leading-[1.6] list-none">
           {sources.map((c) => (

@@ -675,26 +675,37 @@ function RiskPageInner() {
       {/* 6 — Stress scenarios (persisted). */}
       <StressScenarios state={scenarioState} />
 
-      {/* 7 — Correlation (persisted, flagged pairs + threshold). */}
-      <CorrelationMatrix state={correlationState} />
+      {/* 7 + 8 — The two concentration views, paired: which names move together,
+          and how much room each cap has left. Both are collapsed <details>, so
+          stacking them full-width spent two full rows of the page on two summary
+          bars. `items-start` keeps an expanded panel from stretching its
+          neighbour into a tall empty box, and `[&>*]:mb-0` neutralises the
+          mb-6 each card carries for the stacked case so the grid gap is the only
+          spacing. Gated at xl, not lg: CorrelationMatrix's heatmap has a
+          min-w-[560px] table, which needs a ~600px column to avoid landing in
+          its own horizontal scroller on arrival. */}
+      <div className="grid xl:grid-cols-2 gap-6 mb-6 items-start [&>*]:mb-0">
+        <CorrelationMatrix state={correlationState} />
+        <CapUtilisation state={capState} />
+      </div>
 
-      {/* 8 — Cap utilisation (persisted). */}
-      <CapUtilisation state={capState} />
-
-      {/* 9 — Book factor tilt (persisted). */}
+      {/* 9 — Book factor tilt (persisted). Stays full-width: the tilt bars are a
+          diverging scale with a labelled −2.00 … +2.00 axis, and halving the
+          column halves the resolution of the only chart on the page whose whole
+          content is bar length. */}
       <BookFactorTilt state={bookState} />
 
-      {/* 10 — Drawdown & daily P&L. */}
-      <DrawdownChart
-        loading={data.loading}
-        rows={data.returns}
-        failure={data.returnsFailure}
-        inception={data.inception}
-      />
-
-      {/* 11 — The same series as an exact per-day table. The chart above shows
-          shape; a PM reconciling P&L needs the actual daily figures. */}
-      <div className="mb-6">
+      {/* 10 + 11 — Shape and figures for the same series, side by side rather
+          than 600px apart: the chart answers "what did the drawdown look like",
+          the table answers "what exactly did we make on the 23rd". Reading one
+          against the other was previously a scroll. */}
+      <div className="grid xl:grid-cols-2 gap-6 mb-6 items-start [&>*]:mb-0">
+        <DrawdownChart
+          loading={data.loading}
+          rows={data.returns}
+          failure={data.returnsFailure}
+          inception={data.inception}
+        />
         <DailyPLHistory limit={30} />
       </div>
     </main>

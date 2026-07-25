@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { DisclosureChevron } from "@/components/DisclosureChevron";
 
 // Surfaces the output of the L1 theme-DISCOVERY process (scripts/theme_discovery.py):
 // candidate themes found by clustering the news corpus two independent ways — LDA
@@ -155,11 +156,12 @@ export default function DiscoveredThemes() {
                   <span className="text-[11px] text-text-tertiary">
                     surfaced by one method only — lower confidence
                   </span>
-                  <span className="text-text-tertiary text-[11px] ml-auto group-open:hidden">
-                    Show ▸
-                  </span>
-                  <span className="text-text-tertiary text-[11px] ml-auto hidden group-open:inline">
-                    Hide ▾
+                  {/* Was two spans swapping a `▸`/`▾` glyph. One span now, with the
+                      shared caret — same group-open mechanics, one icon source. */}
+                  <span className="text-text-tertiary text-[11px] ml-auto flex items-center gap-1">
+                    <span className="group-open:hidden">Show</span>
+                    <span className="hidden group-open:inline">Hide</span>
+                    <DisclosureChevron className="text-text-tertiary" />
                   </span>
                 </summary>
                 <div className="flex flex-wrap gap-2 mt-2.5">

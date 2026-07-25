@@ -30,18 +30,43 @@
        4.72:1 on paper / 5.22:1 on card. */
     --text-tertiary: #756b5e;
     /* Brand + attention (your palette) */
-    /* 4.34:1 on paper at #e11048 — just under AA for link-sized text. #d40e43
-       is the same crimson a shade deeper, at 4.81:1 / 5.33:1. */
-    --accent: #d40e43;       /* interactive / links / active nav (crimson-pink) */
+    /* #e11048 → #d40e43 (2026-07-24) → #c50c3e (2026-07-25). Same crimson-pink,
+       progressively deeper. The 2026-07-24 step fixed plain text (4.34:1 → 4.81:1
+       on paper) but `badge-tier-anchor` renders the accent over its own 10% tint,
+       where #d40e43 was 4.08:1. #c50c3e clears at 4.58:1 there. Deliberately the
+       MINIMAL darkening: the accent is only 8° of hue from --short, so what keeps
+       "interactive" distinct from "short" is the lightness gap, and every further
+       shade spent on contrast margin narrows it. */
+    --accent: #c50c3e;       /* interactive / links / active nav (crimson-pink) */
     --brand: #9f172a;        /* primary crimson — emphasis, brand marks */
     /* Was #f97316 at 2.53:1 — the worst offender on the site, and it labels the
        things a reader most needs to read ("Not yet validated", near-limit
-       chips, HypeScore caveats). #c2410c is 4.68:1 / 5.18:1 and still reads as
-       orange against the crimson accent. Also used for bars and borders, where
-       a deeper tone is no loss. */
-    --warning: #c2410c;      /* tertiary orange — attention / near-limit */
+       chips, HypeScore caveats). Darkened to #c2410c on 2026-07-24, then to
+       #a83209 on 2026-07-25.
+
+       The 2026-07-24 pass measured #c2410c as plain text on paper (4.68:1) and
+       card (5.18:1) — both pass — and never measured it over its own 12% tint,
+       which is how `badge-warning`, `StatusBadge.estimated` and every near-limit
+       chip actually render it. Tinted it failed on all three surfaces a chip can
+       land on: 3.96:1 on the page, 4.18:1 on --bg-elevated, 4.35:1 on a card.
+       Thinning the tint does not fix it — the tint only costs ~0.8, so a token
+       with 4.68:1 of headroom cannot afford it.
+
+       #a83209 is the minimal darkening that clears AA plain AND tinted on all
+       three — worst case 5.04:1 (12% tint on the page) — and holds the orange
+       hue at 15.5° against the crimson inks at 352°, so attention still reads as
+       distinct from direction. White on the solid token improves to 6.72:1,
+       which the filled `severe`/`high` severity chips use.
+       tests/unit/chip-contrast.test.ts enforces the floor from here on. */
+    --warning: #a83209;      /* tertiary orange — attention / near-limit */
     /* Direction — ledger ink */
-    --long: #147a5c;         /* forest-emerald — up / long */
+    /* #147a5c → #126e53 (2026-07-25), hue held at 162°. Same story as --accent
+       and --warning: fine as plain text, but `badge-long` / `dir-pill-long` /
+       `badge-tier-discovered` render it over an 11% (and 6.6%) tint of itself,
+       where it was 4.14:1 on the page. #126e53 is 4.81:1 at the worst tint.
+       --short at #9f172a needs no change — it measures 6.07:1 tinted, which is
+       why only three of the five tokens moved. */
+    --long: #126e53;         /* forest-emerald — up / long */
     --short: #9f172a;        /* crimson — down / short */
   }
 
@@ -57,7 +82,7 @@
     line-height: 1.5;
   }
 
-  ::selection { background: rgba(212, 14, 67, 0.16); }   /* --accent at 16% */
+  ::selection { background: rgba(197, 12, 62, 0.16); }   /* --accent at 16% */
 }
 
 @layer components {
@@ -111,7 +136,13 @@
     @apply bg-bg-elevated text-text-secondary border border-border;
   }
   .badge-tier-anchor { @apply bg-accent-dim text-accent; }
-  .badge-tier-discovered { @apply bg-long-dim/60 text-long; }
+  /* Was `bg-long-dim/60`, which reads as "60% of an already-faint tint" but is
+     not what Tailwind does — the modifier REPLACES a colour's alpha rather than
+     compounding it, so this compiled to rgba(18,110,83,.6): forest-green text on
+     a 60% forest-green fill, measuring 2.29:1. Outlined instead, which keeps it
+     distinguishable from `badge-long` (its only reason for the heavier fill)
+     without opening a new hue. */
+  .badge-tier-discovered { @apply bg-long-dim text-long border border-long/30; }
 
   .dir-pill {
     @apply inline-flex items-center gap-[4px] px-2 py-[2px] rounded text-[11px] font-semibold;

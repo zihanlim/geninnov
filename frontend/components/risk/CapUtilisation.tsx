@@ -5,6 +5,8 @@
 // binds. Bars are drawn against the cap, so a full bar is exactly at the limit.
 
 "use client";
+
+import { DisclosureChevron } from "@/components/DisclosureChevron";
 import {
   CAP_WARN_UTILISATION,
   capBarColor,
@@ -205,7 +207,7 @@ export function CapUtilisation({
                 }`
               : "Single name · sector · geography"}
           </span>
-          <span className="text-[10px] text-text-tertiary transition-transform group-open:rotate-90">▸</span>
+          <DisclosureChevron className="text-text-tertiary" />
         </span>
       </summary>
 

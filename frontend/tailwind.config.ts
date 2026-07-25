@@ -5,6 +5,14 @@ const config: Config = {
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    // lib/ returns class strings too — severityChipClass in lib/risk/analytics.ts
+    // is the entire visual scale of the /risk severity column. Without this glob
+    // those classes compile only when some file under components/ or app/ happens
+    // to use the same class, which is luck, not a build: bg-short survived only
+    // because BookFactorTilt and PositionRiskAttribution use it, while
+    // tracking-[0.04em] — which appears nowhere else in the tree — was dropped
+    // silently. Scan lib/ so a class written here is a class that ships.
+    "./lib/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {
@@ -27,17 +35,26 @@ const config: Config = {
         // changed together or only var() call sites move.
         "text-tertiary": "#756b5e",
         // Brand / attention
-        accent: "#d40e43",          // interactive / active (crimson-pink), AA 4.81:1
-        "accent-dim": "rgba(212,14,67,0.10)",
+        // 4.58:1 over its own 10% tint (badge-tier-anchor); was #d40e43 at 4.08:1.
+        accent: "#c50c3e",          // interactive / active (crimson-pink)
+        "accent-dim": "rgba(197,12,62,0.10)",
         brand: "#9f172a",           // primary crimson — emphasis
         "brand-dim": "rgba(159,23,42,0.09)",
         // Direction (ledger ink: green long / crimson short)
-        long: "#147a5c",
-        "long-dim": "rgba(20,122,92,0.11)",
+        // 4.81:1 over its own 11% tint (badge-long / dir-pill-long); was #147a5c
+        // at 4.14:1. --short needs no change at 6.07:1 tinted.
+        long: "#126e53",
+        "long-dim": "rgba(18,110,83,0.11)",
         short: "#9f172a",
         "short-dim": "rgba(159,23,42,0.10)",
-        warning: "#c2410c",         // AA 4.68:1 (was #f97316 at 2.53:1)
-        "warning-dim": "rgba(194,65,12,0.12)",
+        // AA plain and tinted on every surface a chip lands on; worst case 5.04:1
+        // over the 12% tint on the page. Was #c2410c, which passed as plain text
+        // but failed tinted on all three (3.96 / 4.18 / 4.35). See globals.css for
+        // the derivation and tests/unit/chip-contrast.test.ts for the enforcement.
+        warning: "#a83209",
+        // Keep the rgb() here in step with `warning` above — this is the same
+        // colour at 12%, and a stale triplet silently splits the palette.
+        "warning-dim": "rgba(168,50,9,0.12)",
         // Legacy alias (kept for backward compat)
         neutral: "#6b6156",
         edge: "#e7e0d3",

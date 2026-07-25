@@ -14,7 +14,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { ChevronRight } from "lucide-react";
+import { DisclosureChevron } from "@/components/DisclosureChevron";
 import type { ResolvedEdge } from "@/lib/book/positionEdge";
 import type { ThemeEdge } from "@/lib/themeSignals";
 import {
@@ -99,10 +99,7 @@ export function WorkedExamplePanel({
         <span className="text-[11px] text-text-tertiary flex items-center gap-1.5 shrink-0">
           <span className="group-open:hidden">Show</span>
           <span className="hidden group-open:inline">Hide</span>
-          <ChevronRight
-            className="text-[10px] transition-transform group-open:rotate-90"
-            aria-hidden="true"
-          />
+          <DisclosureChevron />
         </span>
       </summary>
       <div className="card-body">

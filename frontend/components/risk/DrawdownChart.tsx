@@ -9,6 +9,8 @@
 // says which method produced the curve.
 
 "use client";
+
+import { DisclosureChevron } from "@/components/DisclosureChevron";
 import {
   buildDrawdownSeries,
   fmtSignedPct,
@@ -365,7 +367,7 @@ export function DrawdownChart({
               ? `${series.points.length} session${series.points.length === 1 ? "" : "s"} · ${methodLabel}`
               : "portfolio_returns"}
           </span>
-          <span className="text-[10px] text-text-tertiary transition-transform group-open:rotate-90">▸</span>
+          <DisclosureChevron className="text-text-tertiary" />
         </span>
       </summary>
 

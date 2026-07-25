@@ -37,9 +37,11 @@ function cellColor(value: number | null): string {
   const dev = (t - 50) / 50; // -1 .. +1
   // Ledger ink as translucent tints on warm paper: forest-green long, crimson
   // short. Lighter alpha than the old dark theme so ink text stays readable.
+  // These triplets are --long / --short by hand (a gradient needs a varying
+  // alpha, which var() cannot supply) — keep them in step with globals.css.
   if (dev >= 0) {
     const a = 0.08 + dev * 0.42;
-    return `rgba(20, 122, 92, ${a.toFixed(2)})`;
+    return `rgba(18, 110, 83, ${a.toFixed(2)})`;
   }
   const a = 0.08 + Math.abs(dev) * 0.42;
   return `rgba(159, 23, 42, ${a.toFixed(2)})`;
@@ -110,7 +112,7 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({
             <span>35-65</span>
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3 h-3 rounded-sm" style={{ background: "rgba(20, 122, 92, 0.6)" }} />
+            <span className="inline-block w-3 h-3 rounded-sm" style={{ background: "rgba(18, 110, 83, 0.6)" }} />
             <span>&gt; 65</span>
           </span>
         </div>

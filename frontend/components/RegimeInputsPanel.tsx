@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { slopeToBps } from "@/lib/regimeUnits";
+import { DisclosureChevron } from "@/components/DisclosureChevron";
 
 /**
  * Expandable panel that shows the 6 macro inputs that drove the current regime
@@ -165,7 +166,10 @@ export default function RegimeInputsPanel({ runDate }: Props) {
         className="text-[11px] text-accent hover:underline flex items-center gap-1"
         type="button"
       >
-        {open ? "▾" : "▸"} {open ? "Hide" : "Show"} 6 inputs that drove this classification
+        {/* useState drives this one, not a <details>, so the caret takes `open`
+            explicitly — there is no group-open selector to hang rotation on. */}
+        <DisclosureChevron open={open} />
+        {open ? "Hide" : "Show"} 6 inputs that drove this classification
       </button>
       {open && (
         <div

@@ -22,6 +22,12 @@ import {
   Th,
   Td,
 } from "@/components/method/primitives";
+import { Reconciliation } from "@/components/Reconciliation";
+import {
+  EDGE_TOLERANCE,
+  HYPE_TOLERANCE,
+  reconcile,
+} from "@/lib/method/reconciliation";
 import SignalValidation from "@/components/method/SignalValidation";
 import FactorReconciliation from "@/components/method/FactorReconciliation";
 import EdgeValidation from "@/components/method/EdgeValidation";
@@ -1086,42 +1092,22 @@ export default function MethodPage() {
                       ].join("\n")}
                     </Formula>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <Stat
-                        label="Recomputed from sub-scores"
-                        value={dec(wx.recomputed, 2)}
-                        sub="100 × Σ of the four weighted terms above"
-                      />
-                      <Stat
-                        label="Persisted themes.hype_score"
-                        value={wx.persisted === null ? "—" : dec(wx.persisted, 2)}
-                        sub="what the rest of the product reads"
-                      />
-                      <Stat
-                        label="Δ"
-                        value={
-                          wx.delta === null
-                            ? "—"
-                            : `${wx.delta >= 0 ? "+" : ""}${dec(wx.delta, 2)}`
-                        }
-                        tone={
-                          wx.delta === null
-                            ? "muted"
-                            : Math.abs(wx.delta) < 0.05
-                              ? "good"
-                              : "bad"
-                        }
-                        sub={
-                          wx.delta === null
-                            ? "no persisted score to compare"
-                            : Math.abs(wx.delta) < 0.05
-                              ? "the persisted score reproduces exactly"
-                              : "the persisted score does NOT reproduce"
-                        }
-                      />
-                    </div>
+                    {/* Same claim, same rendering, same tolerance rule as the
+                        EdgeScore block below and as /book's lineage steps — see
+                        components/Reconciliation.tsx. Was three hand-rolled Stats
+                        with the 0.05 threshold and its verdict copy inlined. */}
+                    <Reconciliation
+                      verdict={reconcile(wx.recomputed, wx.persisted, HYPE_TOLERANCE)}
+                      labels={{
+                        recomputed: "Recomputed from sub-scores",
+                        recomputedSub: "100 × Σ of the four weighted terms above",
+                        persisted: "Persisted themes.hype_score",
+                        persistedSub: "what the rest of the product reads",
+                      }}
+                      format={{ decimals: 2, signed: false }}
+                    />
 
-                    {wx.delta !== null && Math.abs(wx.delta) >= 0.05 && (
+                    {wx.delta !== null && Math.abs(wx.delta) >= HYPE_TOLERANCE && (
                       <Note tone="bad" label="Reconciliation failure">
                         Applying the live weights to the persisted sub-scores yields{" "}
                         <span className="num">{dec(wx.recomputed, 2)}</span>, but{" "}
@@ -1760,42 +1746,28 @@ export default function MethodPage() {
                     ].join("\n")}
                   </Formula>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <Stat
-                      label="EdgeScore recomputed"
-                      value={edgeRecomputed === null ? "—" : fmtSigned(edgeRecomputed, 4)}
-                      sub="Σ weighted ÷ Σ weight present (ADR-0036)"
-                    />
-                    <Stat
-                      label="Persisted edge_score"
-                      value={
-                        typeof edgeExample.edge_score === "number"
-                          ? fmtSigned(edgeExample.edge_score, 4)
-                          : "—"
-                      }
-                      sub="what sizing and the drawer read"
-                    />
-                    <Stat
-                      label="Δ"
-                      value={edgeDelta === null ? "—" : fmtSigned(edgeDelta, 4)}
-                      tone={
-                        edgeDelta === null
-                          ? "muted"
-                          : Math.abs(edgeDelta) < 0.005
-                            ? "good"
-                            : "bad"
-                      }
-                      sub={
-                        edgeDelta === null
-                          ? "no persisted score to compare"
-                          : Math.abs(edgeDelta) < 0.005
-                            ? "reconciles exactly"
-                            : "does NOT reconcile"
-                      }
-                    />
-                  </div>
+                  {/* EdgeScore lives on [-1,1] and its SIGN is the trade direction,
+                      so it reads signed at 4dp against a 0.005 tolerance — a
+                      tenth of HypeScore's scale. Same component, different scale,
+                      one verdict rule. */}
+                  <Reconciliation
+                    verdict={reconcile(
+                      edgeRecomputed,
+                      typeof edgeExample.edge_score === "number"
+                        ? edgeExample.edge_score
+                        : null,
+                      EDGE_TOLERANCE,
+                    )}
+                    labels={{
+                      recomputed: "EdgeScore recomputed",
+                      recomputedSub: "Σ weighted ÷ Σ weight present (ADR-0036)",
+                      persisted: "Persisted edge_score",
+                      persistedSub: "what sizing and the drawer read",
+                    }}
+                    format={{ decimals: 4, signed: true }}
+                  />
 
-                  {edgeDelta !== null && Math.abs(edgeDelta) >= 0.005 && (
+                  {edgeDelta !== null && Math.abs(edgeDelta) >= EDGE_TOLERANCE && (
                     <Note tone="bad" label="Reconciliation failure">
                       Applying the live weights to the persisted components yields{" "}
                       <span className="num">{fmtSigned(edgeRecomputed ?? 0, 4)}</span>, but{" "}

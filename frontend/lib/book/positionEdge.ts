@@ -178,6 +178,15 @@ export function resolvePositionEdge(
 // The sizing chain: conviction × inverse-vol → capped weight → notional
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface BindingGroupCap {
+  /** The limit family, e.g. "geography" or "sector". */
+  group: string;
+  /** The group at its limit, e.g. "US" or "Energy". */
+  key: string;
+  /** The cap as a fraction of gross, e.g. 0.35. */
+  cap: number;
+}
+
 export interface SizingStep {
   key: string;
   /** Human label for the row. */
@@ -247,6 +256,10 @@ export function buildSizingChain(args: {
   hypeScore: number | null | undefined;
   cap?: { weight: number; cap: number; utilisation: number; breached: boolean };
   convictionSum?: number | null;
+  /** Group caps (geography, sector) sitting at their limit. A name scaled below its
+   *  normalised weight is inside one of these — ADR-0037 clamps a capped group and
+   *  banks the freed capital as cash — so this is what "no cap binding" got wrong. */
+  bindingGroupCaps?: BindingGroupCap[];
 }): SizingChain {
   const {
     direction,
@@ -257,6 +270,7 @@ export function buildSizingChain(args: {
     hypeScore,
     cap,
     convictionSum,
+    bindingGroupCaps,
   } = args;
   const isLong = direction === "long";
   const conviction = edge.conviction;
@@ -373,11 +387,31 @@ export function buildSizingChain(args: {
       !capBinding &&
       normalised - weight > 0.005          // half a point of capital
     ) {
-      reconciliation =
-        `These steps do not compose: ${pctStr(normalised, 1)} normalised, ` +
-        `no cap binding, yet the book holds ${pctStr(weight, 1)}. ` +
-        `The weight was set by something other than the model shown above — ` +
-        `trust the final weight, not the derivation.`;
+      const groups = (bindingGroupCaps ?? []).filter((g) => g.cap > 0);
+      if (groups.length > 0) {
+        // A name scaled below its normalised weight sits inside a group whose cap is
+        // binding: ADR-0037 clamps the group and banks the freed capital as cash rather
+        // than redistributing it, so the shortfall IS a cap — just not the single-name
+        // one this chain shows. Naming it beats the old "no cap binding", which was
+        // wrong precisely when a group cap was doing the work.
+        const naming = groups
+          .map((g) => `the ${g.group} cap (${g.key}, ${pctStr(g.cap, 0)})`)
+          .join(" and ");
+        const isAre = groups.length === 1 ? "is" : "are";
+        const itsTheir = groups.length === 1 ? "its" : "their";
+        reconciliation =
+          `${pctStr(normalised, 1)} normalised → ${pctStr(weight, 1)} held: the ` +
+          `single-name cap is not the binding one here — ${naming} ${isAre} at ${itsTheir} ` +
+          `limit. Conviction weights are scaled to fit the caps that bind and the freed ` +
+          `capital held as cash (ADR-0037); this per-name chain shows conviction, not that ` +
+          `group rescaling, so the final weight is ground truth.`;
+      } else {
+        reconciliation =
+          `These steps do not compose: ${pctStr(normalised, 1)} normalised, ` +
+          `no cap binding, yet the book holds ${pctStr(weight, 1)}. ` +
+          `The weight was set by something other than the model shown above — ` +
+          `trust the final weight, not the derivation.`;
+      }
     }
   }
 

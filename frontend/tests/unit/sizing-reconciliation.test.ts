@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { buildSizingChain, type ResolvedEdge } from "@/lib/book/positionEdge";
+import {
+  buildSizingChain,
+  type BindingGroupCap,
+  type ResolvedEdge,
+} from "@/lib/book/positionEdge";
 
 /**
  * The sizing chain mixes two provenances: the normalised-conviction step is
@@ -22,7 +26,13 @@ const edge = (conviction: number | null): ResolvedEdge =>
     source: "position",
   }) as unknown as ResolvedEdge;
 
-const chain = (weight: number, conviction = 31.07, convictionSum = 163.5, cap?: unknown) =>
+const chain = (
+  weight: number,
+  conviction = 31.07,
+  convictionSum = 163.5,
+  cap?: unknown,
+  bindingGroupCaps?: BindingGroupCap[],
+) =>
   buildSizingChain({
     direction: "long",
     edge: edge(conviction),
@@ -32,6 +42,7 @@ const chain = (weight: number, conviction = 31.07, convictionSum = 163.5, cap?: 
     hypeScore: 32.6,
     convictionSum,
     cap: cap as never,
+    bindingGroupCaps,
   });
 
 describe("sizing chain reconciliation", () => {
@@ -46,6 +57,22 @@ describe("sizing chain reconciliation", () => {
     expect(c.reconciliation).toContain("19.0%");
     expect(c.reconciliation).toContain("6.4%");
     expect(c.reconciliation).toContain("do not compose");
+  });
+
+  it("names the binding group cap rather than falsely reporting 'no cap binding'", () => {
+    // The 2026-07-25 live case: single-name cap not binding, but the US geography cap
+    // is at its limit and scaled the name down (ADR-0037).
+    const c = chain(
+      0.088,
+      31.07,
+      163.5,
+      { weight: 0.088, cap: 0.2, utilisation: 0.44, breached: false },
+      [{ group: "geography", key: "US", cap: 0.35 }],
+    );
+    expect(c.reconciliation).not.toBeNull();
+    expect(c.reconciliation).toContain("geography cap (US, 35%)");
+    expect(c.reconciliation).toContain("ground truth");
+    expect(c.reconciliation).not.toContain("no cap binding");
   });
 
   it("stays silent when the steps do compose", () => {

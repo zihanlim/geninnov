@@ -47,6 +47,7 @@ import {
   marginalContribution,
   resolvePositionEdge,
   topSibling,
+  type BindingGroupCap,
   type CorrelationPairLite,
   type PositionEdgeRow,
   type ResolvedEdge,
@@ -471,6 +472,22 @@ function BookPageInner() {
     return m;
   }, [rec]);
 
+  // Group caps (geography, sector) sitting at their limit — the book's binding
+  // constraint. A name scaled below its normalised conviction weight is inside one of
+  // these (ADR-0037 clamps a capped group and banks the freed capital as cash), so the
+  // sizing chain names them instead of the false "no cap binding".
+  const bindingGroupCaps = useMemo<BindingGroupCap[]>(() => {
+    const out: BindingGroupCap[] = [];
+    const scan = (group: string, rows: CapRow[] | undefined) => {
+      for (const r of rows ?? [])
+        if (typeof r.utilisation === "number" && r.utilisation >= 0.999)
+          out.push({ group, key: r.key, cap: r.cap });
+    };
+    scan("geography", rec?.cap_utilisation?.geo);
+    scan("sector", rec?.cap_utilisation?.sector);
+    return out;
+  }, [rec]);
+
   // ── Theme focus (?theme=<id>) ────────────────────────────────────────────
   // A "positions →" link from the heatmap/cards lands here. Honour the param so
   // the deep-link is meaningful: name the theme's positions if it holds any, or
@@ -759,6 +776,7 @@ function BookPageInner() {
                 bookRunDate={rec.run_date}
                 advisory={advisory}
                 capByAsset={capByAsset}
+                bindingGroupCaps={bindingGroupCaps}
                 edgeByAsset={edgeByAsset}
                 edgeWeights={edgeWeights}
                 convictionSum={convictionSum}
@@ -779,6 +797,7 @@ function BookPageInner() {
                 bookRunDate={rec.run_date}
                 advisory={advisory}
                 capByAsset={capByAsset}
+                bindingGroupCaps={bindingGroupCaps}
                 edgeByAsset={edgeByAsset}
                 edgeWeights={edgeWeights}
                 convictionSum={convictionSum}
@@ -989,6 +1008,7 @@ function PositionSection({
   citations,
   advisory,
   capByAsset,
+  bindingGroupCaps,
   edgeByAsset,
   edgeWeights,
   convictionSum,
@@ -1011,6 +1031,7 @@ function PositionSection({
   bookRunDate?: string | null;
   advisory: AdvisoryDerivation | null;
   capByAsset: Map<string, CapRow>;
+  bindingGroupCaps: BindingGroupCap[];
   edgeByAsset: Record<string, ResolvedEdge>;
   edgeWeights: EdgeWeights;
   convictionSum: number | null;
@@ -1074,6 +1095,7 @@ function PositionSection({
               bookRunDate={bookRunDate}
               advisory={advisory}
               cap={capByAsset.get(p.asset)}
+              bindingGroupCaps={bindingGroupCaps}
               edge={edgeByAsset[p.asset]}
               edgeWeights={edgeWeights}
               convictionSum={convictionSum}
@@ -1097,6 +1119,7 @@ function PositionRow({
   citations,
   advisory,
   cap,
+  bindingGroupCaps,
   edge,
   edgeWeights,
   convictionSum,
@@ -1114,6 +1137,7 @@ function PositionRow({
   citations?: Citation[];
   advisory: AdvisoryDerivation | null;
   cap?: CapRow;
+  bindingGroupCaps?: BindingGroupCap[];
   edge?: ResolvedEdge;
   edgeWeights: EdgeWeights;
   convictionSum: number | null;
@@ -1191,6 +1215,7 @@ function PositionRow({
         }
       : undefined,
     convictionSum,
+    bindingGroupCaps,
   });
 
   const marginal = marginalContribution(

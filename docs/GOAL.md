@@ -481,6 +481,59 @@ no env, so the build falls back to `placeholder.supabase.co` and every data call
 An attempt down that path briefly pointed the live alias at the broken build; it was
 restored by re-aliasing to the last-good `andromeda` production deployment.
 
+### Loop iteration 63 (2026-07-25)
+
+**Checked the thesis's correlation claims. They hold — and checking them found where the
+model has no number to use.**
+
+The ADR-0071 fix is committed and a run is publishing under the corrected prompt; the
+guard correctly still reports the *old* book's false cap claim until it lands. So this
+iteration went at the remaining unchecked claims in the same thesis.
+
+**The correlation figures are genuine, and the reasoning is sound.** The thesis explains
+declined candidates with *"KWEB correlated with BABA at +0.92"* and *"NEM/GLD/IAU/GDX
+correlated with SLV at +0.93 to +1.00"*. Those are **pool-pair** correlations — GLD and
+IAU are both physical gold trusts, so ~1.00 is real — and citing pool correlations to
+explain why a *candidate* was declined is exactly right. **No defect; recorded so the next
+agent does not re-litigate it.**
+
+**And the book is genuinely diversified.** Every held pair, 252-day:
+
+| pair | ρ |
+|---|---|
+| BABA / PDD | **+0.4753** |
+| JPM / SVXY | +0.4559 |
+| JPM / NUE | +0.3611 |
+
+So `correlation_pairs` being **empty is correct** — the highest pair is 0.48 against a
+0.70 flag — `/risk`'s *"no pair in this book reaches ρ 0.70"* is accurate, and PDD counting
+as an idea independent of BABA in pool depth is right.
+
+#### Recorded next step — the model has no number below the flag
+
+`book_risks` argues *"China policy surprise invalidating both BABA and PDD
+simultaneously: the **MCHI/KWEB** intra-cluster correlation is **+0.92**."* Both cited
+names are **unheld**, and the pair the sentence is actually about — BABA/PDD — is
+**+0.4753**, roughly half.
+
+**This is structural, not carelessness.** The agent is shown only pairs **above** ρ 0.70,
+so when it needs to discuss a held pair *below* the flag it has no figure and reaches for
+the nearest one it was given. The risk itself is legitimate — a China policy shock plausibly
+hits both — but the evidence offered describes a different pair, and the real number would
+have weakened the argument.
+
+**The fix is data, not a guardrail.** `compute_correlation_matrix(..., threshold=0.0)`
+returns every pair in seconds; only the flagged subset is persisted. Persisting the book's
+**maximum** pair (or the full matrix) would let `/risk` say *"highest pair in this book:
+BABA/PDD +0.48"* instead of only *"nothing reaches 0.70"* — turning an absence into a
+measurement, which is precisely the improvement
+[ADR-0067](adrs/0067-a-column-must-name-the-subset-it-measures.md) deferred as *"needs a
+full correlation matrix the page does not have."* **It is obtainable; it simply is not
+stored.**
+
+Not built this iteration: a run is mid-flight and would overwrite `correlation_pairs`
+underneath the change. Recorded with the measurement so it can be picked up cleanly.
+
 ### Loop iteration 62 (2026-07-25)
 
 **Fixing the home tilt last iteration exposed that `/risk` and the thesis compute the

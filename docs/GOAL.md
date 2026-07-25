@@ -149,7 +149,7 @@ block:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 555 backend + 144 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 560 backend + 144 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -198,6 +198,31 @@ Live at https://andromeda-analytics.vercel.app · 555 backend + 144 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 71 (2026-07-25)
+
+**The home "what the crowd is pricing" panel had two defects: it claimed prediction
+markets it neither cites nor uses, and a substring bug surfaced "Next Prime Minister of
+Ethiopia?" as the top macro event.**
+
+1. **False claim.** The sub-line read *"N macro events · cited as evidence on the Q1
+   book."* Untrue: the markets are stored only for this panel, never added to
+   `macro_snapshot`, and `book_view`/thesis reference none of them (checked — no
+   polymarket, ethiopia, bitcoin, "crowd is pricing"). Fixed to *"forward odds for
+   context — not cited in the book,"* and corrected the pipeline comment that called
+   them "cited macro context."
+2. **`eth` ⊂ `Ethiopia`.** `_categorize` substring-matched, so the Crypto keyword `eth`
+   matched inside *Ethiopia* — filing "Next Prime Minister of Ethiopia?" under Crypto,
+   which cleared the `Other` filter and made it the highest-volume "macro event" on the
+   page. Now whole-word (plural-tolerant) matched: Ethiopia → `Other` → dropped, while
+   Fed rate cuts / WTI / Bitcoin / Taiwan still categorise. Five unit tests pin it.
+
+Re-ran the fetcher against prod, so the **data fix is LIVE** — Ethiopia is gone and the
+panel shows only Fed/Bitcoin/Geopolitics/Oil. The **framing fix is committed but not yet
+live**: the Vercel deploy quota is exhausted again, so the sub-line still reads the old
+"cited as evidence" text until the next `andromeda --prod` deploy from HEAD. UI/UX pass
+clean at 1440/375, zero horizontal scroll, zero console errors. 560 backend (+5) + 144
+frontend.
 
 ### Loop iteration 70 (2026-07-25)
 
@@ -548,6 +573,41 @@ Two fixes, one shippable now and one not:
   **this session has no SQL/DDL access** (no Supabase MCP, no `DATABASE_URL`) — so it is
   a committed migration awaiting apply by whoever holds the MCP, not a claim of live.
   546 backend + 134 frontend.
+
+### Loop iteration 61 (2026-07-25)
+
+**The deploy quota reset and the cap-boundary arc closed on the page.**
+
+Twelve consecutive refusals ended — `vercel --prod` succeeded, shipping the two fixes that
+had been committed and tested but unreachable. Verified live rather than assumed:
+
+| | before | now |
+|---|---|---|
+| limit board | `1 breached` | **`0 breached · 1 near · 6 ok · 3 no-data`** |
+| geography headroom | **`−0.0%`** | **`+0.0%`** |
+| negative zero anywhere on `/risk` | present | **none** |
+
+**The row no longer contradicts itself.** `Geography cap (max) · 35.0% / 35.0% / 100% /
++0.0% / NEAR` — a compliant badge beside non-negative headroom, which is what a book
+clamped exactly to its cap should read
+([ADR-0037](adrs/0037-position-limits-bind-and-the-rest-is-cash.md),
+[ADR-0068](adrs/0068-a-cap-breach-is-not-decided-by-float-error.md)).
+
+That arc ran four iterations and produced three separate corrections — the breach
+predicate in the backend, the *same rule implemented twice* in the frontend board that
+never read the backend fix, and finally the headroom cell that only became contradictory
+*because* the badge was fixed. **Each fix exposed the next**, and none of them was visible
+from the diff; all three came from reading the rendered row.
+
+**Verified across the site**, 1440px and 375px: `/risk` 9 positions matching the published
+book with **no provisional warning** — the ADR-0040 reconciliation is quiet because the
+state is genuinely consistent, not because it stopped checking — and `/book` at run
+2026-07-25 reading **5 long / 4 short** with the pool-depth panel correct
+(*"11 candidates → 5 independent ideas → 4 held"*). No horizontal scroll, no `NaN`, zero
+console errors on either page.
+
+**Nothing outstanding from this session's work.** Every fix committed across iterations
+40–60 is now live and verified on the deployed site.
 
 ### Loop iteration 60 (2026-07-25) — a correction, and the rule it produces
 

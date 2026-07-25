@@ -802,6 +802,9 @@ export const CROWDING_PERCENTILE = 80;
 export interface CrowdingHistoryLite {
   percentile: number | null;
   delta1d: number | null;
+  /** Scored hype observations behind this theme — a within-history percentile
+   *  needs five, so this is what the empty state counts down against. */
+  nObs: number;
 }
 
 /**

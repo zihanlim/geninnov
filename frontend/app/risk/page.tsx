@@ -274,7 +274,7 @@ function RiskPageInner() {
         crowding = Object.fromEntries(
           Object.entries(hist.byTheme).map(([id, h]) => [
             id,
-            { percentile: h.percentile, delta1d: h.delta1d },
+            { percentile: h.percentile, delta1d: h.delta1d, nObs: h.hypeSeries.length },
           ]),
         );
       }
@@ -462,6 +462,15 @@ function RiskPageInner() {
     [data.crowding, data.themeNames, data.positions],
   );
 
+  // Best-covered book theme's scored-observation count, for the crowding empty
+  // state: a within-history percentile needs five, so this is the countdown that
+  // turns "not yet" into "how close" — the risk-monitoring half of the engine
+  // awaiting history, not a dead panel.
+  const crowdingMaxObs = useMemo(
+    () => Object.values(data.crowding).reduce((m, c) => Math.max(m, c.nObs), 0),
+    [data.crowding],
+  );
+
   const riskDeltas = useMemo(
     () => computeRiskDeltas(data.riskRows),
     [data.riskRows],
@@ -644,7 +653,7 @@ function RiskPageInner() {
         observationNote={
           data.positions.length === 0
             ? "No sized positions, so there are no book themes to score for crowding."
-            : null
+            : `The book's themes have up to ${crowdingMaxObs} of the five scored observations a within-history percentile needs; below five it reads — rather than a guess, and fills in as the daily history grows.`
         }
       />
 

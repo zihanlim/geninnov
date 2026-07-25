@@ -195,6 +195,31 @@ Live at https://andromeda-analytics.vercel.app · 555 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 70 (2026-07-25)
+
+**Cross-checked the Q2 core — the HypeScore — and found the heatmap's own derivation
+drawer describing the *opposite* of what the engine computes, contradicting both the
+score and Q2's central claim.**
+
+The HypeScore reconciles perfectly with its four sub-scores across all eight themes (US
+Election 0.30×95 + 0.20×53 + 0.30×48 + 0.20×34 = 60.3 ≈ 60, and so on). But the theme
+derivation drawer said the **correlation and momentum sub-scores are "min-max normalised
+across the themes scored on this run,"** and its assumptions note called every sub-score
+**"a *relative* rank, not an absolute level."** That is exactly backwards. ADR-0028
+*replaced* the cross-theme min-max with absolute saturating transforms — correlation
+`min(1, |ρ|/0.50)` against a fixed anchor, momentum `tanh(z/2)` on the theme's own
+MAD-scaled z — for the express purpose of keeping HypeScore **comparable over time**,
+which is what Q2's "support risk monitoring" (ADR-0042) rests on. The pipeline uses
+those absolute functions (`corr_subscore`, `momentum_subscore`); the drawer still
+narrated the superseded method, contradicting the heatmap header two panels up
+("absolute scale — not a rank against the other 8").
+
+Fixed the drawer to state the actual formulas — the correlation and momentum rows and
+the assumptions note now describe an absolute, time-comparable level, matching the code
+and the header. Text-only, no computation change; the persisted sub-scores were always
+absolute. Deployed and verified live (drawer reconciles: 0.3+0.1+0.1+0.1 = 0.6 = 60),
+UI/UX pass clean at 1440/375. 555 backend + 144 frontend.
+
 ### Loop iteration 69 (2026-07-25)
 
 **Executed iteration 68's recorded next step: the SIZING chain that said "trust the

@@ -195,6 +195,40 @@ Live at https://andromeda-analytics.vercel.app · 555 backend + 143 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 68 (2026-07-25)
+
+**Kept poking numbers a reviewer would check. Correlation and returns held up; the
+EdgeScore decomposition — /book's self-described "crown jewel" — did not: its own
+contributions did not sum to the score it printed.**
+
+Cross-checks that PASSED (recorded so they are not re-run): the empty correlation panel
+is correct — BABA-PDD, the two China shorts, correlate only **+0.475**, and every book
+pair is below the 0.70 flag threshold; the +1.38% cumulative return compounds the three
+daily returns exactly, and the daily return uses **signed** weights (shorts flip) with a
+no-silent-zeros price guard; per-name `edge_score` reconciles to the IC-weighted formula
+renormalised over present components (XLE 0.2075 ÷ 0.48 = 0.4323, to the digit).
+
+The bug was in **showing** that last one. `/book`'s EdgeScore panel listed each signal's
+weighted contribution — Trend +0.189, Regime +0.015, Sentiment +0.004 — then a bold
+**"Σ contributions → EdgeScore +0.432"**. Those add to **+0.208**, not +0.432. The
+pipeline drops a null component (Carry/Value are not scored for XLE) and renormalises the
+weights over what is present (ADR-0036), so the score is `0.208 ÷ 0.48`; the panel used
+that renormalised value in its *silent* reconciliation check but never printed the
+division — leaving a reader to watch the numbers fail to add up on the one surface built
+to prove the reasoning. Now it prints the worked division live
+(`+0.208 weighted sum ÷ 0.48 present weight = +0.432`) whenever a component is absent, and
+the stale header comment (it claimed 4 components and pre-ADR-0033 weights) is corrected.
+`recomputeEdgeScore`'s parts are already unit-tested. Deployed and verified live at
+1440/375.
+
+**Recorded next step** (larger, honestly disclosed already): the SIZING chain below the
+decomposition still says *"these steps do not compose … trust the final weight, not the
+derivation"* for every US name. The real reason is the **35% US-geography cap** scaling
+them (a cap IS binding, just not the single-name one the chain shows). Completing that
+derivation — threading the geo/sector cap step and the post-cap book renormalisation into
+`positionEdge.ts` — would make the "why this size" as legible as "why this side" now is.
+555 backend + 143 frontend, UI/UX pass clean.
+
 ### Loop iteration 67 (2026-07-25)
 
 **Poked a set of numbers I hadn't cross-checked — the stress scenarios — and one

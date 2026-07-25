@@ -145,7 +145,7 @@ block:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 554 backend + 143 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 555 backend + 143 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -194,6 +194,30 @@ Live at https://andromeda-analytics.vercel.app · 554 backend + 143 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 67 (2026-07-25)
+
+**Poked a set of numbers I hadn't cross-checked — the stress scenarios — and one
+short row's arithmetic did not check out. Fixed it in the code and re-persisted the
+live book without a full pipeline run.**
+
+Each stress scenario on `/risk` breaks its P&L into per-position rows. The longs read
+fine (`XLE (long): +8.8% × +3% = +0.26%`), but the shorts printed the **unsigned**
+weight, so the sign flip was invisible: `BABA (short): +9.0% × −20% = +1.80%` — except
+`+9.0% × −20% = −1.80%`, not `+1.80%`. The P&L itself was correct (a short gains when its
+name falls); the row's own numbers just contradicted its result — exactly the kind of
+thing a reviewer expands a stress row to check, and it fails on sight. Now it prints the
+**signed** weight, `−9.0% × −20% = +1.80%`, which multiplies to what it claims.
+
+The estimates were unchanged (verified: Rate Shock +1.64%, Credit −1.57%, VIX +0.62%,
+USD −0.62% identical before and after), so this was a pure display-correctness fix.
+`run_scenario_analysis` is a pure function of picks + factor betas + fixed shocks — no
+price fetch — so I recomputed `scenario_results` for the live 07-25 book with the fixed
+code and PATCHed it into `research_recommendations`, landing it live with no deploy and
+no book change. A regression test asserts a short row's printed numbers multiply to its
+printed result. Verified live at 1440/375 (breakdown expanded, no overflow); UI/UX pass
+clean across all four pages, zero horizontal scroll, zero console errors. 555 backend +
+143 frontend.
 
 ### Loop iteration 66 (2026-07-25)
 

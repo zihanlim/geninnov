@@ -764,3 +764,58 @@ def test_shape_check_is_silent_without_measurements_or_text():
     assert check_regime_characterisation_claims(None, _LIVE_REGIME) == []
     assert check_regime_characterisation_claims(
         {"book_view": "", "book_risks": []}, _LIVE_REGIME) == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# run_book_checks — every check runs; the guard reports all failures, not the first
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _three_defect_row():
+    """The live 2026-07-25 book, which carried three defects at once.
+
+    They surfaced across three separate iterations only because the guard returned at
+    the first one.
+    """
+    return {
+        "run_date": "2026-07-25",
+        "book_view": (
+            "2y at 4.37% sits 74bps above Fed Funds — an inverted curve. The book shows "
+            "factor tilts favoring value (HML +0.27) at market-neutral (Mkt -0.02)."
+        ),
+        "book_risks": [],
+        "book_metrics": {"factor_tilts": {"beta_mkt": -0.5022, "beta_hml": 0.3235}},
+        "picks": [{"asset": "SHY", "factor_tilts": {"beta_mkt": -0.02}},
+                  {"asset": "ARKK", "factor_tilts": {"beta_mkt": -0.02}}],
+        "cap_utilisation": {"violations": []},
+    }
+
+
+def test_all_three_live_defects_are_reported_in_one_pass():
+    from scripts.check_data_integrity import run_book_checks
+
+    results = run_book_checks(
+        _three_defect_row(), [], {"yield_curve_slope": 0.34, "vix_term_diff": -1.93})
+    failing = [headline for headline, flags, _ in results if flags]
+    assert len(failing) == 3, failing
+    assert any("factor tilt that is not the book's" in h for h in failing)
+    assert any("do not differentiate" in h for h in failing)
+    assert any("characterises the regime" in h for h in failing)
+
+
+def test_a_clean_book_reports_every_check_as_passing():
+    from scripts.check_data_integrity import run_book_checks
+
+    row = {"run_date": "2026-07-26", "book_view": "An upward-sloping curve.",
+           "book_risks": [], "book_metrics": {}, "picks": [], "cap_utilisation": {}}
+    results = run_book_checks(row, [], {"yield_curve_slope": 0.34})
+    assert all(not flags for _, flags, _ in results)
+    assert len(results) == 6
+
+
+def test_every_check_runs_even_when_an_earlier_one_fails():
+    """The property the early-return version could not offer."""
+    from scripts.check_data_integrity import run_book_checks
+
+    results = run_book_checks(_three_defect_row(), [], None)
+    assert len(results) == 6
+    assert all(isinstance(ok, str) and ok for _, _, ok in results)

@@ -676,6 +676,49 @@ def check_stalled_stages(
     return out
 
 
+def run_book_checks(
+    rec: dict,
+    candidates: list[dict] | None,
+    regime: dict | None,
+) -> list[tuple[str, list[str], str]]:
+    """Every check that reads the published book, as `(headline, flags, ok-message)`.
+
+    A list rather than a chain of early returns, because the guard used to stop at the
+    first failure and that shaped three consecutive iterations of work: the false
+    cap-breach claim was found and fixed, which revealed the restated factor tilt, which
+    revealed the *"inverted curve"* claim. **All three were in the same published thesis
+    on the same day** — they surfaced one per run only because nothing looked past the
+    first. A reader of the output could not distinguish *"one defect"* from *"the first
+    of several"*, which is the wrong thing for a guard to be ambiguous about.
+
+    Order is narrative — broadest claim first, arithmetic last — not priority. Every
+    entry runs regardless of what the ones before it found.
+    """
+    run = rec.get("run_date", "?")
+    return [
+        ("the PUBLISHED thesis makes a claim its own inputs contradict",
+         check_published_book_claims(rec, candidates),
+         f"Published thesis for {run} makes no contradicted claim "
+         f"(checked against {len(candidates or [])} screened candidates)."),
+        ("the published thesis claims a cap breach the book does not have",
+         check_cap_breach_claims(rec),
+         f"No false cap-breach claim in the {run} thesis."),
+        ("the thesis restates a factor tilt that is not the book's",
+         check_factor_tilt_claims(rec),
+         f"Factor tilts stated in the {run} thesis match the book."),
+        ("per-pick factor tilts do not differentiate",
+         check_per_pick_tilts_differentiate(rec),
+         f"Per-pick factor tilts differ across the {run} book."),
+        ("the thesis characterises the regime against its own measurements",
+         check_regime_characterisation_claims(rec, regime),
+         f"Regime characterisations in the {run} thesis match L3."),
+        ("/book's headline does not describe its own positions",
+         check_book_arithmetic(rec),
+         f"Book arithmetic reconciles for {run} "
+         f"(gross, net, long/short split, notional and signed weights)."),
+    ]
+
+
 def main() -> int:
     try:
         from dotenv import load_dotenv
@@ -760,127 +803,54 @@ def main() -> int:
 
     # The thesis guardrails run during generation; the fallback path is terminal and an
     # older row can stay live, so re-check what is actually on the page (ADR-0040).
+    #
+    # Every book check runs and EVERY failure is reported. This used to `return 1` at the
+    # first one, and that shaped three consecutive iterations of work: the cap-breach
+    # claim was found and fixed, which revealed the restated factor tilt, which revealed
+    # the inverted-curve claim — three defects that were all present in the same published
+    # thesis on the same day, surfaced one per run because the guard stopped at the first.
+    # A reader of the output could not tell "one defect" from "the first of several".
     rec_rows = (
         sb.table("research_recommendations")
-        .select("run_date, book_view, independent_ideas")
+        .select("run_date, book_view, book_risks, independent_ideas, picks, "
+                "book_metrics, cap_utilisation")
         .order("run_date", desc=True)
         .limit(1)
         .execute()
         .data
     )
+    failed = False
     if rec_rows:
         rec = rec_rows[0]
+        run = rec["run_date"]
         cands = (
             sb.table("trade_candidates")
             .select("asset")
-            .eq("run_date", rec["run_date"])
+            .eq("run_date", run)
             .execute()
             .data
         )
-        book_flags = check_published_book_claims(rec, cands)
-        if book_flags:
-            print("✗ DATA INTEGRITY CHECK FAILED — the PUBLISHED thesis makes a claim "
-                  "its own inputs contradict:")
-            for f in book_flags:
-                print(f"  - {f}")
-            print("\nThis is the live page, not a generation-time state. Re-run L5 so a "
-                  "corrected thesis is published.")
-            return 1
-        print(f"✓ Published thesis for {rec['run_date']} makes no contradicted claim "
-              f"(checked against {len(cands or [])} screened candidates).")
-
-        # The headline tiles must describe the positions printed beneath them.
-        book_row = (
-            sb.table("research_recommendations")
-            .select("run_date, picks, book_metrics")
-            .eq("run_date", rec["run_date"])
-            .limit(1)
-            .execute()
-            .data
-        )
-        # A thesis must not claim a cap breach the book does not have.
-        cap_row = (
-            sb.table("research_recommendations")
-            .select("run_date, book_view, book_risks, cap_utilisation")
-            .eq("run_date", rec["run_date"])
-            .limit(1)
-            .execute()
-            .data
-        )
-        cap_flags = check_cap_breach_claims(cap_row[0] if cap_row else None)
-        if cap_flags:
-            print("✗ DATA INTEGRITY CHECK FAILED — the published thesis claims a cap "
-                  "breach the book does not have:")
-            for f in cap_flags:
-                print(f"  - {f}")
-            return 1
-        print(f"✓ No false cap-breach claim in the {rec['run_date']} thesis.")
-
-        # A restated factor tilt must be the BOOK's, not the pre-selection pool's.
-        tilt_row = (
-            sb.table("research_recommendations")
-            .select("run_date, book_view, book_risks, book_metrics")
-            .eq("run_date", rec["run_date"])
-            .limit(1)
-            .execute()
-            .data
-        )
-        tilt_flags = check_factor_tilt_claims(tilt_row[0] if tilt_row else None)
-        if tilt_flags:
-            print("✗ DATA INTEGRITY CHECK FAILED — the thesis restates a factor tilt "
-                  "that is not the book's:")
-            for f in tilt_flags:
-                print(f"  - {f}")
-            return 1
-        print(f"✓ Factor tilts stated in the {rec['run_date']} thesis match the book.")
-
-        # Each position's own betas, not one aggregate copied across the book.
-        pick_row = (
-            sb.table("research_recommendations")
-            .select("run_date, picks")
-            .eq("run_date", rec["run_date"])
-            .limit(1)
-            .execute()
-            .data
-        )
-        tilt_spread = check_per_pick_tilts_differentiate(pick_row[0] if pick_row else None)
-        if tilt_spread:
-            print("✗ DATA INTEGRITY CHECK FAILED — per-pick factor tilts do not "
-                  "differentiate:")
-            for f in tilt_spread:
-                print(f"  - {f}")
-            return 1
-        print(f"✓ Per-pick factor tilts differ across the {rec['run_date']} book.")
-
-        # A shape word must match the measured shape (curve, vol term structure).
-        regime = (
+        regime_rows = (
             sb.table("regime_classifications")
             .select("run_date, yield_curve_slope, vix_term_diff")
-            .eq("run_date", rec["run_date"])
+            .eq("run_date", run)
             .limit(1)
             .execute()
             .data
         )
-        shape_flags = check_regime_characterisation_claims(
-            tilt_row[0] if tilt_row else None, regime[0] if regime else None
-        )
-        if shape_flags:
-            print("✗ DATA INTEGRITY CHECK FAILED — the thesis characterises the regime "
-                  "against its own measurements:")
-            for f in shape_flags:
-                print(f"  - {f}")
-            return 1
-        print(f"✓ Regime characterisations in the {rec['run_date']} thesis match L3.")
+        regime = regime_rows[0] if regime_rows else None
 
-        arith = check_book_arithmetic(book_row[0] if book_row else None)
-        if arith:
-            print("✗ DATA INTEGRITY CHECK FAILED — /book's headline does not describe "
-                  "its own positions:")
-            for f in arith:
-                print(f"  - {f}")
-            return 1
-        print(f"✓ Book arithmetic reconciles for {rec['run_date']} "
-              f"(gross, net, long/short split, notional and signed weights).")
+        for headline, flags, ok in run_book_checks(rec, cands, regime):
+            if flags:
+                failed = True
+                print(f"✗ DATA INTEGRITY CHECK FAILED — {headline}:")
+                for f in flags:
+                    print(f"  - {f}")
+            else:
+                print(f"✓ {ok}")
+        if failed:
+            print("\nThis is the live page, not a generation-time state. Re-run L5 so a "
+                  "corrected thesis is published.")
 
     # A stage that began and never finished means that run published nothing.
     stage_rows = (
@@ -901,6 +871,8 @@ def main() -> int:
         return 1
     print("✓ No pipeline stage is stuck mid-run.")
 
+    if failed:
+        return 1
     print("✓ Data integrity check passed — no seed fingerprint detected.")
     return 0
 

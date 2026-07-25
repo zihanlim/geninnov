@@ -204,6 +204,70 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 75 (2026-07-25)
+
+**Two things: the guard stopped hiding defects behind each other, and the corrected
+prompt was finally put through a real run.**
+
+**1. `check_data_integrity` reported only its first failure.** `main()` was a chain of
+early returns, and that quietly set the pace of three consecutive iterations:
+
+| iteration | found | ADR |
+|---|---|---|
+| 72 | a cap breach the book does not have | 0071 |
+| 73 | a factor tilt restated from the pre-selection pool | 0073 |
+| 74 | *"an inverted curve"* against a +34bps slope | 0075 |
+
+**All three were in the same published thesis, on the same day.** They arrived one per run
+because nothing looked past the first — each fix did not *reveal* the next defect so much
+as **stop hiding** it. And the cost is not only pace: a reader of the output could not tell
+*"this book has one defect"* from *"this book has one defect that we know of"*.
+
+`run_book_checks` now returns `(headline, flags, ok)` for all six book checks, every one
+evaluated, exit code decided at the end. Extracted as a pure function because that is what
+makes the property testable — the live three-defect row asserts **three failures in one
+pass**, which no test could express while the logic sat inline in `main()` behind a
+Supabase client. It also collapses five overlapping queries for the same row into one; each
+check had been added by appending another query rather than widening the first.
+[ADR-0076](adrs/0076-a-guard-reports-every-failure.md).
+
+**2. `origin/main` was nine commits behind — at iteration 64.** The scheduled
+`daily-refresh.yml` checks out the *pushed* repo, so every fix from iterations 71–75
+— the corrected prompt, the per-pick beta join, three of the guard's checks — **was absent
+from the job that actually runs**. Committing is not deploying for the backend either:
+`git push` is the deploy step for anything GitHub Actions runs.
+
+**3. The reason ADR-0071 and ADR-0073 did not hold: the block contradicted itself.**
+`format_book_metrics_summary` prepends its **own** header, two lines below the one ADR-0071
+rewrote:
+
+```
+=== CANDIDATE-POOL METRICS — EQUAL-WEIGHTED, BEFORE YOUR SELECTION ===
+… They are NOT the book's metrics. NEVER state them as the book's own composition
+=== BOOK METRICS (computed, not estimated) ===          ← this function
+  Book factor tilts: Mkt=-0.02 SMB=+0.18 HML=+0.27 …    ← this function
+  ⚠ CAP VIOLATIONS: US 66.67% — 31.67pp over its 35% cap
+```
+
+**The correction was contradicted inside the same block by the string it was correcting**,
+and the contradicting version was the one attached to the numbers. Both published
+falsehoods are printed verbatim under those labels by this function: *"market-neutral (Mkt
+−0.02)"* for a book at **−0.50**, and *"US at 66.67% versus the 35% cap (31.67pp over)"*
+for a book with **no violations at all**.
+
+So the two rows are **removed rather than relabelled a third time** — a caveat competes
+with a number and the number wins. A pool-average tilt has no decision value for *choosing*
+picks, and a cap breach computed on 30 equal-weighted candidates is not a fact about any
+book. Crowding — the part that informs a pick — stays as `Pool sector share` / `Pool geo
+share`. **You cannot restate a number you were never given.**
+[ADR-0077](adrs/0077-withhold-the-number-instead-of-forbidding-it.md).
+
+**Open at the end of this firing:** a full `daily_refresh` run was launched to exercise the
+corrected prompt end-to-end and had not returned when the firing closed (the L5 deadline is
+900s). The Playwright pass was blocked for the **third consecutive firing** — the other
+session has held the shared Chrome profile throughout, and there is no project-level MCP
+config to add `--isolated` to.
+
 ### Loop iteration 74 (2026-07-25)
 
 **Read the prompt that shipped iteration 73's fix and found the instruction that had

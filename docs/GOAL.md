@@ -121,6 +121,14 @@ block:
   A HEAD archive carries **both** sessions' committed work — so it also lands the other
   session's fixes that were committed-but-not-deployed (iteration 55 shipped
   `1336a57a`'s cap-breach board fix this way; iterations 45/49/50 the same pattern).
+- **Deploy from the archive ROOT, NEVER from `<tmp>/frontend`** (iteration 63 lost a
+  deploy slot and briefly broke the live site learning this). The root carries the
+  `vercel.json` + root `.vercel` that link the **`andromeda`** Vercel project, whose build
+  env holds `NEXT_PUBLIC_SUPABASE_*`. `frontend/.vercel` links a *different* personal
+  `frontend` scratch project with **no** env, so a deploy from there builds against
+  `placeholder.supabase.co` and every data call 404s. `andromeda-analytics.vercel.app` is
+  the `andromeda` project's production alias and auto-updates on its `--prod` deploys — do
+  not `vercel alias set` it to another project's deployment.
 - **When the cap is out, prefer verifiable work:** backend/pipeline (runs on GitHub
   Actions, verifiable against prod directly), or **data-layer fixes that bypass the
   deploy entirely** — the frontend reads Supabase live, so recomputing with the *fixed
@@ -207,8 +215,21 @@ uses it for the per-row bar, the summary count, and the breach detail — droppi
 reliance on the persisted `violations` list (which is written before the pipeline's own
 epsilon guard, ADR-0068, and so can carry a breach the pipeline itself no longer
 records). Nine unit tests pin the behaviour: float dust and a stale `breached=true`
-flag are *not* breaches; one basis point over — 10⁷× the tolerance — is. Both panels
-now read the same "0 breaches" live. Frontend suite 134 → 143.
+flag are *not* breaches; one basis point over — 10⁷× the tolerance — is. Frontend suite
+134 → 143; typecheck and production build clean.
+
+**Committed (a2f0ef08) but NOT yet live — the Vercel 100-deploys/day quota locked out
+for ~24h before the correct deploy landed.** The fix will go live on the next
+`andromeda` `--prod` deploy from HEAD (mine once the quota resets, or the concurrent
+session's), which auto-updates `andromeda-analytics.vercel.app` since that domain is the
+`andromeda` project's production alias. Until then the live `/risk` still shows the
+pre-existing "1 breach" vs "0 breached" contradiction. **Deploy lesson learned the hard
+way this iteration:** the site must be deployed from the **repo root** (Vercel project
+`andromeda`, which carries the `NEXT_PUBLIC_SUPABASE_*` build env), *not* from
+`frontend/` — deploying that subdir spins up a personal `frontend` scratch project with
+no env, so the build falls back to `placeholder.supabase.co` and every data call 404s.
+An attempt down that path briefly pointed the live alias at the broken build; it was
+restored by re-aliasing to the last-good `andromeda` production deployment.
 
 ### Loop iteration 62 (2026-07-25)
 

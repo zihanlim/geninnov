@@ -77,6 +77,18 @@ Add to `analytics_row` in `_persist_to_supabase` alongside `book_metrics` / `cor
 
 ## Step 4 — render
 
+**⏸️ DEFERRED / DE-SCOPED (iteration 92, 2026-07-26).** Step 4 assumed the beta column was a flaw to
+swap out. The other session's frontend rewrite (`c9042975`) fixed that flaw a cleaner way: the panel
+now shows the *consistent* factor-model beta contribution (Σ signed_weight × β_mkt, which does sum to
+the book tilt) and **gates the regression book beta** behind `MIN_SESSIONS.beta_abs` (60), so the two
+betas are never printed together to be misread. The −0.19-vs-−0.50 question that motivated this whole
+handoff is therefore **answered without the Euler render**. Rendering `contribution_to_vol` on top
+would add a *second* risk-attribution panel — completeness over legibility, the trade
+`docs/design-goals.md` warns against — and can't be verified live while Playwright + WebFetch are both
+blocked. So the decomposition **remains a persisted, identity-checked backend asset**
+(`research_recommendations.risk_decomposition`); a render is revisited only if a non-duplicative slot
+appears *and* live verification is possible. The guidance below is preserved for that future render.
+
 **`frontend/components/risk/PositionRiskAttribution.tsx` should be re-sourced, not replaced.**
 
 Its header says it answers *"which trade do I cut?"* using marginal contribution to book beta

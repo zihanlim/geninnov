@@ -149,7 +149,7 @@ block:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 626 backend tests green (frontend suite is in the other session's active rewrite).
+Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the other session's frontend rewrite has **landed** (commit `c9042975`, 285 frontend tests green per that commit, local/unpushed).
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -203,6 +203,35 @@ Live at https://andromeda-analytics.vercel.app · 626 backend tests green (front
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 92 (2026-07-26) — two blocks cleared; I retired Step 4 rather than ship it blind
+
+**Two of the three blocks from iteration 91 cleared, and the third got worse.** The other session's
+frontend rewrite **landed** — WIP dropped 69 → 4 (an untracked mockup dir and one test tweak), and
+the two files Step 4 needed (`risk/page.tsx`, `lib/risk/analytics.ts`) are committed as part of
+`c9042975`. The **MiniMax quota reset** — a minimal live call returned 200, not the 429 that caused
+iteration 85's regression. But **both live-verification paths are now blocked**: Playwright MCP is
+still disconnected (five firings), and WebFetch is refused by network policy — so I cannot see the
+deployed site at all, only the Supabase data behind it (still the good 5/5 book).
+
+**The consequential call: I am retiring Step 4 (the Euler *render*) rather than shipping it blind.**
+The reason is not just the block — it's that Step 4's *motivation* is gone. The whole point of the
+Euler decomposition (ADR-0082) was to answer the −0.19-vs-−0.50 beta question the per-position
+attribution raised. The frontend rewrite **already answered it a cleaner way**: the position panel
+now shows the *consistent* factor-model beta (Σ signed_weight × β_mkt, which does sum to the book
+tilt) and **gates the regression book beta** behind `MIN_SESSIONS.beta_abs` (60), so the two betas
+are never printed side by side to be misread. The flaw is fixed. Rendering the Euler decomposition
+on top of that would add a *second* risk-attribution panel — completeness over legibility, the exact
+trade `docs/design-goals.md` warns against — and I'd be shipping it to a page I can't load to check
+for overflow or console errors. So the Euler decomposition **stays a persisted backend asset**
+(`research_recommendations.risk_decomposition`, identity-checked, ADR-0082); a future render is
+deferred until Playwright is back *and* a non-duplicative slot exists. Better a clean page with the
+number available than a cluttered one shipped unseen.
+
+I did **not** push or deploy `c9042975` — it's the other session's tested commit to push on their own
+call, and a blind prod deploy with no way to verify it is exactly what iteration 85 taught me not to
+do. Book re-confirmed good via Supabase (5L/5S, thesis 812 chars). `PROGRESS.md` is no longer
+corrupted — the rewrite rewrote it.
 
 ### Loop iteration 91 (2026-07-25) — confirmed green, doc-synced the count, and a plain statement of the block
 

@@ -265,8 +265,16 @@ were recomputed with the fixed code and PATCHed: ten distinct market betas, 2.08
 *"market-neutral (Mkt −0.02)"* stay until the next run writes under the corrected prompt;
 hand-editing it would make the page say something the agent did not conclude.
 
-[ADR-0075](adrs/0075-per-pick-betas-are-joined-not-authored.md). 140 backend tests across
-the affected modules.
+[ADR-0075](adrs/0075-per-pick-betas-are-joined-not-authored.md). 602 backend tests green.
+
+**The Playwright UI/UX pass did not run this iteration**, and the standing mandate requires
+one. The other session held the Chrome profile for the whole firing —
+*"Browser is already in use … use --isolated"* on nine attempts across ~40 minutes. What was
+verified instead: the deployed `/book` chunk contains the new strings (`Factor exposure`,
+`252-day regression`, `a weak fit`), and the persisted picks carry ten distinct market
+betas. **Neither is a substitute for looking at the page** — the new block's layout at
+375px is unverified. First item for the next firing, and a second `--isolated` browser
+profile would stop this recurring.
 
 ### Loop iteration 73 (2026-07-25)
 

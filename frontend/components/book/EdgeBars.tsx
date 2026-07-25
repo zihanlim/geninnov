@@ -1,10 +1,14 @@
 // frontend/components/book/EdgeBars.tsx
 //
-// The EdgeScore 4-component decomposition, per position. This is the CROWN JEWEL
-// of /book: it shows *why* a position is long or short, decomposed into the four
-// signals the engine actually weights — Trend (0.35), Regime (0.25), Carry
-// (0.20), Value (0.20) — and demonstrates they sum to the EdgeScore whose sign is
-// the resolved side.
+// The EdgeScore 5-component decomposition, per position. This is the CROWN JEWEL
+// of /book: it shows *why* a position is long or short, decomposed into the five
+// signals the engine weights — Trend, Regime, Carry, Value and a contrarian
+// Sentiment tilt — whose weights are read live from scoring_config (ADR-0033), not
+// hardcoded here. It demonstrates they RECONCILE to the EdgeScore whose sign is the
+// resolved side: Carry/Value are null for names where they are not computable, so the
+// weights renormalise over what is present (ADR-0036) — Σ(w·v) ÷ Σ(w) — and the panel
+// prints that division rather than leaving the raw contributions visibly failing to
+// sum to the score.
 //
 // Replaces the stale 2-component (Trend + Regime only) view. Each row is a
 // diverging bar centred on zero: the bar length is the WEIGHTED contribution
@@ -80,8 +84,13 @@ export default function EdgeBars({
   // what is present (ADR-0036), so a plain Σ understates |EdgeScore| whenever any
   // component is missing and fired a false "differs from the sum" warning on every
   // such position. Same root cause as /method's RECONCILIATION FAILURE (ADR-0064).
-  const sumContribution = recomputeEdgeScore(edge, weights).edgeScore;
+  const recomp = recomputeEdgeScore(edge, weights);
   const anyPresent = contribs.some((c) => c.raw !== null);
+  // When Carry/Value are absent the shown "× wt" contributions sum to `weightedSum`
+  // but the EdgeScore is `weightedSum / weightPresent`. Without printing that division
+  // the panel reads "+0.19 +0.01 +0.004 → +0.43" and the numbers visibly do not add up.
+  const renormalised =
+    anyPresent && recomp.weightPresent > 0 && recomp.weightPresent < 0.999;
 
   return (
     <div>
@@ -126,17 +135,26 @@ export default function EdgeBars({
           {edge.edge_score !== null
             ? fmtSigned(edge.edge_score, 3)
             : anyPresent
-              ? `${fmtSigned(sumContribution, 3)} (derived)`
+              ? `${fmtSigned(recomp.edgeScore, 3)} (derived)`
               : "—"}
         </span>
       </div>
+      {renormalised && (
+        <p className="m-0 mt-1 text-[10.5px] text-text-tertiary leading-[1.5]">
+          <span className="num">{fmtSigned(recomp.weightedSum, 3)}</span> weighted sum ÷{" "}
+          <span className="num">{recomp.weightPresent.toFixed(2)}</span> present weight ={" "}
+          <span className="num">{fmtSigned(recomp.edgeScore, 3)}</span> — the shown
+          contributions renormalise over the components scored for this name; Carry and
+          Value are not, so their weight is not spread onto the rest (ADR-0036).
+        </p>
+      )}
       {edge.edge_score !== null &&
         anyPresent &&
-        Math.abs(sumContribution - edge.edge_score) > 0.01 && (
+        Math.abs(recomp.edgeScore - edge.edge_score) > 0.01 && (
           <p className="m-0 mt-1 text-[10.5px] text-text-tertiary leading-[1.5]">
-            Persisted EdgeScore differs from the sum of shown components by{" "}
+            Persisted EdgeScore differs from this derivation by{" "}
             <span className="num">
-              {fmtSigned(edge.edge_score - sumContribution, 3)}
+              {fmtSigned(edge.edge_score - recomp.edgeScore, 3)}
             </span>{" "}
             — a component or weight changed since this book was sized.
           </p>

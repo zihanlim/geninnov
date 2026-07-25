@@ -152,9 +152,10 @@ Live at https://andromeda-analytics.vercel.app · 554 backend + 143 frontend tes
   **All six stages report to `pipeline_runs`** since iteration 14 — L1 and L4 were
   silent, so `/method` said "not instrumented" while the status bar said "4/4
   succeeded".
-- **Q1 book** — **5 long / 4 short across 9 positions** (SHY, XLE, NUE, OIH, SVXY
-  long; PDD, BABA, SLV, NOC short) on the 2026-07-25 run, +5.2% net at 56.7% gross.
-  The roster turns over ~90% run to run, so treat any specific list as one draw.
+- **Q1 book** — **5 long / 4 short across 9 positions** (XLE, SVXY, NUE, UNH, JPM
+  long; SLV, BABA, PDD, NOC short) on the 2026-07-25 run, +1.4% net at 59.4% gross,
+  market beta −0.13 (signed, value-weighted). Roster turnover varies run to run
+  (20% this run — 8 of 9 held through), so treat any specific list as one draw.
   **Sized by conviction since iteration 38** (ADR-0053) — it had been HypeScore-weighted
   while every surface claimed otherwise. The model is `weight ∝ conviction`
   (`|EdgeScore|/vol`, vol-floored) normalised across the **whole book**, *then* the
@@ -166,9 +167,9 @@ Live at https://andromeda-analytics.vercel.app · 554 backend + 143 frontend tes
   is at Q1's five**; the
   short side holds four of the five independent ideas that existed, and `/book`'s Pool
   depth panel says so in warning colour rather than excusing it. Almost every name
-  comes from a theme **below** the attention gate (ADR-0046). **The composition moves
-  hard run to run** — 94% turnover against the previous book — so this is one draw
-  from the pool, not a settled answer, and the turnover panel says that too. **One portfolio everywhere** since iteration 10
+  comes from a theme **below** the attention gate (ADR-0046). The composition can move
+  hard run to run — the turnover panel reports each run's figure (20% this run) — so this
+  is one draw from the pool, not a settled answer. **One portfolio everywhere** since iteration 10
   (ADR-0040) — `/book` and `/risk` describe the same names and every risk number is
   computed on them, and since iteration 32 `/risk` *checks* that rather than assuming
   it — and direction no longer inverts on a regime label flip since
@@ -193,6 +194,45 @@ Live at https://andromeda-analytics.vercel.app · 554 backend + 143 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 64 (2026-07-25)
+
+**Two committed fixes were stranded — the deploy quota blocks the frontend and, it
+being Saturday with no nightly until Monday and no `gh` to dispatch the workflow,
+nothing would land them for 2.5 days. So I ran the daily pipeline locally against prod,
+which pushed both live at once and fixed a third thing I'd been treating as
+"disclosed, therefore fine".**
+
+The live site was showing `/book` (run_date 07-25, an OIH/SHY/SVXY book a pre-close
+local run published at 16:22) beside `/risk` computing every statistic on
+`portfolio_positions` (the 07-24 scheduled run's BIL/JPM/UNH names) — *"9 held · 9
+published … THESE ARE NOT THE [published names]"*. ADR-0040's "one portfolio everywhere"
+was visibly broken, and the buggy `book_metrics` had `/risk` reporting market beta
+**+0.18** while the home view read **−0.35**: two pages, opposite signs, same book.
+
+A single local `daily_refresh.py` run (UTC date now 07-25, so `utc_run_date()` stamps
+07-25 and UPSERTs the stale row) regenerated everything from the **fixed** code —
+`book_metrics` (62bbe7bd) and the cap epsilon guard (f002966e) are both on `main`:
+
+- **Book of record reconciled** — the log says *"reconciled to L5: 9 positions (was 40
+  from L1)"*; `/book` and `/risk` now name the identical 9 (XLE/SVXY/NUE/UNH/JPM long,
+  SLV/BABA/PDD/NOC short) and the "THESE ARE NOT THE" warning is gone live.
+- **Factor tilts signed and consistent** — `/risk` BOOK FACTOR TILT, its per-position
+  attribution Σβ, *and* the home FACTOR TILT all read **MKT −0.13, SMB +0.23, HML +0.37,
+  RMW +0.26, CMA −0.30** live (was +0.18 vs −0.35). The thesis regenerated too — no more
+  "modest (Mkt +0.16)"; it now reads *"net market beta dampened by SVXY/NOC/SLV offsets"*.
+- **Cap breach cleared** — *"0 cap violations"* in the log; `/risk` CAP UTILISATION reads
+  **"0 breaches"** beside the board's "0 breached" (the iteration-63 contradiction, now
+  resolved in the data — the US-geo float dust no longer persists as a violation).
+
+Still 5 long / **4 short**: the pipeline abstained on the fifth short (ARKK) exactly as
+before — a re-run doesn't manufacture an idea that isn't there, and the pool-depth panel
+says so. The CapUtilisation frontend fix (a2f0ef08) is still undeployed but now
+belt-and-braces: the data is clean, and the fix guards against float dust *recurring*.
+UI/UX pass clean at 1440/375 across all four pages, zero horizontal scroll, zero console
+errors. **Deploy lesson also recorded:** run the pipeline from repo root with root
+`.vercel`/`.env`; a local run is legitimate (ADR-0069) and lands committed backend fixes
+without a Vercel deploy.
 
 ### Loop iteration 63 (2026-07-25)
 

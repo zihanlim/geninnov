@@ -273,8 +273,12 @@ def estimate_scenario_pnl(
             shock = scenario.base_asset_shocks[asset]
             pnl = sign * w * shock
             direct_pnl += pnl
+            # Show the SIGNED weight so the line's own arithmetic checks out. A short
+            # gains when its name falls, so with the unsigned weight the row read
+            # "+9.0% × -20% = +1.80%" — a product that does not equal its result, the
+            # first thing a reviewer poking a stress row would catch. -9.0% × -20% does.
             contributions.append(
-                f"  {asset} ({p.get('direction', '?')}): {w:+.1%} × {shock:+.0%} = {pnl:+.2%}"
+                f"  {asset} ({p.get('direction', '?')}): {sign * w:+.1%} × {shock:+.0%} = {pnl:+.2%}"
             )
 
     # Blend: use direct PnL only when it has actual non-zero contributions;

@@ -146,6 +146,26 @@ def test_estimate_pnl_short_position_flips_sign():
     assert result.estimated_book_return > 0
 
 
+def test_short_contribution_row_arithmetic_is_self_consistent():
+    """A directly-shocked short's breakdown row must print a SIGNED weight so its own
+    numbers multiply to its own result. With an unsigned weight the sign flip is
+    invisible and the row reads '+9.0% x -20% = +1.80%' — a product that does not equal
+    what it claims, the first thing a reviewer poking a stress row would catch."""
+    import re
+
+    scenario = next(s for s in SCENARIOS if s.base_asset_shocks)
+    asset = next(iter(scenario.base_asset_shocks))
+    result = estimate_scenario_pnl(
+        scenario, [_pick(asset, "short", 0.20)], _bm(gross=0.20), 100_000_000.0
+    )
+    row = next(c for c in result.contribution_breakdown if asset in c and "×" in c)
+    nums = [float(x) / 100 for x in re.findall(r"([+-]?\d+\.?\d*)%", row)]
+    assert len(nums) == 3, f"expected weight, shock, pnl in {row!r}"
+    weight, shock, pnl = nums
+    assert weight < 0, f"short weight should print negative in {row!r}"
+    assert abs(weight * shock - pnl) < 1e-4, f"row arithmetic does not check out: {row!r}"
+
+
 def test_estimate_pnl_dollar_pnl_scaled():
     """Dollar P&L scales with total_capital."""
     picks = [_pick("TLT", "long", 0.10)]

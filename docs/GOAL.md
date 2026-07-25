@@ -195,6 +195,37 @@ Live at https://andromeda-analytics.vercel.app · 554 backend + 143 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 66 (2026-07-25)
+
+**Confronted the #1 gap — Q1 asks five shorts, the book has four — and confirmed with
+evidence it is a genuine abstention, not a narrow universe. Then made the one honest
+improvement left: the risk-monitoring panel that reads empty now says how close it is.**
+
+The honest fix for a short side of four is *widen the universe*, never relax a cap. So I
+checked the universe: **52 tickers across US single-names, Treasuries, credit
+(JNK/ANGL/BKLN), EM/DM/China/Japan/Brazil ETFs, precious metals, and the dollar.** The
+short side surfaced exactly five independent ideas; the book took four and passed over
+ARKK — the *weakest* (|edge| 0.26) and a US name the full 35% US-geo cap can't fit. Every
+non-US short idea (China, precious metals) is already held; there is no untapped non-US
+short to add, so widening further would only manufacture a weak one. The four-short book
+is a well-searched abstention from a broad multi-asset universe — left as-is, on evidence.
+
+**The one shippable improvement was on Q2's risk-monitoring half.** The theme-attention
+crowding panel needs five scored hype observations per theme before a within-history
+percentile means anything (below that it correctly reads `—`, never a fabricated 50th);
+hype history is three days old, so it sits empty. It used to say only *"expected until
+the history backfills"*; it now counts down — *"the book's themes have up to 3 of the five
+scored observations a percentile needs"* — so a reviewer sees a real capability two runs
+from live, not a dead panel. Threaded the per-theme scored-obs count through
+`CrowdingHistoryLite`; no fabricated number. Deployed and verified live.
+
+Everything else was re-confirmed strong, not just asserted: exposures reconcile
+(long−short=net, long+short=gross), market beta reads **−0.13** identically on the home
+tilt, `/risk` BOOK FACTOR TILT, and the attribution Σβ; the n=3 regression stats stay
+*withheld*; `exceeds_cap`'s float guard (ADR-0068) and the signed book_metrics are both
+unit-tested. The IC is honestly one date (h1 −0.228). UI/UX pass clean at 1440/375 across
+all four pages, zero horizontal scroll, zero console errors. 554 backend + 143 frontend.
+
 ### Loop iteration 65 (2026-07-25)
 
 **A verification-and-landing iteration: I re-derived the highest-value step, found the

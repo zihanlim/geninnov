@@ -530,3 +530,105 @@ def test_is_silent_without_a_measurement_or_text():
     assert check_cap_breach_claims(None) == []
     assert check_cap_breach_claims(_caprow(cap_utilisation=None)) == []
     assert check_cap_breach_claims(_caprow(book_view="", book_risks=[])) == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# check_factor_tilt_claims — a restated tilt must be the BOOK's, not the pool's
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _tiltrow(**over):
+    row = {
+        "run_date": "2026-07-25",
+        "book_view": "Late-cycle, risk-on.",
+        "book_risks": [],
+        "book_metrics": {"factor_tilts": {
+            "beta_mkt": -0.5022, "beta_smb": 0.1188, "beta_hml": 0.3235,
+            "beta_rmw": 0.4252, "beta_cma": 0.2077, "beta_umd": -0.0642,
+        }},
+    }
+    row.update(over)
+    return row
+
+
+def test_catches_the_live_market_neutral_claim():
+    """The 2026-07-25 thesis called a book with beta_mkt -0.5022 "market-neutral".
+
+    Same root cause as ADR-0071: the prompt's metrics block is the equal-weighted
+    candidate pool computed BEFORE selection. The pool's Mkt was -0.02; the book's was
+    -0.5022 — the headline risk characterisation was wrong by 25x.
+    """
+    from scripts.check_data_integrity import check_factor_tilt_claims
+
+    row = _tiltrow(book_view=(
+        "The book expresses factor tilts favoring value (HML +0.27) and quality "
+        "(RMW +0.35) at market-neutral (Mkt -0.02)."
+    ))
+    flags = check_factor_tilt_claims(row)
+    assert len(flags) == 3, flags
+    joined = " ".join(flags)
+    assert "beta_mkt is -0.5022" in joined
+    assert "MKT -0.0200" in joined
+
+
+def test_a_tilt_stated_correctly_is_not_flagged():
+    """The check must not discourage citing the book's real tilts."""
+    from scripts.check_data_integrity import check_factor_tilt_claims
+
+    row = _tiltrow(book_view=(
+        "Net short the market (Mkt -0.50) with a value tilt (HML +0.32)."
+    ))
+    assert check_factor_tilt_claims(row) == []
+
+
+def test_rounding_is_not_a_defect():
+    """0.05 in beta units: catch a figure describing a different portfolio, not
+    a rounded one. The live miss was 0.48."""
+    from scripts.check_data_integrity import check_factor_tilt_claims
+
+    assert check_factor_tilt_claims(_tiltrow(book_view="HML +0.30")) == []
+    assert len(check_factor_tilt_claims(_tiltrow(book_view="HML +0.10"))) == 1
+
+
+def test_one_flag_per_factor_however_it_is_named():
+    from scripts.check_data_integrity import check_factor_tilt_claims
+
+    row = _tiltrow(book_view="Mkt -0.02, and the market beta of -0.02 keeps it neutral.")
+    assert len(check_factor_tilt_claims(row)) == 1
+
+
+def test_reads_the_risks_list_as_well_as_the_body():
+    from scripts.check_data_integrity import check_factor_tilt_claims
+
+    row = _tiltrow(book_risks=["A momentum reversal: UMD +0.90 would hurt."])
+    assert len(check_factor_tilt_claims(row)) == 1
+
+
+def test_ordinary_prose_with_numbers_is_not_flagged():
+    """A ticker, a price and a percentage near no factor name must stay silent."""
+    from scripts.check_data_integrity import check_factor_tilt_claims
+
+    row = _tiltrow(book_risks=[
+        "VIX spike to >30: SVXY is directly short-vol.",
+        "Gold breaking $4200/oz disqualifies the GDX short.",
+        "US geographic weight is 35.00% of gross.",
+    ])
+    assert check_factor_tilt_claims(row) == []
+
+
+def test_a_factor_the_book_did_not_measure_is_not_checked():
+    """Absence is not a value — ADR-0066. A null tilt cannot contradict anything."""
+    from scripts.check_data_integrity import check_factor_tilt_claims
+
+    row = _tiltrow(
+        book_metrics={"factor_tilts": {"beta_mkt": None}},
+        book_view="Mkt -0.02.",
+    )
+    assert check_factor_tilt_claims(row) == []
+
+
+def test_is_silent_without_a_row_tilts_or_text():
+    from scripts.check_data_integrity import check_factor_tilt_claims
+
+    assert check_factor_tilt_claims(None) == []
+    assert check_factor_tilt_claims(_tiltrow(book_metrics={})) == []
+    assert check_factor_tilt_claims(_tiltrow(book_view="", book_risks=[])) == []

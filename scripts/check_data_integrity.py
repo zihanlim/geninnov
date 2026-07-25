@@ -314,6 +314,100 @@ def check_cap_breach_claims(rec_row: dict | None) -> list[str]:
     return out
 
 
+_FACTOR_ALIASES = {
+    "beta_mkt": ("mkt", "market beta", "beta_mkt", "mkt-rf"),
+    "beta_smb": ("smb",),
+    "beta_hml": ("hml",),
+    "beta_rmw": ("rmw",),
+    "beta_cma": ("cma",),
+    "beta_umd": ("umd",),
+}
+
+
+def check_factor_tilt_claims(
+    rec_row: dict | None,
+    tol: float = 0.05,
+) -> list[str]:
+    """Reject a thesis restating a factor tilt that is not the book's.
+
+    Same root cause as [ADR-0071]: `compute_book_metrics_node` runs BEFORE
+    `reason_picks` over the equal-weighted candidate pool, while `book_metrics` is
+    recomputed on the actual picks at their actual weights afterwards. ADR-0071 stopped
+    the model claiming a *cap breach* from pool figures; it did not stop it restating
+    pool *tilts* as the book's.
+
+    On 2026-07-25 the thesis closed with *"factor tilts favoring value (HML +0.27) and
+    quality (RMW +0.35) at market-neutral (Mkt -0.02)"*. The book's own tilts were
+    **HML +0.3235, RMW +0.4252, and Mkt -0.5022** — so the headline risk characterisation,
+    *market-neutral*, was wrong by **25x** on a book that is materially net-short the
+    market.
+
+    That is the [ADR-0049](0049) rule again — *a number the system computes should never
+    be re-typed by the model* — and factor tilts now join sizes, weights, exposures and
+    pool-depth counts on the forbidden list.
+
+    Tolerance is 0.05 in beta units, deliberately loose: this is meant to catch a figure
+    describing a *different portfolio*, not to police rounding. The live miss was 0.48.
+
+    Silent when there is no thesis, no `book_metrics.factor_tilts`, or no factor claim.
+
+    Returns failure strings; empty means every restated tilt matches the book.
+    """
+    if not rec_row:
+        return []
+    text = " ".join(
+        [rec_row.get("book_view") or ""]
+        + [str(x) for x in (rec_row.get("book_risks") or [])]
+    )
+    if not text:
+        return []
+    tilts = (rec_row.get("book_metrics") or {}).get("factor_tilts") or {}
+    if not tilts:
+        return []
+
+    run = rec_row.get("run_date", "?")
+    out: list[str] = []
+    for key, aliases in _FACTOR_ALIASES.items():
+        actual = tilts.get(key)
+        if not isinstance(actual, (int, float)) or isinstance(actual, bool):
+            continue
+        # One flag per factor, however many ways the prose names it.
+        mismatch = next(
+            (
+                (alias, claimed)
+                for alias in aliases
+                for claimed in _numbers_after(alias, text)
+                if abs(claimed - float(actual)) > tol
+            ),
+            None,
+        )
+        if mismatch:
+            alias, claimed = mismatch
+            out.append(
+                f"book {run}: thesis states {alias.upper()} {claimed:+.4f} but "
+                f"book_metrics.{key} is {float(actual):+.4f} — the pool metrics in the "
+                f"prompt are equal-weighted and pre-selection; the book's tilts are "
+                f"recomputed on the actual picks at their actual weights."
+            )
+    return out
+
+
+def _numbers_after(alias: str, text: str) -> list[float]:
+    """Numbers attached to ``alias`` — "HML +0.27", "Mkt -0.02", "market beta of 0.14".
+
+    The gap class excludes digits, so the scan cannot leap over an intervening number
+    and attribute a stranger's figure to this factor.
+    """
+    pat = rf"\b{re.escape(alias)}\b[^0-9+\-]{{0,12}}([+-]?\d*\.?\d+)"
+    found = []
+    for m in re.finditer(pat, text, re.IGNORECASE):
+        try:
+            found.append(float(m.group(1)))
+        except ValueError:
+            continue
+    return found
+
+
 def check_book_arithmetic(
     rec_row: dict | None,
     total_capital: float = 100_000_000.0,
@@ -626,6 +720,24 @@ def main() -> int:
                 print(f"  - {f}")
             return 1
         print(f"✓ No false cap-breach claim in the {rec['run_date']} thesis.")
+
+        # A restated factor tilt must be the BOOK's, not the pre-selection pool's.
+        tilt_row = (
+            sb.table("research_recommendations")
+            .select("run_date, book_view, book_risks, book_metrics")
+            .eq("run_date", rec["run_date"])
+            .limit(1)
+            .execute()
+            .data
+        )
+        tilt_flags = check_factor_tilt_claims(tilt_row[0] if tilt_row else None)
+        if tilt_flags:
+            print("✗ DATA INTEGRITY CHECK FAILED — the thesis restates a factor tilt "
+                  "that is not the book's:")
+            for f in tilt_flags:
+                print(f"  - {f}")
+            return 1
+        print(f"✓ Factor tilts stated in the {rec['run_date']} thesis match the book.")
 
         arith = check_book_arithmetic(book_row[0] if book_row else None)
         if arith:

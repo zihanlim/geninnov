@@ -1100,6 +1100,13 @@ Use these to see which complexes are crowded and where a cap would bind. NEVER s
 them as the book's own composition, and never claim a cap breach from them: the sizer
 enforces every cap after you pick, and the page prints the book's real figures beside
 your text.
+DO NOT restate any factor tilt (Mkt, SMB, HML, RMW, CMA, UMD) as the book's, and do not
+call the book market-neutral, net-long or net-short from these numbers. The book's tilts
+are recomputed on your actual picks at their actual weights AFTER you answer, and they
+differ: a pool tilt of Mkt -0.02 became a book tilt of -0.50 on 2026-07-25, so a thesis
+calling that book "market-neutral" was wrong by 25x on its own headline risk claim.
+Describe the DIRECTION of your tilt in words if it matters ("value-tilted", "short
+duration"); the page prints the measured numbers beneath you.
 {book_metrics_summary}
 
 === SCENARIO ANALYSIS ===

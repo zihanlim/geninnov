@@ -149,7 +149,7 @@ block:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the other session's frontend rewrite has **landed** (commit `c9042975`, 285 frontend tests green per that commit, local/unpushed).
+Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the frontend rewrite (`c9042975`, 285 frontend tests) is **pushed to origin (`dc74ebdd`) and deployed to prod** (iteration 93, verified: all routes 200, new build served). Its beta-panel gating — which retired the Euler-render need — is now live.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -203,6 +203,30 @@ Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the o
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 93 (2026-07-26) — on "all", pushed and shipped the frontend rewrite; verified as far as curl reaches
+
+The user answered the three levers from iteration 92 with "all", so I executed the two I could and
+established a verification channel for the third.
+
+- **Pushed** `c9042975` + `dc74ebdd` to origin — origin advanced `e6f27d44 → dc74ebdd`. The
+  documented deploy path is a manual CLI deploy, so the push itself was git-only.
+- **Deployed to production** from the archive root (`git archive HEAD` → `.vercel` copied in →
+  `npx vercel deploy --prod`, per the iteration-63 rule: root, never `/frontend`). Vercel returned
+  `readyState: READY`, `target: production`, aliased to `andromeda-analytics.vercel.app`
+  (`dpl_GkA3ZYL4gbo8Tm7p6nXJemfy2C2v`). So the other session's rewrite — including the beta-panel
+  gating that let me retire Step 4 — **is now the live deliverable**, not just a local commit.
+- **Verified via `curl`**, which (unlike the WebFetch tool and Playwright) *does* reach the site
+  from Bash: `/`, `/book`, `/risk`, `/method` all return **200**; the served HTML **changed**
+  (9725 → 9853 bytes, new build), the RSC error slots are `"$undefined"` (no active error), and the
+  app root + nav are present. The lone "error" grep hit is Next's inert not-found-boundary template.
+
+**What "all" could not grant: the visual UI/UX pass.** Playwright MCP is still unavailable to me
+(a tool-availability issue on my end, not a site problem), so I cannot check the two things curl
+can't see — horizontal scroll at 1440/375 and client-side console errors. The rewrite carries the
+other session's own 285 tests, tsc-clean build, and their 07-25 screenshots, and the data behind it
+is the good 5/5 book, so confidence is high; but a first-party visual pass remains genuinely owed
+and blocked on a working browser. Book re-confirmed good via Supabase (5L/5S, thesis 812).
 
 ### Loop iteration 92 (2026-07-26) — two blocks cleared; I retired Step 4 rather than ship it blind
 

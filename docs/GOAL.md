@@ -204,6 +204,33 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 86 (2026-07-25) — confirmed the restore held; the site is whole and consistent
+
+**A verification turn: after last iteration's regression-and-recovery, the priority was proving
+the restored book is intact and that the L1 refresh (which survived the restore) left nothing
+inconsistent.** With Step 4 still blocked (`risk/page.tsx` + `analytics.ts` in the other session's
+59-file WIP) and the MiniMax quota still out — so no pipeline run — this was the highest-value
+work available, and it matters: a botched recovery would be worse than the original break.
+
+- **The restored book is intact and consistent.** /book is the 5/5 diversified net-short book
+  (SHY·XLE·SVXY·NUE·UNH / GDX·BABA·NOC·ARKK·PDD) with its thesis and VERIFIED badge; /risk shows
+  the same book, HHI 1148 (scalar and bundle), the book-of-record warning gone; home carries the
+  old book's factor tilt (Mkt −0.50, coverage 71%). All four restored tables agree.
+- **The refreshed L0–L4 is same-day-consistent with the old book.** Macro (10y−2y +34bps, HY OAS
+  2.77%, VIX 18.6) and regime (late/risk-on) match the book's thesis — same-day FRED data is
+  deterministic, so the refresh reproduced the book's inputs. Only the news-driven theme
+  HypeScores moved, which is the legitimate daily Q2 update.
+- **Q2 is sound on the fresh data.** All 8 themes' HypeScores reconcile to `0.30·vol + 0.20·sent
+  + 0.30·|ρ| + 0.20·mom` to 1e-4 (Geopolitical 65.4, US Election 59.7, Fed Policy 47.8), and the
+  value renders identically across the heatmap, the top-3 cards and the watchlist — a screenshot
+  that looked like a 68/60 mismatch was a low-res misread; the DOM reads 60 everywhere.
+
+UI/UX pass clean — all four pages at 1440/375, zero horizontal scroll, zero console errors, no NaN.
+Still blocked, unchanged: Step 4 (Euler render + the beta-column decision), the EdgeScore stale
+formula, ADR-0082's index entry — all in the frontend rewrite; and the MiniMax quota. My last
+three commits (Euler wiring + docs) sit local, 3 ahead of `origin/main`. `PROGRESS.md` still
+corrupted.
+
 ### Loop iteration 85 (2026-07-25) — a pipeline run backfired on an exhausted LLM quota; restored the book
 
 **Ran `daily_refresh` to validate the Euler wiring end-to-end and refresh the book. The

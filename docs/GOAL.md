@@ -181,8 +181,9 @@ Live at https://andromeda-analytics.vercel.app · 560 backend + 144 frontend tes
   Two-sided since iteration 8 (ADR-0038, direction per asset) and deeper since
   iteration 9 (ADR-0039, scope by attention). Genuinely cap-bound since iteration 7
   — **`/risk` now shows 0 breached limits**, down from 6 violations. The L5 fallback
-  that dogged iterations 3–5 is **fixed and closed** (iteration 6). Remaining Q1 gap
-  is depth: the ask is five and five.
+  that dogged iterations 3–5 is **fixed and closed** (iteration 6). **The five-and-five
+  gap is CLOSED as of iteration 64** — the 2026-07-25 book is 5 long / 5 short, and the
+  short side took every independent idea the pool offered.
 - **Direction** EdgeScore = trend/regime/carry/value/sentiment, IC-weighted, with
   abstention + conviction sizing (ADR-0031/32/33).
 - **Q2 hype** HypeScore (volume/sentiment/|ρ|/momentum), **absolute and therefore
@@ -443,6 +444,50 @@ UI/UX pass clean at 1440/375 across all four pages, zero horizontal scroll, zero
 errors. **Deploy lesson also recorded:** run the pipeline from repo root with root
 `.vercel`/`.env`; a local run is legitimate (ADR-0069) and lands committed backend fixes
 without a Vercel deploy.
+
+### Loop iteration 64 (2026-07-25) — **Q1 is five and five**
+
+**The book is 5 long / 5 short for the first time, and the guard is fully green.**
+
+```
+2026-07-25   5 LONG / 5 SHORT   (10 positions)
+  long : XLE, SHY, SVXY, NUE, UNH
+  short: BABA, GDX, PDD, NOC, ARKK
+```
+
+Verified live at 1440px and 375px: `LONGS / SHORTS 5 / 5`, and Pool depth reads
+**"Shorts 12 candidates → 5 independent ideas → 5 held · The book took every independent
+idea available up to 5."** No shortfall block on either side — the book took everything
+reachable, including **ARKK**, the name declined across a dozen iterations.
+
+This file has carried *"Remaining Q1 gap is depth: the ask is five and five"* since
+iteration 7. **It is closed**, and worth being precise about how: not by lowering a
+threshold — the standing rule forbids manufacturing a fuller book — but because the short
+pool reached five independent ideas and the agent took all of them.
+
+**And [ADR-0071](adrs/0071-pool-metrics-are-not-book-metrics.md) is verified end-to-end.**
+The run under the corrected prompt published a thesis with **no false cap claim**: the
+`66.67% / 31.67pp` sentence is gone from the page, and the guard now passes all six
+checks including *"No false cap-breach claim in the 2026-07-25 thesis."* The negative
+control held — the check failed on the old book right up until the new one landed, then
+went green.
+
+**Also shipped: [ADR-0072](adrs/0072-persist-the-books-correlation-structure.md)** —
+persist the book's correlation *structure*, not just its flagged tail. `correlation_pairs`
+keeps only pairs ≥ ρ 0.70, so a well-diversified book leaves it empty and every surface
+can say only *"nothing crossed the flag"*. `correlation_summary` stores `max_abs_pair`
+(signed, both names) and `mean_abs_corr` over **every** pair, so a page can say *"the
+highest pair in this book is BABA/PDD +0.48"* — a measurement rather than an absence.
+
+Four choices worth keeping: the extreme is by **magnitude** (a −0.85 hedge is the most
+correlated pair in a book); the mean is of **absolute** values (+0.8 and −0.8 average to
+0.0 signed, describing a coupled book as uncorrelated — the sign-destroying error ADR-0042
+removed from HypeScore); an empty pair list returns `{}` **not zeros** (a one-position
+book has no pairs, which is not a correlation of zero); and it is wrapped so a failed
+measurement costs a panel, not a run. Stored in the existing `book_metrics` JSONB — **no
+migration** — with `correlation_pairs` untouched so no consumer changes meaning beneath it.
+
+**Populates next run**, since the change landed after this pipeline started.
 
 ### Loop iteration 63 (2026-07-25)
 

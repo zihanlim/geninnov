@@ -143,8 +143,18 @@
      pushing past the card edge — the card clips overflow, so on a 375px viewport
      the tail of e.g. "2 sessions · portfolio_returns.cumulative_return" was cut
      off with no scrollbar to reveal it. Wraps only when it must. */
+  /* The header takes the page tint rather than the card's white, so a panel
+     reads as a framed instrument instead of a floating rectangle. `.card`
+     already carries `overflow-hidden`, which is the load-bearing half — it
+     clips this fill flush to the 10px radius with no corner artefact.
+     `bg-bg-primary` deliberately, NOT `bg-bg-elevated`: measured in relative
+     luminance the step from the card is 1.0000 → 0.8987, which matches the
+     depth the outside comps get from their cool surface ramp, in the warm hue,
+     with zero new tokens. `bg-bg-elevated` is 0.9572 — less than half the step
+     for identical cost. No colour token moves, so chip-contrast is unaffected:
+     no chip lands on a card header. */
   .card-header {
-    @apply flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2.5 border-b border-border;
+    @apply flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2.5 border-b border-border bg-bg-primary;
   }
   .card-title {
     @apply text-[11px] uppercase tracking-[0.12em] text-text-secondary font-medium;

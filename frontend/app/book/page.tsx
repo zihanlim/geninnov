@@ -738,7 +738,11 @@ function BookPageInner() {
           )}
 
           {/* â”€â”€ Book header stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          {/* gap-2 (8px), against the 24px page gutter. A metric strip reads as
+              ONE instrument rather than six loose cards when its internal gap is
+              roughly a third of the gutter separating it from everything else —
+              the grouping is carried by the spacing ratio, not by a border. */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-6">
             <Stat
               label="Positions"
               value={String(rec.picks.length)}

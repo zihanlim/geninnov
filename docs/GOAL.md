@@ -204,6 +204,33 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 79 (2026-07-25) — UI audit: a beta the /risk page says reconciles, doesn't
+
+**Full visual pass of the live site (1440 + 375, all four pages) — clean except one real
+cross-check failure on /risk.** The per-position risk-attribution table asserts *"the
+contributions sum to the book's factor-model beta"* and prints the sum as **−0.19 (10 of 10
+measured)**. But the book's factor-model beta — the headline **Book Mkt −0.50** on the same
+page and on `/` — is a different number, so the stated identity is false by the page's own
+figures. A reviewer cross-checking the two would catch it (priority #2: one number that
+doesn't survive a poke discredits the rest).
+
+Root cause, verified against the DB and `book_metrics.py:271-281`: the two betas use different
+weightings. `book_metrics.beta_mkt` = `Σ(signed_w × β) / Σ|w|` over the **7 positions with
+R²≥0.10**, gross-normalised → −0.5029 (SHY, UNH, NOC are dropped for weak fit). The attribution
+sums `signed_weight × β` over **all 10**, net-weighted → −0.1906. Both are individually correct;
+the attribution's claim that its sum equals the factor-model beta is not. `/`'s "Factor tilt of
+book" already handles this honestly — it labels −0.50 *"Coverage 71% of gross · tilt describes
+the covered sleeve only"* (71% = 0.42/0.59). `/risk`'s attribution needs the same treatment:
+either sum over the covered sleeve to −0.50, or stop claiming the net-weighted −0.19 is the
+factor-model beta.
+
+**Flagged, not fixed** — `frontend/app/risk/page.tsx` and `frontend/lib/risk/analytics.ts` (where
+this renders) are both in the other session's active working tree right now, and reconciling it
+is a call about which beta is canonical, which belongs with whoever owns that surface. Editing
+their in-flight files to impose it would collide. `book_metrics.py` itself is committed and
+unchanged. Live book otherwise unchanged (5/5, corrected thesis, guard green); prediction-markets
+*"not cited in the book"* framing and the −0.50 sleeve caveat are both confirmed live.
+
 ### Loop iteration 78 (2026-07-25) — the disqualifier-distance render is now live
 
 **Shipped `95f18d61` (the per-position "distance to your own disqualifier" render), which the

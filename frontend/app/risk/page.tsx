@@ -55,6 +55,20 @@ import {
   type PositionRow,
 } from "@/lib/risk/riskBoard";
 import { fetchThemeHistories } from "@/lib/themeSignals";
+import SectionNav from "@/components/SectionNav";
+
+// Six anchored groups, in the order the page already rendered them — no panel
+// moved. Labels are nouns and carry no figure (SectionNav is tested for that:
+// a count here would be an untraceable number that goes stale against the panel
+// it labels).
+const RISK_SECTIONS = [
+  { id: "limits", label: "Limits" },
+  { id: "attribution", label: "Attribution" },
+  { id: "stress", label: "Stress" },
+  { id: "concentration", label: "Concentration" },
+  { id: "exposure", label: "Exposure" },
+  { id: "realised", label: "Realised" },
+];
 
 const ANALYTICS_COLUMNS =
   // picks: the published book, so this page can check that the positions it computes
@@ -615,6 +629,12 @@ function RiskPageInner() {
       )}
 
       {/* 1 — Risk-limit board: the scan-first "what is near/over" view. */}
+      {/* The nav sits BELOW the alert banners above. An alert is the one thing a
+          reader has to see before deciding where to jump; putting the nav above
+          it would let a reader navigate away from a breach they never saw. */}
+      <SectionNav items={RISK_SECTIONS} />
+
+      <section id="limits" aria-label="Limits and headline risk">
       <RiskLimitBoard
         loading={data.loading}
         rows={limitBoard}
@@ -633,6 +653,9 @@ function RiskPageInner() {
       />
 
       {/* 3 — Per-position risk attribution: "which trade to cut". */}
+      </section>
+
+      <section id="attribution" aria-label="Per-position and per-theme attribution">
       <PositionRiskAttribution
         loading={data.loading}
         rows={attribution}
@@ -658,6 +681,9 @@ function RiskPageInner() {
       />
 
       {/* 5 — What-if scenario builder: live browser-side estimate. */}
+      </section>
+
+      <section id="stress" aria-label="Stress scenarios">
       <WhatIfScenario
         loading={data.loading}
         positions={data.positions}
@@ -674,6 +700,9 @@ function RiskPageInner() {
 
       {/* 6 — Stress scenarios (persisted). */}
       <StressScenarios state={scenarioState} />
+      </section>
+
+      <section id="concentration" aria-label="Concentration">
 
       {/* 7 + 8 — The two concentration views, paired: which names move together,
           and how much room each cap has left. Both are collapsed <details>, so
@@ -693,12 +722,17 @@ function RiskPageInner() {
           diverging scale with a labelled −2.00 … +2.00 axis, and halving the
           column halves the resolution of the only chart on the page whose whole
           content is bar length. */}
+      </section>
+
+      <section id="exposure" aria-label="Factor exposure">
       <BookFactorTilt state={bookState} />
+      </section>
 
       {/* 10 + 11 — Shape and figures for the same series, side by side rather
           than 600px apart: the chart answers "what did the drawdown look like",
           the table answers "what exactly did we make on the 23rd". Reading one
           against the other was previously a scroll. */}
+      <section id="realised" aria-label="Realised performance">
       <div className="grid xl:grid-cols-2 gap-6 mb-6 items-start [&>*]:mb-0">
         <DrawdownChart
           loading={data.loading}
@@ -708,6 +742,7 @@ function RiskPageInner() {
         />
         <DailyPLHistory limit={30} />
       </div>
+      </section>
     </main>
   );
 }

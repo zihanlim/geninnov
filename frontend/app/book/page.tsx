@@ -15,6 +15,18 @@ import {
 } from "@/lib/themeSignals";
 import ThesisBlock from "@/components/research/ThesisBlock";
 import CollapsibleSection from "@/components/CollapsibleSection";
+import SectionNav from "@/components/SectionNav";
+
+// Four anchored groups, in the order the page already rendered them. Labels are
+// nouns and carry no figure — SectionNav is tested for the absence of digits,
+// because a count here would be a number a reader cannot trace and it would go
+// stale against the panel it labels.
+const BOOK_SECTIONS = [
+  { id: "holdings", label: "Holdings" },
+  { id: "solidity", label: "How solid" },
+  { id: "not-taken", label: "Not taken" },
+  { id: "audit", label: "Audit" },
+];
 import {
   AdvisoryDerivation,
   canRenderAdvisoryBody,
@@ -779,6 +791,12 @@ function BookPageInner() {
           </div>
 
           {/* â”€â”€ Book view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* The nav sits below the header banners and the summary tiles: the
+              tiles ARE the answer this page exists to give, so they are never
+              something a reader has to navigate to. */}
+          <SectionNav items={BOOK_SECTIONS} />
+
+          <section id="holdings" aria-label="Holdings and thesis">
           <div className="mb-6">
             <ThesisBlock
               advisory={
@@ -890,6 +908,9 @@ function BookPageInner() {
               sequence. Side by side they read as what they are: corroboration.
               lg:2-up then wide:3-up, since none of the three carries a table
               with a large min-width. */}
+          </section>
+
+          <section id="solidity" aria-label="How solid this book is">
           <div className="grid lg:grid-cols-2 wide:grid-cols-3 gap-6 items-start [&>*]:mb-0 mb-6">
           <PoolDepth
             ideas={rec?.independent_ideas ?? null}
@@ -909,6 +930,9 @@ function BookPageInner() {
           </div>
 
           {/* â”€â”€ Abstention roster â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          </section>
+
+          <section id="not-taken" aria-label="Cleared the screen but not taken">
           <ClearedNotTaken
             candidates={candidates}
             heldAssets={new Set((rec?.picks ?? []).map((p) => p.asset))}
@@ -944,6 +968,9 @@ function BookPageInner() {
           />
 
           {/* â”€â”€ Screening funnel (collapsed â€” audit detail) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          </section>
+
+          <section id="audit" aria-label="Audit detail">
           <CollapsibleSection
             title="Screening funnel"
             summary={
@@ -1025,6 +1052,7 @@ function BookPageInner() {
                 </div>
               </CollapsibleSection>
             )}
+          </section>
 
           <div className="mt-6 text-[12px] text-text-secondary">
             Stress scenarios, correlation structure and cap headroom for this

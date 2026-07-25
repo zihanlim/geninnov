@@ -204,6 +204,54 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 76 (2026-07-25) — **the corrected prompt is verified end-to-end**
+
+**A full `daily_refresh` ran against production and the guard passed all eight checks for
+the first time.** Every fix from iterations 71–75 is now visible in a genuine run, not just
+in tests:
+
+| the 07-25 book, before | after the run |
+|---|---|
+| *"an **inverted** curve"* | *"positive 10y-2y curve (**+34bps**)"* |
+| `HY credit OAS: 2.77 bps` | *"tight credit (**HY OAS 277bps**)"* |
+| *"**backwardation** (VIX3M-VIX = +1.93)"* | *"VIX **contango** (-1.96)"* |
+| *"market-neutral (Mkt −0.02)"* on a −0.50 book | *"lean value (positive HML via XLE and NUE)"* — direction in words, **no restated numbers** |
+| ten identical `beta_mkt -0.02` | **10 distinct**, r² on all ten, joined by the pipeline itself |
+| `correlation_summary` null | 45 pairs, max **SVXY/ARKK +0.65**, mean \|ρ\| 0.19 |
+
+Still **5 long / 5 short** (SHY, XLE, SVXY, NUE, UNH / GDX, BABA, NOC, ARKK, PDD), gross
+66.2%, net −2.4%, **0 cap violations**. The negative controls held throughout: every one of
+those checks failed on the old book and passes on the new one.
+
+**Then: a disqualifier you cannot locate is not falsifiable.** Q1 asks for the trades *and
+why*, and `counter_thesis` is where the *why* is made falsifiable — all ten picks carry a
+measurable trigger. But **six of ten name the same one**, *"wrong if X breaks its 200-day
+MA"*, and nothing on the page said what that moving average **is**. Compare XLE's, which
+names a level — *"wrong if WTI breaks below $80/bbl"* against WTI at $90.47, ~11% of room.
+
+`moving_average_context` now joins `{last, ma, pct_from_ma}` per pick:
+
+```
+NUE  long   247.56 vs 187.44 MA  = +32.1%      ARKK short   71.89 vs  77.73 MA  =  -7.5%
+UNH  long   420.74 vs 339.86 MA  = +23.8%      NOC  short  542.24 vs 604.91 MA  = -10.4%
+SHY  long    81.85 vs  81.49 MA  =  +0.4%      PDD  short   82.66 vs 104.90 MA  = -21.2%
+```
+
+**Every short sits below its trigger and every long above it** — 7–21% of room before the
+stated disqualifier fires, **except SHY at 0.4%**. That is the point: a reader now sees
+which position is near its line, which six identical sentences hid. Under 3% is coloured.
+[ADR-0078](adrs/0078-a-disqualifier-you-cannot-locate.md).
+
+**Honest about what this does not fix:** six picks choosing *"its 200-day MA"* is a generic
+answer, and stating the distance makes that visible rather than repairing it. Whether a
+trade whose disqualifier is a moving average has a thesis at all is the next question.
+
+**Blocked:** the Vercel deploy refused — `api-deployments-free-per-day`, more than 100 in
+24h. The **data** is live (all ten picks carry `ma_context` via the pure-function PATCH
+route), so the render appears as soon as a slot opens; the commit is `95f18d61`. And the
+Playwright pass was blocked for the **fourth consecutive firing** — the other session has
+held the shared Chrome profile the whole time. 613 backend tests green.
+
 ### Loop iteration 75 (2026-07-25)
 
 **Two things: the guard stopped hiding defects behind each other, and the corrected

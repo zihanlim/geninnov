@@ -112,7 +112,7 @@ flowchart TB
         T_FE["factor_exposures"]
         T_REG["regime_classifications"]
         T_RUNS["research_agent_runs<br/>(citations, retries, verified)"]
-        T_RECS["research_recommendations<br/>(picks, book_view,<br/>+ book_metrics, scenario_results,<br/>correlation_pairs, cap_utilisation,<br/>screening_funnel, lens — m022)"]
+        T_RECS["research_recommendations<br/>(picks, book_view,<br/>+ book_metrics, scenario_results,<br/>correlation_pairs, cap_utilisation,<br/>screening_funnel, lens — m022,<br/>risk_decomposition — m038)"]
         V_PFE[["portfolio_factor_exposure<br/><i>VIEW</i> — book-weighted FF5+UMD<br/>over factor_exposures × positions"]]
         T_NEWS["theme_news<br/>(collected headlines → L5)"]
         T_DISC["discovered_themes<br/>(LDA∩embedding shadow tiers)"]
@@ -221,7 +221,7 @@ flowchart TB
     %% ───────── L5 writes ─────────
     N8A -->|advisory_derivation| T_RECS
     N8 -->|research_recommendations| T_RECS
-    N9 -->|book_metrics, scenario_results,<br/>correlation_pairs, cap_utilisation| T_RECS
+    N9 -->|book_metrics, scenario_results,<br/>correlation_pairs, cap_utilisation,<br/>risk_decomposition| T_RECS
     N2 -. "screening_funnel" .-> T_RECS
     T_PP --> V_PFE
     T_FE --> V_PFE
@@ -379,7 +379,7 @@ L7: frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs}.tsx
 | `discovered_themes` | Shadow-mode theme-discovery candidates (LDA∩embedding agreement; migration 021, ADR-0007) | run_date, label, terms JSONB, tier (2/3), methods, status (`shadow`/`promoted`/`rejected`) |
 | `backtest_results` | Every measured property of the system, keyed by `test_name`: HypeScore IC (ADR-0022), EdgeScore IC (ADR-0044), frozen-input book replication (ADR-0050), and the L5 acceptance battery (ADR-0055). Anon-readable (migration 028), surfaced on `/method` via `SignalValidation` ("Does HypeScore actually predict returns?") — currently reports NOT-YET-VALIDATED (0 usable obs; history accruing). **No unique constraint on (test_name, metric_name, end_date)** — writers delete the day's rows then insert, because `upsert(on_conflict=...)` raises 42P10 | test_name (`hype_ic`, `edge_ic`, `book_replication`, `l5_eval_battery`), metric_name, realized_value, pass, notes JSONB |
 | `research_agent_runs` | L5 agent run audit trail; citation guardrail now value-reconciles (ADR-0019) | run_date, prompt_version, model_id, input_snapshot, citations, verified, retries |
-| `research_recommendations` | Q1 output (picks + book view + structured book analytics) | run_date, picks, book_view, book_risks, **`advisory_derivation` JSONB** (T18 strict; fallback cannot be `verified`), and from migration 022 ([ADR-0024](docs/adrs/0024-persist-book-analytics-not-prompt-strings.md)): **`book_metrics`**, **`scenario_results`**, **`correlation_pairs`**, **`cap_utilisation`**, **`screening_funnel`**, `lens`; plus `candidate_correlations` (033) and **`independent_ideas`** (036, [ADR-0048](docs/adrs/0048-count-independent-ideas-not-candidates.md)). Note: `book_metrics_summary` / `scenario_table` never existed as columns — the frontend selected them and 400'd |
+| `research_recommendations` | Q1 output (picks + book view + structured book analytics) | run_date, picks, book_view, book_risks, **`advisory_derivation` JSONB** (T18 strict; fallback cannot be `verified`), and from migration 022 ([ADR-0024](docs/adrs/0024-persist-book-analytics-not-prompt-strings.md)): **`book_metrics`**, **`scenario_results`**, **`correlation_pairs`**, **`cap_utilisation`**, **`screening_funnel`**, `lens`; plus `candidate_correlations` (033), **`independent_ideas`** (036, [ADR-0048](docs/adrs/0048-count-independent-ideas-not-candidates.md)) and **`risk_decomposition`** (038, [ADR-0082](docs/adrs/0082-euler-risk-decomposition-on-the-final-book.md) — Euler ex-ante covariance VaR, decomposes by name; distinct from realised `portfolio_risk.var_95`). Note: `book_metrics_summary` / `scenario_table` never existed as columns — the frontend selected them and 400'd |
 | `portfolio_factor_exposure` | **VIEW** (migration 022) — book-level FF5+UMD tilt, one row per portfolio `run_date` | run_date, beta_mkt…beta_umd (signed-weighted so shorts reduce exposure), `coverage` (share of gross weight with R²≥0.10), assets_covered, assets_total. Queried by `/` and `/portfolio`, which previously 404'd against a table that never existed |
 | `pipeline_runs` | Per-stage pipeline execution audit (T10, migration 012) | run_id, run_date, stage, status (`success`/`failure`/`partial`), duration_s, source_freshness JSONB, started_at, finished_at, error |
 | `portfolio_cumulative_return` | Since-inception compounded cumulative return, one row per as_of date (T14, migration 014) | as_of (PK), inception_date, cumulative_value, compounded (always TRUE), daily_returns_count, source_first_run_id, source_last_run_id, computed_at |

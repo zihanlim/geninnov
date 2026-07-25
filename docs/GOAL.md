@@ -204,6 +204,30 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 84 (2026-07-25) — consolidation: closed the ARCHITECTURE doc-sync, held the line elsewhere
+
+**A deliberately light turn — the high-value visible work is all blocked, and the honest move was
+to consolidate rather than force a change into a file another session is mid-rewrite on.** Step 4
+of the Euler wiring (the render that would retire the beta finding) still needs `frontend/app/risk/
+page.tsx` and `analytics.ts`, both **still in the other session's 46-file WIP** — editing either
+collides, and deploying to ship a render would push their intermediate rewrite live. So no Step 4.
+
+What I did land, non-colliding:
+- **Closed the ARCHITECTURE.md doc-sync deferred in iteration 83** (it was being edited live then;
+  clean now). The `research_recommendations` mermaid node, the L5→table persist edge, and the prose
+  Supabase Tables row all now carry `risk_decomposition — m038` / ADR-0082. The diagram no longer
+  lies about what the row holds.
+- **Verified the Euler data is intact and correct on the live book** — `portfolio_vol` 0.0838,
+  Σ contribution_to_vol = portfolio_vol to 1e-9, 10/10 priced. Last iteration's PATCH survived.
+- **Full UI/UX pass, all clean** — /book, /risk, /method at 1440 and 375, zero horizontal scroll,
+  zero console errors, no NaN; the 5/5 book, corrected thesis and VERIFIED badge all intact.
+
+Still owed, all gated on the other session's frontend settling (not on me): **Step 4** (Euler
+render + the beta-column decision); **ADR-0082 in `docs/adrs/README.md`** (index still WIP);
+the **EdgeScore stale-formula** and **−0.19/−0.50 beta-label** fixes; and a minor **derivation-drawer
+rounding** note (TOTAL 0.6 from 1-dp components vs HypeScore 56 — `ThemeDerivationDrawer.tsx` is
+clean but shipping needs a deploy of their rewrite). `PROGRESS.md` still BOM/mojibake corrupted.
+
 ### Loop iteration 83 (2026-07-25) — wired and persisted the Euler risk decomposition (steps 2–3)
 
 **Continued the handoff: the book now carries a risk decomposition whose contributions sum to

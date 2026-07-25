@@ -75,28 +75,27 @@ def test_book_metrics_equal_long_short_nets_to_zero():
     assert bm.short_weight == 0.10
 
 
-def test_book_metrics_factor_tilts_value_weighted():
-    # TLT has high beta_mkt but short direction should flip sign
+def test_book_metrics_factor_tilts_are_signed_and_direction_flips_shorts():
+    # A SIGNED value-weighted tilt: signed_weight × signed_beta / Σ|weight|. The short
+    # both flips the sign of a positive-beta contribution and, on a negative-beta name,
+    # adds. (weight is passed UNSIGNED — direction carries the sign, matching the
+    # net_exposure = long_w − short_w convention.)
     picks = [
-        _pick("SPY", "long",  0.50),   # long 50% SPY (beta_mkt=1.0)
-        _pick("TLT", "short", 0.50),   # short 50% TLT (beta_mkt=-0.30 in reality, but we test sign flip)
+        _pick("SPY", "long",  0.50),   # long 50% SPY
+        _pick("TLT", "short", 0.50),   # short 50% TLT
     ]
     factor_exp = {
         "SPY": _fe(r2=0.80, beta_mkt=1.0, beta_hml=0.1),
         "TLT": _fe(r2=0.60, beta_mkt=-0.30, beta_hml=0.4),
     }
     bm = compute_book_metrics(picks, factor_exp, 100_000_000.0)
-    # Tilts are unsigned (direction applied separately in scenario analysis).
-    # total_weighted = Σ|weight| per factor × n_factors: SPY 3 factors × 0.5 = 1.5;
-    # TLT 2 factors × 0.5 = 1.0 → total = 2.5. But the code accumulates inside the
-    # factor loop, so each pick's weight is counted per-factor: SPY contributes 3.0
-    # (0.5 × 3 factors), TLT contributes 1.5 (0.5 × 3 factors) → total = 4.5.
-    # Wait, re-read: the loop is for each factor, weight added each time →
-    # SPY: 6 factors × 0.5 = 3.0; TLT: 6 factors × 0.5 = 3.0 → total = 6.0.
-    # Unsigned mkt: (0.5*1.0 + 0.5*0.3) / 6.0 = 0.65/6.0 = 0.1083
-    assert abs(bm.book_beta_mkt - 0.108) < 0.01
-    # HML: (0.5*0.1 + 0.5*0.4) / 6.0 = 0.25/6.0 = 0.0417
-    assert abs(bm.book_beta_hml - 0.0417) < 0.01
+    # den = Σ|weight| = 1.0 (ONCE per pick, not ×6 as the old inner-loop bug did).
+    # MKT: (+0.5·1.0) + (−0.5·−0.30) = 0.50 + 0.15 = 0.65 → shorting a negative-beta
+    #      name ADDS market exposure.
+    assert abs(bm.book_beta_mkt - 0.65) < 0.01
+    # HML: (+0.5·0.1) + (−0.5·0.4) = 0.05 − 0.20 = −0.15 → shorting a high-HML name
+    #      pulls the book's value tilt NEGATIVE. The old abs(beta) kept it positive.
+    assert abs(bm.book_beta_hml - (-0.15)) < 0.01
 
 
 def test_book_metrics_ignores_low_r2_assets():
@@ -109,10 +108,9 @@ def test_book_metrics_ignores_low_r2_assets():
         "BULL": _fe(r2=0.05, beta_mkt=5.0),  # high beta but unreliable
     }
     bm = compute_book_metrics(picks, factor_exp, 100_000_000.0)
-    # Only SPY contributes (BULL excluded due to R² < 0.10)
-    # SPY: 6 factors × weight 0.50 each → total_weighted = 3.0
-    # Unsigned: (0.5 * 1.0) / 3.0 = 0.167
-    assert abs(bm.book_beta_mkt - 0.167) < 0.01
+    # Only SPY contributes (BULL excluded, R² < 0.10). den = Σ|weight| over the covered
+    # sleeve = 0.50 → (0.5·1.0)/0.5 = 1.0. Coverage is 50% of gross.
+    assert abs(bm.book_beta_mkt - 1.0) < 0.01
 
 
 # ─────────────────────────────────────────────────────────────────────────────

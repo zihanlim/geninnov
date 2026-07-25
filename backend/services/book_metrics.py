@@ -196,12 +196,12 @@ MIN_ADV_Millions = 2.0            # exclude names with ADV < $2M/day
 @dataclass
 class BookMetrics:
     """Value-weighted factor tilts of the full book."""
-    book_beta_mkt: float          # unsigned — direction applied separately in scenario analysis
-    book_beta_smb: float          # unsigned
-    book_beta_hml: float          # unsigned
-    book_beta_rmw: float          # unsigned
-    book_beta_cma: float          # unsigned
-    book_beta_umd: float          # unsigned
+    book_beta_mkt: float          # SIGNED value-weighted tilt (shorts reduce exposure)
+    book_beta_smb: float          # SIGNED
+    book_beta_hml: float          # SIGNED
+    book_beta_rmw: float          # SIGNED
+    book_beta_cma: float          # SIGNED
+    book_beta_umd: float          # SIGNED
     gross_exposure: float          # sum of abs(weights), 0-200%
     net_exposure: float           # sum of signed weights, -100 to +100%
     long_weight: float            # sum of long notionals / total_capital
@@ -255,14 +255,26 @@ def compute_book_metrics(
         if r2 < 0.10:
             continue
 
+        # SIGNED value-weighted tilt: (±|weight| by direction) × SIGNED beta, so a short
+        # in a positive-beta name (and a long in a negative-beta name) REDUCES the book's
+        # exposure to that factor — which is what a "tilt" means. Three things were wrong:
+        #   1. `weight` here is UNSIGNED (net_exposure below is long_w − short_w, which
+        #      only works if shorts are positive), so `weight × beta` treated every short
+        #      as a long. Sign it by direction.
+        #   2. `abs(beta)` discarded factor direction, so a factor like SMB came out with
+        #      the wrong sign on the live book.
+        #   3. `total_weighted` was summed INSIDE this per-factor loop — six times per
+        #      pick — so every tilt came out a sixth of its true size, which is why /risk
+        #      read the book "close to factor-neutral" when it was not.
+        # The "unsigned because scenario_analysis applies direction" note was stale:
+        # scenario_analysis reads per-pick betas, never these fields.
+        signed_w = -abs(weight) if p.get("direction") == "short" else abs(weight)
         for f in factors:
-            beta = abs(fe.get(f, 0.0) or 0.0)
-            # Unsigned: direction is stored separately as net_exposure
-            # (scenario_analysis applies direction once using net_exposure)
-            weighted_factors[f] += weight * beta
-            total_weighted += abs(weight)
+            beta = fe.get(f, 0.0) or 0.0
+            weighted_factors[f] += signed_w * beta
+        total_weighted += abs(weight)
 
-    # Normalize by total weight (unsigned — direction applied in scenario analysis)
+    # Normalize by gross of the covered sleeve (sum of |weight|), once per pick.
     book_tilts = {}
     if total_weighted > 0:
         for f in factors:

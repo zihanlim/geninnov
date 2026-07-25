@@ -149,17 +149,20 @@ block:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 560 backend + 144 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 563 backend + 144 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
   **All six stages report to `pipeline_runs`** since iteration 14 — L1 and L4 were
   silent, so `/method` said "not instrumented" while the status bar said "4/4
   succeeded".
-- **Q1 book** — **5 long / 4 short across 9 positions** (XLE, SVXY, NUE, UNH, JPM
-  long; SLV, BABA, PDD, NOC short) on the 2026-07-25 run, +1.4% net at 59.4% gross,
-  market beta −0.13 (signed, value-weighted). Roster turnover varies run to run
-  (20% this run — 8 of 9 held through), so treat any specific list as one draw.
+- **Q1 book** — **5 long / 5 short across 10 positions** (XLE, SHY, SVXY, NUE, UNH
+  long; BABA, GDX, PDD, NOC, ARKK short) on the 2026-07-25 run, **net −5.3% (leans
+  short)** at 59.3% gross, market beta −0.50 (signed, value-weighted, identical on the
+  home tilt and `/risk`). The fifth short (ARKK) surfaced once the regime unit bug was
+  fixed (iteration 72 below) — the persistent four-short book was partly an artefact of
+  a spurious risk-on tilt. Roster turns over run to run, so treat any specific list as
+  one draw.
   **Sized by conviction since iteration 38** (ADR-0053) — it had been HypeScore-weighted
   while every surface claimed otherwise. The model is `weight ∝ conviction`
   (`|EdgeScore|/vol`, vol-floored) normalised across the **whole book**, *then* the
@@ -167,10 +170,9 @@ Live at https://andromeda-analytics.vercel.app · 560 backend + 144 frontend tes
   the **US geography cap sits at its 35% limit**, so every US name (incl. the NOC
   short) is scaled to the same `|weight|/conviction` while the non-US shorts are not,
   and `/risk` reads that geo cap as *near*. Per-row rerun-stability markers say which
-  names survived identical-input reruns and which did not (ADR-0057). **The long side
-  is at Q1's five**; the
-  short side holds four of the five independent ideas that existed, and `/book`'s Pool
-  depth panel says so in warning colour rather than excusing it. Almost every name
+  names survived identical-input reruns and which did not (ADR-0057). **Both sides are
+  now at Q1's five** — the short side took every independent idea the pool offered, and
+  `/book`'s Pool depth panel shows 5 held on each. Almost every name
   comes from a theme **below** the attention gate (ADR-0046). The composition can move
   hard run to run — the turnover panel reports each run's figure (20% this run) — so this
   is one draw from the pool, not a settled answer. **One portfolio everywhere** since iteration 10
@@ -182,8 +184,10 @@ Live at https://andromeda-analytics.vercel.app · 560 backend + 144 frontend tes
   iteration 9 (ADR-0039, scope by attention). Genuinely cap-bound since iteration 7
   — **`/risk` now shows 0 breached limits**, down from 6 violations. The L5 fallback
   that dogged iterations 3–5 is **fixed and closed** (iteration 6). **The five-and-five
-  gap is CLOSED as of iteration 64** — the 2026-07-25 book is 5 long / 5 short, and the
-  short side took every independent idea the pool offered.
+  gap is CLOSED** — the 2026-07-25 book is 5 long / 5 short. The fifth short had been
+  suppressed by a regime unit bug (percent fed to bp-calibrated thresholds) that stood
+  the book ~30% too risk-on; fixing it (iteration 72) surfaced ARKK and tilted the book
+  net short, as a corrected late-cycle read should.
 - **Direction** EdgeScore = trend/regime/carry/value/sentiment, IC-weighted, with
   abstention + conviction sizing (ADR-0031/32/33).
 - **Q2 hype** HypeScore (volume/sentiment/|ρ|/momentum), **absolute and therefore
@@ -199,6 +203,43 @@ Live at https://andromeda-analytics.vercel.app · 560 backend + 144 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 72 (2026-07-25)
+
+**Cross-checking the macro regime — a core input to every EdgeScore — turned up a
+unit-mismatch bug, and fixing it closed the Q1 five-and-five gap that had stood for
+dozens of iterations. The persistent fourth-short book was partly an artefact.**
+
+The yield-curve slope (DGS10−DGS2) and HY OAS (BAMLH0A0HYM2) arrive from FRED in
+**percent** (0.34, 2.77), but every threshold in the classifier and in `risk_appetite`
+is calibrated in **basis points** (`yc < -50`, "HY OAS in bp: 350"). So the curve and
+credit rules were unreachable — 0.34 is never < −50, 2.77 never > 350 — and the two
+headline inputs of a credit-cycle model were dead: cycle fell to real-rate alone,
+sentiment to VIX/breadth alone. Worse, `risk_appetite`'s HY term saturated near +1,
+inflating the continuous appetite to **0.565** (the persisted value, to the digit)
+versus a correct **0.433** — a standing **~30% risk-on tilt on `regime_bias` for every
+asset**. Callers now convert to bp; persisted values stay percent for the UI.
+
+Verified live by re-running the pipeline on the same Saturday data: `risk appetite
++0.433` in the log, discrete label unchanged (**late/risk-on**, no inversion). The
+corrected, less-risk-on regime made the fifth short reachable — the book went **5 long /
+4 short (+1.4% net) → 5 long / 5 short (−5.3% net)**, taking ARKK, the innovation short
+it had abstained on for iterations. (The concurrent session was fixing the L5 prompt in
+the same window, so the regime correction is *a* cause of the 5/5, not provably the only
+one; but it is verified to have removed a real ~30% risk-on bias.) Book-of-record
+reconciled (10 held = 10 published), 0 cap breaches, tilts identical on home and `/risk`
+(Mkt −0.50). Three unit tests pin it, incl. a percent-scale inversion that reaches
+"recession" only via the conversion. UI/UX pass clean at 1440/375, zero horizontal
+scroll, zero console errors.
+
+**Live discrepancy to watch (same root as ADR-0071).** The `/book` thesis still says "at
+market-neutral (Mkt −0.02)" while both panels read **−0.50** for the sized book: the L5
+agent writes the thesis from the *candidate-pool* `book_metrics` (equal-weighted, before
+sizing), and `finalise_book_analytics` recomputes on the final book *after*. The
+concurrent session's [ADR-0071](adrs/0071-pool-metrics-are-not-book-metrics.md) fixed the
+false *cap* claim from this same gap; the factor-tilt claim is the next manifestation and
+is not yet corrected on the live thesis. Defer to that workstream rather than duplicate.
+563 backend (+3) + 144 frontend.
 
 ### Loop iteration 71 (2026-07-25)
 

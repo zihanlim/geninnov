@@ -204,26 +204,6 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
-### Loop iteration 77 (2026-07-25) — corrected thesis confirmed live (one draw of it)
-
-Ran `daily_refresh` end-to-end to land the ADR-0073 fix on the live book. The reasoning: the
-07-25 thesis still closed *"market-neutral (Mkt −0.02)"* on a −0.50 book, the ADR-0073 guard
-was **red by design** until a run published under the corrected prompt, and the weekday-only
-cron (`30 21 * * 1-5`) does not fire on a Saturday — so the flaw and the red guard would have
-sat live all weekend. The run cleared it: the thesis now reads *"directionally balanced… lean
-value (positive HML via XLE and NUE)… away from low-quality growth (negative RMW via ARKK
-short)"* — direction in words, no restated numbers — and the factor-tilt guard scan comes back
-clean (zero factor-name-followed-by-a-number matches). **Verified live** at 1440/375: corrected
-thesis rendered under the VERIFIED badge, zero horizontal scroll, zero console errors.
-
-The concurrent L5 workstream landed the same fix in parallel (iteration 76 below, under its
-newer *withhold-the-numbers* prompt), so this run was partly redundant — it overwrote that
-entry's book with an equivalent draw. **Both produce the identical 10-name roster** (SHY, XLE,
-SVXY, NUE, UNH / GDX, BABA, NOC, ARKK, PDD) with per-pick betas, `counter_thesis`, `ma_context`
-and a 45-pair correlation summary all present; the live book is one draw of it — **gross 59.3%,
-net −5.4%, worst −1.99% (melt-up), 0 cap violations, guard green** — sized slightly tighter than
-that entry's 66.2% / −2.4%, which is the run-to-run turnover the pool already warns of.
-
 ### Loop iteration 77 (2026-07-25) — **the previous iteration's evidence was stale**
 
 **Re-derived the counter-theses against the live book and found ADR-0078 was describing a

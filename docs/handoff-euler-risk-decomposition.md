@@ -43,13 +43,22 @@ shared frame gives byte-identical correlations.
 
 ## Step 2 — wire it
 
-Call `decompose_risk` in `finalise_book_analytics`, after `size_positions` has produced final
-weights. Signed weights come from the picks the same way `compute_book_metrics` reads them.
+**✅ DONE (iteration 83).** `finalise_book_analytics` calls `decompose_risk` after the
+correlation block, signed weights derived from the picks as `compute_book_metrics` does,
+reusing the hoisted frame (criterion #4), wrapped in try/except-and-continue. Live book:
+portfolio_vol 8.38%, Σ contribution_to_vol = portfolio_vol to 1e-9, SVXY/SHY show negative
+(hedge) contributions. `test_finalise_book_analytics_wires_euler_decomposition` pins the
+identity and the single-fetch reuse.
 
-Wrap it in the same `try/except`-and-continue as the `correlation_summary` block. A failed
-decomposition should cost a panel, not the run.
+_Original:_ Call `decompose_risk` in `finalise_book_analytics`, after `size_positions` has
+produced final weights. Signed weights come from the picks the same way `compute_book_metrics`
+reads them. Wrap it in the same `try/except`-and-continue as the `correlation_summary` block.
 
 ## Step 3 — persist
+
+**✅ DONE (iteration 83).** Migration `038_risk_decomposition.sql` adds the JSONB column (applied
+to prod via psycopg2); `_persist_to_supabase` writes `risk_decomposition` alongside `book_metrics`.
+The live book's row was back-filled by recompute + PATCH so the data is present ahead of the render.
 
 **One JSONB column, not a new table.** Follow `supabase/migrations/022_book_analytics_surface.sql`
 exactly — it is the precedent for every other analytic on this row:

@@ -1120,6 +1120,8 @@ def test_finalise_book_analytics_tolerates_none_scenario_return(monkeypatch):
     """Regression: a scenario whose estimated_book_return is None (a pick with no
     factor beta and no direct shock) must not crash the L5 stage — surfaced by
     the GitHub Action run whose fresh factor data produced an unestimable scenario."""
+    import pandas as pd
+    import backend.services.book_metrics as _bm
     from types import SimpleNamespace
     monkeypatch.setattr(q1_agent, "compute_book_metrics",
                         lambda **k: SimpleNamespace(gross_exposure=1.0, net_exposure=0.0))
@@ -1130,11 +1132,59 @@ def test_finalise_book_analytics_tolerates_none_scenario_return(monkeypatch):
                         lambda s: [{"estimated_book_return": None}, {"estimated_book_return": -0.05}])
     monkeypatch.setattr(q1_agent, "correlation_pairs_to_dict", lambda c: [])
     monkeypatch.setattr(q1_agent, "cap_utilisation", lambda bm, picks: {"violations": []})
+    # The hoisted-frame fetch and the Euler decomposition would otherwise hit yfinance.
+    monkeypatch.setattr(_bm, "fetch_pick_returns", lambda *a, **k: pd.DataFrame())
 
     state = _make_state(picks=[{"asset": "FXI", "direction": "long", "weight": 0.5}])
     out = q1_agent.finalise_book_analytics(state)   # must not raise
     # None estimate is filtered from the worst-case calc; the data still preserves it.
     assert out["scenario_results_final"][0]["estimated_book_return"] is None
+    # An empty frame yields no covariance, so the decomposition is None (not zeros).
+    assert out["risk_decomposition_final"] is None
+
+
+def test_finalise_book_analytics_wires_euler_decomposition(monkeypatch):
+    """Step 2 of the Euler handoff: finalise_book_analytics runs decompose_risk on the
+    final sized book, its contributions sum to portfolio_vol, and it REUSES the single
+    hoisted frame — fetch_pick_returns is called exactly once (acceptance criterion #4)."""
+    import math
+    import pandas as pd
+    import backend.services.book_metrics as _bm
+    from types import SimpleNamespace
+
+    idx = pd.date_range("2024-01-01", periods=120).date
+    frame = pd.DataFrame({
+        "AAA": [math.sin(i / 6) for i in range(120)],
+        "BBB": [math.cos(i / 7) for i in range(120)],
+        "CCC": [math.sin(i / 11) + 0.4 * math.cos(i / 4) for i in range(120)],
+    }, index=idx)
+    calls = {"n": 0}
+
+    def _one_frame(*a, **k):
+        calls["n"] += 1
+        return frame
+
+    monkeypatch.setattr(_bm, "fetch_pick_returns", _one_frame)
+    monkeypatch.setattr(q1_agent, "compute_book_metrics",
+                        lambda **k: SimpleNamespace(gross_exposure=1.0, net_exposure=0.1))
+    monkeypatch.setattr(q1_agent, "compute_correlation_matrix", lambda *a, **k: [])
+    monkeypatch.setattr(q1_agent, "run_scenario_analysis", lambda **k: [])
+    monkeypatch.setattr(q1_agent, "book_metrics_to_dict", lambda bm: {})
+    monkeypatch.setattr(q1_agent, "scenario_results_to_dict", lambda s: [])
+    monkeypatch.setattr(q1_agent, "correlation_pairs_to_dict", lambda c: [])
+    monkeypatch.setattr(q1_agent, "correlation_summary", lambda p: {})
+    monkeypatch.setattr(q1_agent, "cap_utilisation", lambda bm, picks: {"violations": []})
+
+    state = _make_state(picks=[
+        {"asset": "AAA", "direction": "long", "weight": 0.4},
+        {"asset": "BBB", "direction": "long", "weight": 0.3},
+        {"asset": "CCC", "direction": "short", "weight": 0.3},
+    ])
+    out = q1_agent.finalise_book_analytics(state)
+    rd = out["risk_decomposition_final"]
+    assert rd is not None, "decomposition should be produced from a 3-name, 120-session frame"
+    assert abs(sum(p["contribution_to_vol"] for p in rd["positions"]) - rd["portfolio_vol"]) < 1e-9
+    assert calls["n"] == 1, f"frame must be hoisted once, was fetched {calls['n']}x"
 
 
 def test_make_factor_table_tolerates_null_betas():

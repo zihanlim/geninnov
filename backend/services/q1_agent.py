@@ -2375,6 +2375,31 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
         print(f"[finalise] candidate correlation skipped "
               f"({exc.__class__.__name__}): {exc}")
         state["candidate_correlations_final"] = {}
+
+    # Euler risk decomposition on the FINAL sized book (step 2 of the handoff): ex-ante
+    # covariance volatility that decomposes by name, with Σ contribution_to_vol = portfolio_vol
+    # exactly. Reuses the frame hoisted above — no new fetch (acceptance criterion #4). A
+    # position that hedges the book shows a NEGATIVE contribution, which is the point; it must
+    # never be rendered as a share-of-whole. This is ex-ante and NOT the realised
+    # portfolio_risk.var_95 — separate column, separate label at render. A failed decomposition
+    # costs a panel, not the run.
+    try:
+        from .risk_decomposition import decompose_risk
+        signed_weights = {
+            p["asset"]: (
+                -abs(p.get("weight", 0.0)) if p.get("direction") == "short"
+                else abs(p.get("weight", 0.0))
+            )
+            for p in picks if p.get("asset")
+        }
+        state["risk_decomposition_final"] = decompose_risk(
+            signed_weights, shared_returns, confidence=0.95
+        )
+    except Exception as exc:
+        print(f"[finalise_book_analytics] risk decomposition skipped "
+              f"({exc.__class__.__name__}): {exc}")
+        state["risk_decomposition_final"] = None
+
     state["cap_utilisation_final"] = cap_utilisation(bm, picks)
 
     # Guard against a None scenario return (a pick with no factor beta AND no
@@ -2691,6 +2716,9 @@ def _persist_to_supabase(state: Q1State) -> bool:
             "correlation_pairs": state.get("correlation_pairs_final") or [],
             "candidate_correlations": state.get("candidate_correlations_final") or {},
             "cap_utilisation": state.get("cap_utilisation_final"),
+            # Euler ex-ante risk decomposition (migration 038). None when <60 overlapping
+            # sessions or <2 priced names — the render says "unavailable", never zeros.
+            "risk_decomposition": state.get("risk_decomposition_final"),
             "screening_funnel": state.get("screening_funnel") or [],
             # ADR-0048: the same pool-depth measurement the agent reasoned over, so
             # /book answers "why not five and five?" with that number rather than

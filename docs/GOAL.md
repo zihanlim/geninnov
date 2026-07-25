@@ -204,6 +204,41 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 83 (2026-07-25) — wired and persisted the Euler risk decomposition (steps 2–3)
+
+**Continued the handoff: the book now carries a risk decomposition whose contributions sum to
+the total** — which removes the *false reconciliation* half of the −0.19/−0.50 finding (79/81),
+where `signed_weight × β_mkt` claimed to sum to the book beta but summed to nothing. Note the
+limit: Euler contributions sum to σ_p by construction, but σ_p is **volatility, not beta** — the
+deeper half of that finding (headline beta normalised over 7 R²-qualifying names vs attribution
+netting all 10) is a *beta* question this does not answer. `decompose_risk` (the pure function + 21 tests the
+other session left on main) is now called in `finalise_book_analytics`, reusing the frame
+hoisted in step 1 — no extra fetch. Persisted to `risk_decomposition` (migration **038**, applied
+to prod via psycopg2; `_persist_to_supabase` writes it). All backend files were clean, not in the
+other session's 56-file frontend WIP.
+
+**Live and verified** (recompute + PATCH, no deploy): portfolio_vol **8.38%**, ex-ante VaR₉₅
+**13.8%**, and **Σ contribution_to_vol = portfolio_vol to 1e-9** — the Euler identity holds exactly.
+BABA/PDD/GDX drive the risk; **SVXY and SHY carry NEGATIVE contributions — they hedge the book**,
+the one thing the beta column could never show and a share-of-whole chart cannot express
+([ADR-0060](adrs/0060-a-hedge-is-negative-not-a-slice.md)). 10/10 priced, 192 sessions. This is
+ex-ante covariance VaR, distinct from the realised `portfolio_risk.var_95` — separate column,
+separate label, never overwriting it. +2 tests (identity + single-fetch reuse), **624 backend pass**.
+[ADR-0082](adrs/0082-euler-risk-decomposition-on-the-final-book.md).
+
+**Step 4 — the render — is the remaining work.** Re-source `PositionRiskAttribution.tsx` to feed
+`ContribBar` from `contribution_to_vol`, add the book-level `portfolio_vol`/`portfolio_var`/
+`diversification_ratio` line and the dropped-count. It waits on the other session's active `/risk`
+WIP (`page.tsx` computes the `rows=` prop; `analytics.ts`), so the data lands ahead of the surface
+rather than colliding. **Whoever finishes it must also decide the beta question** (per the note
+above): whether a `signed_weight × β_mkt` column stays at all beside the volatility one, or the
+book-beta figure is reconciled separately — the volatility decomposition does not close it. Until
+then, the beta mismatch stays live. Doc-sync deferred for the same reason: `ARCHITECTURE.md` (add `risk_decomposition —
+m038` to the `research_recommendations` node) and `docs/adrs/README.md` (index ADR-0082) are both
+in the other session's live WIP this turn — to add when they settle. `PROGRESS.md` still BOM/mojibake
+corrupted (fourth iteration). UI pass clean, 1440/375, no scroll, no console errors (site unchanged;
+backend + data-layer change).
+
 ### Loop iteration 82 (2026-07-25) — hoisted the returns frame (step 1 of the Euler wiring)
 
 **Picked up the handoff the other session left** (`docs/handoff-euler-risk-decomposition.md`):

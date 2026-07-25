@@ -250,14 +250,65 @@ def test_format_book_metrics_live():
         computed=True,
     )
     out = format_book_metrics_summary(bm, [("SPY", "QQQ", 0.95)])
-    assert "Gross exposure" in out
+    assert "Pool gross" in out
     assert "120.0%" in out or "120%" in out
-    assert "Mkt=+0.65" in out
-    assert "UMD=+0.20" in out
-    assert "CAP VIOLATIONS" in out
-    assert "Rates (45%" in out
-    assert "SPY (25%" in out
     assert "HIGH CORRELATION" in out
+    # Crowding survives — it is what the model legitimately needs from this block.
+    assert "Rates" in out and "China" in out
+
+
+def test_the_summary_never_calls_itself_the_book(): 
+    """ADR-0077. ADR-0071 relabelled the surrounding prompt block, and this function
+    prepended `=== BOOK METRICS (computed, not estimated) ===` two lines below it — the
+    correction contradicted inside the same block by the string it was correcting."""
+    bm = BookMetrics(
+        book_beta_mkt=-0.02, book_beta_smb=0.18, book_beta_hml=0.27,
+        book_beta_rmw=0.35, book_beta_cma=-0.13, book_beta_umd=0.0,
+        gross_exposure=1.0, net_exposure=0.0, long_weight=0.5, short_weight=0.5,
+        sector_weights={"Energy": 0.2}, geo_weights={"US": 0.6667},
+        sector_violations=[], geo_violations=["US 66.67% — 31.67pp over its 35% cap"],
+        weight_violations=[], high_correlation_pairs=[], computed=True,
+    )
+    out = format_book_metrics_summary(bm, [])
+    assert "BOOK METRICS" not in out
+    assert "Book factor tilts" not in out
+    assert "pool" in out.lower()
+
+
+def test_pool_factor_tilts_are_withheld_not_relabelled():
+    """A caveat competes with a number and the number wins. The pool's average tilt has
+    no decision value for CHOOSING picks, and its only demonstrated use was being copied
+    into the thesis as the book's (ADR-0073: Mkt -0.02 published for a book at -0.50)."""
+    bm = BookMetrics(
+        book_beta_mkt=-0.02, book_beta_smb=0.18, book_beta_hml=0.27,
+        book_beta_rmw=0.35, book_beta_cma=-0.13, book_beta_umd=0.0,
+        gross_exposure=1.0, net_exposure=0.0, long_weight=0.5, short_weight=0.5,
+        sector_weights={}, geo_weights={},
+        sector_violations=[], geo_violations=[], weight_violations=[],
+        high_correlation_pairs=[], computed=True,
+    )
+    out = format_book_metrics_summary(bm, [])
+    for token in ("Mkt=", "HML=", "RMW=", "-0.02", "+0.27", "+0.35"):
+        assert token not in out, f"{token!r} is still handed to the model"
+
+
+def test_pool_cap_violations_are_withheld():
+    """Caps are enforced by the sizer AFTER selection, so a breach computed on 30
+    equal-weighted candidates is not a fact about any book. This line is the direct
+    source of the "US at 66.67% versus the 35% cap (31.67pp over)" sentence."""
+    bm = BookMetrics(
+        book_beta_mkt=0.0, book_beta_smb=0.0, book_beta_hml=0.0,
+        book_beta_rmw=0.0, book_beta_cma=0.0, book_beta_umd=0.0,
+        gross_exposure=1.0, net_exposure=0.0, long_weight=0.5, short_weight=0.5,
+        sector_weights={}, geo_weights={"US": 0.6667},
+        sector_violations=[], geo_violations=["US 66.67% — 31.67pp over its 35% cap"],
+        weight_violations=["SPY (25% > 20%)"], high_correlation_pairs=[], computed=True,
+    )
+    out = format_book_metrics_summary(bm, [])
+    assert "CAP VIOLATIONS" not in out
+    assert "31.67pp" not in out
+    # The crowding itself is still visible, which is the part that informs a pick.
+    assert "US:67%" in out or "US:" in out
 
 
 def test_format_book_metrics_no_violations():
@@ -271,7 +322,7 @@ def test_format_book_metrics_no_violations():
         high_correlation_pairs=[], computed=True,
     )
     out = format_book_metrics_summary(bm, [])
-    assert "Gross exposure" in out
+    assert "Pool gross" in out
     assert "CAP VIOLATIONS" not in out
     assert "HIGH CORRELATION" not in out
 

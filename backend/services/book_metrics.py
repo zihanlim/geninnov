@@ -675,37 +675,55 @@ def cap_utilisation(bm: BookMetrics, picks: list[dict]) -> dict:
 
 
 def format_book_metrics_summary(bm: BookMetrics, pairs: list[tuple[str, str, float]]) -> str:
-    """Format book metrics as a compact table for the LLM prompt."""
-    lines = ["=== BOOK METRICS (computed, not estimated) ==="]
+    """Format the CANDIDATE-POOL metrics as a compact table for the LLM prompt.
+
+    **This function is called on the equal-weighted screened pool, before selection.**
+    `compute_book_metrics_node` runs at node 3; `reason_picks` at node 5. So every figure
+    here describes a portfolio the book is a *subset* of, at weights the book will not use.
+
+    [ADR-0071](0071) relabelled the surrounding prompt block for exactly that reason — and
+    this function then prepended its own header, `=== BOOK METRICS (computed, not
+    estimated) ===`, two lines below it, and labelled its tilt row *"Book factor tilts"*.
+    **The correction was contradicted inside the same block by the string it was
+    correcting.** The model was told twice that these were the book's, which is why
+    [ADR-0073](0073) found the tilts restated in the thesis after ADR-0071 had supposedly
+    stopped it, and why the published book at Mkt −0.50 was called *"market-neutral (Mkt
+    −0.02)"*.
+
+    Two things are now **withheld rather than relabelled**, because a caveat competes with
+    a number and the number wins:
+
+    - **The factor-tilt row is gone.** A pool-average tilt carries no decision value for
+      *choosing* picks — it is the average of things the model is about to select among —
+      and its only demonstrated use was being copied into the thesis as the book's.
+    - **`CAP VIOLATIONS` is gone.** Caps are enforced by the sizer *after* selection, so a
+      breach computed on 30 equal-weighted candidates is not a fact about any book. That
+      line is the direct source of the *"US at 66.67% versus the 35% cap (31.67pp over)"*
+      sentence ADR-0071 was written about. What the model legitimately needs from it —
+      which complexes are crowded — is already in the sector/geo weights below.
+
+    You cannot restate a number you were never given. [ADR-0077].
+    """
+    lines = ["--- (pool, equal-weighted, pre-selection) ---"]
 
     if not bm.computed:
-        return "Book metrics not computed (insufficient factor data)."
+        return "Candidate-pool metrics not computed (insufficient factor data)."
 
     lines.append(
-        f"  Gross exposure: {bm.gross_exposure:.1%} | "
+        f"  Pool gross: {bm.gross_exposure:.1%} | "
         f"Net: {bm.net_exposure:+.1%} | "
         f"Long: {bm.long_weight:.1%} | Short: {bm.short_weight:.1%}"
-    )
-
-    lines.append(
-        f"  Book factor tilts: Mkt={bm.book_beta_mkt:+.2f} "
-        f"SMB={bm.book_beta_smb:+.2f} HML={bm.book_beta_hml:+.2f} "
-        f"RMW={bm.book_beta_rmw:+.2f} CMA={bm.book_beta_cma:+.2f} UMD={bm.book_beta_umd:+.2f}"
     )
 
     if bm.sector_weights:
         top_sectors = sorted(bm.sector_weights.items(), key=lambda x: x[1], reverse=True)[:5]
         sec_str = " | ".join(f"{s}:{w:.0%}" for s, w in top_sectors)
-        lines.append(f"  Sector weights: {sec_str}")
+        lines.append(f"  Pool sector share: {sec_str}")
 
     if bm.geo_weights:
         top_geos = sorted(bm.geo_weights.items(), key=lambda x: x[1], reverse=True)[:5]
         geo_str = " | ".join(f"{g}:{w:.0%}" for g, w in top_geos)
-        lines.append(f"  Geo weights: {geo_str}")
-
-    violations = bm.sector_violations + bm.geo_violations + bm.weight_violations
-    if violations:
-        lines.append(f"  ⚠ CAP VIOLATIONS: {'; '.join(violations)}")
+        lines.append(f"  Pool geo share: {geo_str}")
 
     if pairs:
         warnings = correlation_warning(pairs)

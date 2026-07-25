@@ -149,7 +149,7 @@ block:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the frontend rewrite (`c9042975`, 285 frontend tests) is **pushed to origin (`dc74ebdd`) and deployed to prod** (iteration 93, verified: all routes 200, new build served). Its beta-panel gating — which retired the Euler-render need — is now live.
+Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the frontend rewrite is deployed to prod and **passed a browser-driven UI/UX pass at 1440 + 375** (iteration 94: zero page horizontal scroll, zero console errors, zero page errors on `/`, `/book`, `/risk`, `/method`; Q1 book renders correctly). Its beta-panel gating — which retired the Euler-render need — is live.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -203,6 +203,33 @@ Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the f
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 94 (2026-07-26) — ran the owed UI/UX pass; the MCP was down, the browser wasn't
+
+For six firings I logged the 1440/375 UI/UX pass as "blocked on Playwright." That was wrong. The
+Playwright **MCP** was unavailable, but `frontend/` has `@playwright/test` (1.61.1) and chromium
+installed — so a plain node script drives a headless browser without the MCP. I finally checked,
+scripted it, and ran the real pass against the freshly deployed build. (Saved as a memory so no
+future firing repeats the false "blocked.")
+
+**Result — clean at both viewports, no fixes needed:**
+- **Desktop 1440 / mobile 375, all four routes** (`/`, `/book`, `/risk`, `/method`): status 200,
+  **`documentElement.scrollWidth == clientWidth`** (zero page horizontal scroll), **zero console
+  errors, zero uncaught page errors**.
+- **Looked at the screenshots** (captured to `docs/captures/2026-07-26/`): desktop `/book` renders
+  the whole Q1 deliverable legibly — 5 longs (SHY·XLE·SVXY·NUE·UNH), 5 shorts (GDX·BABA·NOC·ARKK·
+  PDD), verified thesis, pool-depth, turnover, cleared-not-taken, abstention roster. Mobile stacks
+  cleanly; `/risk` HHI reads 1148, per-position attribution present.
+- **The two mobile "overflow" hits are correct-by-design:** the wide data tables carry
+  `min-w-[760px]` / `min-w-[860px]` and scroll **inside their own container** — the page itself does
+  not scroll (scrollWidth stays 375), which is the required pattern.
+- **One benign observation:** every route fires a `HEAD …/themes?select=id` that returns
+  `ERR_ABORTED` (an AbortController cancelling a stale probe) — it logs **no** console error and the
+  data loads, so it does not fail the "zero console errors" bar. Not a fix; noted for the record.
+
+So the deployed deliverable is now verified the way the mandate actually asks — a real browser, both
+viewports, eyes on the screenshots. Nothing to fix. The `curl` and `@playwright/test` channels also
+mean "Playwright MCP is down" no longer blocks live verification here.
 
 ### Loop iteration 93 (2026-07-26) — on "all", pushed and shipped the frontend rewrite; verified as far as curl reaches
 

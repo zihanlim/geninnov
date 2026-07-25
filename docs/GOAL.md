@@ -145,7 +145,7 @@ block:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 555 backend + 143 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 555 backend + 144 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -194,6 +194,34 @@ Live at https://andromeda-analytics.vercel.app · 555 backend + 143 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 69 (2026-07-25)
+
+**Executed iteration 68's recorded next step: the SIZING chain that said "trust the
+final weight, not the derivation" for every US name now names the cap that actually
+bound it.** With "why this side" made to reconcile last iteration, "why this size" was
+the remaining opaque half of the crown jewel.
+
+The note was wrong two ways: it claimed *"no cap binding, yet the book holds 8.8%"* when
+a cap **was** binding — the panel just only checked the single-name one. The live book's
+only binding cap is the **US geography cap, at its 35% limit** (cap_utilisation.geo US =
+1.00; nothing else ≥ 0.999). So `/book` now passes the group caps (geography, sector)
+sitting at their limit into `buildSizingChain`, and the note reads: *"19.0% normalised →
+8.8% held: the single-name cap is not the binding one here — the geography cap (US, 35%)
+is at its limit. Conviction weights are scaled to fit the caps that bind and the freed
+capital held as cash (ADR-0037) … the final weight is ground truth."*
+
+The attribution is sound, not a guess: ADR-0037 clamps a capped group and **banks the
+freed capital as cash** rather than redistributing it, so a name scaled below its
+normalised weight is necessarily inside a binding group. Verified live — US names (XLE)
+name the geo cap; non-US names (BABA, China at 0.53) correctly show **no** note, so it
+never over-attributes. A unit test pins the geo-cap case; the old "no cap binding"
+fallback still fires only when no group cap is at its limit. Deployed, UI/UX pass clean
+at 1440/375. 555 backend + 144 frontend.
+
+**Both halves of the crown jewel now reconcile on the page**: the EdgeScore decomposition
+prints its renormalisation (÷ present weight), and the sizing chain names its binding cap
+— "why this side" and "why this size" are each legible end-to-end.
 
 ### Loop iteration 68 (2026-07-25)
 

@@ -204,6 +204,28 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 87 (2026-07-25) — pushed the Euler wiring to origin (Playwright pass could not run)
+
+**Pushed on the operator's go-ahead.** `origin/main` advanced `69cf2022..19b8f74b` (clean
+fast-forward, no co-author trailers) — so the Euler wiring (`1c2848dc`: `finalise_book_analytics`
+calls `decompose_risk` + persists `risk_decomposition`, migration 038, ADR-0082) and the
+iteration docs are now on origin. This matters for the scheduled run: `daily-refresh.yml` checks
+out the *pushed* repo, so once the MiniMax quota resets, the automated run will persist the Euler
+decomposition **natively** rather than depending on a manual PATCH. Step 1 (`247c86f7`, the
+hoisted frame) was already on origin. The other session's 68-file WIP is untouched — a push only
+sends committed work.
+
+**The Playwright MCP server disconnected mid-session, so the UI/UX pass could not run this
+iteration** — the browser tools are gone, not merely flaky. This is logged, not skipped: the
+mandate wants one every firing. What I could verify without it: the live book is intact at the DB
+level (5/5, SHY·XLE·SVXY·NUE·UNH / GDX·BABA·NOC·ARKK·PDD, thesis 812 chars), and the deployed
+frontend is unchanged since iteration 86's clean pass (no deploy happened). The visual/console
+checks are owed the next firing that has a working browser.
+
+Everything else is unchanged and blocked: Step 4 (Euler render + beta-column decision), the
+EdgeScore stale formula, ADR-0082's index entry — all in the frontend rewrite; and the MiniMax
+quota (no pipeline run). `PROGRESS.md` still corrupted.
+
 ### Loop iteration 86 (2026-07-25) — confirmed the restore held; the site is whole and consistent
 
 **A verification turn: after last iteration's regression-and-recovery, the priority was proving

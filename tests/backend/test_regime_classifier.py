@@ -159,3 +159,95 @@ class TestRegimeOutputDataclass:
         assert r.cycle == "late"
         assert r.sentiment == "neutral"
         assert r.hy_oas == 360.0
+
+
+# ── Unit contract: FRED gives PERCENT, the classifier is calibrated in BPS ────────
+#
+# yield_curve_slope (DGS10-DGS2) and hy_oas (BAMLH0A0HYM2) arrive from FRED in
+# percent — 0.34, 2.77 — but every threshold and risk_appetite are in basis points.
+# The callers (classify(), compute_edge_scores) convert; these pin why they must.
+from regime_classifier import risk_appetite  # noqa: E402
+
+
+class TestPercentVsBpsUnitContract:
+    def test_curve_and_hy_signals_reachable_only_in_bps(self):
+        # A -60bp inversion with 550bp HY is a recession signal — in basis points.
+        assert _classify_cycle(-60, 550, None) == "recession"
+        # The identical market handed over in PERCENT (-0.60, 5.5) reaches no
+        # curve/HY rule; it lands "late" off real_rate=None fallthrough → "mid".
+        assert _classify_cycle(-0.60, 5.5, None) == "mid"
+
+    def test_hy_oas_scale_moves_risk_appetite_materially(self):
+        # Live 2026-07-25 inputs. In bp (correct) vs percent (the pre-fix caller).
+        correct = risk_appetite(18.58, 277.0, -1.93, 65.0)  # bp
+        buggy = risk_appetite(18.58, 2.77, -1.93, 65.0)     # percent
+        assert correct is not None and buggy is not None
+        assert abs(correct - 0.43) < 0.02
+        assert abs(buggy - 0.57) < 0.02
+        assert buggy - correct > 0.10  # the bug stood the book risk-on
+
+
+class _PerSeriesSupabase:
+    """A fake returning a distinct latest value per series_id (unlike _FakeSupabase,
+    which returns the same rows for every series), and a no-op upsert so classify()
+    can persist. Lets us feed realistic FRED-percent inputs and assert conversion."""
+
+    def __init__(self, values):
+        self._values = values
+
+    def table(self, _name):
+        return _PerSeriesSupabase._Q(self._values)
+
+    class _Q:
+        def __init__(self, values):
+            self._values = values
+            self._series = None
+
+        def select(self, *a, **k):
+            return self
+
+        def eq(self, col, val):
+            if col == "series_id":
+                self._series = val
+            return self
+
+        def lte(self, *a, **k):
+            return self
+
+        def order(self, *a, **k):
+            return self
+
+        def limit(self, *a, **k):
+            return self
+
+        def upsert(self, *a, **k):
+            return self
+
+        def execute(self):
+            v = self._values.get(self._series)
+            rows = [{"value": v, "trading_date": "2026-07-25"}] if v is not None else []
+            return type("Resp", (), {"data": rows})()
+
+
+class TestClassifyConvertsUnits:
+    """classify() must convert its percent FRED inputs to bp before classifying;
+    the discriminating case is a market that only reads 'recession' in bp."""
+
+    def test_percent_inversion_and_hy_blowout_reach_recession(self, monkeypatch):
+        import regime_classifier as rc
+
+        # 10y 3.40, 2y 4.00 → slope -0.60% (-60bp); HY OAS 5.50% (550bp);
+        # breakeven 1.75 → real rate 1.65%. In bp this is a recession; fed as
+        # percent it lands 'late' (yc<0 & rr>1.0) — so this asserts the conversion.
+        values = {
+            "DGS10": 3.40, "DGS2": 4.00, "BAMLH0A0HYM2": 5.50,
+            "T10YIE": 1.75, "^VIX": 30.0, "^VIX3M": 28.0,
+        }
+        monkeypatch.setattr(rc, "_compute_spx_breadth", lambda: 30.0)
+        clf = rc.RegimeClassifier.__new__(rc.RegimeClassifier)
+        clf.supabase = _PerSeriesSupabase(values)
+
+        out = clf.classify(run_date=date(2026, 7, 25))
+        assert out.cycle == "recession"          # unreachable if fed percent
+        assert out.yield_curve_slope == pytest.approx(-0.60)  # persisted in percent
+        assert out.hy_oas == 5.50                # persisted in percent, for the UI

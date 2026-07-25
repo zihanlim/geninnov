@@ -467,9 +467,14 @@ def compute_edge_scores(
     # Continuous risk appetite (ADR-0041) rather than the discrete label. The label
     # is a step function and EdgeScore multiplies it by each asset class's risk beta,
     # so a label change inverts the equity complex on its own.
+    # hy_oas is persisted in PERCENT (2.77) but risk_appetite is calibrated in basis
+    # points ("HY OAS in bp: 350"). Feeding percent made its HY term saturate near +1
+    # (risk-on), inflating appetite ~0.57 vs a correct ~0.43 — a standing risk-on tilt
+    # in regime_bias on every asset. Convert; see regime_classifier.classify().
+    _hy_oas = getattr(regime, "hy_oas", None)
     appetite = risk_appetite(
         getattr(regime, "vix_level", None),
-        getattr(regime, "hy_oas", None),
+        _hy_oas * 100 if _hy_oas is not None else None,
         getattr(regime, "vix_term_diff", None),
         getattr(regime, "spx_breadth", None),
     )

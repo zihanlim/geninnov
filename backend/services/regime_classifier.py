@@ -246,9 +246,19 @@ class RegimeClassifier:
 
         spx_breadth = _compute_spx_breadth()
 
+        # FRED reports the curve slope (DGS10-DGS2) and HY OAS (BAMLH0A0HYM2) in
+        # PERCENT — 0.34, 2.77 — but every threshold below and in risk_appetite is
+        # calibrated in BASIS POINTS ("yc < -50", "HY OAS in bp: 350"). Passing the
+        # percent values made the yield-curve and HY rules unreachable (0.34 is never
+        # < -50, 2.77 never > 350), so cycle fell to real_rate alone and sentiment to
+        # VIX/breadth alone — the two headline inputs of a credit-cycle model were dead.
+        # Convert here; persist the percent values the UI formats (34bps, 2.77%).
+        yc_bps = yield_curve_slope * 100 if yield_curve_slope is not None else None
+        hy_bps = hy_oas * 100 if hy_oas is not None else None
+
         # Classify
-        cycle = _classify_cycle(yield_curve_slope, hy_oas, real_rate)
-        sentiment = _classify_sentiment(vix_spot, vix_term_diff, hy_oas, spx_breadth)
+        cycle = _classify_cycle(yc_bps, hy_bps, real_rate)
+        sentiment = _classify_sentiment(vix_spot, vix_term_diff, hy_bps, spx_breadth)
 
         output = RegimeOutput(
             cycle=cycle,

@@ -325,7 +325,9 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
                   <code className="num">method_id={CORR_SELECTION_METHOD_ID}</code>
                 </span>
                 <br />
-                Min-max normalised across the themes scored on this run
+                |ρ| ÷ 0.50 full-credit level, capped at 1 — an absolute scale, so the
+                reading means the same on any day (ADR-0028 dropped the old cross-theme
+                min-max, which moved when other themes moved)
               </>
             ),
           },
@@ -338,7 +340,8 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
               <>
                 z-score: <span className="num">{fmt(signal?.momentum_raw, 2)}</span>
                 <br />
-                Min-max normalised across the themes scored on this run
+                tanh(z ÷ 2) rescaled to [0,1], 0.5 at no change — the theme&apos;s own
+                MAD-scaled z, absolute, not a rank against the other themes
               </>
             ),
           },
@@ -385,8 +388,10 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
           </span>
         </li>
         <li>
-          Normalisation: min-max across all themes scored on this run date, so
-          each sub-score is a <em>relative</em> rank, not an absolute level.
+          Normalisation: each sub-score is a saturating transform of the theme&apos;s
+          own signal — volume tanh(m/3), correlation |ρ|/0.50, momentum tanh(z/2) — so a
+          reading is an <em>absolute</em> level that means the same thing on any day, not
+          a rank against the other themes (ADR-0028/0042).
         </li>
         <li>
           Source counts:{" "}

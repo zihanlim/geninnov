@@ -47,6 +47,7 @@ from .book_metrics import (
     compute_book_metrics,
     compute_correlation_matrix,
     format_book_metrics_summary,
+    moving_average_context,
     book_metrics_to_dict,
     correlation_pairs_to_dict,
     correlation_summary,
@@ -106,7 +107,12 @@ MINIMAX_ENDPOINT = "https://api.minimax.io/v1/chat/completions"
 LLM_TIMEOUT_SECONDS = int(os.environ.get("LLM_TIMEOUT_SECONDS", "900"))
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-DEFAULT_MODEL     = os.environ.get("ANTHROPIC_MODEL_ID", "claude-sonnet-4-20250514")
+# Contingency provider only — this deployment ships no ANTHROPIC_API_KEY, so
+# _select_provider never reaches this branch (MiniMax wins on priority). Kept
+# current anyway: a dated model id rots silently, and the branch it sits in is
+# exactly the one nobody exercises until the day MiniMax is down.
+# claude-sonnet-4-20250514 retired 2026-06-15 and now 404s.
+DEFAULT_MODEL     = os.environ.get("ANTHROPIC_MODEL_ID", "claude-sonnet-5")
 
 # Google Gemini (final fallback) — see ADR-0026. Provider-agnostic per ADR-0013:
 # the citation guardrail + candidate hard-filter constrain whichever LLM answers,
@@ -339,14 +345,32 @@ def _llm_complete_inner(prompt: str, system: str = "", temperature: float = 0.0,
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         kwargs: dict[str, Any] = {
             "model": DEFAULT_MODEL,
-            "max_tokens": 4096,
-            "temperature": temperature,
+            # 4096 could not hold a ten-pick book even before thinking existed: it
+            # truncated the JSON mid-array, and reason_picks read that as
+            # JSONDecodeError rather than as "the answer did not fit". The Claude 5
+            # family also thinks adaptively by default and spends *this* budget
+            # doing it — the same failure mode MINIMAX_MAX_TOKENS exists for.
+            "max_tokens": int(os.environ.get("ANTHROPIC_MAX_TOKENS", "32000")),
             "messages": [{"role": "user", "content": prompt}],
         }
         if system:
             kwargs["system"] = system
-        resp = client.messages.create(**kwargs)
-        return resp.content[0].text
+        # `temperature` is deliberately not forwarded. The Claude 5 family rejects
+        # temperature/top_p/top_k with a 400; determinism here comes from the
+        # candidate hard-filter and the citation guardrail, not a sampling knob.
+        # The parameter still applies to MiniMax and Gemini above.
+        with client.messages.stream(**kwargs) as stream:
+            resp = stream.get_final_message()
+        if resp.stop_reason == "refusal":
+            raise ValueError("Anthropic declined the request (stop_reason=refusal)")
+        # Adaptive thinking puts a thinking block first, so content[0] is not the
+        # answer any more.
+        text = "".join(b.text for b in resp.content if b.type == "text")
+        if not text:
+            raise ValueError(
+                f"Anthropic returned no text block (stop_reason={resp.stop_reason})"
+            )
+        return _strip_reasoning_and_fences(text)
 
     # ── Google Gemini (fallback) ─────────────────────────────────────────────
     if provider == "gemini":
@@ -2262,6 +2286,20 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
         factor_exposures=factor_exp,
         total_capital=total_capital,
     )
+
+    # Where each name sits against its 200-day MA. Six of ten counter-theses on the
+    # 2026-07-25 book read "wrong if X breaks its 200-day MA" with no number attached, so
+    # the reader could not tell how close the trade was to being disqualified. Wrapped:
+    # explanatory context, so a failed fetch costs a panel rather than the run.
+    try:
+        ma_ctx = moving_average_context([p["asset"] for p in picks if p.get("asset")])
+    except Exception as exc:            # pragma: no cover — defensive
+        print(f"[finalise_book_analytics] MA context unavailable: {exc}")
+        ma_ctx = {}
+    for p in picks:
+        ctx = ma_ctx.get(p.get("asset") or "")
+        if ctx:
+            p["ma_context"] = ctx
 
     corr_pairs = compute_correlation_matrix(picks, lookback_days=252)
     scenarios = run_scenario_analysis(

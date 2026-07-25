@@ -12,6 +12,8 @@ Covers:
 import sys
 import os
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 
 from backend.services.book_metrics import (
@@ -574,3 +576,73 @@ def test_mean_uses_absolute_values():
 
     s = correlation_summary([("A", "B", 0.8), ("C", "D", -0.8)])
     assert abs(s["mean_abs_corr"] - 0.8) < 1e-12
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# moving_average_context — a disqualifier you cannot locate is not falsifiable
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fake_download(frame):
+    def _dl(*_a, **_k):
+        return frame
+    return _dl
+
+
+def _closes(cols: dict, n: int = 260):
+    import pandas as pd
+    idx = pd.date_range("2025-01-01", periods=n, freq="D")
+    data = {("Close", t): pd.Series(v, index=idx) for t, v in cols.items()}
+    return pd.DataFrame(data)
+
+
+def test_reports_where_each_name_sits_against_its_moving_average(monkeypatch):
+    """Six of ten counter-theses on the live book read "wrong if X breaks its 200-day
+    MA" and nothing on the page said what that MA was. The distance is the number that
+    carries the information."""
+    import backend.services.book_metrics as bmod
+
+    # 200 days at 100, then 60 days at 120 -> MA over the last 200 is well below spot.
+    series = [100.0] * 200 + [120.0] * 60
+    monkeypatch.setattr(bmod.yf, "download", _fake_download(_closes({"AAA": series})))
+
+    ctx = bmod.moving_average_context(["AAA"])
+    assert ctx["AAA"]["last"] == pytest.approx(120.0)
+    assert ctx["AAA"]["window"] == 200
+    assert ctx["AAA"]["pct_from_ma"] > 0
+    assert ctx["AAA"]["pct_from_ma"] == pytest.approx(
+        (120.0 - ctx["AAA"]["ma"]) / ctx["AAA"]["ma"])
+
+
+def test_a_name_below_its_average_reports_a_negative_distance(monkeypatch):
+    """Every short on the 2026-07-25 book sits below its 200-day MA — GDX -13.9%,
+    PDD -21.2% — which is how much room the trade has before it is disqualified."""
+    import backend.services.book_metrics as bmod
+
+    series = [100.0] * 200 + [80.0] * 60
+    monkeypatch.setattr(bmod.yf, "download", _fake_download(_closes({"BBB": series})))
+    assert bmod.moving_average_context(["BBB"])["BBB"]["pct_from_ma"] < 0
+
+
+def test_a_short_history_is_omitted_not_averaged(monkeypatch):
+    """A 200-day mean of 40 days is not a 200-day mean — ADR-0066."""
+    import backend.services.book_metrics as bmod
+
+    monkeypatch.setattr(
+        bmod.yf, "download", _fake_download(_closes({"CCC": [100.0] * 40}, n=40)))
+    assert bmod.moving_average_context(["CCC"]) == {}
+
+
+def test_a_failed_fetch_costs_a_panel_not_a_run(monkeypatch):
+    import backend.services.book_metrics as bmod
+
+    def boom(*_a, **_k):
+        raise RuntimeError("yfinance down")
+
+    monkeypatch.setattr(bmod.yf, "download", boom)
+    assert bmod.moving_average_context(["DDD"]) == {}
+
+
+def test_no_tickers_is_silent():
+    from backend.services.book_metrics import moving_average_context
+
+    assert moving_average_context([]) == {}

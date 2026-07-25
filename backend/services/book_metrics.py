@@ -367,6 +367,72 @@ def fetch_pick_returns(
         return pd.DataFrame()
 
 
+def moving_average_context(
+    tickers: list[str],
+    window: int = 200,
+) -> dict[str, dict]:
+    """Where each name sits against its `window`-day moving average.
+
+    **Why this is worth computing.** Every pick already carries a `counter_thesis` with a
+    measurable trigger — that part works. But on the 2026-07-25 book, **six of ten** read
+    *"…is wrong if X breaks above/below its 200-day MA on sustained basis (3+ daily
+    closes)"*, and nothing on the page says what that moving average **is**.
+
+    Compare XLE's, which names a level: *"wrong if WTI breaks below $80/bbl"*, against a
+    macro snapshot showing WTI at $90.47 — a reader can see there is ~11% of room. The MA
+    triggers are the same sentence with the ticker swapped and no number attached, so a
+    reviewer asking *"how close is this to being wrong?"* — the whole point of a
+    disqualifier — cannot answer it from the page. **A trigger you cannot locate is not
+    falsifiable in practice**, and six identical ones also fail `GOAL.md`'s rule that every
+    per-row surface must differentiate.
+
+    The distance is the number that carries the information: NOC 1.2% above its MA is a
+    trade about to be disqualified; ARKK 18% above is not.
+
+    Returns `{ticker: {last, ma, pct_from_ma, window, observations}}`, omitting any ticker
+    with fewer than `window` observations rather than averaging a short history — a 200-day
+    mean of 40 days is not a 200-day mean ([ADR-0066](0066)). `{}` on any fetch failure:
+    this is explanatory context, and a failed measurement costs a panel, not a run.
+    """
+    if not tickers:
+        return {}
+    try:
+        end = date.today()
+        # Calendar days needed to contain `window` trading days, plus slack.
+        start = end - timedelta(days=int(window * 1.6) + 40)
+        data = yf.download(list(set(tickers)), start=start, end=end,
+                           progress=False, auto_adjust=True)
+        if data.empty:
+            return {}
+        closes = data["Close"] if isinstance(data.columns, pd.MultiIndex) else \
+            data[["Close"]].rename(columns={"Close": tickers[0]})
+    except Exception:
+        return {}
+
+    out: dict[str, dict] = {}
+    for t in set(tickers):
+        if t not in closes.columns:
+            continue
+        series = closes[t].dropna()
+        if len(series) < window:
+            continue
+        try:
+            last = float(series.iloc[-1])
+            ma = float(series.tail(window).mean())
+            if not (last == last) or not (ma == ma) or ma == 0:
+                continue
+            out[t] = {
+                "last": last,
+                "ma": ma,
+                "pct_from_ma": (last - ma) / ma,
+                "window": window,
+                "observations": int(len(series)),
+            }
+        except (ValueError, TypeError, IndexError):
+            continue
+    return out
+
+
 def candidate_book_correlation(
     candidate_assets: list[str],
     held_assets: list[str],

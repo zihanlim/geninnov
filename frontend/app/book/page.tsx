@@ -77,6 +77,14 @@ interface Pick {
   time_horizon?: string;
   factor_tilts?: Record<string, number>;
   factor_r_squared?: number | null;
+  /** Where this name sits against its 200-day MA — ADR-0078. */
+  ma_context?: {
+    last: number;
+    ma: number;
+    pct_from_ma: number;
+    window: number;
+    observations: number;
+  } | null;
   notional?: number;
   weight?: number;
   signed_weight?: number;
@@ -569,7 +577,8 @@ function BookPageInner() {
           className="mb-6 rounded-[10px] border px-4 py-3 text-[13px] leading-[1.6]"
           style={{
             borderColor: "var(--warning)",
-            background: "rgba(194, 65, 12, 0.08)",
+            // --warning at 8%. Keep in step with the token in globals.css.
+            background: "rgba(168, 50, 9, 0.08)",
           }}
         >
           <span className="font-semibold" style={{ color: "var(--warning)" }}>
@@ -610,7 +619,7 @@ function BookPageInner() {
               style={
                 focusHeldOut
                   ? { borderColor: "var(--border-strong)" }
-                  : { borderColor: "var(--long)", background: "var(--long-dim, rgba(20,122,92,0.06))" }
+                  : { borderColor: "var(--long)", background: "var(--long-dim, rgba(18,110,83,0.06))" }
               }
               data-testid="theme-focus-banner"
             >
@@ -1416,6 +1425,33 @@ function PositionRow({
                   >
                     {pick.counter_thesis}
                   </div>
+                  {/* Six of ten counter-theses name the 200-day MA as the trigger and
+                      nothing said what it was, so the reader could not tell how close
+                      the trade was to being disqualified. ADR-0078. */}
+                  {pick.ma_context && (
+                    <p className="text-[11.5px] text-text-tertiary mt-1.5 mb-0">
+                      {pick.asset} last{" "}
+                      <span className="num">
+                        {pick.ma_context.last.toFixed(2)}
+                      </span>{" "}
+                      · {pick.ma_context.window}-day MA{" "}
+                      <span className="num">{pick.ma_context.ma.toFixed(2)}</span> ·{" "}
+                      <span
+                        className="num"
+                        style={{
+                          color:
+                            Math.abs(pick.ma_context.pct_from_ma) < 0.03
+                              ? "var(--warning)"
+                              : undefined,
+                        }}
+                      >
+                        {fmtSigned(pick.ma_context.pct_from_ma * 100, 1)}%
+                      </span>{" "}
+                      {Math.abs(pick.ma_context.pct_from_ma) < 0.03
+                        ? "— within 3% of the moving average, so an MA-based trigger is close."
+                        : "away from it."}
+                    </p>
+                  )}
                 </>
               )}
 

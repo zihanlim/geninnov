@@ -516,6 +516,67 @@ tilt (the view) is already correct at −0.35. **UI/UX pass** — `/`, `/book`, 
 `/method` at 1440 and 375: zero horizontal scroll, zero console errors. 554 backend +
 134 frontend.
 
+### Loop iteration 62 (2026-07-25)
+
+**The book's own risk disclosures claimed a 31.67pp cap breach it does not have.**
+
+Clean state, so this read the published thesis and cross-checked its claims — the
+technique that has found every real defect here. `book_risks`, the panel a reviewer reads
+to learn what could break the book, contained:
+
+> **US geographic concentration:** pre-computed book metrics show US at **66.67%** versus
+> the 35% cap (**31.67pp over**)…
+
+and, twice, *"…the Gold Miners position (currently 7% of book)"*.
+
+**Both false of the book:**
+
+| claim | actual |
+|---|---|
+| US 66.67%, 31.67pp over its cap | `geo_weights.US` = **35.00%**, `violations` = `[]` |
+| Gold Miners 7% of book | **no gold miner held** — China 18.53, Metals 12.24, Energy 8.77, Financials 6.23, Healthcare 4.63, Defense 4.63, Rates 4.34 |
+
+**The model was not hallucinating — it was repeating what it was handed.**
+`compute_book_metrics_node` runs **before** `reason_picks` over the **screened candidate
+pool with equal weights** (its own docstring says so), and the prompt presented that block
+as `=== BOOK METRICS (computed, not estimated) ===`.
+
+**The arithmetic closes exactly.** `screen_candidates` caps the pool at 30 names, so
+**20/30 = 66.67%** US and **2/30 = 6.67% ≈ "7%"** Gold Miners — GDX and NEM, both in the
+pool, neither in the book. Every figure quoted is the equal-weighted pool number under a
+label that said *book*.
+
+This is [ADR-0067](adrs/0067-a-column-must-name-the-subset-it-measures.md)'s rule — *a
+column must name the subset it measures* — displaced from the UI into the prompt, and the
+consequence is worse: **a UI mislabel misleads a reader; a prompt mislabel makes the
+system publish a false governance breach in its own risk disclosures.**
+
+Fixed three ways: the prompt header now says **CANDIDATE-POOL METRICS — EQUAL-WEIGHTED,
+BEFORE YOUR SELECTION** and forbids restating them as the book's; `check_cap_breach_claims`
+rejects a claimed breach when `cap_utilisation.violations` is empty (ADR-0049's rule
+applied to caps, and exactly falsifiable); and it **stays silent when the book genuinely
+breaches** — a real breach *should* be discussed, and suppressing it would trade a false
+positive for a worse false negative.
+
+**Composition figures in prose are left to the prompt, not the guard.** Checking every
+sector and geography number would mean adjudicating language, the unfalsifiable verdict
+ADR-0045 refused for turnover. Only the cap claim is mechanically decidable, so only it is
+mechanised.
+
+**Verified against live production as a negative control:** the guard flags the exact
+published sentence and stays quiet on the other five risk items. 565 backend tests.
+
+**A test of mine needed correcting too.** `test_guard_runs_as_a_script_not_only_as_a_module`
+asserted the guard exits `0` or `2` against production, and broke the instant a check
+legitimately fired. **A test that fails when a guard correctly reports a defect is testing
+the wrong thing** — it now accepts `1` and asserts only that nothing crashed, which was
+always its actual purpose.
+
+Re-ran the pipeline so a book publishes under the corrected prompt rather than leaving the
+finding standing.
+
+[ADR-0071](adrs/0071-pool-metrics-are-not-book-metrics.md).
+
 ### Loop iteration 61 (2026-07-25)
 
 **Last iteration's factor-tilt migration was "committed, can't apply." It could — the

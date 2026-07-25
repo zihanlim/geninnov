@@ -195,6 +195,45 @@ Live at https://andromeda-analytics.vercel.app · 554 backend + 143 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 65 (2026-07-25)
+
+**A verification-and-landing iteration: I re-derived the highest-value step, found the
+book already in strong shape after 64, so I landed the last stranded commit live and
+poked every headline number to confirm it survives — the deliverable's remaining "gap"
+(a fifth short) is a principled abstention, not a bug.**
+
+The Vercel quota had partially reset, so the committed CapUtilisation robustness fix
+(a2f0ef08, iteration 63) finally deployed and is **live** — belt-and-braces now that the
+data is clean, but it guards against cap float-dust *recurring*. Then a cross-check
+sweep of the fresh 07-25 book, the method that finds every real bug here:
+
+- **Exposures reconcile** — `long − short = net` (0.0138) and `long + short = gross`
+  (0.5937) to the digit.
+- **Market beta is one number across three surfaces** — home FACTOR TILT, `/risk` BOOK
+  FACTOR TILT, and the per-position attribution Σβ all read **−0.13**; caps read 0
+  breaches on both `/risk` panels.
+- **The 3-session stats are withheld, not faked** — `portfolio_risk` holds a −1.30
+  regression beta and an 8.25 Sharpe, both nonsense on n=3, and the site shows
+  *"Unavailable · needs 30 sessions"* rather than printing them. The one beta it *does*
+  show is the ex-ante FF5 loading, correctly labelled.
+
+**Fifth short — re-examined, still an honest abstention.** The pool held exactly five
+independent short ideas; the book took four and passed over **ARKK**, the weakest
+(|edge| 0.26 vs 0.29–0.43) and a US name the full US-geography cap has no room for. The
+thesis names the decline (*"shorting innovation in a risk-on tape … fights momentum"*),
+and the pool-depth panel's *"by choice, not by constraint"* is the ADR-0056/0058 sense —
+the pool wasn't the limiter, the selection was. A fifth short would have to come from
+*widening the universe with a non-US idea*, not from relaxing the 35% cap (which the
+operating principles forbid), and manufacturing a weak one is worse than a disclosed
+abstention. Left as-is, deliberately.
+
+**Q2 IC — re-ran, still honestly one date.** `backtest_hype` reports h1 IC −0.228 on
+n_obs=8 (one cross-section), h5/h20 empty for want of a forward window; the panel says
+exactly that (*"no forward window yet"*, *"not yet validated — and we say so"*), and
+`/method` frames the negative sign as crowding-to-fade, which the EdgeScore already
+does. Not a fixable gap — the hype history is genuinely short. UI/UX pass clean at
+1440/375 across all four pages, zero horizontal scroll, zero console errors.
+
 ### Loop iteration 64 (2026-07-25)
 
 **Two committed fixes were stranded — the deploy quota blocks the frontend and, it

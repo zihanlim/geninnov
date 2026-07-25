@@ -61,6 +61,10 @@ bind here:
 
 Re-derive — do not just take the backlog below on faith:
 
+0. **Re-derive again immediately before any irreversible action** — deleting or
+   overwriting data, deploying, publishing. Once at the top of the iteration is not
+   enough: a long turn can outlive its own premise. Iteration 60 proposed deleting a
+   production row that a completed pipeline run had already made correct, mid-turn.
 1. Check the live site and the DB for what is actually true right now.
 2. Ask: *what single change most increases the chance a reviewer believes this?*
 3. Do it end-to-end — implement, test, deploy, **verify on the live URL**, and keep
@@ -544,6 +548,53 @@ Two fixes, one shippable now and one not:
   **this session has no SQL/DDL access** (no Supabase MCP, no `DATABASE_URL`) — so it is
   a committed migration awaiting apply by whoever holds the MCP, not a claim of live.
   546 backend + 134 frontend.
+
+### Loop iteration 60 (2026-07-25) — a correction, and the rule it produces
+
+**I proposed deleting production data to fix a problem that had already fixed itself.**
+
+Iteration 59 ended by asking whether to delete the `2026-07-25` book row, on the grounds
+that it was an artifact of an early local run shadowing a correct `2026-07-24` run. The
+user pushed back with an observation rather than an answer: *"but the app writes? RUN DATE
+2026-07-25 · Updated 2h ago · LAST PIPELINE RUN 2026-07-25"*.
+
+**They were right and my premise was stale.** Re-checking the clock rather than my notes:
+
+```
+utc now : 2026-07-25T02:39
+run_date 2026-07-25  L0..L5 all success, finished 00:44:35 – 00:49:55 UTC  (~1.9h ago)
+```
+
+A **complete, successful, six-stage run** had executed at 00:44 UTC and stamped `run_date`
+**2026-07-25** — which is the correct UTC date *at that time*. The row I was calling an
+artifact had been overwritten by a legitimate run, precisely as
+[ADR-0070](adrs/0070-forward-dating-was-never-implemented.md) predicted: *"the artifact
+stays until the scheduled run of 2026-07-25 overwrites it by upsert."* My own ADR said
+this would happen and I still proposed deleting.
+
+**Verified healed:** positions and published picks both at `2026-07-25`, both 9 names,
+matching exactly — **5 long / 4 short** (JPM, NUE, SVXY, UNH, XLE / BABA, NOC, PDD, SLV).
+All five guard checks green, and the availability check is no longer vacuous (40 screened
+candidates, up from 0). **Nothing was deleted, and nothing needed to be.**
+
+#### The rule this produces
+
+The standing mandate says *re-derive at the start of each firing*. That is not enough.
+**Re-derive immediately before an irreversible action, not once at the top of the
+iteration.** A long turn can outlive its own premise — this one spanned a completed
+pipeline run and a date rollover, and the state I was reasoning about stopped existing
+part-way through.
+
+It is the same failure this project keeps recording, turned on itself: **a claim asserted
+from a stale reading of something that was checkable right now.** The difference is that
+every previous instance cost a wrong sentence in a document; this one would have cost
+production rows.
+
+**What made it safe was asking.** Deleting production data is outward-facing and hard to
+reverse, so it went to the user instead of the loop's own judgement — and the answer was
+not one of the three options I offered, it was a fact that dissolved the question. **When
+an irreversible action is on the table, the value of asking is not the permission; it is
+the chance for someone to notice the premise is wrong.**
 
 ### Loop iteration 59 (2026-07-25)
 

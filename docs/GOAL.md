@@ -204,6 +204,23 @@ Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the f
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 95 (2026-07-26) — re-verified the live build clean; stayed out of the other session's active frontend edit
+
+Playwright MCP reconnected. Re-ran the UI/UX pass on the *current* deploy (the other session has
+pushed several prod builds since iteration 93): **`/`, `/book`, `/risk`, `/method` at 1440 + 375 —
+all 200, zero page horizontal scroll, zero console errors, zero uncaught page errors.** Looked at
+the screenshots: desktop `/book` renders the full Q1 book intact (5 long SHY·XLE·SVXY·NUE·UNH / 5
+short GDX·BABA·NOC·ARKK·PDD, verified thesis, 59.3% gross / −5.4% net) — the live data is unchanged
+and correct.
+
+**The consequential fact this firing: the other session is mid-edit on 10 uncommitted frontend files**
+(`book/page.tsx`, `globals.css`, all four route pages, `PositionRow`, `AbstentionRoster`,
+`ClearedNotTaken`, `CitationList`, `ThemeHeatmap`). That is almost certainly the *visible* UI/UX work
+— the answer to "why don't I see a change yet" is that it's in flight, not shipped. So the correct
+move is to **stay out of the frontend entirely** this round rather than collide with their edit
+(the [[concurrent-session-shares-worktree]] lesson). Verification + docs only from me; the visible
+change comes from them. Deliverables re-confirmed intact and clean live.
+
 ### Loop iteration 94 (2026-07-26) — ran the owed UI/UX pass; the MCP was down, the browser wasn't
 
 For six firings I logged the 1440/375 UI/UX pass as "blocked on Playwright." That was wrong. The

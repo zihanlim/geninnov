@@ -204,6 +204,39 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 85 (2026-07-25) — a pipeline run backfired on an exhausted LLM quota; restored the book
+
+**Ran `daily_refresh` to validate the Euler wiring end-to-end and refresh the book. The
+validation succeeded; the book regressed, and I had to restore it.** Two separable outcomes:
+
+- **The backend wiring is validated in a real run.** L0–L4 clean; the Euler decomposition
+  persisted **natively** (not my PATCH) with Σ contribution_to_vol = portfolio_vol to 1e-9;
+  the scenario breakdowns reconciled 5/5 from committed code. Steps 1–3 work end-to-end.
+- **But MiniMax returned `429 Token Plan usage limit reached`** — `reason_picks` failed all
+  retries, so L5 fell to the deterministic fallback: an **empty thesis**, a **net-long +10.5%**
+  book, and a short side of **five correlated China names** (BABA/KWEB/PDD/MCHI/FXI → 6 high-corr
+  pairs) — exactly the concentration the one-per-complex apparatus exists to prevent, appearing
+  because the LLM that applies that judgement never ran. A strictly worse Q1 answer than the
+  book it replaced.
+
+**Recovered by restoring the prior book across all four book-specific tables** (I snapshotted it
+before the run, per the mandate's rule 0): `research_recommendations` (PATCH from snapshot →
+/book), `portfolio_positions` (reconstructed from the picks + trade_candidate signals →
+book-of-record check), `portfolio_risk` (scalar HHI **and** the `numeric_derivations` bundle
+value → 1147.65, the /risk card was reading a stale 1182), and `portfolio_returns`
+(−0.04% / +1.16% / $101.16M). **Verified live**: /book is the 5/5 diversified net-short book with
+its thesis and VERIFIED badge; /risk shows the old book everywhere, HHI 1148 consistent, the
+book-of-record warning gone; 1440/375 clean, no console errors, no NaN. The L0–L4 refresh (fresh
+macro, regime, factors, theme HypeScores) legitimately stays — Q2 attention updates daily.
+
+**Lesson (this is the iteration-63 class again): a pipeline run is an irreversible action whose
+premise — "the LLM will produce a real thesis" — can be false, and the MiniMax token quota is
+exhausted right now.** Do not re-run `daily_refresh` until the quota resets; a 429 yields an
+empty-thesis fallback book every time. The snapshot-first discipline is what made this
+recoverable. See [[dont-rerun-pipeline-on-exhausted-minimax-quota]]. Full restore needs all four
+tables, not just `research_recommendations` — the derived tables trip the book-of-record check
+and show stale HHI otherwise.
+
 ### Loop iteration 84 (2026-07-25) — consolidation: closed the ARCHITECTURE doc-sync, held the line elsewhere
 
 **A deliberately light turn — the high-value visible work is all blocked, and the honest move was

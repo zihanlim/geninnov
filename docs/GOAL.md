@@ -204,6 +204,25 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 88 (2026-07-25) — the restored book cross-checks whole, to the last number
+
+**A 10-point numeric cross-check of the restored book, all passing** — the strongest evidence yet
+that last iteration's recovery is sound, not just superficially correct: gross/net match
+`book_metrics` (59.3% / −5.4%); the Euler identity holds to 1e-9 (vol 0.0838, 10/10 priced);
+every scenario breakdown reconciles to its total with the melt-up as worst (−1.99%); the
+correlation summary is internally consistent (45 pairs, max SVXY/ARKK 0.647, **0 flagged** because
+all sit below the 0.70 threshold — matching the empty `correlation_pairs`); 0 cap violations; and
+HHI 1148 matches Σ(wᵢ/gross)²×10000 over the weights. Nothing the pipeline run corrupted survived
+the restore. The `docs/adrs/README.md` index entry for ADR-0082 is now present (the other session
+added it), closing that deferred item.
+
+**Still a holding pattern, honestly.** The substantive work — Step 4's Euler render, the EdgeScore
+formula, the beta-column decision — is all inside the other session's frontend rewrite; the MiniMax
+quota is out (no pipeline run); and the Playwright MCP server is disconnected (no UI pass, no way to
+verify a deploy). Until one of those clears, the loop can only verify and document. The book is
+correct and live, the backend is on origin, and the moment `/risk`'s frontend settles or a browser
+comes back, Step 4 is a fast follow.
+
 ### Loop iteration 87 (2026-07-25) — pushed the Euler wiring to origin (Playwright pass could not run)
 
 **Pushed on the operator's go-ahead.** `origin/main` advanced `69cf2022..19b8f74b` (clean

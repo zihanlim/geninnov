@@ -137,7 +137,7 @@ block:
 
 ## Where things stand (update me)
 
-Live at https://andromeda-analytics.vercel.app · 546 backend + 134 frontend tests green.
+Live at https://andromeda-analytics.vercel.app · 554 backend + 134 frontend tests green.
 
 - **Pipeline** L0–L5 runs daily on GitHub Actions (`daily-refresh.yml`, verified
   firing on schedule); monthly `theme-discovery.yml`; all 6 secrets configured.
@@ -185,6 +185,41 @@ Live at https://andromeda-analytics.vercel.app · 546 backend + 134 frontend tes
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
+
+### Loop iteration 62 (2026-07-25)
+
+**Fixing the home tilt last iteration exposed that `/risk` and the thesis compute the
+same tilt a different, wrong way. Three bugs in `compute_book_metrics` — it was
+counting shorts as longs, ignoring factor direction, and dividing every tilt by six.**
+
+Iteration 61 fixed the home's FACTOR TILT (the SQL view). That made the home
+disagree with `/risk`'s BOOK FACTOR TILT and the `/book` thesis — both fed by
+`book_metrics.compute_book_metrics`, which had three separate errors stacked in one
+loop:
+
+1. **Unsigned weight.** `weight × beta` used the unsigned weight (the book's
+   `net_exposure = long_w − short_w` only works if shorts are stored positive), so
+   every short was summed as a long.
+2. **`abs(beta)`.** Factor direction was discarded, so a long in a negative-beta name
+   added positive exposure — SMB's sign flipped on the live book.
+3. **`total_weighted += abs(weight)` inside the per-factor loop** — six times per
+   pick, so every tilt came out **a sixth** of its true size. That is precisely why
+   `/risk` read *"close to factor-neutral"* and the thesis called the tilts *"modest
+   (Mkt +0.16, SMB +0.04…)"* — the book is not.
+
+Signed by direction over `|weight|`, signed beta, normalised once: on the live book
+market beta goes **+0.18 → −0.19**, **SMB +0.05 → +0.32**, HML/RMW/CMA to their true
+signed magnitudes (verified against a hand computation). `scenario_analysis` reads
+per-pick betas and never these fields, so it is untouched — **554 backend green**; the
+two tests that had *documented* the six-times arithmetic now pin the signed result.
+
+**Not live this iteration, and that is the correct call.** `/risk` and the thesis both
+read the *persisted* `book_metrics`; re-persisting it alone would leave the thesis
+prose citing +0.16 next to a −0.19 panel. The next full pipeline run regenerates
+`book_metrics` **and** the thesis together, so it goes live consistent. The home's own
+tilt (the view) is already correct at −0.35. **UI/UX pass** — `/`, `/book`, `/risk`,
+`/method` at 1440 and 375: zero horizontal scroll, zero console errors. 554 backend +
+134 frontend.
 
 ### Loop iteration 61 (2026-07-25)
 

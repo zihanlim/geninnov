@@ -2301,7 +2301,24 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
         if ctx:
             p["ma_context"] = ctx
 
-    corr_pairs = compute_correlation_matrix(picks, lookback_days=252)
+    # Hoist ONE 252-day returns frame for every correlation consumer below. This function
+    # reached yfinance three separate times for the same window — the 0.70-threshold book
+    # correlation, the 0.0-threshold summary, and the candidate correlation — three
+    # independent chances to lose a book to a scraper hiccup. Pairwise .corr() is unaffected
+    # by extra columns, so one shared frame gives identical correlations; it is also the
+    # single frame the Euler risk decomposition reuses next
+    # (docs/handoff-euler-risk-decomposition.md, step 1). MA context stays its own fetch — it
+    # needs prices, not returns. fetch_pick_returns swallows its own errors to an empty frame,
+    # so on any miss shared_returns is None and each consumer falls back to fetching its own.
+    from .book_metrics import fetch_pick_returns
+    _pool_assets = [c.get("asset") for c in (state.get("candidates") or []) if c.get("asset")]
+    _shared = fetch_pick_returns(
+        sorted(set(p["asset"] for p in picks if p.get("asset")) | set(_pool_assets)),
+        lookback_days=252,
+    )
+    shared_returns = _shared if (_shared is not None and not _shared.empty) else None
+
+    corr_pairs = compute_correlation_matrix(picks, lookback_days=252, returns=shared_returns)
     scenarios = run_scenario_analysis(
         picks=picks,
         book_metrics=bm,
@@ -2328,7 +2345,9 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
     # migration. `correlation_pairs` is untouched, so every existing consumer keeps its
     # meaning.
     try:
-        all_pairs = compute_correlation_matrix(picks, lookback_days=252, threshold=0.0)
+        all_pairs = compute_correlation_matrix(
+            picks, lookback_days=252, threshold=0.0, returns=shared_returns
+        )
         state["book_metrics_final"]["correlation_summary"] = correlation_summary(all_pairs)
     except Exception as exc:   # pragma: no cover - network/data
         # An explanatory measurement must never break the book — the rule
@@ -2349,7 +2368,7 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
             if c.get("asset") and c.get("asset") not in set(held_assets)
         ]
         state["candidate_correlations_final"] = candidate_book_correlation(
-            cand_assets, held_assets, lookback_days=252
+            cand_assets, held_assets, lookback_days=252, returns=shared_returns
         )
     except Exception as exc:
         # Never fail the book over an explanatory panel.

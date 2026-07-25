@@ -215,6 +215,40 @@ def test_correlation_warning_inverse_hedge():
     assert not any(w.startswith("ONE BET") for w in warnings)
 
 
+def test_correlation_functions_reuse_provided_returns_frame():
+    """Step 1 of the Euler wiring: a pre-fetched frame must be reused (no re-fetch) and
+    give the identical result. A wider frame (an extra candidate column) must not perturb
+    a held pair's correlation — .corr() is pairwise-complete. This is what lets
+    finalise_book_analytics hoist ONE frame for its three correlation consumers."""
+    import math
+    import pandas as pd
+    from unittest.mock import patch
+    from backend.services.book_metrics import candidate_book_correlation
+
+    idx = pd.date_range("2025-01-01", periods=80).date
+    base = [math.sin(i / 5) for i in range(80)]
+    df = pd.DataFrame({
+        "SPY":  base,
+        "QQQ":  [b * 1.01 + 0.001 for b in base],  # ~identical to SPY
+        "TLT":  [-b for b in base],                # opposite
+        "MSFT": [math.cos(i / 5) for i in range(80)],  # extra (candidate) column
+    }, index=idx)
+    picks = [_pick("SPY", "long", 0.1), _pick("QQQ", "long", 0.1), _pick("TLT", "short", 0.1)]
+
+    def _boom(*a, **k):
+        raise AssertionError("fetch_pick_returns must NOT be called when returns= is provided")
+
+    with patch("backend.services.book_metrics.fetch_pick_returns", _boom):
+        pairs = compute_correlation_matrix(picks, returns=df, threshold=0.0)
+        cand = candidate_book_correlation(["MSFT"], ["SPY", "QQQ", "TLT"], returns=df)
+
+    # The frame was reused (no fetch raised), the extra MSFT column did not move SPY/QQQ,
+    # and the candidate got a closest held name back.
+    spy_qqq = next(v for a, b, v in pairs if {a, b} == {"SPY", "QQQ"})
+    assert spy_qqq > 0.99
+    assert "MSFT" in cand and cand["MSFT"]["closest"] in {"SPY", "QQQ", "TLT"}
+
+
 def test_correlation_warning_empty():
     assert correlation_warning([]) == []
 

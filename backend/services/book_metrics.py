@@ -437,6 +437,7 @@ def candidate_book_correlation(
     candidate_assets: list[str],
     held_assets: list[str],
     lookback_days: int = 252,
+    returns: pd.DataFrame | None = None,
 ) -> dict[str, dict]:
     """For each candidate NOT held, its closest held position by |correlation|.
 
@@ -472,7 +473,8 @@ def candidate_book_correlation(
     if not cands or not held:
         return {}
 
-    returns = fetch_pick_returns(sorted(set(cands) | set(held)), lookback_days)
+    if returns is None:
+        returns = fetch_pick_returns(sorted(set(cands) | set(held)), lookback_days)
     if returns.empty:
         return {}
 
@@ -497,16 +499,23 @@ def compute_correlation_matrix(
     picks: list[dict],
     lookback_days: int = 252,
     threshold: float = HIGH_CORR_THRESHOLD,
+    returns: pd.DataFrame | None = None,
 ) -> list[tuple[str, str, float]]:
     """
     Compute pairwise Pearson correlation of daily returns for pick assets.
     Returns list of (asset_a, asset_b, correlation) for pairs where |corr| > threshold.
+
+    Pass ``returns`` to reuse a pre-fetched frame instead of hitting yfinance again.
+    ``.corr()`` uses pairwise-complete observations, so a wider frame (extra columns for
+    other assets) yields byte-identical pairwise correlations — the result is the same
+    whether the frame was fetched for these tickers alone or hoisted for the whole book.
     """
     tickers = list({p["asset"] for p in picks if p.get("asset")})
     if len(tickers) < 2:
         return []
 
-    returns = fetch_pick_returns(tickers, lookback_days)
+    if returns is None:
+        returns = fetch_pick_returns(tickers, lookback_days)
     if returns.empty or len(returns.columns) < 2:
         return []
 

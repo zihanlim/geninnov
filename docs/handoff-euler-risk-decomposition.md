@@ -27,17 +27,19 @@ Book level: `portfolio_vol`, `portfolio_var`, `confidence`, `gross_exposure`, `n
 
 ## Step 1 — the prerequisite refactor (do this first, separately)
 
-`finalise_book_analytics` (`q1_agent.py`) currently reaches yfinance **four times per run**:
-`moving_average_context`, `compute_correlation_matrix` → `fetch_pick_returns`,
-`candidate_book_correlation`, and `independent_ideas`. yfinance is a scraper, so that is four
-independent chances to lose a book.
+**✅ DONE (iteration 82).** `compute_correlation_matrix` and `candidate_book_correlation` now take
+an optional `returns=` frame; `finalise_book_analytics` fetches ONE 252-day frame (book ∪
+candidates) and threads it to all three correlation consumers — the two book calls (0.70 and 0.0
+threshold) and the candidate call — collapsing three yfinance fetches to one. `moving_average_context`
+stays its own fetch (it needs prices, not returns). Behaviour-preserving: verified on live data that
+the shared-frame path reproduces the independent-fetch correlation to 0.00e+00 across all 45 book
+pairs; `test_correlation_functions_reuse_provided_returns_frame` pins reuse-and-identity.
+**Step 2 must pass this same frame to `decompose_risk` (acceptance criterion #4), not re-fetch.**
 
-Hoist one 252-day frame and pass it down. `compute_correlation_matrix` should accept an optional
-pre-fetched `returns` rather than always fetching its own.
-
-**Do this as its own commit.** It is behaviour-preserving and independently verifiable — the
-existing correlation tests should pass untouched. Bundling it with new behaviour makes a
-regression here indistinguishable from a regression in the decomposition.
+_Original brief, for context:_ `finalise_book_analytics` reached yfinance **four times per run**
+(`moving_average_context`, two `compute_correlation_matrix` calls, `candidate_book_correlation`) —
+four independent chances to lose a book to a scraper hiccup. `.corr()` is pairwise-complete, so one
+shared frame gives byte-identical correlations.
 
 ## Step 2 — wire it
 

@@ -204,6 +204,32 @@ Live at https://andromeda-analytics.vercel.app · 564 backend + 144 frontend tes
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 82 (2026-07-25) — hoisted the returns frame (step 1 of the Euler wiring)
+
+**Picked up the handoff the other session left** (`docs/handoff-euler-risk-decomposition.md`):
+the Euler risk decomposition — the proper fix for the −0.19/−0.50 beta-attribution finding
+(iterations 79/81), since it replaces `signed_weight × β_mkt` (which sums to nothing) with risk
+contributions that sum to `portfolio_vol`. The pure function + 21 tests already exist on main; the
+brief hands off the wiring. All the files it touches (`q1_agent.py`, `book_metrics.py`,
+`PositionRiskAttribution.tsx`) are clean, not in the other session's 56-file frontend WIP — so
+this is non-colliding, unlike the last three findings.
+
+Did **step 1, the prerequisite refactor**, as its own commit per the brief. `finalise_book_analytics`
+reached yfinance three times for the same 252-day window (book correlation at 0.70, the 0.0-threshold
+summary, and candidate correlation) — three independent chances to lose a book to a scraper hiccup.
+`compute_correlation_matrix` and `candidate_book_correlation` now accept an optional pre-fetched
+`returns=` frame; the node fetches **one** frame (book ∪ candidates) and threads it to all three.
+Behaviour-preserving because `.corr()` is pairwise-complete — extra columns can't move a pair's
+correlation. **Verified on live data**: the shared-frame path reproduces the independent-fetch
+correlation to **0.00e+00** across all 45 book pairs. +1 reuse-and-identity test; 125 backend tests
+pass. Invisible until the next pipeline run (no deploy, live data unchanged); UI pass clean at 1440/375
+across all four pages.
+
+Steps 2–4 (call `decompose_risk` reusing this frame → persist to migration 038 → re-source
+`PositionRiskAttribution.tsx`) are the next iterations' work and land the user-visible payoff that
+retires the beta finding. `PROGRESS.md` remains BOM/mojibake corrupted in the shared tree (third
+iteration) — untouched.
+
 ### Loop iteration 81 (2026-07-25) — the EdgeScore formula on /book and / is stale by two years of config
 
 **Reconciled the two headline scoring numbers against their own inputs. Both compute

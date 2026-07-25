@@ -1794,3 +1794,125 @@ def test_catches_the_other_phrasings_of_the_same_excuse():
         "ARKK is not in the tradable universe.",
     ):
         assert check_availability_claims(prose, _LIVE_CANDIDATES), prose
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# attach_asset_factor_tilts — per-pick betas are joined, never re-typed (ADR-0075)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_LIVE_EXPOSURES = {
+    # Real 2026-07-25 rows. beta_umd is null for every asset in the live table.
+    "ARKK": {"beta_mkt": 1.48955, "beta_smb": 0.366933, "beta_hml": -0.47521,
+             "beta_rmw": -1.35673, "beta_cma": 0.0937154, "beta_umd": None,
+             "r_squared": 0.772629},
+    "SHY": {"beta_mkt": 0.0146072, "beta_smb": 0.0130453, "beta_hml": -0.0265642,
+            "beta_rmw": 0.00358089, "beta_cma": 0.0419115, "beta_umd": None,
+            "r_squared": 0.0729643},
+    "BABA": {"beta_mkt": 1.24626, "beta_smb": -0.249799, "beta_hml": -0.207389,
+             "beta_rmw": -0.369905, "beta_cma": 0.676156, "beta_umd": None,
+             "r_squared": 0.138452},
+}
+
+
+def test_every_position_gets_its_own_betas_not_one_shared_row():
+    """The live defect: all ten picks carried beta_mkt -0.02, the pool aggregate.
+
+    SHY is 1-3yr Treasuries and ARKK is high-beta growth; a book that prints the same
+    market beta for both has told the reader nothing about either.
+    """
+    from backend.services.q1_agent import attach_asset_factor_tilts
+
+    picks = [{"asset": "ARKK", "direction": "short"},
+             {"asset": "SHY", "direction": "long"},
+             {"asset": "BABA", "direction": "short"}]
+    attach_asset_factor_tilts(picks, _LIVE_EXPOSURES)
+
+    mkts = [p["factor_tilts"]["beta_mkt"] for p in picks]
+    assert mkts == pytest.approx([1.48955, 0.0146072, 1.24626])
+    assert len(set(mkts)) == 3, "every position must carry its own beta"
+
+
+def test_the_models_copied_tilts_are_overwritten():
+    """The join is authoritative — a stale LLM value must not survive it."""
+    from backend.services.q1_agent import attach_asset_factor_tilts
+
+    picks = [{"asset": "ARKK", "factor_tilts": {"beta_mkt": -0.02, "beta_hml": 0.27}}]
+    attach_asset_factor_tilts(picks, _LIVE_EXPOSURES)
+    assert picks[0]["factor_tilts"]["beta_mkt"] == pytest.approx(1.48955)
+    assert picks[0]["factor_tilts"]["beta_hml"] == pytest.approx(-0.47521)
+
+
+def test_an_unmeasured_beta_is_omitted_not_zeroed():
+    """ADR-0066: 0.0 would assert no momentum exposure was found, not that none
+    was measured. beta_umd is null across the live table."""
+    from backend.services.q1_agent import attach_asset_factor_tilts
+
+    picks = [{"asset": "ARKK"}]
+    attach_asset_factor_tilts(picks, _LIVE_EXPOSURES)
+    assert "beta_umd" not in picks[0]["factor_tilts"]
+    assert len(picks[0]["factor_tilts"]) == 5
+
+
+def test_fit_quality_rides_along_with_the_betas():
+    """A beta a reader cannot weight is a number with no unit: ARKK fits at 0.77,
+    BABA at 0.14."""
+    from backend.services.q1_agent import attach_asset_factor_tilts
+
+    picks = [{"asset": "ARKK"}, {"asset": "BABA"}]
+    attach_asset_factor_tilts(picks, _LIVE_EXPOSURES)
+    assert picks[0]["factor_r_squared"] == pytest.approx(0.772629)
+    assert picks[1]["factor_r_squared"] == pytest.approx(0.138452)
+
+
+def test_a_pick_with_no_factor_row_gets_an_empty_dict():
+    from backend.services.q1_agent import attach_asset_factor_tilts
+
+    picks = [{"asset": "NOSUCH"}]
+    attach_asset_factor_tilts(picks, _LIVE_EXPOSURES)
+    assert picks[0]["factor_tilts"] == {}
+    assert picks[0]["factor_r_squared"] is None
+
+
+def test_missing_exposures_entirely_does_not_raise():
+    from backend.services.q1_agent import attach_asset_factor_tilts
+
+    picks = [{"asset": "ARKK"}]
+    assert attach_asset_factor_tilts(picks, None)[0]["factor_tilts"] == {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The regime block: units and characterisations are computed, not inferred
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_the_curve_is_rendered_in_bps_and_named():
+    """yield_curve_slope is persisted in PERCENT. Printed raw under a header reading
+    "bps", 0.34 told the agent the curve was a third of one basis point — and it
+    opened the published thesis with "an inverted curve"."""
+    from backend.services.q1_agent import _describe_yield_curve
+
+    out = _describe_yield_curve(0.34)          # the live 2026-07-25 value
+    assert "+34 bps" in out
+    assert "NOT inverted" in out
+    assert "INVERTED" in _describe_yield_curve(-0.20)
+    assert "FLAT" in _describe_yield_curve(0.01)
+    assert _describe_yield_curve(None) == "N/A"
+
+
+def test_the_vol_term_structure_states_which_regime_it_is():
+    """Handed -1.93 with a "positive = backwardation" note, the model re-expressed it
+    as VIX3M-VIX = +1.93 and kept the label belonging to the other subtraction order."""
+    from backend.services.q1_agent import _describe_vix_term
+
+    out = _describe_vix_term(-1.93)            # the live 2026-07-25 value
+    assert "CONTANGO" in out
+    assert "-1.93" in out
+    assert "BACKWARDATION" in _describe_vix_term(2.5)
+    assert _describe_vix_term(None) == "N/A"
+
+
+def test_a_percent_spread_is_rendered_in_bps():
+    """HY OAS 2.77% was printed as "2.77 bps" — a credit market ~100x too tight."""
+    from backend.services.q1_agent import _describe_bps
+
+    assert _describe_bps(2.77) == "277 bps"
+    assert _describe_bps(None) == "N/A"

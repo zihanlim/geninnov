@@ -76,6 +76,7 @@ interface Pick {
   counter_thesis?: string;
   time_horizon?: string;
   factor_tilts?: Record<string, number>;
+  factor_r_squared?: number | null;
   notional?: number;
   weight?: number;
   signed_weight?: number;
@@ -165,6 +166,16 @@ const fmtPct = (n?: number | null, dp = 1) =>
   n === null || n === undefined || Number.isNaN(n)
     ? "—"
     : `${(n * 100).toFixed(dp)}%`;
+// beta_mkt -> Mkt. The raw column names leaked to the page as chip labels.
+const FACTOR_LABELS: Record<string, string> = {
+  beta_mkt: "Mkt",
+  beta_smb: "SMB",
+  beta_hml: "HML",
+  beta_rmw: "RMW",
+  beta_cma: "CMA",
+  beta_umd: "UMD",
+};
+
 const fmtSigned = (n?: number | null, dp = 2) =>
   n === null || n === undefined || Number.isNaN(n)
     ? "—"
@@ -1475,17 +1486,36 @@ function PositionRow({
 
               {pick.factor_tilts && Object.keys(pick.factor_tilts).length > 0 && (
                 <>
-                  <SubHead className="mt-4">Factor tilts</SubHead>
+                  {/* These are THIS ASSET's own betas, joined from the L2
+                      factor_exposures table — not the book's. Until ADR-0075 the model
+                      was asked to fill this field and copied one aggregate row into all
+                      ten positions, so SHY and ARKK printed the same market beta. */}
+                  <SubHead className="mt-4">
+                    Factor exposure — {pick.asset}&rsquo;s own betas
+                  </SubHead>
                   <div className="flex flex-wrap gap-1.5">
                     {Object.entries(pick.factor_tilts).map(([k, v]) => (
                       <span
                         key={k}
                         className="text-[11.5px] num bg-bg-elevated text-text-secondary px-2 py-1 rounded border border-border"
                       >
-                        {k} {fmtSigned(v)}
+                        {FACTOR_LABELS[k] ?? k} {fmtSigned(v)}
                       </span>
                     ))}
                   </div>
+                  <p className="text-[11.5px] text-text-tertiary mt-1.5 mb-0">
+                    FF5 + UMD, 252-day regression against {pick.asset}&rsquo;s own returns.{" "}
+                    {typeof pick.factor_r_squared === "number" ? (
+                      <>
+                        R<sup>2</sup> <span className="num">{pick.factor_r_squared.toFixed(2)}</span>
+                        {pick.factor_r_squared < 0.3
+                          ? " — a weak fit, so read these betas loosely."
+                          : "."}
+                      </>
+                    ) : (
+                      <>Fit quality not recorded.</>
+                    )}
+                  </p>
                 </>
               )}
 

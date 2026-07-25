@@ -392,6 +392,101 @@ def check_factor_tilt_claims(
     return out
 
 
+def check_per_pick_tilts_differentiate(rec_row: dict | None) -> list[str]:
+    """Every position's factor tilts must be its own, not one row copied ten times.
+
+    Until [ADR-0075] the prompt asked the model to fill each pick's `factor_tilts` from
+    *"the pre-computed book_metrics"* — an aggregate. It complied exactly: on 2026-07-25
+    all ten positions carried byte-identical tilts, `beta_mkt -0.02`, the candidate pool's
+    equal-weighted average, which belongs to no position in the book. **SHY** (1-3yr
+    Treasuries) and **ARKK** (high-beta growth) were printed with the same market beta, on
+    a page whose whole premise is that each row says something different.
+
+    The measured betas were in `factor_exposures` all along — ARKK 1.49, BABA 1.25,
+    SHY 0.015 — so this flags the fingerprint rather than the prose: identical
+    non-empty tilts across two or more picks cannot be a coincidence of measurement.
+
+    Silent for a one-position book, or when no pick carries tilts.
+    """
+    if not rec_row:
+        return []
+    picks = rec_row.get("picks") or []
+    if isinstance(picks, str):
+        try:
+            picks = json.loads(picks)
+        except (ValueError, TypeError):
+            return []
+    with_tilts = [p for p in picks if isinstance(p, dict) and p.get("factor_tilts")]
+    if len(with_tilts) < 2:
+        return []
+
+    signatures = {json.dumps(p["factor_tilts"], sort_keys=True) for p in with_tilts}
+    if len(signatures) > 1:
+        return []
+    return [
+        f"book {rec_row.get('run_date', '?')}: all {len(with_tilts)} positions carry "
+        f"IDENTICAL factor_tilts {signatures.pop()} — per-pick betas must be joined from "
+        f"factor_exposures, not copied from one aggregate (ADR-0075). "
+        f"Assets: {', '.join(p.get('asset', '?') for p in with_tilts)}"
+    ]
+
+
+def check_regime_characterisation_claims(
+    rec_row: dict | None,
+    regime_row: dict | None,
+) -> list[str]:
+    """A shape word in the thesis must match the measured shape.
+
+    `verify_citations` grounds *numbers* against their sources, so a thesis can cite every
+    level correctly and still characterise them backwards — the gap
+    [ADR-0049](0049) named. Both live examples on 2026-07-25 are shape words:
+
+    - *"2y at 4.37% sits 74bps above Fed Funds — **an inverted curve**"*, with the
+      measured 10y-2y slope at **+34bps**. The sentence describes an upward slope and
+      names it an inversion.
+    - *"term structure already in **backwardation** (VIX3M-VIX = +1.93)"*, with
+      `vix_term_diff` (VIX − VIX3M) at **−1.93**, which is contango — the calm state —
+      used to argue a VIX-spike risk was already underway.
+
+    Both are now stated for the model rather than left to inference, but the prompt is one
+    defence and this is the other.
+    """
+    if not rec_row or not regime_row:
+        return []
+    text = " ".join(
+        [rec_row.get("book_view") or ""]
+        + [str(x) for x in (rec_row.get("book_risks") or [])]
+    ).lower()
+    if not text.strip():
+        return []
+
+    run = rec_row.get("run_date", "?")
+    out: list[str] = []
+
+    slope = regime_row.get("yield_curve_slope")
+    if isinstance(slope, (int, float)) and not isinstance(slope, bool):
+        bps = slope * 100.0
+        if re.search(r"\binvert(ed|s|ing|ion)\b", text) and bps > 0:
+            out.append(
+                f"book {run}: the thesis calls the curve INVERTED, but the measured "
+                f"10y-2y slope is {bps:+.0f} bps — upward-sloping."
+            )
+
+    vt = regime_row.get("vix_term_diff")
+    if isinstance(vt, (int, float)) and not isinstance(vt, bool):
+        if "backwardation" in text and vt < 0:
+            out.append(
+                f"book {run}: the thesis says the vol term structure is in "
+                f"BACKWARDATION, but VIX - VIX3M is {vt:+.2f} — contango."
+            )
+        if "contango" in text and vt > 0:
+            out.append(
+                f"book {run}: the thesis says the vol term structure is in CONTANGO, "
+                f"but VIX - VIX3M is {vt:+.2f} — backwardation."
+            )
+    return out
+
+
 def _numbers_after(alias: str, text: str) -> list[float]:
     """Numbers attached to ``alias`` — "HML +0.27", "Mkt -0.02", "market beta of 0.14".
 
@@ -738,6 +833,44 @@ def main() -> int:
                 print(f"  - {f}")
             return 1
         print(f"✓ Factor tilts stated in the {rec['run_date']} thesis match the book.")
+
+        # Each position's own betas, not one aggregate copied across the book.
+        pick_row = (
+            sb.table("research_recommendations")
+            .select("run_date, picks")
+            .eq("run_date", rec["run_date"])
+            .limit(1)
+            .execute()
+            .data
+        )
+        tilt_spread = check_per_pick_tilts_differentiate(pick_row[0] if pick_row else None)
+        if tilt_spread:
+            print("✗ DATA INTEGRITY CHECK FAILED — per-pick factor tilts do not "
+                  "differentiate:")
+            for f in tilt_spread:
+                print(f"  - {f}")
+            return 1
+        print(f"✓ Per-pick factor tilts differ across the {rec['run_date']} book.")
+
+        # A shape word must match the measured shape (curve, vol term structure).
+        regime = (
+            sb.table("regime_classifications")
+            .select("run_date, yield_curve_slope, vix_term_diff")
+            .eq("run_date", rec["run_date"])
+            .limit(1)
+            .execute()
+            .data
+        )
+        shape_flags = check_regime_characterisation_claims(
+            tilt_row[0] if tilt_row else None, regime[0] if regime else None
+        )
+        if shape_flags:
+            print("✗ DATA INTEGRITY CHECK FAILED — the thesis characterises the regime "
+                  "against its own measurements:")
+            for f in shape_flags:
+                print(f"  - {f}")
+            return 1
+        print(f"✓ Regime characterisations in the {rec['run_date']} thesis match L3.")
 
         arith = check_book_arithmetic(book_row[0] if book_row else None)
         if arith:

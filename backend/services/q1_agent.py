@@ -1036,7 +1036,6 @@ Output format (respond ONLY with valid JSON, no markdown):
       "counter_thesis": "What specific signal or event would DISQUALIFY this trade? Include a measurable trigger. E.g. 'Long TLT is wrong if 10y yield breaks above 4.80% on sustained basis (>3 consecutive closes)'",
       "catalysts": ["FOMC meeting date", "CPI release date"],
       "risk": "1-2 sentence risk description",
-      "factor_tilts": {"beta_mkt": 0.2, "beta_smb": -0.1, "beta_hml": 0.3, "beta_umd": 0.5},
       "citations": [
         {"text": "HY OAS at 380bps", "source": "BAMLH0A0HYM2"}
       ]
@@ -1060,7 +1059,9 @@ Rules:
 - every numeric value in thesis, catalysts, risk, counter_thesis, or book_view MUST cite a source
 - time_horizon must be specific: "1-2 weeks" | "2-4 weeks" | "1-3 months" | "3-6 months"
 - counter_thesis MUST include a measurable disqualifier: a specific price/yield/data level, not a vague concern
-- factor_tilts: use the pre-computed book_metrics if available; set to {} if no data
+- do NOT emit factor_tilts. Each pick's FF5+UMD betas are joined from the L2
+  factor_exposures table after you answer — they are measured per asset, and the
+  book's are recomputed on your actual weights
 - scenario analysis: reference the specific scenario results in book_risks (e.g. "S2 rate shock hits -6%")
 - if uncertain about a number, write "N/A — [reason]" and do not cite
 - cite every number: prices, yields, spreads, betas, scores, dates, P&L figures
@@ -1078,10 +1079,10 @@ REASON_PICKS_PROMPT_TEMPLATE = """Today's date: {run_date}
 === REGIME CLASSIFICATION (L3) ===
 Cycle: {cycle}
 Sentiment: {sentiment}
-  Yield curve slope (10y-2y): {yc_slope} bps
-  HY credit OAS: {hy_oas} bps
+  Yield curve slope (10y-2y): {yc_slope}
+  HY credit OAS: {hy_oas}
   VIX: {vix}
-  VIX term structure: {vix_term} (positive = backwardation)
+  VIX term structure: {vix_term}
   Real rate: {real_rate}%
   SPX breadth: {breadth}%
 
@@ -1159,6 +1160,76 @@ def _format_lens_framing(lens: str) -> str:
     if lens == "multi_asset" or lens not in LENS_PROMPT_FRAMING:
         return "=== LENS: MULTI-ASSET (default) ===\nNo lens filter applied — picks can span any asset class."
     return f"=== LENS: {lens.upper()} ===\n{LENS_PROMPT_FRAMING[lens]}"
+
+
+# A curve within this of flat is described as flat rather than given a direction —
+# ±5bps is inside the daily noise of two separately-quoted constant-maturity yields.
+FLAT_CURVE_BPS = 5.0
+
+
+def _is_num(x) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def _describe_yield_curve(slope_pct: float | None) -> str:
+    """Render the 10y-2y slope in bps **and say what shape that is**.
+
+    `regime_classifications.yield_curve_slope` is stored in PERCENT (DGS10 − DGS2, both
+    FRED percent series), so 2026-07-25's +34bps curve is persisted as `0.34`. The prompt
+    printed the raw number under a header reading `bps` — telling the agent the curve was
+    **0.34 basis points**, indistinguishable from flat. It duly opened the published
+    thesis with *"an inverted curve"* while quoting levels that show an upward slope.
+    That is the same percent-vs-bps mismatch that made the classifier's own thresholds
+    unreachable (iteration 72), surviving in the one place it reaches a reader.
+
+    Converting the unit is necessary but not sufficient: a *shape* is a characterisation
+    the system can compute, and by the rule in [ADR-0049]/[ADR-0073] a fact the system can
+    compute is not left for the model to infer. So the label is stated, not implied.
+    """
+    if not _is_num(slope_pct):
+        return "N/A"
+    bps = slope_pct * 100.0
+    if abs(bps) < FLAT_CURVE_BPS:
+        shape = "essentially FLAT — neither inverted nor meaningfully upward-sloping"
+    elif bps > 0:
+        shape = "upward-sloping — the curve is NOT inverted"
+    else:
+        shape = "INVERTED — 10y below 2y"
+    return f"{bps:+.0f} bps ({shape})"
+
+
+def _describe_vix_term(diff: float | None) -> str:
+    """Render VIX − VIX3M with its regime named.
+
+    The convention note *"positive = backwardation"* was correct for this quantity, and
+    the model still got it backwards: handed `-1.93`, it wrote *"term structure already in
+    backwardation (VIX3M-VIX = +1.93)"* — flipping the subtraction order, which is
+    arithmetically fine, and then keeping the label that belonged to the other order. Under
+    VIX3M − VIX = +1.93 the market is in **contango**, the calm state, and the thesis used
+    the opposite to argue a VIX-spike risk was already underway.
+
+    Naming the state removes the step where a convention has to be applied correctly.
+    """
+    if not _is_num(diff):
+        return "N/A"
+    if abs(diff) < 0.05:
+        state = "flat"
+    elif diff > 0:
+        state = "BACKWARDATION — spot above 3-month, the stressed state"
+    else:
+        state = "CONTANGO — spot below 3-month, the calm/normal state"
+    return f"VIX − VIX3M = {diff:+.2f} ({state})"
+
+
+def _describe_bps(value_pct: float | None) -> str:
+    """A FRED percent series rendered in bps, e.g. HY OAS 2.77 → `277 bps`.
+
+    The prompt read `HY credit OAS: 2.77 bps` for a spread that is 277 — a credit market
+    described as ~100x tighter than it is.
+    """
+    if not _is_num(value_pct):
+        return "N/A"
+    return f"{value_pct * 100:.0f} bps"
 
 
 def _format_macro_snapshot(snapshot: dict[str, dict]) -> str:
@@ -1314,10 +1385,12 @@ def reason_picks(state: Q1State) -> Q1State:
         "acro_snapshot": _format_macro_snapshot(macro),
         "cycle": regime.get("cycle", "N/A"),
         "sentiment": regime.get("sentiment", "N/A"),
-        "yc_slope": regime.get("yield_curve_slope", "N/A"),
-        "hy_oas": regime.get("hy_oas", "N/A"),
+        # These three arrive from FRED in PERCENT and used to be printed under a header
+        # reading "bps". See _describe_yield_curve for what that cost.
+        "yc_slope": _describe_yield_curve(regime.get("yield_curve_slope")),
+        "hy_oas": _describe_bps(regime.get("hy_oas")),
         "vix": regime.get("vix_level", "N/A"),
-        "vix_term": regime.get("vix_term_diff", "N/A"),
+        "vix_term": _describe_vix_term(regime.get("vix_term_diff")),
         "real_rate": regime.get("real_rate", "N/A"),
         "breadth": regime.get("spx_breadth", "N/A"),
         "theme_table": _make_theme_table(themes),
@@ -2004,6 +2077,44 @@ def verify_citations(state: Q1State) -> Q1State:
 # Node 6: size_positions  (pure fn)
 # ─────────────────────────────────────────────────────────────────────────────
 
+FACTOR_BETA_KEYS = ("beta_mkt", "beta_smb", "beta_hml", "beta_rmw", "beta_cma", "beta_umd")
+
+
+def attach_asset_factor_tilts(
+    picks: list[dict],
+    factor_exposures: dict[str, dict] | None,
+) -> list[dict]:
+    """Join each pick's OWN FF5+UMD betas from L2, replacing the model's copy.
+
+    `factor_tilts` is a **per-pick** field rendered per row on `/book`, but the prompt
+    told the model *"use the pre-computed book_metrics if available"* — an aggregate. It
+    complied exactly: on 2026-07-25 all **ten** positions carried byte-identical tilts,
+    `beta_mkt -0.02` for every one of them, which is the candidate pool's equal-weighted
+    average and belongs to no position in the book. SHY (1-3yr Treasuries) and ARKK
+    (high-beta growth) were printed with the same market beta.
+
+    The measured values were already in the table the prompt prints two sections earlier:
+    **ARKK 1.49, BABA 1.25, SHY 0.015.** So this is [ADR-0049]/[ADR-0073] once more — a
+    number the system computes is joined, never re-typed by the model — and it is also
+    what `GOAL.md` asks of any per-row surface: *every scannable layer must differentiate*.
+
+    `r_squared` rides along because these betas are not equally trustworthy: ARKK's fit is
+    0.77, BABA's 0.14. A beta a reader cannot weight is a number with no unit.
+
+    An unmeasured beta is **omitted**, not zeroed — `beta_umd` is null for every asset
+    today, and 0.0 would assert no momentum exposure was found when none was measured
+    ([ADR-0066]). A pick with no factor row at all gets `{}`.
+    """
+    exposures = factor_exposures or {}
+    for p in picks:
+        fe = exposures.get(p.get("asset") or "") or {}
+        p["factor_tilts"] = {
+            k: float(fe[k]) for k in FACTOR_BETA_KEYS if _is_num(fe.get(k))
+        }
+        p["factor_r_squared"] = float(fe["r_squared"]) if _is_num(fe.get("r_squared")) else None
+    return picks
+
+
 def size_positions(state: Q1State) -> Q1State:
     """
     HypeScore-weighted allocation of $100M across the 10 picks, WITH the
@@ -2105,6 +2216,9 @@ def size_positions(state: Q1State) -> Q1State:
         pick["weight"] = weight
         pick["signed_weight"] = sign * weight
         pick["notional"] = notional
+
+    # Overwrite whatever the model put in factor_tilts with the asset's measured betas.
+    attach_asset_factor_tilts(kept, state.get("factor_exposures"))
 
     state["picks"] = kept
     return state

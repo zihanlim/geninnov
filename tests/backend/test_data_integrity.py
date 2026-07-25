@@ -632,3 +632,135 @@ def test_is_silent_without_a_row_tilts_or_text():
     assert check_factor_tilt_claims(None) == []
     assert check_factor_tilt_claims(_tiltrow(book_metrics={})) == []
     assert check_factor_tilt_claims(_tiltrow(book_view="", book_risks=[])) == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# check_per_pick_tilts_differentiate — one aggregate copied across the book
+# ─────────────────────────────────────────────────────────────────────────────
+
+_POOL_TILTS = {"beta_cma": -0.13, "beta_hml": 0.27, "beta_mkt": -0.02,
+               "beta_rmw": 0.35, "beta_smb": 0.18, "beta_umd": 0.0}
+
+
+def test_catches_the_live_ten_identical_tilt_rows():
+    """The 2026-07-25 book: all ten positions carried the pool's aggregate."""
+    from scripts.check_data_integrity import check_per_pick_tilts_differentiate
+
+    row = {"run_date": "2026-07-25",
+           "picks": [{"asset": a, "factor_tilts": dict(_POOL_TILTS)}
+                     for a in ("XLE", "SHY", "SVXY", "NUE", "UNH",
+                               "BABA", "GDX", "PDD", "NOC", "ARKK")]}
+    flags = check_per_pick_tilts_differentiate(row)
+    assert len(flags) == 1
+    assert "all 10 positions" in flags[0]
+    assert "SHY" in flags[0] and "ARKK" in flags[0]
+
+
+def test_genuinely_measured_betas_pass():
+    from scripts.check_data_integrity import check_per_pick_tilts_differentiate
+
+    row = {"run_date": "2026-07-26", "picks": [
+        {"asset": "ARKK", "factor_tilts": {"beta_mkt": 1.48955}},
+        {"asset": "SHY", "factor_tilts": {"beta_mkt": 0.0146072}},
+    ]}
+    assert check_per_pick_tilts_differentiate(row) == []
+
+
+def test_a_single_position_cannot_fail_to_differentiate():
+    from scripts.check_data_integrity import check_per_pick_tilts_differentiate
+
+    row = {"run_date": "x", "picks": [{"asset": "XLE", "factor_tilts": _POOL_TILTS}]}
+    assert check_per_pick_tilts_differentiate(row) == []
+
+
+def test_empty_tilts_are_not_a_duplication():
+    """A book with no factor data is a different problem, not this one."""
+    from scripts.check_data_integrity import check_per_pick_tilts_differentiate
+
+    row = {"run_date": "x", "picks": [{"asset": "A", "factor_tilts": {}},
+                                      {"asset": "B", "factor_tilts": {}}]}
+    assert check_per_pick_tilts_differentiate(row) == []
+
+
+def test_reads_picks_delivered_as_a_json_string():
+    import json as _json
+    from scripts.check_data_integrity import check_per_pick_tilts_differentiate
+
+    row = {"run_date": "x", "picks": _json.dumps(
+        [{"asset": "A", "factor_tilts": _POOL_TILTS},
+         {"asset": "B", "factor_tilts": _POOL_TILTS}])}
+    assert len(check_per_pick_tilts_differentiate(row)) == 1
+
+
+def test_tilt_spread_is_silent_without_a_row():
+    from scripts.check_data_integrity import check_per_pick_tilts_differentiate
+
+    assert check_per_pick_tilts_differentiate(None) == []
+    assert check_per_pick_tilts_differentiate({"picks": "not json"}) == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# check_regime_characterisation_claims — a shape word must match the shape
+# ─────────────────────────────────────────────────────────────────────────────
+
+_LIVE_REGIME = {"yield_curve_slope": 0.34, "vix_term_diff": -1.93}
+
+
+def test_catches_the_live_inverted_curve_claim():
+    """The published thesis opened by describing an upward slope and naming it
+    an inversion — every level cited correctly, the characterisation false."""
+    from scripts.check_data_integrity import check_regime_characterisation_claims
+
+    row = {"run_date": "2026-07-25", "book_view":
+           "2y at 4.37% sits 74bps above Fed Funds (3.63%) — an inverted curve that "
+           "historically resolves via Fed cuts.", "book_risks": []}
+    flags = check_regime_characterisation_claims(row, _LIVE_REGIME)
+    assert len(flags) == 1
+    assert "+34 bps" in flags[0]
+
+
+def test_catches_the_live_backwardation_claim():
+    from scripts.check_data_integrity import check_regime_characterisation_claims
+
+    row = {"run_date": "2026-07-25", "book_view": "",
+           "book_risks": ["term structure already in backwardation (VIX3M-VIX = +1.93)"]}
+    flags = check_regime_characterisation_claims(row, _LIVE_REGIME)
+    assert len(flags) == 1
+    assert "contango" in flags[0]
+
+
+def test_the_opposite_mislabel_is_caught_too():
+    from scripts.check_data_integrity import check_regime_characterisation_claims
+
+    row = {"run_date": "x", "book_view": "vol is in contango", "book_risks": []}
+    flags = check_regime_characterisation_claims(row, {"vix_term_diff": 2.1})
+    assert len(flags) == 1
+    assert "backwardation" in flags[0]
+
+
+def test_a_true_inversion_claim_passes():
+    """A real inversion SHOULD be discussed — the check must not suppress it."""
+    from scripts.check_data_integrity import check_regime_characterisation_claims
+
+    row = {"run_date": "x", "book_view": "the curve is inverted", "book_risks": []}
+    assert check_regime_characterisation_claims(
+        row, {"yield_curve_slope": -0.20, "vix_term_diff": -1.0}) == []
+
+
+def test_correct_shape_words_pass():
+    from scripts.check_data_integrity import check_regime_characterisation_claims
+
+    row = {"run_date": "x",
+           "book_view": "an upward-sloping curve with vol in contango",
+           "book_risks": []}
+    assert check_regime_characterisation_claims(row, _LIVE_REGIME) == []
+
+
+def test_shape_check_is_silent_without_measurements_or_text():
+    from scripts.check_data_integrity import check_regime_characterisation_claims
+
+    row = {"run_date": "x", "book_view": "inverted", "book_risks": []}
+    assert check_regime_characterisation_claims(row, None) == []
+    assert check_regime_characterisation_claims(None, _LIVE_REGIME) == []
+    assert check_regime_characterisation_claims(
+        {"book_view": "", "book_risks": []}, _LIVE_REGIME) == []

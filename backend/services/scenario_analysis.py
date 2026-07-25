@@ -163,6 +163,31 @@ SCENARIOS: list[Scenario] = [
             "SVXY":  +0.15,    # short credit benefit
         },
     ),
+    Scenario(
+        name="S5_melt_up",
+        label="Melt-up / Squeeze (SPX +10%)",
+        description="Risk-on melt-up: SPX rallies ~10%, VIX collapses, credit tightens, "
+                    "and high-beta / innovation names squeeze higher. This is the stress "
+                    "case for a NET-SHORT or defensively-hedged book — the other four are "
+                    "risk-off shocks such a book gains from, so without this the worst "
+                    "case reads a misleading ~0. Both tails, not just the crash.",
+        factor_shocks={"mkt": +0.10, "umd": +0.08},   # market up, momentum leads
+        base_asset_shocks={
+            "ARKK":  +0.25,    # innovation/high-beta rips hardest in a squeeze
+            "QQQ":   +0.12,    # tech leads
+            "IWM":   +0.10,    # small-cap short squeeze
+            "BABA":  +0.15,    # China risk assets rally
+            "PDD":   +0.15,
+            "KWEB":  +0.15,
+            "FXI":   +0.12,
+            "SVXY":  +0.18,    # short-VIX rips as VIX collapses
+            "XLE":   +0.06,    # cyclicals participate
+            "GDX":   -0.07,    # gold/miners sold as the hedge bid unwinds
+            "GLD":   -0.05,
+            "TLT":   -0.06,    # duration sold in risk-on
+            "HYG":   +0.04,    # credit tightens
+        },
+    ),
 ]
 
 

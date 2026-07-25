@@ -51,10 +51,26 @@ def _pick(asset, direction, weight):
 # SCENARIOS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_four_scenarios_defined():
-    assert len(SCENARIOS) == 4
+def test_five_scenarios_defined_covering_both_tails():
+    assert len(SCENARIOS) == 5
     names = {s.name for s in SCENARIOS}
-    assert names == {"S1_vix_spike", "S2_rate_shock", "S3_usd_strength", "S4_credit_widening"}
+    assert names == {
+        "S1_vix_spike", "S2_rate_shock", "S3_usd_strength",
+        "S4_credit_widening", "S5_melt_up",
+    }
+    # Both tails: at least one risk-off (mkt down) and one risk-on (mkt up) shock, so a
+    # net-short book cannot escape stress the way it did when all four were risk-off.
+    mkts = [s.factor_shocks.get("mkt", 0.0) for s in SCENARIOS]
+    assert any(m < 0 for m in mkts) and any(m > 0 for m in mkts)
+
+
+def test_melt_up_is_the_stress_case_for_a_short_book():
+    """The four risk-off scenarios are tailwinds for a short book; the melt-up is its
+    downside. A short in a high-beta name must LOSE when the market rips higher."""
+    melt = next(s for s in SCENARIOS if s.name == "S5_melt_up")
+    assert melt.factor_shocks["mkt"] > 0
+    result = estimate_scenario_pnl(melt, [_pick("ARKK", "short", 0.20)], _bm(gross=0.20), 100_000_000.0)
+    assert result.estimated_book_return < 0  # short squeezed
 
 
 def test_scenarios_have_factor_shocks():
@@ -236,11 +252,11 @@ def test_estimate_pnl_empty_picks():
 # run_scenario_analysis
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_run_all_four_scenarios():
+def test_run_all_scenarios():
     picks = [_pick("SPY", "long", 0.10)]
     bm = _bm(gross=0.10, beta_mkt=1.0)
     results = run_scenario_analysis(picks, bm, 100_000_000.0)
-    assert len(results) == 4
+    assert len(results) == 5
 
 
 def test_run_scenario_analysis_sorts_by_severity():

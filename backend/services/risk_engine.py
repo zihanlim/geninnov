@@ -198,8 +198,16 @@ def _wrap(
     status: str = "exact",
     uncertainty: Optional[Uncertainty] = None,
     unavailable_reason: Optional[str] = None,
+    epistemic: Optional[str] = None,
 ) -> NumericDerivation:
-    """Build, validate, and return a NumericDerivation for a single risk metric."""
+    """Build, validate, and return a NumericDerivation for a single risk metric.
+
+    `epistemic` defaults to `known` when there is a value and `unknown` when there is not
+    (ADR-0098). The fallback is deliberately the WEAKER of the two absences: `unknown` tells
+    a reader to come back, which is harmless if it turns out nothing was ever coming, whereas
+    `not_applicable` tells them to stop waiting and is a claim that has to be earned. A
+    caller asserting the stronger one passes it explicitly.
+    """
     # `as_of` can be nominally AHEAD of now at a UTC date boundary — a run_date set
     # to today's UTC-midnight while now() is still the previous UTC day in a +ve
     # timezone (e.g. early morning in SGT = UTC+8). Clamp computed_at to at least
@@ -221,6 +229,7 @@ def _wrap(
         freshness=Freshness(max_age_seconds=86400, observed_age_seconds=age_seconds),
         uncertainty=uncertainty,
         unavailable_reason=unavailable_reason,
+        epistemic=epistemic or ("known" if value is not None else "unknown"),
     )
     validate_numeric(d)
     return d
@@ -306,7 +315,16 @@ def compute_risk(
             return _wrap(
                 field_id, method_id, None, unit, src, as_of,
                 status="unavailable",
-                unavailable_reason="insufficient history",
+                # UNKNOWN, not not_applicable (ADR-0098). The statistic is undefined on a
+                # series this short, but the shortfall is in the data we have rather than in
+                # the question — it resolves as history accrues, so a reader should come
+                # back. `not_applicable` would tell them to stop waiting for a number that is
+                # in fact on its way.
+                epistemic="unknown",
+                unavailable_reason=(
+                    "fewer than two return observations, so the statistic is undefined; "
+                    "it resolves as history accrues"
+                ),
             )
         return _wrap(
             field_id, method_id, value, unit, src, as_of,

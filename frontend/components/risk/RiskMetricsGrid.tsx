@@ -7,6 +7,7 @@
 
 "use client";
 import { markEstimated } from "@/lib/derivations/format";
+import { absenceCopy } from "@/lib/derivations/numeric";
 import { StatusBadge } from "@/components/status/StatusBadge";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
 import { UncertaintyBand } from "@/components/status/UncertaintyBand";
@@ -206,6 +207,12 @@ function RiskCard({
   // asserts it.
   const suppressed = Boolean(sampleCaveat);
   const present = derivation.value !== null && !suppressed;
+  // An absence gets copy that distinguishes "not measured" (come back) from "does not
+  // apply" (nothing is coming) — ADR-0098. A figure that IS present can still carry a note,
+  // e.g. "provenance not persisted", so that case keeps rendering the raw reason rather
+  // than being swallowed by absenceCopy's null-on-present contract.
+  const note =
+    derivation.value === null ? absenceCopy(derivation) : derivation.unavailable_reason;
   return (
     <div className="card p-4">
       <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -260,10 +267,8 @@ function RiskCard({
               high={derivation.uncertainty.band_high}
             />
           )}
-        {derivation.unavailable_reason && (
-          <span className="text-[11px] text-text-tertiary leading-[1.5]">
-            {derivation.unavailable_reason}
-          </span>
+        {note && (
+          <span className="text-[11px] text-text-tertiary leading-[1.5]">{note}</span>
         )}
       </div>
       {sampleCaveat && (
@@ -338,6 +343,10 @@ export function RiskMetricsGrid({
       unavailable_reason: present
         ? "provenance not persisted — portfolio_risk.numeric_derivations has no entry for this field"
         : unavailableReason(def),
+      // All three fallback absences (read failed, no row, column NULL) are UNKNOWN rather
+      // than not_applicable: each says we could not read the value, none says the metric
+      // does not apply to this book (ADR-0098).
+      epistemic: present ? "known" : "unknown",
     };
   };
 

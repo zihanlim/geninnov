@@ -56,6 +56,7 @@ import FactorReconciliation from "@/components/method/FactorReconciliation";
 import EdgeValidation from "@/components/method/EdgeValidation";
 import TrackRecord from "@/components/method/TrackRecord";
 import BookRevisions from "@/components/method/BookRevisions";
+import SourceIndependence from "@/components/method/SourceIndependence";
 
 /* ══ Row types ═══════════════════════════════════════════════════════════════ */
 
@@ -229,7 +230,7 @@ const STAGES: {
     code: "L1",
     name: "Theme detection",
     what:
-      "Brave News + Reddit → VADER sentiment, mention counts, price correlation, momentum",
+      "Brave News (Reddit is fetched but unconfigured — ADR-0094) → VADER sentiment, mention counts, price correlation, momentum",
     writes: "theme_signals_history",
     instrumented: true,
   },
@@ -2049,7 +2050,7 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
                   <Td>Market bar; price series for the |ρ| term</Td>
                 </tr>
                 <tr>
-                  <Td>Brave News + Reddit</Td>
+                  <Td>Brave News · Reddit (fetched, unconfigured)</Td>
                   <Td mono>theme_signals_history</Td>
                   <Td mono align="right">
                     {signals.error ? (
@@ -2134,7 +2135,7 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
                 <span className="num break-words">{prov.error}</span>
                 <div className="mt-1.5">
                   Migration <Code>020_signal_provenance.sql</Code> defines this column to record
-                  whether a theme&apos;s attention signal came from live Brave/Reddit responses
+                  whether a theme&apos;s attention signal came from live provider responses
                   (<span className="num">real</span>), from the mock fallback that fires when API
                   credentials are absent (<span className="num">mock</span>), from a mix (
                   <span className="num">mixed</span>), or from nothing at all (
@@ -2201,7 +2202,7 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
                             </Td>
                             <Td>
                               {k === "real"
-                                ? "All collected text came from live Brave/Reddit responses."
+                                ? "All collected text came from live provider responses — see the independence note below for which providers."
                                 : k === "mock"
                                   ? "All text came from the fallback stub — the HypeScore for these themes is not a market observation."
                                   : k === "mixed"
@@ -2219,6 +2220,11 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
             )}
           </div>
         </div>
+
+        {/* Inside `sources`, not a new anchor: "how many providers is this built on"
+            is the same reader question this section already answers, and ADR-0084's stop
+            rule is to split by section rather than to add one per panel. */}
+        <SourceIndependence />
       </Section>
       )}
 

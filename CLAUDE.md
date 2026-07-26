@@ -93,6 +93,7 @@ All project documentation lives under `docs/`:
 | `backend/services/book_revisions.py` | Diffs a published book against the row about to replace it, so an upsert on `run_date` cannot change a published figure silently. `reason` is NOT NULL by constraint ([ADR-0093](docs/adrs/0093-a-published-book-that-changes-must-say-so.md)) |
 | `backend/services/pick_outcomes.py` | The forward track record — resolves published picks against a **pipeline-assigned** 21-trading-day spec. Pure functions; `scripts/resolve_outcomes.py` runs it. Rows are `pending` at publication so the denominator precedes the outcome. No Brier score: `conviction` is a sizing input, not a probability ([ADR-0090](docs/adrs/0090-a-published-pick-must-be-falsifiable.md)) |
 | `frontend/app/book/page.tsx` | L6: The $100M book — per-trade thesis, pool depth, turnover, replication. (`/research`, `/portfolio`, `/trades` are retired server redirects to it.) |
+| `frontend/lib/themeProvenance.ts` | Provenance of the attention signal, incl. `sourceIndependence()` — HypeScore currently rests on **one provider** (Brave); Reddit is fetched but unconfigured ([ADR-0094](docs/adrs/0094-no-corroboration-gate-over-a-single-source.md)) |
 | `frontend/lib/supabase.ts` | Supabase client for frontend reads |
 | `frontend/app/ask/page.tsx` | L8: `/ask` — interrogate the published book. Reached from a TopBar control, **not** a fifth nav destination |
 | `frontend/app/api/chat/route.ts` | L8: the repo's only route handler. Rate limit first, then spend |

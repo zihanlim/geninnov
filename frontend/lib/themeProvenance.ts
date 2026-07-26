@@ -66,7 +66,11 @@ export function provenanceColor(p: DataSource | null): string {
 export function provenanceLabel(p: DataSource | null): string {
   switch (p) {
     case "real":
-      return "Live Brave/Reddit signal";
+      // Does NOT name a provider: this function has no access to the corpus and cannot
+      // know which providers contributed. It said "Live Brave/Reddit signal" while Reddit
+      // supplied zero of 1,005 rows. Which providers actually contributed is stated by
+      // `independenceSentence`, from the data. See ADR-0094.
+      return "Live provider signal";
     case "mixed":
       return "Mixed — some sources fell back to mock";
     case "mock":
@@ -156,5 +160,126 @@ export function attentionConcentration(
     top3Share,
     scoredCount: scores.length,
     effectiveThemes: hhi > 0 ? 1 / hhi : null,
+  };
+}
+
+// ─── Source independence ──────────────────────────────────────────────────────
+//
+// How many INDEPENDENT providers the attention signal rests on.
+//
+// This exists because of what the number turned out to be. `theme_news` held 1,005
+// rows on 2026-07-26 and every single one carried `source = 'brave'` — Reddit
+// contributed zero. The pipeline does call `fetch_posts_for_theme` and does tag its
+// items `source: "reddit"`, but `REDDIT_CLIENT_ID` is not among the repo secrets, so
+// `reddit_client` correctly returns `[]` in production rather than fabricating posts
+// (ADR-0023 working as designed). The effect is that HypeScore's attention, volume and
+// sentiment sub-scores all trace to ONE provider.
+//
+// Meanwhile three places on the site said "Brave News + Reddit" and one said "All
+// collected text came from live Brave/Reddit responses" — naming a provider that supplies
+// none of the rows, on the pages whose whole job is to say where a number came from.
+//
+// Computed from the data rather than stated as a constant, so the day Reddit credentials
+// are added the disclosure corrects itself instead of becoming a new false claim in the
+// opposite direction.
+
+/**
+ * Sources the daily pipeline is coded to fetch, whether or not they are configured.
+ *
+ * Hardcoded on purpose: it is the only way to distinguish "this provider returned
+ * nothing today" from "this provider was never asked". Derived from the two fetchers in
+ * `scripts/daily_refresh.py` (`fetch_news_for_theme` → brave,
+ * `fetch_posts_for_theme` → reddit). A `mock_` prefix marks fallback rows.
+ */
+export const PIPELINE_SOURCES = ["brave", "reddit"] as const;
+
+export interface SourceIndependence {
+  /** Providers that actually contributed rows, largest first. */
+  contributing: Array<{ source: string; items: number }>;
+  /**
+   * How many distinct providers contributed anything.
+   *
+   * This is the number a corroboration gate would need. At 1, a gate requiring N
+   * independent source types either always passes (N=1) or can never pass (N>=2) — which
+   * is why no such gate was built. See ADR-0094.
+   */
+  independentSources: number;
+  /** Share of items from the single largest provider, 0-1. 1 means single-sourced. */
+  topSourceShare: number | null;
+  /** Coded into the pipeline but contributed nothing — asked and silent, or never asked. */
+  absent: string[];
+  /** Any contributing source carrying the `mock_` fallback prefix. */
+  syntheticSources: string[];
+  totalItems: number;
+}
+
+/** Independence of the attention corpus, from `theme_news` source counts. */
+export function sourceIndependence(
+  rows: Array<{ source: string | null | undefined }>,
+): SourceIndependence {
+  // A plain object rather than a Map: this tsconfig targets below es2015, so spreading a
+  // Map iterator needs --downlevelIteration (the same trap method-anchors.test.ts
+  // documents for RegExpStringIterator).
+  const counts: Record<string, number> = {};
+  for (const r of rows) {
+    const s = (r.source ?? "").trim();
+    if (!s) continue;
+    counts[s] = (counts[s] ?? 0) + 1;
+  }
+
+  const contributing = Object.entries(counts)
+    .map(([source, items]) => ({ source, items }))
+    .sort((a, b) => b.items - a.items || a.source.localeCompare(b.source));
+
+  const totalItems = contributing.reduce((s, c) => s + c.items, 0);
+  const present = new Set(contributing.map((c) => c.source.replace(/^mock_/, "")));
+
+  return {
+    contributing,
+    independentSources: contributing.length,
+    // null, not 1, when nothing was collected: a share of an empty corpus is not
+    // "fully concentrated", it is unmeasurable (ADR-0066).
+    topSourceShare: totalItems > 0 ? contributing[0].items / totalItems : null,
+    absent: PIPELINE_SOURCES.filter((s) => !present.has(s)),
+    syntheticSources: contributing.filter((c) => c.source.startsWith("mock_")).map((c) => c.source),
+    totalItems,
+  };
+}
+
+/** One sentence a reader can act on. Never claims independence the corpus lacks. */
+export function independenceSentence(si: SourceIndependence): string {
+  if (si.totalItems === 0) {
+    return "No attention text was collected, so the number of independent providers behind these scores is unknown.";
+  }
+  const names = si.contributing.map((c) => c.source).join(", ");
+  const absent = si.absent.length
+    ? ` ${si.absent.join(" and ")} ${si.absent.length === 1 ? "is" : "are"} fetched by the pipeline but contributed nothing.`
+    : "";
+  if (si.independentSources === 1) {
+    return (
+      `Attention is single-sourced: all ${si.totalItems} items came from ${names}, so these scores ` +
+      `carry no cross-provider corroboration.${absent}`
+    );
+  }
+  return (
+    `Attention draws on ${si.independentSources} providers (${names}), the largest supplying ` +
+    `${Math.round((si.topSourceShare ?? 0) * 100)}% of ${si.totalItems} items.${absent}`
+  );
+}
+
+/** Source counts for the latest run present in `theme_news`. */
+export async function fetchSourceIndependence(): Promise<{
+  independence: SourceIndependence | null;
+  error: string | null;
+}> {
+  const { data, error } = await supabase
+    .from("theme_news")
+    .select("source")
+    .order("run_date", { ascending: false })
+    .limit(2000);
+  if (error) return { independence: null, error: error.message };
+  return {
+    independence: sourceIndependence((data ?? []) as Array<{ source: string | null }>),
+    error: null,
   };
 }

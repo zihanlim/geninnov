@@ -20,6 +20,7 @@ import { CapUtilisation } from "@/components/risk/CapUtilisation";
 import { BookFactorTilt } from "@/components/risk/BookFactorTilt";
 import { RiskMetricsGrid } from "@/components/risk/RiskMetricsGrid";
 import { DrawdownChart, type InceptionRow } from "@/components/risk/DrawdownChart";
+import { SourceCaveat } from "@/components/status/SourceCaveat";
 import { DailyPLHistory } from "@/components/portfolio/DailyPLHistory";
 import { RiskLimitBoard } from "@/components/risk/RiskLimitBoard";
 import { PositionRiskAttribution } from "@/components/risk/PositionRiskAttribution";
@@ -733,6 +734,31 @@ function RiskPageInner() {
           the table answers "what exactly did we make on the 23rd". Reading one
           against the other was previously a scroll. */}
       <section id="realised" aria-label="Realised performance">
+      {/* Stated before the curve, not after it. Both panels below draw a shape a
+          reader recognises as a track record, and at the current observation
+          count that shape is asserting far more than the data supports. The n is
+          read from the persisted row rather than from rows.length so the caveat
+          cannot disagree with the figure L4 published. */}
+      {!data.loading && (
+        <SourceCaveat source="portfolio_cumulative_return.daily_returns_count">
+          {data.inception ? (
+            <>
+              Realised, not simulated — but short. {data.inception.daily_returns_count}{" "}
+              daily observation
+              {data.inception.daily_returns_count === 1 ? "" : "s"} since inception{" "}
+              {data.inception.inception_date}, weekdays only. At this length the
+              curve shows what happened; it is not yet a track record and no
+              Sharpe, drawdown or win rate drawn from it is stable.
+            </>
+          ) : (
+            <>
+              No since-inception row was returned, so the length of this series is
+              unstated — read the shape below as the observations that exist, not
+              as a track record.
+            </>
+          )}
+        </SourceCaveat>
+      )}
       <div className="grid xl:grid-cols-2 gap-6 mb-6 items-start [&>*]:mb-0">
         <DrawdownChart
           loading={data.loading}

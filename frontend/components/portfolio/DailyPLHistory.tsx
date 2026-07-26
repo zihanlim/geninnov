@@ -109,6 +109,7 @@ export function DailyPLHistory({ limit = 30 }: { limit?: number }) {
         {rows[0] && (
           <FreshnessLabel
             observed_age_seconds={Math.max(0, Math.floor((Date.now() - new Date(rows[0].run_date).getTime()) / 1000))}
+            observed_at={rows[0].run_date}
           />
         )}
       </div>

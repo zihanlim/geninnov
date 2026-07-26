@@ -97,8 +97,25 @@ export default function PredictionMarkets() {
           <div className="text-[11px] uppercase tracking-[0.12em] text-text-tertiary font-semibold">
             Prediction markets
           </div>
-          <div className="text-[12px] text-text-tertiary mt-0.5">
-            {markets.length} macro events · forward odds for context — not cited in the book
+          {/* "not cited in the book" was already here and is the load-bearing
+              half. What was missing is the other half of goal 1: WHERE the odds
+              came from and WHEN. Without a cadence a crowd-odds feed sitting
+              among pipeline output reads as live, and without the ident it reads
+              as something the L5 screen consumed — it does not; polymarket_fetcher
+              writes this table for display and no candidate or thesis reads it. */}
+          <div className="text-[12px] text-text-tertiary mt-0.5 flex flex-wrap items-baseline gap-x-1.5">
+            <span>
+              {markets.length} macro events · forward odds for context — never
+              enter the candidate pool and no thesis cites them
+            </span>
+            {markets[0]?.fetched_at && (
+              <span>
+                · fetched{" "}
+                <time dateTime={new Date(markets[0].fetched_at).toISOString()}>
+                  {markets[0].fetched_at.slice(0, 10)}
+                </time>
+              </span>
+            )}
           </div>
         </div>
         <a

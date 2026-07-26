@@ -230,6 +230,19 @@ function RiskCard({
         )}
       </div>
       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+        {/* No observed_at passed below, deliberately — and the label it renders
+            is currently WRONG in a way worth recording rather than papering over.
+            `freshness.observed_age_seconds` is not an age since now:
+            backend/derivations/numeric.py:53 ASSERTS it equals
+            computed_at - as_of, i.e. how stale the input already was when the
+            pipeline read it. FreshnessLabel prints "Updated {age} ago", so a
+            figure computed ~24h ago over a market close ~33h ago reports
+            "Updated 9h ago" — the one number of the three that is not its age.
+            Attaching an instant here would give that claim a machine-readable
+            timestamp and harden a mislabel into a citation. The fix is to render
+            it as a lag ("input 9h stale at compute") or to feed the component a
+            real recency; both change what the page asserts, so they belong in
+            their own change rather than smuggled into this one. */}
         {present && (
           <FreshnessLabel
             observed_age_seconds={derivation.freshness.observed_age_seconds}

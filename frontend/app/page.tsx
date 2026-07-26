@@ -404,7 +404,14 @@ function ConvictionPageInner() {
             <span className="num">{fmtDate(runDate)}</span>
             {Number.isFinite(observed_age_seconds) && (
               <span className="ml-2" data-testid="updated-label">
-                <FreshnessLabel observed_age_seconds={observed_age_seconds} />
+                <FreshnessLabel
+                  observed_age_seconds={observed_age_seconds}
+                  // pipelineFinishedAt, not runDate — for the reason spelled out
+                  // where observed_age_seconds is computed above. The timestamp
+                  // behind the label must be the one the age was measured from,
+                  // or the tooltip contradicts the words next to it.
+                  observed_at={pipelineFinishedAt}
+                />
               </span>
             )}
           </div>

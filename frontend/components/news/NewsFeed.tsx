@@ -52,12 +52,19 @@ export function NewsFeed({ embedded = false }: { embedded?: boolean } = {}) {
   // version rendered a second <h2> with the same words, a card inside a card,
   // and an mb-8 that pushed 1,260px of rows through a 418px pane. A component
   // written as a page section does not become a pane by being placed in one.
+  //
+  // `min-h-0` on the embedded wrapper is load-bearing, for the reason
+  // TerminalPane's own header states about itself: this is a FLEX CHILD of the
+  // pane, and a flex child defaults to `min-height: auto`, so it refuses to
+  // shrink below its content. With 12 rows that is ~1,190px, which pushed the
+  // pane past its locked grid row and gave the whole page 645px of empty scroll
+  // below the fold — the page scrolled, and there was nothing down there.
   const Wrapper = embedded ? "div" : "section";
   return (
     <Wrapper
       id="news"
       aria-label={embedded ? undefined : "Headlines behind today's scores"}
-      className={embedded ? "" : "mb-8"}
+      className={embedded ? "min-h-0" : "mb-8"}
     >
       {!embedded && (
         <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">

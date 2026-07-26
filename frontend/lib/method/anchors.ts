@@ -50,6 +50,9 @@ export const METHOD_ANCHORS = {
   // published book right", which is the same reader question as "did it run, and who
   // checked it" — not "how is this number built".
   "track-record": "evidence",
+  // Rendered by BookRevisions (ADR-0093). `evidence`: "was the published book changed"
+  // is the same reader question as "did it run, and who checked it".
+  corrections: "evidence",
 } as const satisfies Record<string, MethodChapter>;
 
 export type MethodAnchor = keyof typeof METHOD_ANCHORS;
@@ -81,5 +84,6 @@ export const CHAPTER_NAV: Record<MethodChapter, Array<{ id: string; label: strin
     { id: "sources", label: "Sources" },
     { id: "guardrails", label: "Guardrails" },
     { id: "track-record", label: "Track record" },
+    { id: "corrections", label: "Corrections" },
   ],
 };

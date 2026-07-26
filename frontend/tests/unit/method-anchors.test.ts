@@ -28,7 +28,7 @@ const src = readFileSync(BODY, "utf8");
 // Hardcoded on purpose. Deriving this from METHOD_ANCHORS would make the test
 // agree with the map no matter what the map said, which is not a test.
 const BUILD = ["hypescore", "tradescore", "edgescore", "factors", "signal-validation"];
-const EVIDENCE = ["pipeline", "sources", "guardrails", "track-record"];
+const EVIDENCE = ["pipeline", "sources", "guardrails", "track-record", "corrections"];
 
 describe("METHOD_ANCHORS", () => {
   it("covers exactly the documented anchors, no more and no fewer", () => {

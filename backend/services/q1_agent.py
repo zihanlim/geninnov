@@ -2698,6 +2698,36 @@ def _build_advisory_derivation(state: Q1State) -> AdvisoryDerivation:
 # Persist to Supabase
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _record_book_revisions(sb, run_date: str, new_row: dict) -> None:
+    """Log what an upsert is about to replace, per field.
+
+    Reads the currently-published row for this run_date and diffs it against the row about
+    to be written. A first publication produces nothing — a baseline is not a change, and
+    logging it would put a row on every book ever published and bury the real ones.
+
+    Imported lazily so the guard stays importable without this module's dependencies, the
+    same convention `check_data_integrity` uses for its q1_agent import.
+    """
+    from .book_revisions import PIPELINE_RERUN, diff_books, summarise
+
+    existing = (
+        sb.table("research_recommendations")
+        .select("picks, book_metrics, book_view, scenario_results")
+        .eq("run_date", run_date)
+        .limit(1)
+        .execute()
+        .data
+    ) or []
+    if not existing:
+        return
+
+    revisions = diff_books(run_date, existing[0], new_row, trigger_type=PIPELINE_RERUN,
+                           actor="scripts/daily_refresh.py")
+    print(f"[_persist_to_supabase] {summarise(revisions)}")
+    if revisions:
+        sb.table("book_revisions").insert([r.to_row() for r in revisions]).execute()
+
+
 def _persist_to_supabase(state: Q1State) -> bool:
     """Write agent run + recommendations to Supabase. Returns True on success."""
     sb: Client = create_client(state["supabase_url"], state["supabase_key"])
@@ -2774,6 +2804,22 @@ def _persist_to_supabase(state: Q1State) -> bool:
             "independent_ideas": _with_shortfall(state),
             "lens": state.get("lens", "multi_asset"),
         }
+
+        # Record WHAT this upsert is about to overwrite, before it overwrites it.
+        #
+        # The upsert below is `on_conflict="run_date"`, so a second run for the same date
+        # replaces the published book in place and no prior version survives. On
+        # 2026-07-26 `research_agent_runs` held 17 runs for run_date 2026-07-25 and 25 for
+        # 2026-07-24 — every one that reached persist overwrote a published book with no
+        # trace. Read-then-diff, so a reader who quoted a figure can find out it moved.
+        #
+        # Deliberately non-fatal and BEFORE the write: this reports on the book, it does
+        # not produce one, and a logging failure must never cost a run that was otherwise
+        # ready to publish. See ADR-0093.
+        try:
+            _record_book_revisions(sb, run_date, analytics_row)
+        except Exception as exc:  # noqa: BLE001 — see above
+            print(f"[_persist_to_supabase] revision log skipped ({exc.__class__.__name__}): {exc}")
 
         try:
             sb.table("research_recommendations").upsert(

@@ -20,6 +20,28 @@ does not authorise anything.
 
 ---
 
+### Loop iteration 109 (2026-07-27) — /ask is a chat on the reader's explicit call; flagged a home-page load-scroll transient
+
+**The reader confirmed they wanted the chat-style `/ask`** ("overwrite the design choice"), overriding
+the deliberate document-not-chat-shell design. Done: the question now sits in a right-aligned user
+bubble, the answer in a left-aligned block behind the Andromeda mark. What I deliberately *kept*,
+because they are load-bearing not stylistic: **no streaming** (the citation guardrail must check a
+figure before it is on screen, ADR-0012/0049) and the page **still scrolls as a document**, not an
+`h-screen` chat shell, so Ctrl+F, deep links and long transcripts survive (goal 7). Neutral user
+bubble, not the crimson accent, so it never reads as direction ink (ADR-0085). Deployed and verified
+live with a real question at 1440 and 375 — bubbles render, the answer stays honestly hedged ("I
+cannot confirm it is the largest position … without data on the other picks"), and **no horizontal
+scroll during a mobile conversation**.
+
+The pass also caught a **home-page load-scroll transient**: `/` at 375 flashes `scrollWidth` to
+**841px for ~1s during hydration**, then settles clean (all three trials). Diagnosed to a
+`<tr>` in the `ThemeHeatmap` `min-w-[760px]` table that briefly escapes its `overflow-x-auto`
+container before the layout settles — the other session's committed heatmap work (`d679126e`),
+with `page.tsx` in their active WIP. Steady state is clean, so it is a minor hydration flash, not a
+persistent break; **flagged for the home-page owner** rather than reaching a subtle reflow fix into a
+file they are editing. Repro: load `/` at 375, poll `documentElement.scrollWidth` — it is 841 around
+1–2 s, 375 after.
+
 ### Loop iteration 108 (2026-07-27) — poked the macro regime inputs; all six reconcile against the thesis
 
 Site clean this firing (`/`, `/book`, `/risk`, `/method`, `/ask` at 1440/375 — 0 issues, 0 mojibake;

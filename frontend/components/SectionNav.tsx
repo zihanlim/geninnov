@@ -91,10 +91,15 @@ export default function SectionNav({ items }: { items: SectionNavItem[] }) {
 
   if (items.length === 0) return null;
 
+  // The -mx/px full-bleed must track the page <main> gutter at EVERY breakpoint.
+  // <main> adds wide:px-5 (ADR-0086's narrowed wide gutter); without a matching
+  // wide:-mx-5 here the strip kept bleeding lg:-mx-8 (32px) against that 20px
+  // gutter and pushed the body 12px wide at >=1424 — a real horizontal scroll on
+  // /book, /risk, /method that a headless 1440 pass (no scrollbar) narrowly hid.
   return (
     <nav
       aria-label="Sections"
-      className="sticky top-14 z-40 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 mb-5 border-b border-border bg-bg-primary/85 backdrop-blur-md"
+      className="sticky top-14 z-40 -mx-4 sm:-mx-6 lg:-mx-8 wide:-mx-5 px-4 sm:px-6 lg:px-8 wide:px-5 mb-5 border-b border-border bg-bg-primary/85 backdrop-blur-md"
     >
       {/* scrollbar-none: this is chrome, not a data table — it should still pan
           on a phone but has no business advertising a scrollbar. See globals.css. */}

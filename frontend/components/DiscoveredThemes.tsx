@@ -108,7 +108,7 @@ export default function DiscoveredThemes() {
                 <span className="text-[11px] uppercase tracking-[0.1em] text-text-secondary font-semibold">
                   Both methods agree
                 </span>
-                <span className="badge badge-long">{tier2.length}</span>
+                <span className="badge badge-neutral">{tier2.length}</span>
                 <span className="text-[11px] text-text-tertiary">
                   an LDA topic and an embedding cluster share ≥2 terms
                 </span>

@@ -28,7 +28,7 @@ const CYCLE_BADGE: Record<string, string> = {
   early: "badge-warning",
   mid: "badge-tier-anchor",
   late: "badge-warning",
-  recession: "badge-short",
+  recession: "badge-warning",
 };
 
 const CYCLE_LABEL: Record<string, string> = {
@@ -98,7 +98,7 @@ export default function RegimeHero({
           <span className={`badge ${CYCLE_BADGE[cycle] ?? "badge-neutral"}`}>
             {CYCLE_LABEL[cycle] ?? cycle.toUpperCase()}
           </span>
-          <span className={`badge ${sentiment === "risk-on" ? "badge-long" : sentiment === "risk-off" ? "badge-short" : "badge-neutral"}`}>
+          <span className={`badge ${sentiment === "risk-on" ? "badge-neutral" : sentiment === "risk-off" ? "badge-warning" : "badge-neutral"}`}>
             {SENTIMENT_LABEL[sentiment] ?? sentiment.toUpperCase()}
           </span>
         </div>

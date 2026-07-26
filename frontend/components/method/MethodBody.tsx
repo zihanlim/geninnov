@@ -269,8 +269,8 @@ type StageVerdict =
   | { kind: "no_record" };
 
 const STATUS_CHIP: Record<string, string> = {
-  success: "badge badge-long",
-  failure: "badge badge-short",
+  success: "badge badge-neutral",
+  failure: "badge bg-warning-deep text-bg-surface",
   partial: "badge badge-warning",
 };
 
@@ -2392,11 +2392,20 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
                         <Td align="right">
                           <span
                             className={
+                              // Three states, three renderings. `true` and
+                              // `null` must NOT match: "this run was verified"
+                              // and "nobody recorded whether it was" are
+                              // different claims, and collapsing them is the
+                              // goal-2 failure of showing an absence as a
+                              // value. `null` takes tertiary ink — present but
+                              // visibly unasserted (5.23:1, still over the AA
+                              // floor). Was badge-long/badge-short: direction
+                              // ink on a verification verdict (ADR-0085).
                               r.verified === true
-                                ? "badge badge-long"
+                                ? "badge badge-neutral"
                                 : r.verified === false
-                                  ? "badge badge-short"
-                                  : "badge badge-neutral"
+                                  ? "badge bg-warning-deep text-bg-surface"
+                                  : "badge bg-bg-elevated text-text-tertiary border border-border"
                             }
                           >
                             {r.verified === null ? "null" : String(r.verified)}

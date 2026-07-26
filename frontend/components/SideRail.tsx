@@ -27,7 +27,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BookOpen, ChevronLeft, PanelLeftOpen, Radar, ShieldAlert, Sigma } from "lucide-react";
+import { BookOpen, PanelLeftClose, PanelLeftOpen, Radar, ShieldAlert, Sigma } from "lucide-react";
 
 const DESTINATIONS = [
   // Radar: what the engine is detecting. BookOpen: the published book.
@@ -123,7 +123,7 @@ export default function SideRail() {
             page reflow. */}
         {expanded ? (
           <>
-            <ChevronLeft size={14} aria-hidden strokeWidth={1.75} />
+            <PanelLeftClose size={14} aria-hidden strokeWidth={1.75} />
             Narrow
           </>
         ) : (

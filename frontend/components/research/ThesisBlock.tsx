@@ -40,7 +40,7 @@ function StatusBadge({
   if (displayStatus === "verified") {
     return (
       <span
-        className="badge badge-long"
+        className="badge badge-neutral"
         style={{ fontSize: 10 }}
         aria-label="Verified"
       >

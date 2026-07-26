@@ -388,6 +388,51 @@ describe("goal 3 — direction ink stays with direction", () => {
     },
   );
 
+  it.each(Object.entries(TONE_CLS))(
+    "methodTones.%s box is not painted with direction ink",
+    (tone, cls) => {
+      expect(
+        cls,
+        `/method tone "${tone}" uses direction ink (${cls}). These are verdicts about a computation, not book directions — and on /method a green "reconciles" callout renders near green LONG rows. See ADR-0085.`,
+      ).not.toMatch(DIRECTION_INK);
+    },
+  );
+
+  it.each(Object.entries(TONE_LABEL_CLS))(
+    "methodTones.%s label is not painted with direction ink",
+    (tone, cls) => {
+      expect(cls).not.toMatch(DIRECTION_INK);
+    },
+  );
+
+  it("leaves no direction ink on a badge outside the direction vocabulary", () => {
+    // The inline call sites, not just the vocabularies. `badge badge-long` on a
+    // success/verified/regime/tier chip was the largest remaining group of
+    // goal-3 violations; this stops them coming back one component at a time.
+    const roots = ["app", "components"];
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (/\.tsx?$/.test(e.name)) {
+          const src = readFileSync(p, "utf8");
+          for (const line of src.split("\n")) {
+            if (/^\s*(\/\/|\*)/.test(line)) continue; // a comment explaining the ban is not a violation
+            if (/badge\s+badge-(long|short)|"badge-(long|short)"/.test(line)) {
+              offenders.push(`${p}: ${line.trim().slice(0, 90)}`);
+            }
+          }
+        }
+      }
+    };
+    for (const r of roots) walk(path.resolve(__dirname, "../..", r));
+    expect(
+      offenders,
+      `badge-long/badge-short used outside the direction vocabulary:\n  ${offenders.join("\n  ")}`,
+    ).toEqual([]);
+  });
+
   it("keeps the direction chips themselves on direction ink", () => {
     // The inverse assertion. If a refactor ever neutralises .badge-long or
     // .dir-pill-long, the vocabulary above would pass while the one thing that

@@ -27,7 +27,7 @@ function relationshipBadge(pair: CorrelationPair) {
     ? pair.relationship === "inverse"
     : pair.corr < 0;
   return (
-    <span className={`badge ${inverse ? "badge-long" : "badge-short"}`}>
+    <span className={`badge ${inverse ? "badge-neutral" : "badge-warning"}`}>
       {inverse ? "inverse / hedge" : "same-direction"}
     </span>
   );

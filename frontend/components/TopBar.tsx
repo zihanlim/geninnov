@@ -67,7 +67,7 @@ export default function TopBar() {
       </Link>
 
       <nav
-        className="flex gap-0.5 sm:gap-1 justify-self-center items-center min-w-0"
+        className="flex wide:hidden gap-0.5 sm:gap-1 justify-self-center items-center min-w-0"
         aria-label="Primary"
       >
         {NAV_ITEMS.map((item) => {

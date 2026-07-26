@@ -160,7 +160,7 @@ export default function BookPage() {
   return (
     <Suspense
       fallback={
-        <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 pt-7 pb-20">
+        <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-7 pb-20">
           <div className="skeleton h-[180px]" />
         </main>
       }
@@ -576,7 +576,7 @@ function BookPageInner() {
   // layout.tsx's grid-cols-[minmax(0,1fr)] track plus the min-w-0 item let wide
   // tables scroll inside their own overflow-x-auto wrappers.
   return (
-    <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 pt-7 pb-20">
+    <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-7 pb-20">
       <div className="flex justify-between items-end mb-7 gap-6 flex-wrap">
         <div className="min-w-0 flex-1">
           <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">

@@ -96,6 +96,8 @@ All project documentation lives under `docs/`:
 | `frontend/app/ask/page.tsx` | L8: `/ask` — interrogate the published book. Reached from a TopBar control, **not** a fifth nav destination |
 | `frontend/app/api/chat/route.ts` | L8: the repo's only route handler. Rate limit first, then spend |
 | `frontend/lib/chat/agent.ts` | L8: plan → execute → answer → verify. Exactly two LLM calls per question |
+| `frontend/app/api/mcp/route.ts` | L8: the book as an **MCP server** — Streamable HTTP, `2025-06-18`, stateless, POST-only, over the SAME `TOOLS` registry `/ask` uses. No LLM and no rate limit: the caller brings their own model ([ADR-0092](docs/adrs/0092-the-book-as-an-mcp-server-over-the-tools-that-already-exist.md)) |
+| `frontend/app/llms.txt/route.ts` | Machine-readable site index; the tool list is generated from `TOOLS` so it cannot drift |
 | `frontend/lib/chat/tools.ts` | L8: the read-only tools. They import the SAME modules the pages render — never a copy |
 | `frontend/lib/chat/guardrail.ts` | L8: adjudicates every numeral as cited / quoted / unverified ([ADR-0087](docs/adrs/0087-a-chat-that-cannot-do-arithmetic.md)) |
 | `supabase/migrations/039_chat_usage.sql` | L8 spend guard — sealed table + `chat_rate_limit()` RPC, service_role only |

@@ -60,6 +60,12 @@ ${question}`;
 /**
  * Render one fact the way a reader should see it, with the raw value beside it.
  *
+ * Exported because the MCP endpoint (`app/api/mcp/route.ts`) must render a fact the same
+ * way: two surfaces describing one figure that disagree about its display form is the
+ * exact class of defect this file exists to prevent. Its first version appended
+ * `f.unit` as a suffix and produced "10 count" and "0.593 pct" — `unit` is a TYPE TAG,
+ * not a display suffix, which is only obvious once you have this function.
+ *
  * The display form comes FIRST because the model copies what it is shown, and on
  * the first live run it was shown raw fractions — so it wrote "weight
  * 0.0925279954328765" into prose meant for a portfolio manager. Telling it in
@@ -67,7 +73,7 @@ ${question}`;
  * string it should type. The raw value stays visible so a question about the
  * underlying precision is still answerable.
  */
-const displayFact = (f: ToolResult["facts"][number]): string => {
+export const displayFact = (f: ToolResult["facts"][number]): string => {
   if (f.value === null) return "not computed";
   if (typeof f.value === "string") return f.value;
   switch (f.unit) {

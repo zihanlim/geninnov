@@ -330,7 +330,9 @@ const regimeTool: ToolSpec = {
       ["vix_level", "VIX", "score"],
       ["vix_term_diff", "VIX term structure", "score"],
       ["real_rate", "Real rate", "pct_points"],
-      ["spx_breadth", "S&P breadth", "pct"],
+      // 65 means 65% of SPX constituents above their 200d MA — the unit
+      // RegimeInputsPanel renders. Tagged `pct` here, it read as 6500%.
+      ["spx_breadth", "S&P breadth (% of SPX above 200d MA)", "pct_whole"],
     ] as const) {
       const v = num(row[k]);
       if (v !== null) facts.push(f(`regime.${k}`, label, v, `regime_classifications.${k}`, unit, runDate));

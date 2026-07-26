@@ -165,6 +165,79 @@ describe("verifyAnswer — dates and years", () => {
   });
 });
 
+describe("verifyAnswer — month names", () => {
+  // The regression this pins shipped to production and passed with
+  // `verified: true`: the first live answer opened "The May 2026 run classified
+  // the macro regime…" about a run dated 2026-07-25. The numeric scan was blind
+  // to it because "May" is a word — and a fabricated vintage misdates every
+  // number in the same answer.
+  const withRunDate = [
+    result({ facts: [fact({ key: "regime.run_date", value: "2026-07-25", unit: "date" })] }),
+  ];
+
+  it("flags a month that is not the run's month", () => {
+    const v = verifyAnswer("The May 2026 run classified the regime as late.", withRunDate);
+    expect(v.verified).toBe(false);
+    expect(v.unverified).toContain("May");
+    expect(v.verdicts.find((x) => x.token === "May")?.kind).toBe("month");
+  });
+
+  it("accepts the month the run actually falls in, long or short", () => {
+    expect(verifyAnswer("The July run.", withRunDate).verified).toBe(true);
+    expect(verifyAnswer("The Jul run.", withRunDate).verified).toBe(true);
+  });
+
+  it("accepts a month quoted from the run's own prose", () => {
+    const results = [
+      result({
+        facts: [fact({ key: "book.run_date", value: "2026-07-25", unit: "date" })],
+        notes: { catalysts: ["PDD earnings (Aug-Sep)"] },
+      }),
+    ];
+    const v = verifyAnswer("The catalyst is PDD earnings in Aug.", results);
+    expect(v.verified).toBe(true);
+    expect(v.verdicts.find((x) => x.token === "Aug")?.grounding).toBe("quoted");
+  });
+
+  it("ignores the ordinary English words, which is why the match is case-sensitive", () => {
+    // "the book may re-rate" and "margins march higher" are prose, not dates.
+    const v = verifyAnswer("The book may re-rate as margins march higher.", withRunDate);
+    expect(v.verified).toBe(true);
+    expect(v.verdicts.filter((x) => x.kind === "month")).toHaveLength(0);
+  });
+});
+
+describe("verifyAnswer — whole-percent facts", () => {
+  // The same production answer rendered S&P breadth as "6500.00%" because the
+  // tool tagged a column storing 65 (meaning 65%) as a fraction.
+  const breadth = [
+    result({
+      facts: [fact({ key: "regime.spx_breadth", label: "S&P breadth (% of SPX above 200d MA)", value: 65, unit: "pct_whole" })],
+    }),
+  ];
+
+  it("grounds the percent as written", () => {
+    expect(verifyAnswer("Breadth was 65%.", breadth).verified).toBe(true);
+  });
+
+  it("still grounds the fraction form", () => {
+    expect(verifyAnswer("0.65 of constituents cleared it.", breadth).verified).toBe(true);
+  });
+
+  it("does not flag a number the tool put in its own label", () => {
+    // The label is "S&P breadth (% of SPX above 200d MA)". An answer repeating
+    // "200d MA" is copying what it was shown, and marking that as unsourced
+    // teaches a reader to ignore the marks that matter.
+    const v = verifyAnswer("Breadth counts constituents above their 200d MA.", breadth);
+    expect(v.verified).toBe(true);
+    expect(v.verdicts.find((x) => x.token === "200")?.grounding).toBe("quoted");
+  });
+
+  it("does not ground the fraction-scaled figure the old tag produced", () => {
+    expect(verifyAnswer("Breadth was 6500%.", breadth).unverified).toContain("6500%");
+  });
+});
+
 describe("verifyAnswer — an answer with no figures", () => {
   it("passes prose that states an absence", () => {
     const results = [

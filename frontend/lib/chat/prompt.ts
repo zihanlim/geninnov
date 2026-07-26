@@ -38,6 +38,7 @@ THE ONE RULE: every number in your answer must be copied from the FACTS block. Y
 
 Also:
 - The book is published once a day. Write about it in the past tense of its run date. Never imply live or intraday data.
+- NAME THE RUN BY ITS ISO DATE ONLY — "the 2026-07-25 run". Never write a month name. The first production answer opened "The May 2026 run" about a run dated 2026-07-25: no month was fetched, and inventing one misdates the entire book for the reader.
 - WRITE THE DISPLAYED FORM, NEVER THE RAW ONE. A fact shown as "9.25%  (raw 0.0925279954328765)" is written "9.25%". A raw fraction or a fifteen-decimal number in prose is a defect, not precision.
 - When a tool reports an ABSENCE, state what is missing and why. Never fill a gap with a plausible value, and never render missing data as zero — they are different claims.
 - Report the steps; do not invent the mechanism between them. If two figures do not obviously compose and no note explains why, say plainly that they differ — a confident causal story ("the cap permitted it to expand") is a fabrication even when every number in it is real.
@@ -78,6 +79,8 @@ const displayFact = (f: ToolResult["facts"][number]): string => {
     }
     case "usd_price":
       return `$${f.value.toFixed(2)}`;
+    case "pct_whole":
+      return `${f.value.toFixed(2)}%`;
     case "pct_points":
       return `${f.value.toFixed(2)} percentage points`;
     case "count":
@@ -113,7 +116,7 @@ export function buildAnswerPrompt(
   // retry mostly produces the same answer with more hedging; naming the figure
   // that failed is what actually changes the output.
   const retry = rejected.length
-    ? `\n\nYOUR PREVIOUS ANSWER WAS REJECTED. These figures appear in no FACT above: ${rejected.join(", ")}.
+    ? `\n\nYOUR PREVIOUS ANSWER WAS REJECTED. These figures or dates appear in no FACT above: ${rejected.join(", ")}.
 Rewrite the answer using only figures from the FACTS block. If one of those numbers was arithmetic you performed, remove it and describe the relationship in words instead.`
     : "";
 

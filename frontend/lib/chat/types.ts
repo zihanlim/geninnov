@@ -31,8 +31,16 @@ export interface Fact {
    * per-share price and renders as itself. They are separate because they were
    * once the same: a $121.40 close tagged `usd` rendered as "$0.00M", which is
    * not a rounding error but a different claim about the world.
+   *
+   * `pct` is a FRACTION (0.65 -> 65%); `pct_whole` is ALREADY in percent units
+   * (65 -> 65%); `pct_points` is a spread or difference in points (0.34 ->
+   * "0.34 percentage points"). Mixing the first two is how the first production
+   * answer described S&P breadth as "6500.00%" — the column stores 65 meaning
+   * 65%, and the tool had called it a fraction. Check the page that already
+   * renders a field before choosing: RegimeInputsPanel gives spx_breadth the
+   * unit "%" and real_rate the unit "%", but stores both as whole numbers.
    */
-  unit?: "pct" | "pct_points" | "usd" | "usd_price" | "score" | "bp" | "x" | "date" | "count" | "text";
+  unit?: "pct" | "pct_whole" | "pct_points" | "usd" | "usd_price" | "score" | "bp" | "x" | "date" | "count" | "text";
   /** Provenance, e.g. "research_recommendations.picks[].weight". */
   source: string;
   /** The run this value belongs to. A figure without its vintage is a rumour. */

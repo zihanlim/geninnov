@@ -22,6 +22,8 @@ const fmt = (value: number | string | null, unit?: string): string => {
   switch (unit) {
     case "pct":
       return `${(value * 100).toFixed(2)}%`;
+    case "pct_whole":
+      return `${value.toFixed(2)}%`;
     case "pct_points":
       return `${value.toFixed(2)}`;
     case "usd":

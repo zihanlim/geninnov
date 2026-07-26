@@ -56,11 +56,21 @@ export function segment(answer: string, verdicts: NumeralVerdict[]): Segment[] {
 }
 
 function Numeral({ verdict, text }: { verdict: NumeralVerdict; text: string }) {
+  // A month is a word, not a figure. Setting "July" in tabular mono beside the
+  // surrounding prose would read as a data value and look like a typesetting
+  // bug; it still gets the same mark, because it makes the same kind of claim.
+  const mono = verdict.kind === "month" ? "" : "num";
+  const noun = verdict.kind === "month" ? "date" : "figure";
+
   if (verdict.grounding === "cited") {
     return (
       <span
-        className="num border-b border-dotted border-border-strong cursor-help"
-        title={`${verdict.fact?.label ?? "Source"} — ${verdict.fact?.source ?? ""}`}
+        className={`${mono} border-b border-dotted border-border-strong cursor-help`.trim()}
+        title={
+          verdict.kind === "month"
+            ? "The month of the run this answer is about."
+            : `${verdict.fact?.label ?? "Source"} — ${verdict.fact?.source ?? ""}`
+        }
       >
         {text}
       </span>
@@ -68,7 +78,7 @@ function Numeral({ verdict, text }: { verdict: NumeralVerdict; text: string }) {
   }
   if (verdict.grounding === "quoted") {
     return (
-      <span className="num cursor-help" title="Quoted from the run's own prose (a thesis, a counter-thesis, or your question) — repeated, not recomputed.">
+      <span className={`${mono} cursor-help`.trim()} title="Quoted from the run's own prose (a thesis, a counter-thesis, or your question) — repeated, not recomputed.">
         {text}
         <span aria-hidden className="text-text-tertiary">°</span>
         <span className="sr-only"> (quoted, not recomputed)</span>
@@ -77,9 +87,9 @@ function Numeral({ verdict, text }: { verdict: NumeralVerdict; text: string }) {
   }
   return (
     <span
-      className="num font-semibold cursor-help"
+      className={`${mono} font-semibold cursor-help`.trim()}
       style={{ color: "var(--warning)" }}
-      title="This figure matched no fetched value. It was not verified against the published book — treat it as unsourced."
+      title={`This ${noun} matched no fetched value. It was not verified against the published book — treat it as unsourced.`}
     >
       {text}
       <sup aria-hidden>?</sup>

@@ -39,6 +39,12 @@ export interface NumeralVerdict {
   grounding: Grounding;
   /** The fact that grounded it, when `cited`. */
   fact?: Fact;
+  /**
+   * What kind of claim the token makes. `month` is a WORD, not a figure — the
+   * UI must not set it in tabular mono, and the reader should see it marked as
+   * a date claim rather than as a number.
+   */
+  kind?: "number" | "date" | "month";
 }
 
 export interface VerificationResult {
@@ -71,6 +77,35 @@ const NUMERAL =
 
 /** ISO dates are handled separately — they are one token, not three numbers. */
 const ISO_DATE = /\d{4}-\d{2}-\d{2}/g;
+
+// A month name is a claim about WHEN, and the numeric scan is blind to it. That
+// is not hypothetical: the first answer /ask served in production opened "The
+// May 2026 run classified the macro regime…" about a run dated 2026-07-25, and
+// passed with `verified: true` and zero unverified figures, because "May" is a
+// word. For a product whose whole claim is that its numbers are auditable, a
+// fabricated vintage is worse than a fabricated figure — it misdates every
+// number in the same answer.
+//
+// CAPITALISED ONLY, and that is deliberate. "may" and "march" are ordinary
+// English words ("the book may re-rate"), and adjudicating them would flag
+// correct prose constantly. A month being referred to as a month is capitalised
+// in every sentence this product will ever write.
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Sept", "Oct", "Nov", "Dec"];
+const MONTH = new RegExp(`\\b(?:${[...MONTH_NAMES, ...MONTH_ABBR].join("|")})\\b`, "g");
+
+/** "2026-07-25" → the month words a correct answer may use for it. */
+function monthsOfDate(iso: string): string[] {
+  const m = /^\d{4}-(\d{2})-\d{2}/.exec(iso);
+  if (!m) return [];
+  const i = Number(m[1]) - 1;
+  if (i < 0 || i > 11) return [];
+  const full = MONTH_NAMES[i];
+  return [full, full.slice(0, 3), ...(full === "September" ? ["Sept"] : [])];
+}
 
 interface Parsed {
   /** Absolute magnitude, sign dropped: direction is carried by words, not by the guardrail. */
@@ -117,6 +152,11 @@ function renderings(fact: Fact): number[] {
       // it as basis points too.
       out.push(v * 100);
       break;
+    case "pct_whole":
+      // Already in percent units (65 means 65%). The fraction is offered too,
+      // for an answer that prefers "0.65 of constituents".
+      out.push(v / 100);
+      break;
     case "usd":
       out.push(v / 1_000_000, v / 1_000_000_000, v / 1_000);
       break;
@@ -157,6 +197,13 @@ function proseNumerals(results: ToolResult[], question: string): Set<string> {
       bag.push(Array.isArray(v) ? v.join(" ") : v);
     }
     if (r.absence) bag.push(r.absence);
+    // Fact LABELS too. They are text the tools returned, and several of them
+    // carry numbers a correct answer will repeat: "S&P breadth (% of SPX above
+    // 200d MA)", "VaR 95%", "200d MA". Without this, an answer that says "above
+    // their 200d moving average" — copying the label it was shown — has its
+    // "200" flagged as unsourced, which trains a reader to ignore the marks.
+    // Quoted, never cited: a label is a name, not a measurement.
+    for (const f of r.facts) bag.push(f.label);
   }
   const out = new Set<string>();
   for (const text of bag) {
@@ -203,6 +250,35 @@ export function verifyAnswer(
       token: m[0],
       index: idx,
       grounding: dates.has(m[0]) ? "cited" : "unverified",
+      kind: "date",
+    });
+  }
+
+  // Month WORDS, on the same ladder. A month is cited when it is the month of a
+  // date the tools actually returned, quoted when it appears in their prose (a
+  // catalyst reading "PDD earnings (Aug-Sep)" is a legitimate thing to repeat),
+  // and unverified otherwise — which is what "The May 2026 run" was.
+  const citedMonths = new Set<string>();
+  Array.from(dates).forEach((d) => monthsOfDate(d).forEach((mm) => citedMonths.add(mm)));
+  const proseMonths = new Set<string>();
+  for (const text of [question, ...results.flatMap((r) => [
+    ...Object.values(r.notes ?? {}).map((v) => (Array.isArray(v) ? v.join(" ") : v)),
+    r.absence ?? "",
+  ])]) {
+    for (const m of Array.from(text.matchAll(MONTH))) proseMonths.add(m[0]);
+  }
+  for (const m of Array.from(answer.matchAll(MONTH))) {
+    const token = m[0];
+    const index = m.index ?? 0;
+    verdicts.push({
+      token,
+      index,
+      kind: "month",
+      grounding: citedMonths.has(token)
+        ? "cited"
+        : proseMonths.has(token)
+          ? "quoted"
+          : "unverified",
     });
   }
 
@@ -225,7 +301,11 @@ export function verifyAnswer(
       // A percent sign in the answer must be met by a percent-ish fact. Without
       // this, a Sharpe of 1.9 would happily ground "1.9%" of anything.
       const wantsPct = parsed.suffix === "%" || parsed.suffix.startsWith("bp");
-      const isPct = fact.unit === "pct" || fact.unit === "pct_points" || fact.unit === "bp";
+      const isPct =
+        fact.unit === "pct" ||
+        fact.unit === "pct_whole" ||
+        fact.unit === "pct_points" ||
+        fact.unit === "bp";
       if (wantsPct && !isPct) return false;
       return renderings(fact).some((c) => matches(parsed, c));
     });

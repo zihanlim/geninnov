@@ -2698,6 +2698,23 @@ def _build_advisory_derivation(state: Q1State) -> AdvisoryDerivation:
 # Persist to Supabase
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _picks_and_gross(state: Q1State) -> tuple[list, float] | None:
+    """The sized book and the gross both overlay analytics denominate against.
+
+    Shared so the sanctions and positioning panels cannot disagree about what "the book" is
+    or what its gross was — two readers of the same state that drift apart would put two
+    different denominators on the same page.
+    """
+    picks = state.get("sized_picks") or state.get("picks") or []
+    bm = state.get("book_metrics_final") or state.get("book_metrics")
+    gross = getattr(bm, "gross_exposure", None)
+    if gross is None and isinstance(bm, dict):
+        gross = bm.get("gross_exposure")
+    if not picks or not isinstance(gross, (int, float)) or isinstance(gross, bool):
+        return None
+    return list(picks), float(gross)
+
+
 def _sanctions_row(state: Q1State) -> dict | None:
     """The book's sanctions exposure, or None when it cannot be assessed.
 
@@ -2708,17 +2725,44 @@ def _sanctions_row(state: Q1State) -> dict | None:
         from .sanctions_exposure import assess, to_row
     except Exception:  # noqa: BLE001
         return None
-    picks = state.get("sized_picks") or state.get("picks") or []
-    bm = state.get("book_metrics_final") or state.get("book_metrics")
-    gross = getattr(bm, "gross_exposure", None)
-    if gross is None and isinstance(bm, dict):
-        gross = bm.get("gross_exposure")
-    if not picks or not isinstance(gross, (int, float)):
+    book = _picks_and_gross(state)
+    if book is None:
         return None
+    picks, gross = book
     try:
-        return to_row(assess(list(picks), float(gross)))
+        return to_row(assess(picks, gross))
     except Exception as exc:  # noqa: BLE001 — an analytic must never cost the run
         print(f"[_persist_to_supabase] sanctions exposure skipped ({exc.__class__.__name__}): {exc}")
+        return None
+
+
+def _positioning_row(state: Q1State) -> dict | None:
+    """External (CFTC) speculator positioning against the book, or None if unassessable.
+
+    The only overlay here that touches the network. `fetch_readings` degrades per contract —
+    a portal that does not answer yields a position marked UNOBSERVABLE with a reason, never
+    one silently counted as uncrowded. If the fetch fails wholesale we still persist the
+    assessment with `fetched=False`, because "we did not look" is a fact worth recording and
+    is not the same claim as "nothing is crowded" (ADR-0097).
+    """
+    try:
+        from ..data.cot_fetcher import fetch_readings
+        from .positioning_crowding import assess, to_row
+    except Exception:  # noqa: BLE001
+        return None
+    book = _picks_and_gross(state)
+    if book is None:
+        return None
+    picks, gross = book
+    try:
+        readings = fetch_readings(p.get("asset") for p in picks if p.get("asset"))
+    except Exception as exc:  # noqa: BLE001
+        print(f"[_persist_to_supabase] COT fetch failed ({exc.__class__.__name__}): {exc}")
+        readings = None
+    try:
+        return to_row(assess(picks, gross, readings))
+    except Exception as exc:  # noqa: BLE001 — an analytic must never cost the run
+        print(f"[_persist_to_supabase] positioning crowding skipped ({exc.__class__.__name__}): {exc}")
         return None
 
 
@@ -2832,6 +2876,11 @@ def _persist_to_supabase(state: Q1State) -> bool:
             # a documented judgement, and two copies of a judgement drift into a confidently
             # wrong classification with no visible symptom.
             "sanctions_exposure": _sanctions_row(state),
+            # Whether the book leans the way speculators already do, for the slice of it that
+            # trades against a futures contract (ADR-0097). Stores COVERAGE first: only 2 of
+            # 10 positions in the live book map at all, and a crowding verdict without that
+            # denominator reads as though the whole book had been checked.
+            "positioning_crowding": _positioning_row(state),
         }
 
         # Record WHAT this upsert is about to overwrite, before it overwrites it.

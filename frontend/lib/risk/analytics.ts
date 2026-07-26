@@ -103,6 +103,9 @@ export interface ResearchAnalyticsRow {
   /** ADR-0096. Null on any run predating migration 045 — which means "not judged",
    *  never "no exposure". */
   sanctions_exposure?: SanctionsExposureRow | null;
+  /** ADR-0097. Null on any run predating migration 046, or one where CFTC did not
+   *  answer — which means "not retrieved", never "not crowded". */
+  positioning_crowding?: PositioningCrowdingRow | null;
 }
 
 /** portfolio_risk latest row. */
@@ -543,5 +546,64 @@ export interface SanctionsExposureRow {
   }>;
   /** Held names in neither the exposed nor the cleared map: unknown, not absent. */
   unclassified: string[];
+  summary: string;
+}
+
+/**
+ * `research_recommendations.positioning_crowding` — ADR-0097.
+ *
+ * External (CFTC Commitments of Traders) speculator positioning against the book. Computed
+ * in Python (`backend/services/positioning_crowding.py` over `backend/data/cot_fetcher.py`)
+ * and persisted, NOT re-derived here: the contract mapping is a judgement, on the same
+ * argument as the sanctions jurisdiction map.
+ *
+ * COVERAGE IS THE HEADLINE. Only positions that trade against a futures contract can be
+ * assessed at all — 2 of 10 in the live book. A component that rendered only `rows` would
+ * let a reader conclude the whole book had been checked, so `coverage_share` is read first
+ * and `unobservable` is rendered rather than dropped.
+ */
+export interface PositioningCrowdingRow {
+  /** False = the fetch was never made or failed wholesale. NOT the same as "nothing is
+   *  crowded" — it means we did not look. */
+  fetched: boolean;
+  gross_exposure: number;
+  observed_gross: number;
+  agreeing_gross: number;
+  /** Share of book gross COT can speak to. null when the book has no gross (ADR-0066). */
+  coverage_share: number | null;
+  /** Share of book GROSS (not of the observed slice) sitting with a crowded consensus.
+   *  Bounded above by `coverage_share` by construction. */
+  crowded_share: number | null;
+  rows: Array<{
+    asset: string;
+    /** The side the BOOK states. */
+    direction: string;
+    weight: number;
+    contract: string;
+    contract_code: string;
+    /** True when long the asset is short the contract's underlying (SVXY). */
+    inverse: boolean;
+    /** Direction resolved into the contract's underlying — the side actually compared. */
+    effective_side: string;
+    /** 0-100 percentile of net speculator position in its own trailing 3y range. */
+    cot_index: number;
+    net_spec: number;
+    /** `long` | `short` | null when speculators are mid-range. */
+    crowded_side: string | null;
+    agrees_with_crowd: boolean;
+    as_of: string;
+    rationale: string;
+  }>;
+  /** Positions COT cannot see, each WITH its reason — never a bare omission. */
+  unobservable: Array<{
+    asset: string;
+    direction: string;
+    weight: number;
+    reason: string;
+  }>;
+  /** The CFTC OBSERVATION Tuesday (stalest across contracts), not the retrieval date. */
+  as_of: string | null;
+  crowded_high: number;
+  crowded_low: number;
   summary: string;
 }

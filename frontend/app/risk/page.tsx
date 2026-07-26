@@ -15,6 +15,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { StressScenarios } from "@/components/risk/StressScenarios";
+import { PositioningCrowding } from "@/components/risk/PositioningCrowding";
 import { SanctionsExposure } from "@/components/risk/SanctionsExposure";
 import { CorrelationMatrix } from "@/components/risk/CorrelationMatrix";
 import { CapUtilisation } from "@/components/risk/CapUtilisation";
@@ -46,6 +47,7 @@ import {
   type ReturnRow,
   type RiskRow,
   type ScenarioResult,
+  type PositioningCrowdingRow,
   type SanctionsExposureRow,
 } from "@/lib/risk/analytics";
 import {
@@ -80,7 +82,7 @@ const RISK_SECTIONS = [
 const ANALYTICS_COLUMNS =
   // picks: the published book, so this page can check that the positions it computes
   // risk on are the names the book actually holds (ADR-0040).
-  "run_date, lens, scenario_results, correlation_pairs, cap_utilisation, book_metrics, picks, sanctions_exposure";
+  "run_date, lens, scenario_results, correlation_pairs, cap_utilisation, book_metrics, picks, sanctions_exposure, positioning_crowding";
 const BASE_COLUMNS = "run_date, lens";
 const RISK_COLUMNS =
   "run_date, updated_at, total_capital, var_95, cvar_95, sharpe, beta, concentration_hhi, numeric_derivations";
@@ -395,6 +397,23 @@ function RiskPageInner() {
           !v ||
           typeof v !== "object" ||
           typeof (v as { direction?: unknown }).direction !== "string",
+      ),
+    [source],
+  );
+
+  // Same rule for external positioning: a null column means the CFTC reading was NOT
+  // RETRIEVED (run predates migration 046, or the portal did not answer), which is a
+  // different claim from "the book is not crowded" (ADR-0097).
+  const positioningState = useMemo(
+    () =>
+      classify<PositioningCrowdingRow>(
+        source,
+        (row) => row.positioning_crowding,
+        (v) =>
+          !v ||
+          typeof v !== "object" ||
+          !Array.isArray((v as { rows?: unknown }).rows) ||
+          !Array.isArray((v as { unobservable?: unknown }).unobservable),
       ),
     [source],
   );
@@ -744,6 +763,7 @@ function RiskPageInner() {
       {/* 6b — Sanctions exposure, beside the stress table because it is the same kind of
           claim: what the book does under a shock it did not choose. ADR-0096. */}
       <SanctionsExposure state={sanctionsState} />
+      <PositioningCrowding state={positioningState} />
       </section>
 
       <section id="concentration" aria-label="Concentration">

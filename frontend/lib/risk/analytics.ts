@@ -100,6 +100,9 @@ export interface ResearchAnalyticsRow {
   /** The published book. Only the assets are read here — /risk uses them to check
    *  that the positions it computes on are the names the book holds (ADR-0040). */
   picks?: Array<{ asset?: string | null }> | string | null;
+  /** ADR-0096. Null on any run predating migration 045 — which means "not judged",
+   *  never "no exposure". */
+  sanctions_exposure?: SanctionsExposureRow | null;
 }
 
 /** portfolio_risk latest row. */
@@ -502,4 +505,43 @@ export function buildDrawdownSeries(rows: ReturnRow[]): DrawdownSeries | null {
     worst,
     skipped,
   };
+}
+
+/**
+ * `research_recommendations.sanctions_exposure` — ADR-0096.
+ *
+ * Computed in Python (`backend/services/sanctions_exposure.py`) and persisted, NOT
+ * re-derived here. The jurisdiction map it rests on is a documented JUDGEMENT, and two
+ * copies of a judgement drift into a confidently wrong classification with no visible
+ * symptom — unlike a formula, which produces a visibly wrong number when it drifts.
+ * (Contrast `lib/method/trackRecord.ts`, which does re-implement its backend aggregate:
+ * justified there because that aggregate is never persisted, only its per-pick rows are.)
+ *
+ * `summary` travels with the figures for the same reason each scenario carries its own
+ * description: the page must not restate the direction in different words from the module
+ * that decided it.
+ */
+export interface SanctionsExposureRow {
+  /** `long` | `short` | `flat` | `none`, by NET exposure to sanctions risk. */
+  direction: string;
+  long_weight: number;
+  short_weight: number;
+  /** Signed. Negative = net short sanctions risk, so escalation helps the book. */
+  net_weight: number;
+  /** Exposed weight, NOT netted — an offsetting pair still shows its full gross. */
+  exposed_gross: number;
+  gross_exposure: number;
+  /** null when the book has no gross: a share of nothing is unmeasurable (ADR-0066). */
+  share_of_gross: number | null;
+  positions: Array<{
+    asset: string;
+    direction: string;
+    weight: number;
+    jurisdiction: string;
+    /** The named channel, e.g. "HFCAA delisting risk…" — never a bare score. */
+    mechanism: string;
+  }>;
+  /** Held names in neither the exposed nor the cleared map: unknown, not absent. */
+  unclassified: string[];
+  summary: string;
 }

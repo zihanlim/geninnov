@@ -215,7 +215,9 @@ export interface SourceIndependence {
 
 /** Independence of the attention corpus, from `theme_news` source counts. */
 export function sourceIndependence(
-  rows: Array<{ source: string | null | undefined }>,
+  // `source?` not `source:` — a row that OMITS the key is the same case as one carrying
+  // null, and requiring the key made an honest test fixture unrepresentable.
+  rows: Array<{ source?: string | null }>,
 ): SourceIndependence {
   // A plain object rather than a Map: this tsconfig targets below es2015, so spreading a
   // Map iterator needs --downlevelIteration (the same trap method-anchors.test.ts

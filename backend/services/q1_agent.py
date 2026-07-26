@@ -2698,6 +2698,30 @@ def _build_advisory_derivation(state: Q1State) -> AdvisoryDerivation:
 # Persist to Supabase
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _sanctions_row(state: Q1State) -> dict | None:
+    """The book's sanctions exposure, or None when it cannot be assessed.
+
+    None rather than an empty assessment: a run that could not classify must render
+    "unavailable", not a shape the UI reads as "no exposure" (ADR-0066).
+    """
+    try:
+        from .sanctions_exposure import assess, to_row
+    except Exception:  # noqa: BLE001
+        return None
+    picks = state.get("sized_picks") or state.get("picks") or []
+    bm = state.get("book_metrics_final") or state.get("book_metrics")
+    gross = getattr(bm, "gross_exposure", None)
+    if gross is None and isinstance(bm, dict):
+        gross = bm.get("gross_exposure")
+    if not picks or not isinstance(gross, (int, float)):
+        return None
+    try:
+        return to_row(assess(list(picks), float(gross)))
+    except Exception as exc:  # noqa: BLE001 — an analytic must never cost the run
+        print(f"[_persist_to_supabase] sanctions exposure skipped ({exc.__class__.__name__}): {exc}")
+        return None
+
+
 def _record_book_revisions(sb, run_date: str, new_row: dict) -> None:
     """Log what an upsert is about to replace, per field.
 
@@ -2803,6 +2827,11 @@ def _persist_to_supabase(state: Q1State) -> bool:
             # verification is exactly the one whose reasoning gap matters most.
             "independent_ideas": _with_shortfall(state),
             "lens": state.get("lens", "multi_asset"),
+            # Which held names sit in a sanctions-sensitive jurisdiction AND ON WHICH SIDE
+            # (ADR-0096). Computed here rather than in the UI because the jurisdiction map is
+            # a documented judgement, and two copies of a judgement drift into a confidently
+            # wrong classification with no visible symptom.
+            "sanctions_exposure": _sanctions_row(state),
         }
 
         # Record WHAT this upsert is about to overwrite, before it overwrites it.

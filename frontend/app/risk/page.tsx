@@ -15,6 +15,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { StressScenarios } from "@/components/risk/StressScenarios";
+import { SanctionsExposure } from "@/components/risk/SanctionsExposure";
 import { CorrelationMatrix } from "@/components/risk/CorrelationMatrix";
 import { CapUtilisation } from "@/components/risk/CapUtilisation";
 import { BookFactorTilt } from "@/components/risk/BookFactorTilt";
@@ -45,6 +46,7 @@ import {
   type ReturnRow,
   type RiskRow,
   type ScenarioResult,
+  type SanctionsExposureRow,
 } from "@/lib/risk/analytics";
 import {
   buildLimitBoard,
@@ -78,7 +80,7 @@ const RISK_SECTIONS = [
 const ANALYTICS_COLUMNS =
   // picks: the published book, so this page can check that the positions it computes
   // risk on are the names the book actually holds (ADR-0040).
-  "run_date, lens, scenario_results, correlation_pairs, cap_utilisation, book_metrics, picks";
+  "run_date, lens, scenario_results, correlation_pairs, cap_utilisation, book_metrics, picks, sanctions_exposure";
 const BASE_COLUMNS = "run_date, lens";
 const RISK_COLUMNS =
   "run_date, updated_at, total_capital, var_95, cvar_95, sharpe, beta, concentration_hhi, numeric_derivations";
@@ -377,6 +379,22 @@ function RiskPageInner() {
         source,
         (row) => row.scenario_results,
         (v) => !Array.isArray(v) || v.length === 0,
+      ),
+    [source],
+  );
+
+  // ADR-0096. An OBJECT, not an array, so "empty" means a missing or typeless value
+  // rather than a zero-length list: a run predating migration 045 must read "not judged",
+  // never "no exposure".
+  const sanctionsState = useMemo(
+    () =>
+      classify<SanctionsExposureRow>(
+        source,
+        (row) => row.sanctions_exposure,
+        (v) =>
+          !v ||
+          typeof v !== "object" ||
+          typeof (v as { direction?: unknown }).direction !== "string",
       ),
     [source],
   );
@@ -722,6 +740,10 @@ function RiskPageInner() {
 
       {/* 6 — Stress scenarios (persisted). */}
       <StressScenarios state={scenarioState} />
+
+      {/* 6b — Sanctions exposure, beside the stress table because it is the same kind of
+          claim: what the book does under a shock it did not choose. ADR-0096. */}
+      <SanctionsExposure state={sanctionsState} />
       </section>
 
       <section id="concentration" aria-label="Concentration">

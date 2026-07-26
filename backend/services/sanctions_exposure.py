@@ -194,3 +194,25 @@ def describe(exp: SanctionsExposure) -> str:
             f"unknown, not absent."
         )
     return base
+
+
+def to_row(exp: SanctionsExposure) -> dict:
+    """Persisted shape for `research_recommendations.sanctions_exposure`.
+
+    Carries the rendered sentence alongside the numbers so the page cannot restate the
+    direction differently from the module that computed it — the same reason
+    `scenario_results_to_dict` carries each scenario's own description (ADR-0095).
+    """
+    return {
+        "direction": exp.direction,
+        "long_weight": exp.long_weight,
+        "short_weight": exp.short_weight,
+        "net_weight": exp.net_weight,
+        "exposed_gross": exp.exposed_gross,
+        "gross_exposure": exp.gross_exposure,
+        # None, not 0.0, when the book has no gross (ADR-0066).
+        "share_of_gross": exp.share_of_gross,
+        "positions": exp.positions,
+        "unclassified": sorted(set(exp.unclassified)),
+        "summary": describe(exp),
+    }

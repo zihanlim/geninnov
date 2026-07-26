@@ -82,13 +82,39 @@ the `assessStaleness` verdict work both removed.
 - `gross_exposure` is passed in rather than summed from the picks, so the denominator is the
   same one `book_metrics` reports and the two cannot disagree.
 
-## What this does not do yet
+## The render (shipped same day)
 
-**Nothing renders it.** The assessment is computed and tested but no page shows it, so the
-exposure is documented rather than disclosed — the same gap ADR-0090 had for one day before
-the `/method` panel shipped. The natural home is `/risk` beside the concentration and
-correlation panels, since it is a concentration claim; that is a render of
-`assess()` + `describe()` with no new logic.
+`/risk` shows it beside the stress table — the same kind of claim: what the book does under a
+shock it did not choose. Persisted to `research_recommendations.sanctions_exposure`
+(migration 045) and rendered from there rather than recomputed in TS, because the jurisdiction
+map is a **judgement**. Two copies of a judgement drift into a confidently wrong
+*classification* with no visible symptom, whereas two copies of a formula produce a visibly
+wrong *number*. (Contrast `lib/method/trackRecord.ts`, which does re-implement its backend
+aggregate — justified there because that aggregate is never persisted, only its per-pick rows
+are.)
 
-It also does not tell you whether sanctions pressure is **rising** — only what the book would
-do if it did. That needs the credential.
+The persisted `summary` sentence renders verbatim, for the same reason each scenario now
+carries its own description
+([ADR-0095](0095-s6-scales-by-measured-disruption-when-there-is-a-reading.md)): the page must
+not restate the direction in different words from the module that decided it.
+
+Backfilled onto the live 2026-07-25 row so the disclosure applies to the published book, and
+**that backfill is itself logged in `book_revisions`** — the second real entry in the log
+ADR-0093 built, with `previous_value` NULL because the field did not exist rather than because
+it was zero.
+
+**The goal-3 guard caught the first draft.** It rendered the side with inline `badge-long` /
+`badge-short`, and `chip-contrast.test.ts` flagged it: that sweep has no allowlist by design,
+and a legitimate direction chip is expected to use the `dir-pill-*` primitive
+([ADR-0085](0085-direction-cannot-be-carried-by-hue-alone.md)). Rewritten to match
+`AttentionCrowding.dirLabel`, so there is one way to render a side on `/risk` rather than two.
+Conforming was correct; exempting the chip would have been the exact failure that test exists
+to prevent.
+
+A null column renders "not judged", explicitly not "no exposure" — a run predating migration
+045 has not been assessed, and the two must not look alike.
+
+## What this still does not do
+
+It does not tell you whether sanctions pressure is **rising** — only what the book would do if
+it did. That needs the credential.

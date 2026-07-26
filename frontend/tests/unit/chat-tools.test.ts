@@ -168,6 +168,92 @@ describe("risk_metrics", () => {
     );
     expect(noScenarios.absence).toMatch(/scenario_results is empty/);
   });
+
+  // The defect this guards (ADR-0100): /ask and the MCP server read portfolio_risk straight
+  // through, so on the 2026-07-25 book — THREE return observations — they would quote a
+  // Sharpe of 6.32 against a declared minimum of 60, while the /risk tile suppressed the
+  // identical number. The guard lived in a React component, so every non-React consumer
+  // ignored it.
+  const RISK_ROW = {
+    var_95: 1_485_840, cvar_95: 1_864_070, sharpe: 6.32251, beta: -1.29775,
+    concentration_hhi: 1200, total_capital: 100_000_000,
+  };
+  const sessions = (n: number) => Array.from({ length: n }, (_, i) => ({ run_date: `d${i}` }));
+  const keys = (out: { facts: { key: string }[] }) => out.facts.map((x) => x.key);
+
+  it("withholds under-sampled statistics from the model", async () => {
+    const out = await runTool("risk_metrics", {}, ctx({
+      research_recommendations: [BOOK_ROW],
+      portfolio_risk: [RISK_ROW],
+      portfolio_returns: sessions(3),
+    }));
+
+    for (const k of ["risk.sharpe", "risk.beta", "risk.var_95", "risk.cvar_95"]) {
+      expect(keys(out), `${k} must not be quotable from 3 sessions`).not.toContain(k);
+    }
+    // ...while the statistics that need no history are untouched.
+    expect(keys(out)).toContain("risk.concentration_hhi");
+    expect(keys(out)).toContain("risk.total_capital");
+  });
+
+  it("tells the model the figures exist rather than letting it report none", async () => {
+    const out = await runTool("risk_metrics", {}, ctx({
+      research_recommendations: [BOOK_ROW],
+      portfolio_risk: [RISK_ROW],
+      portfolio_returns: sessions(3),
+    }));
+    expect(out.absence).toMatch(/EXIST in portfolio_risk/);
+    expect(out.absence).toMatch(/Sharpe \(3 sessions of return history, needs 60/);
+    expect(out.absence).toMatch(/do NOT say they are unavailable/);
+  });
+
+  it("quotes them once the sample supports them", async () => {
+    const out = await runTool("risk_metrics", {}, ctx({
+      research_recommendations: [BOOK_ROW],
+      portfolio_risk: [RISK_ROW],
+      portfolio_returns: sessions(60),
+    }));
+    for (const k of ["risk.sharpe", "risk.beta", "risk.var_95", "risk.cvar_95"]) {
+      expect(keys(out)).toContain(k);
+    }
+    expect(out.absence).toBeUndefined();
+  });
+
+  it("quotes VaR but not Sharpe at 30 sessions — the thresholds differ", async () => {
+    const out = await runTool("risk_metrics", {}, ctx({
+      research_recommendations: [BOOK_ROW],
+      portfolio_risk: [RISK_ROW],
+      portfolio_returns: sessions(30),
+    }));
+    expect(keys(out)).toContain("risk.var_95");
+    expect(keys(out)).toContain("risk.cvar_95");
+    expect(keys(out)).not.toContain("risk.sharpe");
+    expect(keys(out)).not.toContain("risk.beta");
+  });
+
+  it("does not withhold when the sample cannot be read", async () => {
+    // An unreadable count must degrade to prior behaviour, not black out every figure —
+    // a read error is not evidence of a small sample.
+    //
+    // Needs a fake that fails ONE table: the shared `db` helper errors every select, which
+    // would empty portfolio_risk too and short-circuit to "has no rows", passing this test
+    // without ever reaching the branch it is about.
+    const onlyReturnsFail: DbReader = {
+      async select(table) {
+        if (table === "portfolio_returns") return { rows: [], error: "connection reset" };
+        const rows = { research_recommendations: [BOOK_ROW], portfolio_risk: [RISK_ROW] }[
+          table as "research_recommendations" | "portfolio_risk"
+        ];
+        return { rows: rows ?? [], error: null };
+      },
+    };
+    const out = await runTool("risk_metrics", {}, { db: onlyReturnsFail });
+
+    // The branch is genuinely reached: risk was read, so this is not the "no rows" path.
+    expect(out.absence ?? "").not.toMatch(/portfolio_risk has no rows/);
+    expect(out.absence ?? "").not.toMatch(/EXIST in portfolio_risk/);
+    expect(keys(out)).toContain("risk.sharpe");   // quoted, because the sample is unjudged
+  });
 });
 
 describe("screening_funnel", () => {

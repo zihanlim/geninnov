@@ -25,6 +25,7 @@ import type { CapRow, Pick, ScenarioResult } from "@/lib/book/types";
 import { bookAssetsFromPicks } from "@/lib/bookPicks";
 import { assessPipeline, EXPECTED_STAGES } from "@/lib/pipelineHealth";
 import { reconcileToBook } from "@/lib/risk/bookOfRecord";
+import { sampleAdequacy } from "@/lib/risk/sampleAdequacy";
 import { turnover } from "@/lib/turnover";
 import type { DbReader, Fact, ToolContext, ToolResult, ToolSpec } from "./types";
 
@@ -356,17 +357,33 @@ const riskMetrics: ToolSpec = {
     "L4 portfolio risk (VaR 95, CVaR 95, Sharpe, beta, concentration HHI, capital) and the five stress scenarios with their estimated book return and dollar P&L. Call this for anything about risk, drawdown, stress, or what happens if the market moves.",
   args: {},
   async run(args, { db }) {
-    const [riskRes, bookRes] = await Promise.all([
+    const [riskRes, bookRes, sessionsRes] = await Promise.all([
       db.select("portfolio_risk", "total_capital, var_95, cvar_95, sharpe, beta, concentration_hhi, updated_at", {
         order: { column: "updated_at", ascending: false },
         limit: 1,
       }),
       latestBook(db),
+      // The sample every estimated statistic below is judged against. Counted by reading
+      // one column rather than by widening `DbReader` with a `count`: that interface is
+      // deliberately minimal so the read-only claim stays structural, and this table gains
+      // one row per trading day, so the read is small and bounded in practice.
+      db.select("portfolio_returns", "run_date"),
     ]);
     const risk = riskRes.rows[0];
     const book = bookRes.rows[0];
     const runDate = str(book?.run_date ?? null);
     const facts: Fact[] = [];
+
+    // How many sessions of realised return history exist. A statistic below its declared
+    // minimum is WITHHELD here exactly as the /risk tile withholds it — otherwise /ask and
+    // the MCP server quote a number the page refuses to show (ADR-0100). On the 2026-07-25
+    // book that was a Sharpe of 6.32 from three observations against a minimum of 60.
+    // `null` on a failed read, NOT 0 — `sampleAdequacy` treats an unknown sample as
+    // unjudged and does not withhold, so a transient read error degrades to today's
+    // behaviour rather than blacking out every figure.
+    const sessions = sessionsRes.error ? null : sessionsRes.rows.length;
+    const withheld: string[] = [];
+
     if (risk) {
       for (const [k, label, unit] of [
         ["var_95", "VaR 95%", "usd"],
@@ -377,7 +394,16 @@ const riskMetrics: ToolSpec = {
         ["total_capital", "Total capital", "usd"],
       ] as const) {
         const v = num(risk[k]);
-        if (v !== null) facts.push(f(`risk.${k}`, label, v, `portfolio_risk.${k}`, unit, runDate));
+        if (v === null) continue;
+        const adequacy = sampleAdequacy(k, sessions);
+        if (!adequacy.ok) {
+          // Named in `absence` rather than silently dropped: a model that cannot see the
+          // figure must still be told it exists and why it is not quotable, or it will
+          // report "no VaR is available" — a different and wrong claim.
+          withheld.push(`${label} (${adequacy.reason})`);
+          continue;
+        }
+        facts.push(f(`risk.${k}`, label, v, `portfolio_risk.${k}`, unit, runDate));
       }
     }
     const scenarios = (book?.scenario_results ?? null) as ScenarioResult[] | null;
@@ -400,9 +426,17 @@ const riskMetrics: ToolSpec = {
         : undefined,
       absence: !risk
         ? "portfolio_risk has no rows — L4 has not computed risk for this book, so VaR, Sharpe and beta cannot be quoted."
-        : !scenarios?.length
-          ? "scenario_results is empty for this run — the book was not stress-tested, so scenario numbers cannot be quoted."
-          : undefined,
+        : withheld.length
+          ? `These statistics EXIST in portfolio_risk but are not quotable, because the return ` +
+            `sample cannot support them: ${withheld.join("; ")}. Say they are not published ` +
+            `at this sample size — do NOT say they are unavailable or that the book has no ` +
+            `risk figures.` +
+            (scenarios?.length
+              ? ""
+              : " Separately, scenario_results is empty for this run, so scenario numbers cannot be quoted.")
+          : !scenarios?.length
+            ? "scenario_results is empty for this run — the book was not stress-tested, so scenario numbers cannot be quoted."
+            : undefined,
     };
   },
 };

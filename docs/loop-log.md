@@ -20,6 +20,23 @@ does not authorise anything.
 
 ---
 
+### Loop iteration 104 (2026-07-27) — verified the other session's new bar-panels (numbers hold); repaired an ADR-index mojibake recurrence
+
+The other session is systematically answering the four transcript bars in the frontend —
+`SourceIndependence`/`SourceBoard` (bar 2), `PositioningCrowding` with coverage stated (bar 1),
+`TrackRecord` on `/method/evidence` (bar 4, verified live). Rather than duplicate their active work,
+I did the steady-state role: swept the deployed site and poked the new numbers. Full pass — `/`,
+`/book`, `/risk`, `/method`, `/method/evidence`, `/ask` at 1440/375 — **0 issues, 0 mojibake**; the
+`/ask` centred-console fix from the prior firing is live. Poked the two new `/risk` figures against
+the book: **sanctions 30.2% of gross** = (PDD 9.3 + BABA 8.7) / 59.3 ✓, **COT 22% of gross** =
+(SHY 9.3 + SVXY 3.9) / 59.3 ✓ — both survive (my first screenshot read of "38.2%" was the misread,
+not the data). Fixed a recurrence the [[frontend-files-get-mojibake-corrupted]] memory predicted:
+`docs/adrs/README.md` carried **44 mojibake markers** (committed, a repo doc — not on the live site) —
+guarded run-reversal, 0 remaining, ASCII skeleton byte-identical, no deploy needed. Bar 3
+(asset-specific domain knowledge in the `reason_picks` prompt) is the one backend bar still open; it
+is partly disclosed already (`ConvictionCard` labels the thesis theme-level), and a real fix belongs
+in a focused backend firing, not bolted on here.
+
 ### Loop iteration 103 (2026-07-26) — re-derived the remaining build order; the top item was time-gated, the one under it was a guard that could not see half of what it guarded
 
 **Re-derived rather than taking the backlog on faith, and two of the four items dissolved.** `/risk`

@@ -56,6 +56,7 @@ import FactorReconciliation from "@/components/method/FactorReconciliation";
 import EdgeValidation from "@/components/method/EdgeValidation";
 import TrackRecord from "@/components/method/TrackRecord";
 import BookRevisions from "@/components/method/BookRevisions";
+import SourceBoard from "@/components/method/SourceBoard";
 import SourceIndependence from "@/components/method/SourceIndependence";
 
 /* ══ Row types ═══════════════════════════════════════════════════════════════ */
@@ -2225,6 +2226,12 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
             is the same reader question this section already answers, and ADR-0084's stop
             rule is to split by section rather than to add one per panel. */}
         <SourceIndependence />
+
+        {/* Same section for the same reason: "what is this built on, and which parts are
+            stale" is the sources question. SourceIndependence answers how MANY providers
+            the attention signal rests on; this answers what every source can say about its
+            own age — including the ones whose tables can say nothing (ADR-0102). */}
+        <SourceBoard />
       </Section>
       )}
 

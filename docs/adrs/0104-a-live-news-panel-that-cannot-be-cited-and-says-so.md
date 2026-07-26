@@ -2,12 +2,12 @@
 
 **Status:** Accepted
 **Date:** 2026-07-27
-**Amends:** [ADR-0102](0102-most-of-our-tables-record-when-we-asked-not-when-it-happened.md) — which refused this panel
+**Amends:** [ADR-0105](0105-most-of-our-tables-record-when-we-asked-not-when-it-happened.md) — which refused this panel
 **Related:** [ADR-0009](0009-research-first-design-philosophy.md), [ADR-0084](0084-method-splits-by-reader-question-not-by-copy.md), [ADR-0087](0087-a-chat-that-cannot-do-arithmetic.md)
 
 ## Context
 
-[ADR-0102](0102-most-of-our-tables-record-when-we-asked-not-when-it-happened.md) refused a
+[ADR-0105](0105-most-of-our-tables-record-when-we-asked-not-when-it-happened.md) refused a
 live news video panel and said: *"if the live panel is ever wanted, it reverses two standing
 non-goals and needs its own ADR arguing them down, not a component."* This is that ADR. (Numbered 0104: a concurrent session took 0103 for the themes-page terminal decision while this was being written.)
 
@@ -93,7 +93,7 @@ the exceptions are stated.
 no fact derives from one, and nothing in the book's derivation changed. The panel is
 adjacent to the product, not part of it.
 
-**What was refused in ADR-0102 stays refused**: the 3D globe, the finance radar over 29
+**What was refused in ADR-0105 stays refused**: the 3D globe, the finance radar over 29
 exchanges, and the Country Instability Index. Those fail the triage on *invented data*, which
 is a different and unanswerable objection — no amount of framing makes six `GEO_MAP` buckets
 into a globe.

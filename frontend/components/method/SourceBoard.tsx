@@ -9,7 +9,7 @@ import {
   type SourceVerdict,
 } from "@/lib/method/sourceBoard";
 
-// Every source the book rests on, and what each can honestly say about its own age (ADR-0102).
+// Every source the book rests on, and what each can honestly say about its own age (ADR-0105).
 //
 // The finding it exists to state: most of our tables record only RETRIEVAL.
 // `macro_indicators` has `fetch_date` and `fetched_at` and no observation column, so "how old

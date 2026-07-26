@@ -19,7 +19,7 @@
 // (ADR-0023), and `theme_news` has zero Reddit rows. "Silent" and "stale" must not render
 // alike.
 //
-// See ADR-0102.
+// See ADR-0105.
 
 /** Which timestamp role a table can actually answer for — ADR-0098's roles, applied here. */
 export type TimestampRole = "observed" | "published" | "retrieved";

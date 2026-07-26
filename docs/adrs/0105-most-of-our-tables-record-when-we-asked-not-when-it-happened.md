@@ -1,8 +1,10 @@
-# ADR-0102: Most of our tables record when we asked, not when it happened
+# ADR-0105: Most of our tables record when we asked, not when it happened
 
 **Status:** Accepted
 **Date:** 2026-07-27
 **Supersedes:** —
+**Renumbered:** filed as 0102, moved to 0105. A concurrent session had committed its own
+0102 thirty-four minutes earlier; first commit keeps the number.
 **Related:** [ADR-0094](0094-no-corroboration-gate-over-a-single-source.md), [ADR-0098](0098-an-absence-must-say-which-kind-of-absence-it-is.md), [ADR-0009](0009-research-first-design-philosophy.md)
 
 ## Context

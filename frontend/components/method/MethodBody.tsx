@@ -2230,7 +2230,7 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
         {/* Same section for the same reason: "what is this built on, and which parts are
             stale" is the sources question. SourceIndependence answers how MANY providers
             the attention signal rests on; this answers what every source can say about its
-            own age — including the ones whose tables can say nothing (ADR-0102). */}
+            own age — including the ones whose tables can say nothing (ADR-0105). */}
         <SourceBoard />
       </Section>
       )}

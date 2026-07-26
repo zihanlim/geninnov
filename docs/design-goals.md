@@ -86,12 +86,29 @@ This supersedes ADR-0009's "dark mode retained" clause; the rest of ADR-0009
 
 ### 5. Affordances match capability
 
-The frontend reads Supabase directly and writes nothing. So it shows no
-`COMMIT`, no `RECALCULATE`, no `SAVE`. A button that implies a capability the
-system does not have is a lie with a hover state. Export is fine — it acts on
-data already in the browser.
+No control may imply it can change the book. The frontend shows no `COMMIT`, no
+`RECALCULATE`, no `SAVE`. A button that implies a capability the system does not
+have is a lie with a hover state. Export is fine — it acts on data already in
+the browser.
 
-**Test:** for every control, name the code path it triggers. No path, no control.
+This used to read "the frontend reads Supabase directly and writes nothing",
+which was the *mechanism* rather than the goal. `/ask` (ADR-0087) added the
+first control that triggers server-side work, so the mechanism no longer states
+it and the goal is stated directly instead. The bar `/ask` had to clear, and
+which any future server-side control must clear:
+
+- it writes nothing to any domain table (its only write is a request counter in
+  a table that exists for no other purpose);
+- it reads with the anon key — the same rows the browser could already fetch —
+  so it can reveal nothing a visitor could not;
+- it cannot re-run, re-size, re-rank or re-publish anything.
+
+The capability its affordance implies is "ask a question about the published
+run". That is exactly the capability that exists.
+
+**Test:** for every control, name the code path it triggers. No path, no
+control. Then: if that path reaches a server, name what it can change. "Nothing
+in the book" is the only acceptable answer.
 
 ### 6. Prose carries the why; mono carries the figure
 
@@ -174,6 +191,16 @@ Stated so nobody re-litigates them by accident:
   of URLs. See [ADR-0084](adrs/0084-method-splits-by-reader-question-not-by-copy.md)
   for the stop rules that keep this from becoming the rail by increments —
   chiefly: **split by section, never by copy of the same data.**
+  `/ask` ([ADR-0087](adrs/0087-a-chat-that-cannot-do-arithmetic.md)) is the
+  worked example of the distinction: it is a route, and it is reached from a
+  TopBar *control*, because it is a way of READING the book rather than a fifth
+  thing the product is. Four destinations, still. If it ever turns up in the nav
+  or the rail, that decision has been reversed and needs re-arguing here.
+- **A chatbot that answers from the model's own knowledge.** `/ask` may only
+  answer from values a tool fetched this turn. When the tools come back empty,
+  the absences ARE the answer — the agent says what is missing, and does not
+  reach for what it happens to know about markets. A figure it cannot trace is
+  marked untraceable in the prose rather than quietly shipped.
 
 ## Evaluating an external mockup
 

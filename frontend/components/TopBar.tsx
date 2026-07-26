@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { MessageSquareText } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 // Ordered as a portfolio manager's morning: what's moving → what we hold →
@@ -96,7 +97,27 @@ export default function TopBar() {
           floated pills with gaps. That is the one structural idea worth taking
           from the comps' top bar — a run-state group reads as one instrument
           when its cells share a border, and as loose chrome when they don't. */}
-      <div className="flex items-stretch text-text-secondary text-[12px] justify-self-end border border-border rounded-md overflow-hidden bg-bg-elevated divide-x divide-border">
+      <div className="flex items-center gap-2 justify-self-end">
+        {/* /ask is a TOOL, not a fifth destination.
+            The four-destination rule in design-goals.md is about what the
+            product IS — themes, book, risk, method — and adding "Ask" to that
+            list would claim the chat is a peer of the book rather than a way of
+            reading it. So it sits outside the nav, styled as a control, and the
+            nav stays four items in both the bar and the rail. It is also why
+            SideRail is untouched: the rail mirrors the destinations. */}
+        <Link
+          href="/ask"
+          aria-current={pathname?.startsWith("/ask") ? "page" : undefined}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-[12px] font-medium whitespace-nowrap transition-colors ${
+            pathname?.startsWith("/ask")
+              ? "border-border-strong bg-bg-elevated text-text-primary"
+              : "border-border bg-bg-surface text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+          }`}
+        >
+          <MessageSquareText size={13} aria-hidden strokeWidth={1.75} />
+          Ask
+        </Link>
+        <div className="flex items-stretch text-text-secondary text-[12px] border border-border rounded-md overflow-hidden bg-bg-elevated divide-x divide-border">
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] whitespace-nowrap">
           {/* Was bg-long — direction green spent on a freshness state, which is
               goal 3's failure mode (ADR-0085). The words "live"/"stale" already
@@ -124,6 +145,7 @@ export default function TopBar() {
         <span className="hidden md:inline-flex items-center px-2.5 py-1 text-[11px] text-text-tertiary whitespace-nowrap">
           Next run <span className="num ml-1">21:30 UTC</span>
         </span>
+        </div>
       </div>
     </header>
   );

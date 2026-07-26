@@ -91,6 +91,12 @@ All project documentation lives under `docs/`:
 | `backend/services/q1_agent.py` | L5: 8-node Q1 reasoning agent (`run_q1_agent`) |
 | `frontend/app/book/page.tsx` | L6: The $100M book — per-trade thesis, pool depth, turnover, replication. (`/research`, `/portfolio`, `/trades` are retired server redirects to it.) |
 | `frontend/lib/supabase.ts` | Supabase client for frontend reads |
+| `frontend/app/ask/page.tsx` | L8: `/ask` — interrogate the published book. Reached from a TopBar control, **not** a fifth nav destination |
+| `frontend/app/api/chat/route.ts` | L8: the repo's only route handler. Rate limit first, then spend |
+| `frontend/lib/chat/agent.ts` | L8: plan → execute → answer → verify. Exactly two LLM calls per question |
+| `frontend/lib/chat/tools.ts` | L8: the read-only tools. They import the SAME modules the pages render — never a copy |
+| `frontend/lib/chat/guardrail.ts` | L8: adjudicates every numeral as cited / quoted / unverified ([ADR-0087](docs/adrs/0087-a-chat-that-cannot-do-arithmetic.md)) |
+| `supabase/migrations/039_chat_usage.sql` | L8 spend guard — sealed table + `chat_rate_limit()` RPC, service_role only |
 | `supabase/migrations/001_initial_schema.sql` | Full database schema (L1–L4 tables) |
 | `supabase/migrations/005_macro_indicators.sql` | L0 macro_indicators + macro_daily_history |
 | `supabase/migrations/006_factor_exposures.sql` | L2 factor_exposures table |
@@ -125,7 +131,19 @@ BRAVE_SEARCH_API_KEY=...
 REDDIT_CLIENT_ID=...
 REDDIT_CLIENT_SECRET=...
 REDDIT_USER_AGENT=Andromeda/1.0
+
+# /ask (L8) — SERVER-ONLY, set on the FRONTEND deployment. Never NEXT_PUBLIC_.
+MINIMAX_API_KEY=...            # required or /ask 503s. SHARED with the nightly book's quota
+SUPABASE_SERVICE_KEY=...       # required in production: the spend-guard RPC is service_role only
+CHAT_IP_SALT=...               # recommended — an unsalted hash of an IPv4 address is brute-forceable
+CHAT_PER_IP_DAILY_CAP=15       # optional
+CHAT_GLOBAL_DAILY_CAP=200      # optional — this is what protects tomorrow's book
 ```
+
+**`/ask` shares the MiniMax quota with L5.** That is the reason it is capped at
+all: an exhausted quota does not produce a broken chat, it produces tomorrow's
+book as a deterministic template with no thesis. If the caps are raised, raise
+them against that, not against the bill.
 
 ## MCP tools
 
@@ -164,12 +182,12 @@ mcp__playwright__browser_console_messages({ level: "error" })
 
 All weights and lookbacks are stored in the `scoring_config` Supabase table — not hardcoded. To change how themes are scored, update the database, don't edit Python code.
 
-## Q1 thesis pipeline (L0–L6)
+## Q1 thesis pipeline (L0–L8)
 
 The L5 agent (`backend/services/q1_agent.py`) is a deterministic-then-stochastic pipeline. Layers L0–L4 are pure functions — auditable, reproducible. Layer L5 is the only place an LLM is invoked — **MiniMax-M3** in this deployment. The provider is
 chosen at import time by `_select_provider` (MiniMax → Anthropic → Gemini, first key present wins,
 pinnable with `LLM_PROVIDER`), and per ADR-0013 the citation guardrail and candidate hard-filter
-constrain whichever model answers, so the provider is swappable without weakening the L5 contract. Layers L6–L7 render the result with citation provenance.
+constrain whichever model answers, so the provider is swappable without weakening the L5 contract. Layers L6–L7 render the result with citation provenance, and L8 (`/ask`) lets a reader interrogate it at request time under the same citation contract — see [ADR-0087](docs/adrs/0087-a-chat-that-cannot-do-arithmetic.md).
 
 | Layer | Source | What it does |
 |-------|--------|--------------|
@@ -181,5 +199,6 @@ constrain whichever model answers, so the provider is swappable without weakenin
 | **L5** | `backend/services/q1_agent.py` | 8-node pipeline: aggregate → screen → compute book metrics → scenario analysis → reason_picks (LLM) → verify_citations → size_positions → persist |
 | L6 | `frontend/app/book/page.tsx` | Per-trade thesis + book view rendered on `/book` |
 | L7 | `frontend/components/{CitationList,ThemeDerivationDrawer,RegimeInputs}.tsx` | Citation footnotes + derivation audit trail |
+| **L8** | `frontend/app/api/chat/route.ts` + `frontend/lib/chat/` | `/ask` — the only **request-time** LLM call. Plan (LLM picks ≤4 tools) → execute (deterministic, reusing the pages' own functions) → answer (LLM, restricted to fetched facts) → verify (every numeral cited/quoted/unverified, one retry). Read-only; spend-capped; fails closed |
 
 The citation guardrail (verify_citations → retry → fallback) is the primary defense against LLM hallucination of macro numbers. See [ADR-0012](docs/adrs/0012-citation-guardrail-llm-defense.md) for the design rationale.

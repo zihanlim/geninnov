@@ -3,6 +3,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { assessStaleness } from "@/lib/freshness";
+import {
+  assessPipeline,
+  type Health,
+  type PipelineRun,
+} from "@/lib/pipelineHealth";
 import { reconcileToBook, type Reconciliation } from "@/lib/risk/bookOfRecord";
 import { bookAssetsFromPicks } from "@/lib/bookPicks";
 
@@ -18,70 +23,10 @@ import { bookAssetsFromPicks } from "@/lib/bookPicks";
  * It now reads `pipeline_runs` and reports what actually happened.
  */
 
-interface PipelineRun {
-  run_date: string;
-  stage: string;
-  status: string;
-  finished_at: string | null;
-  duration_s: number | null;
-}
-
-// The stages daily_refresh.py records. A stage absent from the latest run_date
-// did not run — which is information, not an error in this component.
-//
-// This list held only L0/L2/L3/L5 because L1 and L4 never called
-// record_pipeline_run(). The bar therefore read "All stages complete · 4/4
-// succeeded" while /method, on the same screen, said of both missing stages
-// "Last success: never" — 4/4 was counting the stages that report, not the stages
-// that exist. Both are instrumented now, so the denominator is the real one.
-const EXPECTED_STAGES = ["L0", "L1", "L2", "L3", "L4", "L5"];
-
-type Health = "healthy" | "degraded" | "failed" | "unknown";
-
-function assess(runs: PipelineRun[]): {
-  health: Health;
-  label: string;
-  detail: string;
-} {
-  if (runs.length === 0) {
-    return {
-      health: "unknown",
-      label: "No pipeline runs recorded",
-      detail: "pipeline_runs is empty",
-    };
-  }
-  const latestDate = runs[0].run_date;
-  const today = runs.filter((r) => r.run_date === latestDate);
-  const byStage = new Map(today.map((r) => [r.stage, r]));
-
-  const ran = EXPECTED_STAGES.filter((s) => byStage.has(s));
-  const missing = EXPECTED_STAGES.filter((s) => !byStage.has(s));
-  const failed = ran.filter((s) => byStage.get(s)!.status === "failure");
-  const partial = ran.filter((s) => byStage.get(s)!.status === "partial");
-
-  if (failed.length > 0) {
-    return {
-      health: "failed",
-      label: `${failed.length} stage${failed.length === 1 ? "" : "s"} failed`,
-      detail: `Failed: ${failed.join(", ")}`,
-    };
-  }
-  if (missing.length > 0 || partial.length > 0) {
-    const bits: string[] = [];
-    if (missing.length) bits.push(`${missing.join(", ")} did not run`);
-    if (partial.length) bits.push(`${partial.join(", ")} incomplete`);
-    return {
-      health: "degraded",
-      label: `${ran.length}/${EXPECTED_STAGES.length} stages recorded`,
-      detail: bits.join(" · "),
-    };
-  }
-  return {
-    health: "healthy",
-    label: "All stages complete",
-    detail: `${ran.length}/${EXPECTED_STAGES.length} succeeded`,
-  };
-}
+// The PipelineRun shape, the expected-stage list and the health ladder now live
+// in lib/pipelineHealth.ts, because /ask asks the same question on a reader's
+// behalf and two copies of this logic is how the ribbon and the chat come to
+// disagree about whether the pipeline ran.
 
 const DOT: Record<Health, string> = {
   healthy: "var(--long)",
@@ -145,7 +90,7 @@ export default function LiveFeed() {
   const state =
     runs === null
       ? { health: "unknown" as Health, label: "Loading…", detail: "" }
-      : assess(runs);
+      : assessPipeline(runs);
   const latest = runs?.[0];
   const lastFinish = runs?.find((r) => r.finished_at)?.finished_at ?? null;
   const staleness = assessStaleness(latest?.run_date);

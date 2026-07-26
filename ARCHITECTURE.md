@@ -4,7 +4,7 @@
 
 ## System Architecture Diagram
 
-The full L0–L7 stack, from cron trigger to rendered frontend, in one diagram. Deterministic layers are white, the LLM is highlighted, the database is a cylinder, the frontend subtree is on the right.
+The full L0–L8 stack, from cron trigger to rendered frontend, in one diagram. Deterministic layers are white, the LLM is highlighted, the database is a cylinder, the frontend subtree is on the right.
 
 ```mermaid
 flowchart TB
@@ -20,7 +20,7 @@ flowchart TB
     end
 
     %% ───────── LLM providers ─────────
-    subgraph LLM["LLM Provider (L5 only)"]
+    subgraph LLM["LLM Providers — L5 (nightly, batch) and L8 (/ask, request-time)"]
         MINIMAX["MiniMax API<br/>MINIMAX_API_KEY<br/>MiniMax-M3"]
         ANTHROPIC["Anthropic<br/>ANTHROPIC_API_KEY<br/>claude-sonnet-4"]
         GEMINI["Google Gemini<br/>GEMINI_API_KEY<br/>gemini-flash-latest (ADR-0026)"]
@@ -119,6 +119,7 @@ flowchart TB
         T_PIPE["pipeline_runs<br/>(run_id, stage, status,<br/>duration_s, source_freshness)"]
         T_CUM["portfolio_cumulative_return<br/>(as_of, inception_date,<br/>compounded value)"]
         T_BT["backtest_results<br/>(hype_ic, edge_ic,<br/>book_replication, l5_eval_battery)"]
+        T_CHAT["chat_usage — m039<br/><i>SEALED: RLS with no policies.<br/>Reachable only via chat_rate_limit(),<br/>SECURITY DEFINER, service_role only —<br/>anon EXECUTE would let a stranger<br/>DoS the daily LLM budget</i>"]
     end
 
     %% ───────── Frontend (Next.js 14 → Vercel) ─────────
@@ -131,6 +132,7 @@ flowchart TB
             SHELL --> PG_BOOK
             SHELL --> PG_RISK
             SHELL --> PG_METH
+            SHELL --> PG_ASK
             PG_HOME["/ — Themes<br/>app/page.tsx"]
             PG_BOOK["<b>/book — The $100M Book</b><br/>app/book/page.tsx<br/><i>positions + thesis + sizing<br/>+ screening funnel</i>"]
             PG_RISK["<b>/risk — Risk &amp; Stress</b><br/>app/risk/page.tsx<br/><i>scenarios, correlation,<br/>cap headroom, drawdown</i>"]
@@ -139,6 +141,7 @@ flowchart TB
             METHBODY["components/method/MethodBody.tsx<br/><i>ONE body, ONE fetch — both chapters<br/>filter it by chapterOwns(); two fetches<br/>could disagree about a vintage (ADR-0084)</i>"]
             PG_METH --> METHBODY
             PG_METH_EV --> METHBODY
+            PG_ASK["<b>/ask — interrogate the book</b><br/>app/ask/page.tsx<br/><i>a TOOL, not a fifth destination:<br/>reached from a TopBar control, never<br/>from the four-item nav (ADR-0087)</i>"]
             PG_TR["/trades — retired<br/>app/trades/page.tsx<br/><i>server redirect() → /book</i>"]
             PG_PF["/portfolio — retired<br/>app/portfolio/page.tsx<br/><i>server redirect() → /book</i>"]
             PG_RS["/research — retired<br/>app/research/page.tsx<br/><i>server redirect() → /book</i>"]
@@ -180,6 +183,25 @@ flowchart TB
         FASSETMETA["frontend/lib/assetMetadata.ts<br/>(taxonomy seam: classify(ticker))"]
 
         SUPC["frontend/lib/supabase.ts<br/>(anon key, RLS-gated reads)"]
+
+        %% ───────── L8 — the first SERVER-SIDE code in the frontend ─────────
+        subgraph L8["L8 — /ask agent (request-time, server-only) — ADR-0087"]
+            direction TB
+            ROUTE["app/api/chat/route.ts<br/><i>the ONLY route handler in the repo.<br/>rate limit FIRST, then spend.</i>"]
+            RATE["lib/chat/rateLimit.ts<br/><i>salted IP hash → chat_rate_limit RPC.<br/>FAILS CLOSED — a broken guard<br/>protects nothing on the day it matters</i>"]
+            PLAN["lib/chat/agent.ts — 1. plan<br/>🤖 <b>LLM</b> — choose ≤4 tools<br/><i>chooses WHICH facts, never what a number is</i>"]
+            EXEC["2. execute — lib/chat/tools.ts<br/><i>deterministic, parallel. Reuses the SAME<br/>modules the pages render: buildSizingChain,<br/>turnover, reconcileToBook, assessPipeline</i>"]
+            ANS["3. answer<br/>🤖 <b>LLM</b> — prose from the FACTS block only"]
+            GUARD["4. verify — lib/chat/guardrail.ts<br/><i>every numeral → cited / quoted / unverified.<br/>ONE retry naming the offending tokens</i>"]
+            MARK["components/chat/VerifiedProse.tsx<br/><i>marks each figure in place; untraceable<br/>ones ship flagged, never silently</i>"]
+
+            ROUTE --> RATE --> PLAN --> EXEC --> ANS --> GUARD
+            GUARD -- "unverified" --> ANS
+            GUARD -- "verified ✓ / flagged" --> MARK
+        end
+
+        PG_ASK -- "POST /api/chat" --> ROUTE
+        MARK --> PG_ASK
     end
 
     %% ───────── Edges: triggers → pipeline ─────────
@@ -226,6 +248,11 @@ flowchart TB
     ANTHROPIC -. "fallback" .-> N6
     GEMINI -. "fallback" .-> N3
     GEMINI -. "fallback" .-> N6
+    %% /ask calls MiniMax ONLY — no fallback chain. The key is shared with the
+    %% nightly book, so a chat that silently failed over to a second paid
+    %% provider would spend a budget nobody agreed to (ADR-0087).
+    MINIMAX -- "2 completions per question<br/>(plan + answer), same shared quota" --> PLAN
+    MINIMAX --> ANS
 
     %% ───────── L5 writes ─────────
     N8A -->|advisory_derivation| T_RECS
@@ -253,6 +280,8 @@ flowchart TB
     T_BT -- "signal validation +<br/>replication panel" --> PG_METH
 
     %% ───────── Frontend reads ─────────
+    DB -- "anon key, server-side —<br/>the same public-read rows<br/>the browser already fetches" --> EXEC
+    T_CHAT -- "chat_rate_limit() RPC<br/>service_role only" --> RATE
     DB --> SUPC
     SUPC --> L6
     SUPC --> FELIB
@@ -286,7 +315,7 @@ flowchart TB
 |-------|---------|
 | Grey | External data source or trigger (cron, FRED, yfinance, Brave, Reddit, Ken French, Polymarket) |
 | White | Deterministic Python logic (L0–L4, all of L5 except `classify_news` and `reason_picks`) |
-| **Yellow** | **The only LLM calls in the entire system** — `classify_news` (N3) and `reason_picks` (N6) |
+| **Yellow** | **Every LLM call in the system.** Nightly and batch: `classify_news` (N3) and `reason_picks` (N6). Request-time: the /ask agent's `plan` and `answer` steps (L8). Nothing else in the product invokes a model |
 | Blue | Supabase tables (cylinder) |
 | Green | Frontend (L6 pages + L7 provenance components) |
 | **Red** | **Offline verification harnesses** — the acceptance battery, replication, and the IC backtests. None of these run in the daily job; they are invoked deliberately and write to `backtest_results` |
@@ -305,6 +334,7 @@ The diagram is a single source of truth. If you add a node, table, page, compone
 | L5 | **Q1 Reasoning Agent** | `backend/services/q1_agent.py` → `run_q1_agent` | `research_recommendations` + `research_agent_runs` tables; 8 nodes (aggregate → screen → book metrics → scenario analysis → reason_picks LLM → verify_citations → size_positions → persist). Emits `AdvisoryDerivation` with T18 strict fallback policy. Supports `lens` parameter (multi_asset/credit/rates/equity/fx/commodity) per [ADR-0015](docs/adrs/0015-lens-mode-asset-class.md) |
 | L6 | Writeup | `frontend/app/layout.tsx` (shell: `TopBar` + `SideRail`) + `frontend/app/{book,risk,method,method/evidence}/` + `frontend/components/method/MethodBody.tsx` (legacy `{trades,portfolio,research}/` now `redirect()` → `/book`) | Book-centric IA ([ADR-0025](docs/adrs/0025-book-centric-information-architecture.md)): `/book` = positions + thesis + full sizing chain + screening funnel; `/risk` = stress scenarios, correlation matrix, cap headroom, factor tilt, drawdown. `/method` split by reader question ([ADR-0084](docs/adrs/0084-method-splits-by-reader-question-not-by-copy.md)): **`/method`** = live HypeScore/TradeScore/**4-component EdgeScore** formulas + conviction×inverse-vol sizing + factor model; **`/method/evidence`** = `pipeline_runs` health, data-source provenance, LLM citation-guardrail audit. Both chapters render one `MethodBody` with one `useEffect` and one set of queries, gated by `chapterOwns()` — splitting the fetch would let two chapters describe different runs. Section anchors hop client-side via `lib/method/anchors.ts` + `LegacyAnchorHop`, because a URL fragment never reaches the server. The three legacy pages are thin server redirects to the consolidated triad |
 | L7 | **Provenance UI** | `frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs,LensSelector}.tsx` + `frontend/components/status/{StatusBadge,FreshnessLabel,UncertaintyBand}.tsx` + `frontend/components/portfolio/{CumulativeReturn,DailyPLHistory,ExposureSummary}.tsx` | Click-through audit trail for every score (incl. the 4-component EdgeScore decomposition + conviction sizing in `TradeDerivationDrawer`); asset-class lens toggle on the `/book` triad; status/freshness/uncertainty read-models render derivations |
+| **L8** | **/ask agent (request-time)** | `frontend/app/api/chat/route.ts` + `frontend/lib/chat/{agent,tools,guardrail,prompt,minimax,rateLimit,db}.ts` + `frontend/app/ask/page.tsx` | The only server-side code in the frontend and the only request-time LLM call in the product. Four steps: **plan** (LLM picks ≤4 tools) → **execute** (deterministic, parallel, reusing the very modules the pages render — `buildSizingChain`, `turnover`, `reconcileToBook`, `assessPipeline`) → **answer** (LLM, restricted to the FACTS block) → **verify** (`guardrail.ts` adjudicates every numeral as cited / quoted / unverified, one retry naming the failures). Read-only over the published run: the anon key server-side, no writes to any domain table. Spend is bounded by `chat_usage` + the `chat_rate_limit` RPC (migration 039), which **fails closed**. See [ADR-0087](docs/adrs/0087-a-chat-that-cannot-do-arithmetic.md) |
 | — | **Derivations** | `backend/derivations/{numeric.py,advisory.py}` (mirrored in `frontend/lib/derivations/{numeric,advisory,format}.ts`) | Frozen dataclasses + validators (`NumericDerivation`, `AdvisoryDerivation`) consumed by L4, L5 and the L7 read-models |
 | — | **Pipeline Runs** | `backend/services/pipeline_runs.py` | `pipeline_runs` table — per-stage execution audit (run_id, stage, status, duration_s, source_freshness) |
 | — | **L5 acceptance battery** | `backend/eval/{fixtures,battery,scorer,runner}.py`, driven by `scripts/run_eval.py` | Five frozen L0–L4 fixtures whose right answer is written down beside them, scored against `reason_picks`. Structural checks (pool membership, side caps, one-per-complex, citations via the real `verify_citations`, prose-number reconciliation) gate; directional checks (net tilt, minimum conviction) report only. Runs in CI against a no-LLM canned agent (`ci.yml` → `l5-eval`, the one job with no `\|\| true`); runs live against a pinned `--provider` before a model or prompt change. Persists to `backtest_results(test_name='l5_eval_battery')`. See [ADR-0055](docs/adrs/0055-an-acceptance-battery-for-the-model-that-writes-the-book.md) |
@@ -390,8 +420,9 @@ L7: frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs}.tsx
 | `research_agent_runs` | L5 agent run audit trail; citation guardrail now value-reconciles (ADR-0019) | run_date, prompt_version, model_id, input_snapshot, citations, verified, retries |
 | `research_recommendations` | Q1 output (picks + book view + structured book analytics) | run_date, picks, book_view, book_risks, **`advisory_derivation` JSONB** (T18 strict; fallback cannot be `verified`), and from migration 022 ([ADR-0024](docs/adrs/0024-persist-book-analytics-not-prompt-strings.md)): **`book_metrics`**, **`scenario_results`**, **`correlation_pairs`**, **`cap_utilisation`**, **`screening_funnel`**, `lens`; plus `candidate_correlations` (033), **`independent_ideas`** (036, [ADR-0048](docs/adrs/0048-count-independent-ideas-not-candidates.md)) and **`risk_decomposition`** (038, [ADR-0082](docs/adrs/0082-euler-risk-decomposition-on-the-final-book.md) — Euler ex-ante covariance VaR, decomposes by name; distinct from realised `portfolio_risk.var_95`). Note: `book_metrics_summary` / `scenario_table` never existed as columns — the frontend selected them and 400'd |
 | `portfolio_factor_exposure` | **VIEW** (migration 022) — book-level FF5+UMD tilt, one row per portfolio `run_date` | run_date, beta_mkt…beta_umd (signed-weighted so shorts reduce exposure), `coverage` (share of gross weight with R²≥0.10), assets_covered, assets_total. Queried by `/` and `/portfolio`, which previously 404'd against a table that never existed |
-| `pipeline_runs` | Per-stage pipeline execution audit (T10, migration 012) | run_id, run_date, stage, status (`success`/`failure`/`partial`), duration_s, source_freshness JSONB, started_at, finished_at, error |
-| `portfolio_cumulative_return` | Since-inception compounded cumulative return, one row per as_of date (T14, migration 014) | as_of (PK), inception_date, cumulative_value, compounded (always TRUE), daily_returns_count, source_first_run_id, source_last_run_id, computed_at |
+| `pipeline_runs` | Per-stage pipeline execution audit (T10, migration 012). **RLS was off until migration 040** — with the anon key public by design, that made this audit log anon-WRITABLE, so a stranger could have recorded a green run that never happened. Now RLS on + `Public read` (SELECT only); the pipeline writes with the service key, which bypasses RLS | run_id, run_date, stage, status (`success`/`failure`/`partial`), duration_s, source_freshness JSONB, started_at, finished_at, error |
+| `portfolio_cumulative_return` | Since-inception compounded cumulative return, one row per as_of date (T14, migration 014). **RLS was off until migration 040** — anon could have rewritten the since-inception performance number `/risk` renders. Now RLS on + `Public read` (SELECT only) | as_of (PK), inception_date, cumulative_value, compounded (always TRUE), daily_returns_count, source_first_run_id, source_last_run_id, computed_at |
+| `chat_usage` | Per-IP-hash daily request counter for the L8 /ask agent (migration 039, [ADR-0087](docs/adrs/0087-a-chat-that-cannot-do-arithmetic.md)). **Sealed**: RLS is enabled with *no policies*, so anon and authenticated cannot read or write it at all; the only door is `chat_rate_limit(ip_hash, per_ip_cap, global_cap)`, a `SECURITY DEFINER` function granted to `service_role` alone. Granting anon EXECUTE would hand every visitor the ability to burn the global daily budget with curl — a denial of service built out of the spend guard itself | ip_hash (salted SHA-256, never the address), usage_date (UTC), requests (ATTEMPTS, so a blocked caller stays blocked) |
 | `theme_assets.asset_class` | L5 lens filter | ticker, asset_class (rates/credit/equity/fx/commodity) — added in migration 009 |
 
 ## Environment Variables
@@ -415,6 +446,17 @@ ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL_ID=claude-sonnet-4-20250514  # optional override
 GEMINI_API_KEY=AQ...                          # third L5 provider (ADR-0026), free tier
 GEMINI_MODEL_ID=gemini-flash-latest           # optional override (avoid pinned 2.x — 404/429 on new keys)
+
+# L8 — the /ask agent (frontend deployment, ADR-0087). All server-only: none of
+# these may ever be prefixed NEXT_PUBLIC_.
+MINIMAX_API_KEY=...            # required, or /ask returns 503. SHARED with the nightly book
+MINIMAX_MODEL_ID=MiniMax-M3    # optional override
+SUPABASE_SERVICE_KEY=...       # required in production: the spend guard's RPC is service_role only
+CHAT_IP_SALT=...               # recommended: an unsalted SHA-256 of an IPv4 address is brute-forceable
+CHAT_PER_IP_DAILY_CAP=15       # optional
+CHAT_GLOBAL_DAILY_CAP=200      # optional — the ceiling that protects tomorrow's book
+CHAT_MAX_TOKENS=8000           # optional; M3 spends this on reasoning too
+CHAT_LLM_TIMEOUT_MS=60000      # optional; must stay under half the route's maxDuration
 ```
 
 ## Q1 Agent: Citation Guardrail
@@ -495,6 +537,7 @@ pytest tests/backend/ -v
 - [x] `themes.corr_score` now persists `abs(price_corr)` — the value `hype_score()` actually consumes — so the four sub-scores reproduce the score they claim to derive
 - [x] **EdgeScore direction surfaced** — `edge_score`/`trend_signal`/`regime_bias` (migration 023) rendered on `/method` §4 (live weights + worked example), `/book` per-position "why this side", and `TradeDerivationDrawer`. The stale "direction = sign(TradeScore)" explanations on `/method` §3 and the drawer were corrected: TradeScore is reframed as intra-side ranking; direction is `sign(EdgeScore)` per [ADR-0031](docs/adrs/0031-edge-score-direction-signal.md). Read via `fetchThemeEdge` in `frontend/lib/themeSignals.ts`
 - [x] L7: Provenance UI infrastructure — citation footnotes, theme derivation drawer, regime inputs panel, lens selector
+- [x] **L8: `/ask` — the request-time agent** ([ADR-0087](docs/adrs/0087-a-chat-that-cannot-do-arithmetic.md)). Plan → execute → answer → verify, exactly two LLM calls per question. The tools import the pages' OWN deterministic functions (`buildSizingChain`, `turnover`, `reconcileToBook`, `assessPipeline` — the last extracted from `LiveFeed.tsx` so the ribbon and the agent cannot disagree about whether the pipeline ran). Every numeral in the answer is adjudicated **cited / quoted / unverified**, with one retry that names the failures and in-place marking for anything still untraceable. No streaming — a guardrail cannot check a token already on screen. Read-only (anon key, server-side); spend-capped by `chat_usage` + a `SECURITY DEFINER` RPC that **fails closed**. Adds the repo's first route handler and its first server-held secret
 - [x] L7 status read-models — `StatusBadge`, `FreshnessLabel`, `UncertaintyBand` rendering derivations
 - [x] L7 portfolio read-models — `CumulativeReturn` (since-inception compounded), `DailyPLHistory`, `ExposureSummary`
 - [x] L7 research read-model — `ThesisBlock`
@@ -537,6 +580,7 @@ pytest tests/backend/ -v
 - [x] **Under-sampled risk statistics are suppressed, not annotated** (`frontend/components/risk/RiskMetricsGrid.tsx`) — `/risk` rendered VaR, CVaR and Sharpe as a headline figure **plus** a caveat saying the figure meant nothing (**"SHARPE 10.77 ▲ +4.56"** at 22px above *"2 sessions of history — needs 60. Too small to read as a real Sharpe."*), while **Beta on the same card correctly showed "—· insufficient history"**. Two under-sampled statistics, two different treatments. A reader skims the number, not the footnote — and the delta chip asserted a meaningful *improvement* in a statistic we had just called noise, the same figure having read −8.23 before an earlier upstream correction. Annotating was a deliberate earlier choice and better than silence, but it still violated the standing rule *prefer "unavailable, because X" over a confidently-wrong number*. A statistic below its declared `MIN_DAYS_FOR_*` now renders `—`, badges **Unavailable** rather than Estimated, withholds the delta chip, and states the reason in place. The computed value remains in `portfolio_risk` for anyone who queries it; the page stops asserting it.
 - [x] **The risk-limit board withholds statistics its sample cannot support** (`frontend/lib/risk/riskBoard.ts`) — suppressing the metric *tiles* sharpened a contradiction rather than resolving it: the board still read **"VaR (95%) 1.7% / 6.0% limit / OK"** while the tile on the same page read *"Not shown: 2 sessions of history, needs 30. A VaR from this sample is noise, so we do not publish one."* Same number, same page, opposite claims — and **the OK is the more dangerous**, because a green stamp against a governing limit reads as a risk check that passed. Beta already rendered NO DATA there, so the board too was treating two under-sampled statistics two ways. `buildLimitBoard` now takes `returnSessions` and withholds any statistic below its declared minimum, mirroring `MIN_DAYS_FOR_*` in `risk_engine.py` and `minSessions` in `RiskMetricsGrid` so tile and board cannot disagree. The row still renders (a limit a PM cannot see is a limit they cannot manage) as `unknown`. Scoped to statistical **estimates** only — max drawdown is a realised fact and the HHI/cap/exposure rows come from today's weights, so gating those would replace a real number with a blank; an unknown session count does not withhold either. Five tests pin it.
 - [x] **Stress scenarios use per-asset betas, not the book tilt** (`backend/services/scenario_analysis.py`) — every scenario returned ~zero: **VIX Spike −0.021% (−$21k on $100M)**, credit −0.012%, USD −0.005%, rates −0.003%, all "low", on a row whose own description says *"historically associated with −15 to −25% SPX drawdown"*. `estimate_scenario_pnl` substituted `book_metrics`' **book-level** factor tilt for every pick's beta and `abs()`d it; pushing a book-level tilt inside the per-pick loop computes `β_book × Σ(±wᵢ) × shock` = **β_book × NET exposure**, when a shock acts on **GROSS**. The book ran 48.7% gross against 0.6% net, so `0.191 × 0.006 × −0.18 = −0.021%` — exactly the figure displayed. The `abs()` separately destroyed sign, so a net-short-beta book could never show a gain. The function's own docstring always specified per-asset betas; only the code disagreed. Now threaded `factor_exposures` (already in state at both call sites, and reconciled 8/8 against known benchmarks). After: VIX **+1.63%**, rates +1.05%, USD +0.26%, credit −0.02% — and independently confirmed, since `/risk` already showed **Σβ contribution = −0.09** for this book and −0.09 × −18% ≈ +1.6%. The scenario now agrees with the attribution table on the same page; it did not before. Assets with no factor row are skipped, not scored as β 0.
+- [x] **A stress scenario that does not transmit through market beta** (`backend/services/scenario_analysis.py::S6_supply_shock`, [ADR-0088](docs/adrs/0088-a-stress-scenario-that-does-not-transmit-through-market-beta.md)) — [ADR-0074](docs/adrs/0074-stress-both-tails-not-just-the-crash.md) gave the suite its second *tail*; it still had one *channel*. S1–S5 are each a market shock scaled by a factor beta, so a position the factor model cannot see is invisible to all five: on the live 2026-07-25 book **NOC** (`beta_mkt` **−0.014**, a 4.7% short whose entire thesis is geopolitical — a short in defense is a short in escalation) had a worst case of **9 basis points** across the whole battery, and **SHY**, the book's largest long at 9.25%, scored **2.6bp**. **23.6% of gross was effectively unstressed**, structurally rather than by oversight. `S6_supply_shock` transmits through the `SECTOR_MAP` buckets the book is already capped against (`Scenario.sector_shocks`, resolution ticker → sector → factor via one `_resolve_shock` the P&L loop and the `covered_frac` gate share, because they could previously disagree about what "covered" meant and a gate that counts an asset the loop skips picks the wrong estimator). It is also the only **inflationary** shock, so duration stops hedging: TLT −7% here against +4%/+6% in S1/S4. It scores **+1.48%** and does *not* become the worst case — the melt-up stays worst at −1.99%, and a scenario tuned to a predetermined headline would not be a stress test — but it shocks **10/10 positions**, moves NOC to **47bp**, and surfaces the book's implicit short-geopolitical-risk position (short gold miners **and** short defense, **−1.24%** combined) that nothing else revealed. The five existing scenarios reproduce their persisted values to the basis point (`+0.00pp`). Sector transmission generalises where a ticker list does not — a name added to `SECTOR_MAP` is stressed the day it appears, pinned by a test that fails if any Tier-1 ticker resolves no shock
 - [x] **A dropped quote no longer kills the daily run** (`scripts/daily_refresh.py::compute_and_persist_daily_return`) — the 2026-07-24 re-run died with `RuntimeError: daily return aborted: missing prices for ['EMB']`. EMB is a liquid ETF that fetched fine seconds later; a **batch yfinance download had silently dropped it**, and L4 risk plus the entire L5 book and thesis were lost because one quote of eighteen went missing in one HTTP call. The guard stays — never invent a return for an unpriced position, the rule that caught DXY in migration 031 — but aborting over a *transient* batch artefact is disproportionate for a process billed as daily. Missing tickers are now retried **individually** before the gap is treated as real; a single-ticker fetch reliably succeeds where a batch call dropped it. The contract is unchanged: a ticker still absent after its own dedicated fetch aborts exactly as before, and a test pins that alongside the recovery case, because the easy mistake is to "fix" the abort by tolerating missing data.
 - [x] **The site says when the book is not today's book** (`frontend/lib/freshness.ts`) — the 2026-07-24 pipeline death was invisible in a way no other defect this session was. Every other one was a wrong number *on* the page; this was a **missing run**, and the page had no way to show it: `/book` printed "RUN DATE 2026-07-22" and the status bar said "2d ago", both factual, both in the same neutral grey as "5 min ago". `assessStaleness` judges a run_date in **business days** — calendar days are the wrong unit, since a Friday book read on Sunday is two calendar days old and perfectly current — and flags at **2**, not 1, because the job runs *after* the close so the newest book on any weekday morning is legitimately yesterday's; flagging at 1 would fire daily and a warning that is always on is a warning nobody reads. `/book` gets a banner naming the date, the missed-run count and the consequence ("These are not today's positions"), the run date turns amber, and the status bar carries the same signal on every page. Six tests pin the boundaries, including silence when there is no run date — a missing date is a different problem and inventing a staleness claim from it would be a fabrication.
 - [x] **`/book` shows what cleared the screen and still was not taken** (`frontend/components/book/ClearedNotTaken.tsx`) — *"why isn't X in the book?"* had no answer anywhere: the abstention roster covers themes that failed the |EdgeScore| band and the screening funnel counts what each filter removed, but a candidate that passed **every** filter and simply was not selected by L5 was invisible. That is the largest remaining gap between pool and book, and the sharpest question about the current one — Q1 asks five-and-five, the book holds **5 long / 3 short**. The pool had five shorts (SLV −0.399 Metals, GDX −0.336 Gold Miners, NOC −0.304 Defense, GLD −0.301 Metals, ARKK −0.228 Disruptive Innovation) and L5 took one per distinct complex, skipping GDX and GLD as the same precious-metals bet already held via SLV. **Three independent short ideas is the honest answer to "why not five", and showing the two it declined makes that checkable rather than assertable.** The panel states only what the data supports — name, side, EdgeScore, theme, and whether the book already holds that theme — and deliberately does **not** attribute a reason to L5, whose rationale belongs in the thesis.

@@ -20,6 +20,20 @@ does not authorise anything.
 
 ---
 
+### Loop iteration 111 (2026-07-27) — the MarketBar fix held; a "5 console errors" flag on /risk was flaky, not a defect
+
+Verified iteration 110's fix: home `/` at 375 holds at 375 through load (no flash). The pass then
+flagged **5 console errors on /risk at 375** — but two clean re-runs (0 and 0) showed it does **not
+reproduce**. Traced to the benign `ERR_ABORTED` probe: `LiveFeed`'s `themes` `{head:true}` count
+query (`LiveFeed.tsx:51`), in the layout so it fires on every route, with no explicit AbortController
+— a browser-level cancel that *sometimes* logs "Failed to load resource" and sometimes does not. The
+count always loads (`Themes 8` renders), so it is not a real defect; a speculative fix to a flaky
+signal cannot be verified, so I did not make one. **Corrected the memory** (it wrongly said the abort
+produces *no* console error) with the real rule: a single pass's console-error count can spike
+falsely — re-run a flagged route before believing it. Steady-state elsewhere: `/`, `/book`, `/risk`,
+`/method`, `/ask` clean, 0 mojibake; the chat-`/ask` holds. Nothing to ship — the honest result is
+"the flag was noise, and I confirmed it rather than chasing it."
+
 ### Loop iteration 110 (2026-07-27) — fixed the home load-scroll flash — but only after misdiagnosing it twice
 
 Took the transient I flagged in 109. Got it right on the third try, and the two wrong turns are worth

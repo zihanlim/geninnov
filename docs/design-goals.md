@@ -57,9 +57,20 @@ cannot both hold. See [ADR-0085](adrs/0085-direction-cannot-be-carried-by-hue-al
 **Test:** desaturate the page. Can you still tell longs from shorts *by glyph or
 wordmark*? Then: does any chip that is **not** a direction use `--long`/`--short`?
 The second half is machine-enforced over the enumerated chip vocabularies
-(`lib/statusChips.ts`, `lib/methodTones.ts`, the severity maps, and the `.badge-*` /
-`.dir-pill-*` rules). Inline signed-value colouring is deliberately out of scope — it
-already carries its `+`/`−` — and widening that scope needs its own ADR.
+(`lib/statusChips.ts`, `lib/methodTones.ts`, `lib/risk/riskChips.ts`, the severity
+maps, and the `.badge-*` / `.dir-pill-*` rules) **and over both spellings of an
+inline chip** — `badge badge-short` *and* the utility form `badge bg-short-dim
+text-short`. The second spelling is not a footnote: sweeping for the first alone let
+three shipped chips walk past the 2026-07-26 goal-3 pass. A chip is direction tint
+**plus** direction ink; that pair is the signature, and a legitimate direction chip
+has `.badge-long` / `.dir-pill-long` to use instead.
+
+Inline signed-value colouring is deliberately out of scope — it already carries its
+`+`/`−` — and widening that scope needs its own ADR. Note what that exemption
+actually rests on: the glyph says what the hue says. Where a colour is keyed to a
+*verdict* rather than to the sign — a `higherIsWorse` delta chip, a breach, a
+crowding flag — the exemption does not reach it, because there the glyph and the hue
+can disagree, and on `/risk` one span was printing the word "long" in crimson.
 
 ### 4. Warm paper, not the interchangeable dark dashboard
 

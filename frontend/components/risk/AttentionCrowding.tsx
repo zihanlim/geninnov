@@ -18,7 +18,11 @@ import { Ident, SectionSkeleton } from "./SectionGap";
 
 function pctBadge(p: number | null): { label: string; cls: string } {
   if (!isNum(p)) return { label: "—", cls: "text-text-tertiary" };
-  if (p >= CROWDING_PERCENTILE) return { label: `${Math.round(p)}th`, cls: "text-short" };
+  // The top step was `text-short` only because --warning-deep did not exist when
+  // this was written: crowding is a SEVERITY, and the band below it already
+  // escalates along --warning. The ramp is now monotone on one hue and owes
+  // nothing to direction ink (ADR-0085).
+  if (p >= CROWDING_PERCENTILE) return { label: `${Math.round(p)}th`, cls: "text-warning-deep" };
   if (p >= 50) return { label: `${Math.round(p)}th`, cls: "text-warning" };
   return { label: `${Math.round(p)}th`, cls: "text-text-secondary" };
 }
@@ -82,10 +86,10 @@ export function AttentionCrowding({
             <div className="px-[18px] pt-3.5">
               <div
                 className="pl-4 border-l-2 py-1.5"
-                style={{ borderColor: "var(--short)" }}
+                style={{ borderColor: "var(--warning-deep)" }}
                 role="alert"
               >
-                <p className="m-0 mb-1 text-[11px] font-medium text-short uppercase tracking-[0.1em]">
+                <p className="m-0 mb-1 text-[11px] font-medium text-warning-deep uppercase tracking-[0.1em]">
                   {flagged.length} crowding flag{flagged.length === 1 ? "" : "s"}
                 </p>
                 <ul className="m-0 pl-4 text-[12px] text-text-secondary leading-[1.7]">
@@ -154,7 +158,7 @@ export function AttentionCrowding({
                     return (
                       <tr
                         key={r.themeId}
-                        className={`hover:bg-bg-elevated ${crowded ? "bg-short-dim/20" : ""}`}
+                        className={`hover:bg-bg-elevated ${crowded ? "bg-warning-dim" : ""}`}
                       >
                         <td className="px-[16px] py-[7px] border-b border-border text-text-primary">
                           {r.themeName}
@@ -185,7 +189,12 @@ export function AttentionCrowding({
                         </td>
                         <td className="px-[16px] py-[7px] border-b border-border text-[12px] text-text-secondary leading-[1.5] max-w-[30ch]">
                           {crowded ? (
-                            <span className="text-short">crowded {r.bookDirection}</span>
+                            // The sharpest form of the goal-3 failure on the site:
+                            // this prints the WORD "long" in the SHORT colour, so
+                            // the wordmark and the ink named opposite directions in
+                            // the same span. Crowding is a warning about a position,
+                            // not a direction of one.
+                            <span className="text-warning-deep">crowded {r.bookDirection}</span>
                           ) : r.bookDirection !== null ? (
                             "positioned, not crowded"
                           ) : (

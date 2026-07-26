@@ -24,6 +24,7 @@ import tailwindConfig from "@/tailwind.config";
 import { severityChipClass } from "@/lib/risk/analytics";
 import { STATUS_CHIPS } from "@/lib/statusChips";
 import { TONE_CLS, TONE_LABEL_CLS, type Tone } from "@/lib/methodTones";
+import { DELTA_CHIPS, LIMIT_STATUS_CHIPS } from "@/lib/risk/riskChips";
 
 const AA_SMALL_TEXT = 4.5;
 
@@ -167,6 +168,14 @@ const CHIPS: Array<[string, string]> = [
   ]),
   ...cssChipVariants(),
   ...methodToneChips(),
+  ...Object.entries(LIMIT_STATUS_CHIPS).map(([k, v]): [string, string] => [
+    `LIMIT_STATUS_CHIPS.${k}`,
+    v.cls,
+  ]),
+  ...Object.entries(DELTA_CHIPS).map(([k, cls]): [string, string] => [
+    `DELTA_CHIPS.${k}`,
+    cls,
+  ]),
 ];
 
 describe("chip contrast", () => {
@@ -405,10 +414,54 @@ describe("goal 3 — direction ink stays with direction", () => {
     },
   );
 
+  it.each(Object.entries(LIMIT_STATUS_CHIPS))(
+    "LIMIT_STATUS_CHIPS.%s is not painted with direction ink",
+    (name, chip) => {
+      expect(
+        chip.cls,
+        `risk-limit status "${name}" uses direction ink (${chip.cls}). On /risk this chip renders in the same viewport as PositionRiskAttribution's long and short rows, so a green OK is the exact hue of a LONG pill. See ADR-0085.`,
+      ).not.toMatch(DIRECTION_INK);
+      expect(
+        chip.fill,
+        `risk-limit status "${name}" fills its utilisation meter with direction ink (${chip.fill}).`,
+      ).not.toMatch(/var\(--(?:long|short)\)/);
+    },
+  );
+
+  it.each(Object.entries(DELTA_CHIPS))(
+    "DELTA_CHIPS.%s is not painted with direction ink",
+    (name, cls) => {
+      expect(
+        cls,
+        `delta verdict "${name}" uses direction ink (${cls}). The signed-value exemption does not reach this chip: \`higherIsWorse\` decouples the hue from the sign, so a falling Sharpe and a falling VaR take opposite colours on the same glyph. See ADR-0085.`,
+      ).not.toMatch(DIRECTION_INK);
+    },
+  );
+
   it("leaves no direction ink on a badge outside the direction vocabulary", () => {
     // The inline call sites, not just the vocabularies. `badge badge-long` on a
     // success/verified/regime/tier chip was the largest remaining group of
     // goal-3 violations; this stops them coming back one component at a time.
+    //
+    // TWO patterns, because one was not enough. This swept for `badge badge-long`
+    // only, and a chip written with UTILITY classes — `badge bg-short-dim
+    // text-short` — is the same violation in a spelling the sweep could not see.
+    // Three shipped chips survived the 2026-07-26 goal-3 pass that way:
+    // RiskLimitBoard's OK/BREACHED board, DeltaChip, and DiscoveredThemes' method
+    // tag. So the second pattern is the boxed-chip SIGNATURE: a direction tint and
+    // direction ink on one line.
+    //
+    // It is deliberately the pair, not either alone. A bare `text-short` is the
+    // signed-value case the header exempts (it carries its own +/− glyph); a bare
+    // `bg-short-dim` is a row tint, not a chip. Only tint-plus-ink is a chip, and a
+    // legitimate direction chip has `.badge-long` / `.dir-pill-long` to use instead.
+    const RULES: Array<[RegExp, string]> = [
+      [/badge\s+badge-(long|short)|"badge-(long|short)"/, "badge-long/badge-short"],
+      [
+        /bg-(long|short)-dim[\w/[\]-]*[\s"'`].*\btext-(long|short)\b/,
+        "direction tint + direction ink (a chip in utility-class spelling)",
+      ],
+    ];
     const roots = ["app", "components"];
     const offenders: string[] = [];
     const walk = (dir: string) => {
@@ -419,8 +472,8 @@ describe("goal 3 — direction ink stays with direction", () => {
           const src = readFileSync(p, "utf8");
           for (const line of src.split("\n")) {
             if (/^\s*(\/\/|\*)/.test(line)) continue; // a comment explaining the ban is not a violation
-            if (/badge\s+badge-(long|short)|"badge-(long|short)"/.test(line)) {
-              offenders.push(`${p}: ${line.trim().slice(0, 90)}`);
+            for (const [re, why] of RULES) {
+              if (re.test(line)) offenders.push(`${p} [${why}]: ${line.trim().slice(0, 90)}`);
             }
           }
         }
@@ -429,8 +482,30 @@ describe("goal 3 — direction ink stays with direction", () => {
     for (const r of roots) walk(path.resolve(__dirname, "../..", r));
     expect(
       offenders,
-      `badge-long/badge-short used outside the direction vocabulary:\n  ${offenders.join("\n  ")}`,
+      `direction ink used outside the direction vocabulary:\n  ${offenders.join("\n  ")}`,
     ).toEqual([]);
+  });
+
+  it("the utility-spelling sweep actually fires on the chips it was written for", () => {
+    // A negative control. The first rule shipped for weeks while three chips in the
+    // second spelling walked past it, so an added pattern that silently matches
+    // nothing would repeat exactly that failure — a guard whose regex is subtly
+    // wrong looks identical to a clean codebase.
+    const utilityChipRule = /bg-(long|short)-dim[\w/[\]-]*[\s"'`].*\btext-(long|short)\b/;
+    for (const line of [
+      `  breached: { label: "BREACHED", badge: "bg-short-dim text-short" },`,
+      `  const cls = worse ? "bg-short-dim text-short" : "bg-long-dim text-long";`,
+      `    className="text-[10px] rounded bg-long-dim text-long"`,
+    ]) {
+      expect(utilityChipRule.test(line), `rule missed: ${line.trim()}`).toBe(true);
+    }
+    // And does NOT fire on the two exempted shapes.
+    for (const line of [
+      `  const cls = v >= 0 ? "text-long" : "text-short";`, // signed value, no tint
+      `    className={crowded ? "bg-short-dim/20" : ""}`, // row tint, no ink
+    ]) {
+      expect(utilityChipRule.test(line), `rule over-fired: ${line.trim()}`).toBe(false);
+    }
   });
 
   it("keeps the direction chips themselves on direction ink", () => {

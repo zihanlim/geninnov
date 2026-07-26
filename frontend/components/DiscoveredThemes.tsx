@@ -133,7 +133,10 @@ export default function DiscoveredThemes() {
                         {(r.methods ?? []).map((m) => (
                           <span
                             key={m}
-                            className="text-[10px] uppercase tracking-[0.06em] px-1.5 py-0.5 rounded bg-long-dim text-long"
+                            // Was bg-long-dim text-long: forest green on a chip that
+                            // names a DISCOVERY METHOD (LDA / embedding), not a book
+                            // direction. Neutral metadata takes neutral ink (ADR-0085).
+                            className="text-[10px] uppercase tracking-[0.06em] px-1.5 py-0.5 rounded bg-bg-elevated text-text-secondary border border-border"
                           >
                             {METHOD_LABEL[m] ?? m}
                           </span>

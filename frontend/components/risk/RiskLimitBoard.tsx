@@ -10,10 +10,10 @@
 "use client";
 import {
   type LimitRow,
-  type LimitStatus,
   countByStatus,
   NEAR_LIMIT_FRACTION,
 } from "@/lib/risk/riskBoard";
+import { LIMIT_STATUS_CHIPS } from "@/lib/risk/riskChips";
 import { isNum } from "@/lib/risk/analytics";
 import { Ident } from "./SectionGap";
 
@@ -39,23 +39,9 @@ function fmtHeadroom(v: number | null, unit: LimitRow["unit"]): string {
   return `${sign}${mag}`;
 }
 
-const STATUS_META: Record<
-  LimitStatus,
-  { label: string; badge: string; dot: string }
-> = {
-  breached: { label: "BREACHED", badge: "bg-short-dim text-short", dot: "var(--short)" },
-  near: { label: "NEAR", badge: "bg-warning-dim text-warning", dot: "var(--warning)" },
-  ok: { label: "OK", badge: "bg-long-dim text-long", dot: "var(--long)" },
-  unknown: {
-    label: "NO DATA",
-    badge: "bg-bg-elevated text-text-tertiary border border-border",
-    dot: "var(--border-strong)",
-  },
-};
-
 function UtilBar({ row }: { row: LimitRow }) {
   const util = row.utilisation;
-  const meta = STATUS_META[row.status];
+  const meta = LIMIT_STATUS_CHIPS[row.status];
   const fillPct = util === null ? 0 : Math.min(Math.max(util, 0), 1) * 100;
   const overflow = util !== null && util > 1;
   return (
@@ -77,7 +63,7 @@ function UtilBar({ row }: { row: LimitRow }) {
       />
       <div
         className="absolute left-0 top-0 bottom-0 rounded-sm"
-        style={{ width: `${fillPct}%`, background: meta.dot }}
+        style={{ width: `${fillPct}%`, background: meta.fill }}
       />
     </div>
   );
@@ -149,7 +135,7 @@ export function RiskLimitBoard({
               </thead>
               <tbody>
                 {rows.map((row) => {
-                  const meta = STATUS_META[row.status];
+                  const meta = LIMIT_STATUS_CHIPS[row.status];
                   return (
                     <tr key={row.key} className="hover:bg-bg-elevated align-top">
                       <td className="px-[16px] py-3 border-b border-border">
@@ -173,7 +159,7 @@ export function RiskLimitBoard({
                       <td
                         className={`px-[14px] py-3 border-b border-border text-right num ${
                           row.status === "breached"
-                            ? "text-short"
+                            ? "text-warning-deep"
                             : row.status === "near"
                               ? "text-warning"
                               : row.value === null
@@ -198,17 +184,21 @@ export function RiskLimitBoard({
                       </td>
                       <td
                         className={`px-[14px] py-3 border-b border-border text-right num ${
+                          // Not the signed-value exemption: headroom < 0 IS the
+                          // breach, restated as a negative number, so it must match
+                          // the value cell above. Leaving it crimson would put two
+                          // different hues on one breached row.
                           row.headroom === null
                             ? "text-text-tertiary"
                             : row.headroom < 0
-                              ? "text-short"
+                              ? "text-warning-deep"
                               : "text-text-secondary"
                         }`}
                       >
                         {fmtHeadroom(row.headroom, row.unit)}
                       </td>
                       <td className="px-[16px] py-3 border-b border-border text-right">
-                        <span className={`badge ${meta.badge}`}>{meta.label}</span>
+                        <span className={`badge ${meta.cls}`}>{meta.label}</span>
                       </td>
                     </tr>
                   );

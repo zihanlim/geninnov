@@ -204,6 +204,49 @@ Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the f
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 103 (2026-07-26) — re-derived the remaining build order; the top item was time-gated, the one under it was a guard that could not see half of what it guarded
+
+**Re-derived rather than taking the backlog on faith, and two of the four items dissolved.** `/risk`
+section grouping + `SectionNav` (recorded pending in the ADR-0084 entry) is **built** — six `<section
+id>` blocks and a nav. Build tasks 6/7/12 in `PROGRESS.md` are **stale rows**, not work: the cron is
+GitHub Actions and verified firing, `discovered_themes` is populated, the L7 provenance components
+ship. That is the recurring failure mode this file warns about, so it is worth saying plainly. Rows
+corrected in the same change.
+
+**The HypeScore IC — the one honesty surface still reading NOT YET VALIDATED — is time-gated, not
+blocked, and I confirmed that against the DB rather than assuming it.** Ran the harness dry (no
+`--persist`, so the current reading could not be destroyed by a worse one — the
+[[dont-rerun-pipeline-on-exhausted-minimax-quota]] lesson generalised). It returns exactly what is
+persisted: h1 IC −0.228, **n_dates 1**. The reason is arithmetic, not code. `theme_signals_history`
+holds five run_dates but **7/21 and 7/22 are pre-pipeline seed rows with `hype_score` NULL** (24 of
+40 rows scored, all on 7/23–7/25), and of those three, 7/24 is a Friday and 7/25 a Saturday, so
+neither has a forward close yet. One usable cross-section. `ic_ir` needs two. **Nothing to build —
+it clears on its own after the next two weekday runs**, and the panel already says so honestly.
+
+**So the top actionable item was one layer down: the goal-3 guard has a hole, and three chips were
+sitting in it.** Full write-up in `PROGRESS.md`. The short version: the sweep matches `badge
+badge-long|short`, and `badge bg-short-dim text-short` is the same violation in a spelling it cannot
+see. `RiskLimitBoard`'s OK/BREACHED board, `DeltaChip` and `DiscoveredThemes`' method tag all shipped
+through it — and the first two render on `/risk` inches from long and short position rows, so green
+meant LONG *and* "limit OK" on one page. Worst instance: `AttentionCrowding` printed the word
+**`long` in the SHORT colour**, wordmark and ink contradicting each other in one span.
+
+Fixed on the ramp the previous pass already established (`--warning-deep` loud, quiet-neutral
+affirmative), both vocabularies hoisted to `lib/risk/riskChips.ts` — living inside a component is
+*how* they escaped — the guard taught the second spelling, and a **negative control** added asserting
+the new rule fires on the three real offenders and stays silent on the two exempted shapes. A pattern
+that matches nothing looks exactly like a clean codebase; that is how the first rule shipped for
+weeks. 67 tests in the contrast file, tsc clean, build green, contrast measured 7.17 / 15.54 / 5.23 /
+8.48:1. **Not deployed** — the other session is mid-flight on `/ask` (untracked `lib/chat/`,
+`app/api/chat`, migration 039) and two of their guardrail tests are currently red, so shipping a
+build off this tree would carry their WIP. Their files were not touched.
+
+**Process note, learned the hard way this firing:** my first copy of this entry was **silently
+clobbered** — the other session wrote iterations 101 and 102 from their own in-memory copy of
+`GOAL.md` minutes after my edit landed, and a whole-file write does not conflict, it just wins. On a
+shared tree, re-check a long-lived doc immediately after writing it, and commit doc edits promptly
+rather than batching them.
+
 ### Loop iteration 102 (2026-07-26) — mojibake fix holds; added a live encoding scan to the standing sweep
 
 The mojibake fix is on origin and holding — **no fresh mojibake anywhere in the source**, and a

@@ -9,6 +9,7 @@
 "use client";
 import { isNum } from "@/lib/risk/analytics";
 import type { MetricDelta } from "@/lib/risk/riskBoard";
+import { DELTA_CHIPS } from "@/lib/risk/riskChips";
 
 export function DeltaChip({
   delta,
@@ -18,7 +19,9 @@ export function DeltaChip({
   delta: MetricDelta;
   /** Formats the absolute delta magnitude into display units. */
   format: (v: number) => string;
-  /** true → an increase is bad (red); false → an increase is good (green). */
+  /** true → an increase is bad (the loud --warning-deep chip); false → an increase
+   *  is good (the quiet chip). Never direction ink: the hue does not track the
+   *  sign here, so a crimson chip would just read as a short. See lib/risk/riskChips. */
   higherIsWorse?: boolean;
 }) {
   if (!isNum(delta.delta)) return null;
@@ -26,7 +29,7 @@ export function DeltaChip({
   if (d === 0) {
     return (
       <span
-        className="num text-[10px] px-1.5 py-px rounded bg-bg-elevated text-text-tertiary border border-border"
+        className={`num text-[10px] px-1.5 py-px rounded ${DELTA_CHIPS.unchanged}`}
         title={
           delta.previousDate
             ? `unchanged vs ${delta.previousDate}`
@@ -38,7 +41,7 @@ export function DeltaChip({
     );
   }
   const worse = higherIsWorse ? d > 0 : d < 0;
-  const cls = worse ? "bg-short-dim text-short" : "bg-long-dim text-long";
+  const cls = DELTA_CHIPS[worse ? "worse" : "better"];
   const arrow = d > 0 ? "▲" : "▼";
   // Pass the SIGNED delta to the formatter. It used to receive Math.abs(d), and
   // since every deltaFormat prefixes a sign from the value it is given, a fall of

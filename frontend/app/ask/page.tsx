@@ -88,8 +88,21 @@ export default function AskPage() {
     }
   }
 
+  // Empty state is a centred "ask console": header + prompts + input sit in the
+  // middle of the viewport rather than clinging to the top over a half-page void
+  // (the sparseness the page read as before). The moment a question is asked the
+  // layout reverts to a top-aligned scrolling document, because a growing
+  // transcript is goal 7 — it must scroll the page, deep-link and Ctrl+F.
+  const empty = turns.length === 0;
+
   return (
-    <main className="mx-auto max-w-[880px] px-4 sm:px-6 wide:px-10 py-8 pb-16">
+    <main
+      className={`mx-auto max-w-[880px] px-4 sm:px-6 wide:px-10 pb-16 ${
+        empty
+          ? "flex min-h-[calc(100vh-9rem)] flex-col justify-center"
+          : "py-8"
+      }`}
+    >
       <header className="mb-6">
         <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-text-primary m-0">
           Ask the book
@@ -104,7 +117,7 @@ export default function AskPage() {
         </p>
       </header>
 
-      {turns.length === 0 && (
+      {empty && (
         <ul className="list-none p-0 m-0 mb-8 grid gap-2 sm:grid-cols-2">
           {SUGGESTIONS.map((s) => (
             <li key={s}>

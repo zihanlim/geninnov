@@ -243,7 +243,9 @@ class TestClassifyConvertsUnits:
             "DGS10": 3.40, "DGS2": 4.00, "BAMLH0A0HYM2": 5.50,
             "T10YIE": 1.75, "^VIX": 30.0, "^VIX3M": 28.0,
         }
-        monkeypatch.setattr(rc, "_compute_spx_breadth", lambda: 30.0)
+        # Takes as_of now: breadth is bounded by run_date like every other input,
+        # so that a backfilled row cannot be stamped with today's reading.
+        monkeypatch.setattr(rc, "_compute_spx_breadth", lambda as_of=None, hist=None: 30.0)
         clf = rc.RegimeClassifier.__new__(rc.RegimeClassifier)
         clf.supabase = _PerSeriesSupabase(values)
 

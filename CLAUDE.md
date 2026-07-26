@@ -83,6 +83,7 @@ All project documentation lives under `docs/`:
 |------|---------|
 | `scripts/daily_refresh.py` | Daily scoring pipeline (L1–L4 + L5 Q1 agent) |
 | `scripts/theme_discovery.py` | Bootstrap + monthly theme discovery |
+| `scripts/backfill_regime.py` | Rebuilds L3 regime history from `macro_daily_history` (pure function, no API/LLM cost). Dry-run by default; `--apply` writes; never overwrites the published rows without `--overwrite`. **L1 HypeScore and the L5 book are deliberately NOT backfillable** — see the module docstring |
 | `backend/data/macro_fetcher.py` | L0: FRED + yfinance macro snapshot |
 | `backend/data/factor_fetcher.py` | L2: Ken French FF5 + UMD factor exposures |
 | `backend/services/regime_classifier.py` | L3: Rule-based cycle × sentiment classifier |

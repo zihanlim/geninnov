@@ -71,22 +71,63 @@ def _fetch_latest_series(
     return None
 
 
-def _compute_spx_breadth() -> Optional[float]:
-    """Compute % of SPX components above their 200d MA. Uses top 50 by market cap via SPY holdings."""
-    try:
-        # Use SPY as a proxy — ~500 holdings; get 200d MA via yfinance
-        spy = yf.Ticker("SPY")
-        hist = spy.history(period="1y", interval="1d")
-        if len(hist) < 200:
+_SPY_HISTORY_CACHE: Optional["pd.DataFrame"] = None
+
+
+def _spy_history(period: str = "3y") -> Optional["pd.DataFrame"]:
+    """SPY daily closes, fetched once per process.
+
+    Cached because the backfill asks for breadth on ~250 separate dates off the
+    same series; downloading it 250 times would be 250 identical round trips.
+    """
+    global _SPY_HISTORY_CACHE
+    if _SPY_HISTORY_CACHE is None:
+        try:
+            _SPY_HISTORY_CACHE = yf.Ticker("SPY").history(period=period, interval="1d")
+        except Exception:
             return None
-        ma200 = hist["Close"].rolling(200).mean()
-        latest_close = hist["Close"].iloc[-1]
+    return _SPY_HISTORY_CACHE
+
+
+def _compute_spx_breadth(
+    as_of: Optional[date] = None,
+    hist: Optional["pd.DataFrame"] = None,
+) -> Optional[float]:
+    """SPX breadth proxy: is SPY above its own 200-day moving average.
+
+    ``as_of`` truncates the price history to that date, and it is not optional
+    in spirit — every OTHER input to `classify()` is already bounded by
+    `run_date` (see `_fetch_latest_series`), and this one was not. Classifying a
+    past date therefore mixed as-of macro readings with TODAY's breadth: a
+    look-ahead leak, and the one input capable of flipping the sentiment label.
+    It was invisible while the only caller was "classify right now"; a backfill
+    makes it wrong 250 times.
+
+    ``hist`` is injectable so the logic can be tested against a synthetic series
+    without touching the network.
+
+    HONEST ABOUT WHAT THIS IS: despite the name and the "%" unit the UI gives it,
+    this returns 65.0 or 35.0 and nothing in between. It is a BINARY
+    SPY-above-its-MA flag wearing a percentage, not the share of index members
+    above their own 200d MA. Left as-is here because changing what the number
+    MEANS is a separate decision from fixing when it is measured — but a reader
+    who sees "S&P breadth 65%" is reading a flag, and that deserves its own fix.
+    """
+    try:
+        frame = hist if hist is not None else _spy_history()
+        if frame is None or frame.empty:
+            return None
+        if as_of is not None:
+            # Index is tz-aware from yfinance; compare on calendar dates.
+            frame = frame[[d.date() <= as_of for d in frame.index]]
+        if len(frame) < 200:
+            return None
+        ma200 = frame["Close"].rolling(200).mean()
+        latest_close = frame["Close"].iloc[-1]
         latest_ma = ma200.iloc[-1]
-        # Rough proxy: if SPY above MA, breadth ~70%; if below, ~30%
-        if latest_close > latest_ma:
-            return 65.0
-        else:
-            return 35.0
+        if latest_ma != latest_ma:  # NaN — fewer than 200 usable observations
+            return None
+        return 65.0 if latest_close > latest_ma else 35.0
     except Exception:
         return None
 
@@ -244,7 +285,9 @@ class RegimeClassifier:
         if dgs10 is not None and breakeven is not None:
             real_rate = dgs10 - breakeven
 
-        spx_breadth = _compute_spx_breadth()
+        # Bounded by run_date like every other input above. Passing nothing here
+        # is what let a backfilled 2025 row carry today's breadth.
+        spx_breadth = _compute_spx_breadth(as_of=run_date)
 
         # FRED reports the curve slope (DGS10-DGS2) and HY OAS (BAMLH0A0HYM2) in
         # PERCENT — 0.34, 2.77 — but every threshold below and in risk_appetite is

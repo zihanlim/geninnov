@@ -204,6 +204,26 @@ Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the f
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 96 (2026-07-26) — the visible UI work is landing in real time from the other session; I held the frontend
+
+The answer to the user's "why don't I see a UI change" resolved itself this firing: the other session
+**committed 10 UI commits** (unpushed) and was still committing *as I looked* (HEAD moved mid-
+investigation). These are the visible changes — `feat(book): answer the four questions a PM arrives
+with, above the fold`, `feat(ui): in-page section nav on /book and /risk`, `split /method by reader
+question` (ADR-0084), provenance-chip and severity-ramp colour work (ADR-0085), and notably
+`fix(ui): wide gate is 1424px — 1440 never fires on a real Windows window`. They are **committed but
+not pushed or deployed**, so the live site is still the prior build.
+
+Because HEAD was a moving target, deploying or editing any frontend file would have been reckless —
+I stayed entirely out and did verification + docs only. Live (old) build re-checked: `/book` stable
+at 1440/1425/1366 (scrollHeight 4532 at all three), no regression.
+
+**Methodology catch, logged to memory:** my headless pass runs `viewport:1440` with *no scrollbar*,
+so it clears a 1440 gate that a real maximized 1440 window (~1425 usable) never triggers — exactly
+the bug the other session just fixed. My earlier "clean at 1440" passes could not have caught it.
+Going forward the sweep includes 1425 and 1366, not just 1440/375. The visible change the user is
+waiting for ships when the other session pushes + deploys; nothing for me to add to it.
+
 ### Loop iteration 95 (2026-07-26) — re-verified the live build clean; stayed out of the other session's active frontend edit
 
 Playwright MCP reconnected. Re-ran the UI/UX pass on the *current* deploy (the other session has

@@ -204,6 +204,31 @@ Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the f
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 97 (2026-07-26) — found and fixed a real desktop scroll bug in the shipped rail UI; reported the mobile one
+
+The other session's new rail UI is deployed, so I ran the pass on **it** — at 1440, **1425**, **1366**,
+375 (the realistic-width sweep from iteration 96). It caught two real horizontal-scroll defects the
+round-1440-only pass could not:
+
+- **FIXED + shipped + verified live — desktop section-nav scroll.** `SectionNav` bleeds full-bleed
+  `-mx-4 sm:-6 lg:-8` to match the page `<main>` gutter, but `<main>` narrows to `wide:px-5` at the
+  ADR-0086 wide breakpoint (≥1424) and the nav had no `wide:` variant — so it over-extended 32px
+  against a 20px gutter and scrolled the body **12px on /book, /risk, /method** at 1440 and 1425.
+  One-token fix (`wide:-mx-5 wide:px-5`, commit `b12d109b`), deployed
+  (`dpl … ivrhjeolg`), **re-verified live: all three routes at 1440 and 1425 now `scrollWidth ==
+  viewport`, zero console/page errors.** A headless 1440 pass (no scrollbar) had cleared the 1440
+  gate and hidden this; 1425 exposed it — the methodology fix earning its keep on the first run.
+- **REPORTED, not fixed — mobile `/book` scrolls to 658px.** A ~640px element in the fresh "four
+  questions above the fold" `/book` restructure stretches the page on a 375 phone. `ScrollArea`
+  (outer `overflow-hidden` frame + inner `overflow-x-auto`) is built correctly, and `/risk` +
+  `/method` using the same pattern stay contained — so it is `/book`-specific: a wide table/element
+  that lost its `ScrollArea` wrapper (or an ancestor its `min-w-0`) during the restructure. Fixing
+  it right means tracing their 767-line rewrite; a guess risks breaking fresh work, so it goes to
+  the session that owns `/book`. Precise repro is in this entry.
+
+Discipline held: only `SectionNav.tsx` touched (their tree was quiet, my commit lands on the shared
+main so they see it), no co-author, and I did **not** reach into the `/book` restructure.
+
 ### Loop iteration 96 (2026-07-26) — the visible UI work is landing in real time from the other session; I held the frontend
 
 The answer to the user's "why don't I see a UI change" resolved itself this firing: the other session

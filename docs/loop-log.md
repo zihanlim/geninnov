@@ -20,6 +20,26 @@ does not authorise anything.
 
 ---
 
+### Loop iteration 110 (2026-07-27) — fixed the home load-scroll flash — but only after misdiagnosing it twice
+
+Took the transient I flagged in 109. Got it right on the third try, and the two wrong turns are worth
+recording. **Wrong turn 1:** my overflow diagnostic reported the heatmap `<tr>` (760px) as the cause,
+so I added `min-w-0` to the heatmap card. It did nothing — the `<tr>` was a *red herring*: it already
+sits inside the `ScrollArea`'s `overflow-x-auto min-w-0` and is contained; my "widest leaf" logic
+lacked the ancestor-overflow filter, so it flagged a contained element. The local dev test looked
+clean, but **dev never reproduced the prod hydration transient** — a false-negative I should not have
+deployed on. **Wrong turn 2:** that deploy failed a webpack build because I put a `{/* */}` comment
+between `return (` and its root element (twice this session — a `//` comment between JSX attributes is
+also invalid; noting the pattern).
+
+**The real cause:** the `MarketBar` *loading skeleton* is a `flex` row of five non-wrapping index
+tiles (~700px) with no `flex-wrap`, while the loaded MarketBar has it. So the skeleton — not the
+settled tape — overflowed to 841px for the ~1s before data arrived. One-word fix (`flex-wrap` on the
+skeleton), matching what it stands in for; reverted the ineffective heatmap change. Deployed and
+**verified on prod: home 375 holds at 375 across three trials** (was 841), steady-state pass 0 issues
+/ 0 mojibake. The chat-`/ask` from 109 is holding. Lesson for the diagnostic: filter out
+overflow-contained elements, and validate a hydration fix on the deployed URL, never dev.
+
 ### Loop iteration 109 (2026-07-27) — /ask is a chat on the reader's explicit call; flagged a home-page load-scroll transient
 
 **The reader confirmed they wanted the chat-style `/ask`** ("overwrite the design choice"), overriding

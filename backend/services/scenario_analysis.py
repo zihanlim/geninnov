@@ -493,18 +493,66 @@ def estimate_scenario_pnl(
     )
 
 
+def scenarios_for_run(chokepoint_signal=None) -> list[Scenario]:
+    """The scenario battery for one run, with S6 scaled by measured disruption if there is any.
+
+    Returns a NEW list and a NEW S6 rather than mutating `SCENARIOS`: the module constant is
+    the reviewed ADR-0088 calibration and has to stay readable as such — a run that rescaled
+    it in place would leave the next reader unable to tell what was signed off.
+
+    The description is rewritten either way. A stress number scaled by a live reading and one
+    run on a fixed calibration are different claims, and /risk renders that description
+    verbatim, so the distinction has to travel with the scenario rather than live in a log
+    (design goal 1).
+    """
+    if chokepoint_signal is None:
+        return list(SCENARIOS)
+
+    from .chokepoint_signal import scale_sector_shocks
+
+    out: list[Scenario] = []
+    for s in SCENARIOS:
+        if s.name != "S6_supply_shock":
+            out.append(s)
+            continue
+        measured = getattr(chokepoint_signal, "measured", False)
+        mult = getattr(chokepoint_signal, "multiplier", 1.0)
+        out.append(
+            Scenario(
+                name=s.name,
+                label=s.label,
+                description=f"{s.description} {chokepoint_signal.reason}",
+                factor_shocks=dict(s.factor_shocks),
+                base_asset_shocks=(
+                    scale_sector_shocks(s.base_asset_shocks, mult) if measured
+                    else dict(s.base_asset_shocks)
+                ),
+                sector_shocks=(
+                    scale_sector_shocks(s.sector_shocks, mult) if measured
+                    else dict(s.sector_shocks)
+                ),
+            )
+        )
+    return out
+
+
 def run_scenario_analysis(
     picks: list[dict],
     book_metrics,       # BookMetrics
     total_capital: float = 100_000_000.0,
     factor_exposures: dict[str, dict] | None = None,
+    chokepoint_signal=None,
 ) -> list[ScenarioResult]:
     """
-    Run all four stress scenarios against the portfolio.
+    Run the stress battery against the portfolio.
     Returns list of ScenarioResult ordered by severity (most severe first).
+
+    `chokepoint_signal` (a `chokepoint_signal.ChokepointSignal`, optional) scales S6 by
+    measured maritime disruption. Omitted or unmeasured, S6 runs on its documented ADR-0088
+    calibration — which is what every caller did before ADR-0095 and remains the default.
     """
     results: list[ScenarioResult] = []
-    for scenario in SCENARIOS:
+    for scenario in scenarios_for_run(chokepoint_signal):
         result = estimate_scenario_pnl(
             scenario, picks, book_metrics, total_capital, factor_exposures
         )
@@ -515,7 +563,32 @@ def run_scenario_analysis(
     return results
 
 
-def scenario_results_to_dict(results: list[ScenarioResult]) -> list[dict]:
+def run_scenario_analysis_with_scenarios(
+    picks: list[dict],
+    book_metrics,
+    total_capital: float = 100_000_000.0,
+    factor_exposures: dict[str, dict] | None = None,
+    chokepoint_signal=None,
+) -> tuple[list[ScenarioResult], list[Scenario]]:
+    """`run_scenario_analysis`, plus the scenario objects it actually used.
+
+    Exists so a caller can hand the same list to `scenario_results_to_dict` and persist a
+    description that matches the shocks the P&L was computed from. Without it, a scaled run
+    silently persists the unscaled story.
+    """
+    scenarios = scenarios_for_run(chokepoint_signal)
+    results: list[ScenarioResult] = [
+        estimate_scenario_pnl(s, picks, book_metrics, total_capital, factor_exposures)
+        for s in scenarios
+    ]
+    results.sort(key=lambda r: abs(r.estimated_book_return), reverse=True)
+    return results, scenarios
+
+
+def scenario_results_to_dict(
+    results: list[ScenarioResult],
+    scenarios: list[Scenario] | None = None,
+) -> list[dict]:
     """Structured scenario results for persistence and rendering.
 
     ``format_scenario_table`` renders these as a string for the LLM prompt; that
@@ -525,7 +598,15 @@ def scenario_results_to_dict(results: list[ScenarioResult]) -> list[dict]:
     ``description`` is carried through from the Scenario definition so the UI can
     explain what each shock assumes without duplicating the calibration.
     """
-    by_name = {s.name: s for s in SCENARIOS}
+    # Keyed off the scenarios THIS RUN used, not the module constant.
+    #
+    # A run whose S6 was scaled by measured disruption (ADR-0095) carries a different
+    # description and different shocks from the constant. Resolving against SCENARIOS would
+    # persist the scaled P&L beside the UNSCALED description and shock map — the figure and
+    # its stated cause disagreeing, on the row /risk renders verbatim, which is precisely
+    # the defect design goal 1 exists to prevent. Defaults to the constant so every existing
+    # caller is unaffected.
+    by_name = {s.name: s for s in (scenarios if scenarios is not None else SCENARIOS)}
     out: list[dict] = []
     for r in results:
         scenario = by_name.get(r.scenario_name)

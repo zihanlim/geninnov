@@ -88,6 +88,7 @@ All project documentation lives under `docs/`:
 | `backend/data/factor_fetcher.py` | L2: Ken French FF5 + UMD factor exposures |
 | `backend/services/regime_classifier.py` | L3: Rule-based cycle × sentiment classifier |
 | `backend/services/book_metrics.py` | L5: value-weighted FF5+UMD book tilts, sector/geo caps, correlation matrix |
+| `backend/services/chokepoint_signal.py` | Maps a measured maritime-disruption reading to a multiplier on S6's calibration; every refusal returns the neutral 1.0 **with a reason**. Needs `WORLDMONITOR_API_KEY` (Pro tier); absent, S6 runs its documented ADR-0088 calibration ([ADR-0095](docs/adrs/0095-s6-scales-by-measured-disruption-when-there-is-a-reading.md)) |
 | `backend/services/scenario_analysis.py` | L5: 6-scenario stress test — 4 risk-off (VIX/rates/USD/credit) + 1 risk-on melt-up, so a net-short book is stressed on both tails (ADR-0074), + 1 supply shock that transmits through `SECTOR_MAP` instead of market beta and is inflationary, so a position the factor model cannot see is still stressed and duration stops hedging ([ADR-0088](docs/adrs/0088-a-stress-scenario-that-does-not-transmit-through-market-beta.md)) |
 | `backend/services/q1_agent.py` | L5: 8-node Q1 reasoning agent (`run_q1_agent`) |
 | `backend/services/book_revisions.py` | Diffs a published book against the row about to replace it, so an upsert on `run_date` cannot change a published figure silently. `reason` is NOT NULL by constraint ([ADR-0093](docs/adrs/0093-a-published-book-that-changes-must-say-so.md)) |

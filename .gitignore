@@ -62,3 +62,7 @@ venv/
 # Pulled by `vercel env pull`. Values are redacted placeholders EXCEPT
 # VERCEL_OIDC_TOKEN, which is a real ~1.2KB JWT. Never commit this.
 .env.vercel
+
+# Playwright run artifacts — regenerated every run, never reviewed.
+frontend/test-results/
+frontend/playwright-report/

@@ -12,39 +12,50 @@ import TerminalPane from "@/components/home/TerminalPane";
 
 const html = (ui: React.ReactElement) => renderToString(ui);
 
-describe("TerminalPane — the lock is desktop-only (ADR-0103 constraint 1)", () => {
-  it("gates its inner scroller behind lg:, so mobile keeps ordinary page flow", () => {
+describe("TerminalPane — a pane never scrolls its own content", () => {
+  // These three assertions are INVERTED from what they were. They used to pin
+  // ADR-0103's inner-scroller mechanism (`lg:overflow-y-auto` + `min-h-0` on the
+  // pane and its body). That mechanism was removed at the owner's direction
+  // because it made every pane guess a height for content it could not measure,
+  // and the guesses clipped: at 1920 the regime pane rendered "FACTOR TILT OF
+  // BOO", printed five factor betas as "+0"/"-0", and carried a vertical AND a
+  // horizontal scrollbar inside one card. Six panes each owned a scroll context
+  // on one screen.
+  //
+  // The rule now is the one design goal 7 always stated: the PAGE scrolls, the
+  // card sizes to its content. These tests guard the reversal so a future edit
+  // cannot quietly reintroduce a per-pane scroller.
+
+  it("ships no overflow-y scroller of its own, gated or otherwise", () => {
     const out = html(
       <TerminalPane id="themes" title="Themes">
         <div>rows</div>
       </TerminalPane>
     );
-    expect(out).toContain("lg:overflow-y-auto");
+    expect(out).not.toMatch(/overflow-y-(auto|scroll)/);
   });
 
-  it("never ships an UNGATED overflow-y-auto", () => {
-    // The whole failure mode in one assertion. `overflow-y-auto` without the `lg:` prefix
-    // traps a 375px viewport inside a short scroller — the thing design goal 7 was
-    // protecting, which ADR-0103 only bought an exemption from at >=1024px.
+  it("ships no overflow-y scroller in bare mode either", () => {
     const out = html(
-      <TerminalPane id="themes" title="Themes">
+      <TerminalPane id="themes" title="Themes" bare>
         <div>rows</div>
       </TerminalPane>
     );
-    const ungated = out.match(/(^|[^:])\boverflow-y-auto\b/g) ?? [];
-    // Every occurrence must be the lg:-prefixed one.
-    for (const m of ungated) expect(m).toMatch(/lg:overflow-y-auto|:overflow-y-auto/);
+    expect(out).not.toMatch(/overflow-y-(auto|scroll)/);
   });
 
-  it("keeps min-h-0 on the pane and its scroll body", () => {
-    // Without it a flex child will not shrink below its content, the shell grows past the
-    // viewport, and the scroller silently never engages.
-    const out = html(
-      <TerminalPane id="themes" title="Themes">
-        <div>rows</div>
-      </TerminalPane>
-    );
-    expect((out.match(/min-h-0/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  it("does not trap scroll chaining with overscroll-contain", () => {
+    // overscroll-contain only matters when the element scrolls. With no scroller
+    // it is dead weight, and leaving it behind is the tell that a scroller is
+    // about to come back.
+    for (const bare of [false, true]) {
+      const out = html(
+        <TerminalPane id="themes" title="Themes" bare={bare}>
+          <div>rows</div>
+        </TerminalPane>
+      );
+      expect(out).not.toContain("overscroll-contain");
+    }
   });
 });
 
@@ -111,15 +122,16 @@ describe("TerminalPane — bare mode (the double-header fix)", () => {
     expect(out).not.toContain("card-title");
   });
 
-  it("still gates its scroller behind lg: in bare mode", () => {
+  it("keeps its stacking margin below lg and drops it inside the grid", () => {
+    // What bare mode still owes the layout now that it owns no scroller: panes
+    // stack with a gap on a phone, and the grid's own gap takes over at lg.
     const out = html(
       <TerminalPane id="a" title="T" bare>
         x
       </TerminalPane>
     );
-    expect(out).toContain("lg:overflow-y-auto");
-    const bare = out.match(/(^|[^:])\boverflow-y-auto\b/g) ?? [];
-    for (const m of bare) expect(m).toMatch(/lg:overflow-y-auto|:overflow-y-auto/);
+    expect(out).toContain("mb-4");
+    expect(out).toContain("lg:mb-0");
   });
 
   it("still carries the id and the accessible name", () => {

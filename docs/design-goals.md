@@ -134,18 +134,28 @@ single fact they came for. Two consequences:
 - **Collapse optional detail behind `<details>`**, don't delete it and don't
   make it always-on. The three detail panels on `/risk` are collapsed by
   default for exactly this reason.
-- **Full-page scroll is the default. `/` is the one exception, and it is
-  argued.** Viewport-locked shells (`h-screen` + `overflow-y-auto` on the
-  content) photograph well and break Ctrl+F, deep links, and long candidate
-  tables — so they need a reason, not a preference.
-  [ADR-0103](adrs/0103-the-themes-page-is-a-terminal.md) makes that case for the
-  Themes page only, on a measured 4,186px (4.7 screens), and pays for it with
-  four constraints: the lock applies at `≥1024px` only, every pane is
-  `id`-addressable, the duplicate renderings are deleted rather than relocated,
-  and the palette does not change. **`/book`, `/risk` and `/method` keep
-  full-page scroll** — they carry the long tables and the prose, which is
-  exactly what a pane is bad at. A second page proposing a lock needs its own
-  ADR and its own measurement; "for consistency with `/`" is not one.
+- **Never trap a page in an inner scroller.** Viewport-locked shells
+  (`h-screen` + `overflow-y-auto` on the content) photograph well and break
+  Ctrl+F, deep links, and long candidate tables. Full-page scroll always wins.
+
+  **This was conditional for a day and is absolute again.**
+  [ADR-0103](adrs/0103-the-themes-page-is-a-terminal.md) took a measured,
+  properly-argued exemption for `/`;
+  [ADR-0106](adrs/0106-the-themes-page-is-a-grid-that-scrolls.md) reverses it on
+  what the exemption produced. A locked shell divides a fixed height between
+  panes with `minmax(0,Nfr)` rows, so **every pane must clip whatever does not
+  fit** — the regime pane rendered "FACTOR TILT OF BOO" and printed five factor
+  betas as "+0"/"-0" against real values of −0.50, +0.22, +0.32, +0.43, −0.38,
+  behind two scrollbars, with six scroll contexts on one screen. A tilt of −0.50
+  displayed as −0 is not a compressed number, it is a **wrong** one, which is
+  goal 1 violated by the layout.
+
+  The lesson is narrower than "terminals are bad": **a pane may not own a height
+  it cannot measure.** Content-sized rows (`auto` + `items-start`) give the same
+  dense side-by-side reading with nothing cut. The one place an inner scroller
+  remains legitimate is a floating popover — bounded by the viewport by
+  definition, so `max-h` + `overflow-y-auto` is the only way it can hold a long
+  list. Goal 7 is about trapping a *page*, not a dock.
 
 ### 8. Accessibility is a floor, not a polish pass
 

@@ -83,7 +83,13 @@ export default function TerminalPane({
         ref={ref}
         id={id}
         aria-label={title}
-        className={`flex flex-col min-h-0 mb-4 lg:mb-0 lg:overflow-y-auto overscroll-contain ${className}`}
+        // No `lg:overflow-y-auto` any more. A pane that scrolls inside a locked
+        // shell has to guess a height for its content, and every guess was wrong:
+        // the regime pane clipped "FACTOR TILT OF BOO" and rendered its factor
+        // values as "+0"/"-0" with BOTH a vertical and a horizontal scrollbar.
+        // Panes now size to their content and the PAGE scrolls, so nothing is
+        // truncated and there is one scroll context instead of six.
+        className={`flex flex-col mb-4 lg:mb-0 ${className}`}
       >
         {children}
       </section>
@@ -95,7 +101,7 @@ export default function TerminalPane({
       ref={ref}
       id={id}
       aria-label={title}
-      className={`card flex flex-col min-h-0 mb-4 lg:mb-0 target:ring-1 target:ring-accent ${className}`}
+      className={`card flex flex-col mb-4 lg:mb-0 target:ring-1 target:ring-accent ${className}`}
     >
       <div className="card-header shrink-0 flex-wrap gap-2">
         <span className="card-title">{title}</span>
@@ -103,9 +109,7 @@ export default function TerminalPane({
           <span className="num text-[11px] text-text-tertiary">{meta}</span>
         ) : null}
       </div>
-      <div className="flex-1 min-h-0 lg:overflow-y-auto overscroll-contain">
-        {children}
-      </div>
+      <div className="flex-1">{children}</div>
     </section>
   );
 }

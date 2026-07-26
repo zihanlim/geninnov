@@ -14,7 +14,7 @@ import MarketBar from "@/components/MarketBar";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
 import { NewsFeed } from "@/components/news/NewsFeed";
 import { NewsRibbon } from "@/components/news/NewsRibbon";
-import LiveNews from "@/components/live/LiveNews";
+import LiveNewsDock from "@/components/live/LiveNewsDock";
 import { fetchLatestNews, type NewsItem } from "@/lib/news";
 import { StatusBadge } from "@/components/status/StatusBadge";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
@@ -405,14 +405,14 @@ function ConvictionPageInner() {
   );
 
   return (
-    // ADR-0103: viewport-locked at lg and above, ordinary scrolling page below it.
-    // The height subtracts exactly the two pieces of fixed chrome — TopBar (`h-14`, 56px)
-    // and LiveFeed (`--feed-h`) — rather than a guessed number, so the lock survives a
-    // change to either. `100dvh` not `100vh`: on mobile browsers `vh` includes the
-    // retracting URL bar, and this shell must never be taller than what is actually
-    // visible. `lg:overflow-hidden` is what makes the panes, not the page, do the
-    // scrolling.
-    <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-4 pb-20 lg:pb-3 lg:h-[calc(100dvh-56px-var(--feed-h))] lg:overflow-hidden lg:flex lg:flex-col lg:gap-3">
+    // The viewport lock from ADR-0103 is GONE, at the owner's direction. It made
+    // every pane guess a height for content it could not measure, and the guesses
+    // clipped: the regime pane truncated "FACTOR TILT OF BOO" and printed its
+    // factor betas as "+0"/"-0" behind two scrollbars, and six panes each owned a
+    // scroll context on one screen. A grid whose rows size to their content, on a
+    // page that scrolls once, shows the same material without cutting any of it —
+    // which is design goal 7's original position, restored.
+    <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-4 pb-20">
       <div className="flex justify-between items-end mb-4 lg:mb-0 gap-4 flex-wrap shrink-0">
         <div>
           <h1 className="text-[19px] font-semibold tracking-[-0.01em] m-0">
@@ -427,6 +427,12 @@ function ConvictionPageInner() {
         </div>
         <div className="text-right text-text-secondary text-[12px]">
           <div className="flex items-center justify-end gap-3 mb-1">
+            {/* Top right, beside the status — a toggle rather than a grid cell.
+                A permanent pane implied the streams are one of the things this
+                site publishes; they are explicitly not a source the book is
+                built on. Closed by default, and closed means no third-party
+                request is made at all. */}
+            <LiveNewsDock runDate={runDate} />
             <StatusBadge status={dashboardStatus} />
           </div>
           <div className="mt-1">
@@ -479,6 +485,46 @@ function ConvictionPageInner() {
               oversight. */}
           <div className="shrink-0">
             <NewsRibbon />
+          </div>
+
+          {/* ── Macro regime: a full-width banner, back at the top ───────────
+              ADR-0103 demoted this into a grid cell on the argument that it is
+              "context, not chrome". In a cell it had neither the width nor the
+              height for what it carries: at 1920 it rendered "FACTOR TILT OF
+              BOO", printed five factor betas as "+0"/"-0", and carried a
+              vertical AND a horizontal scrollbar inside one card.
+              It is the orientation every number below is read against — the
+              regime decides what a LONG even means — so it goes first, at full
+              width, where its three columns fit. Restored at the owner's
+              direction. */}
+          <div className="mb-4">
+            <RegimeHero
+              cycle={regime?.cycle ?? "—"}
+              sentiment={regime?.sentiment ?? "—"}
+              headline={regimeHeadline(regime)}
+              narrative={regimeNarrative(regime)}
+              cycleSubtext={
+                typeof regime?.yield_curve_slope === "number"
+                  ? `10y−2y ${formatSlopeBps(regime.yield_curve_slope)}${
+                      typeof regime?.real_rate === "number"
+                        ? ` · real rate ${regime.real_rate.toFixed(2)}%`
+                        : ""
+                    }`
+                  : "Curve inputs unavailable this run"
+              }
+              volLabel={vol.label}
+              volSubtext={vol.sub}
+              factors={factors}
+              factorCoverage={factorCoverage}
+              factorUnavailableReason={
+                factorError
+                  ? `portfolio_factor_exposure query failed: ${factorError}`
+                  : factors.length === 0
+                    ? "No sized positions yet, so the book has no factor tilt to report."
+                    : undefined
+              }
+              runDate={regime?.run_date}
+            />
           </div>
 
           {/* ── Screening: four aggregates, as a strip rather than a pane ────
@@ -535,11 +581,13 @@ function ConvictionPageInner() {
             )}
           </div>
 
-          {/* ── The pane grid (ADR-0103) ─────────────────────────────────────
-              Only this region is locked. `lg:min-h-0` is what lets it shrink to
-              the space the strips above leave; without it the grid keeps its
-              content height and the panes never scroll. */}
-          <div className="lg:flex-1 lg:min-h-0 lg:grid lg:grid-cols-3 lg:grid-rows-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)] lg:gap-4">
+          {/* ── The pane grid ────────────────────────────────────────────────
+              Rows are `auto`, not `minmax(0,Nfr)`. Fractional rows divide a fixed
+              height between panes and force every one of them to clip whatever
+              does not fit; `auto` lets each row be as tall as its tallest pane,
+              so a card shows its content instead of a scrollbar. `items-start`
+              stops a short pane from stretching to match a tall neighbour. */}
+          <div className="lg:grid lg:grid-cols-3 lg:auto-rows-auto lg:items-start lg:gap-4">
 
           <TerminalPane id="themes" title="Theme scores" bare className="lg:col-span-2 lg:row-span-2">
             {themeError ? (
@@ -679,68 +727,16 @@ function ConvictionPageInner() {
             <PredictionMarkets />
           </TerminalPane>
 
-          {/* Out of the strip stack and into the grid: as a strip it claimed 191px
-              of an 814px shell for orientation, which the panes then did not have.
-              It is context, not chrome, so it competes for a cell like everything
-              else. */}
-          <TerminalPane id="regime" title="Macro regime" bare>
-          <RegimeHero
-            cycle={regime?.cycle ?? "—"}
-            sentiment={regime?.sentiment ?? "—"}
-            headline={regimeHeadline(regime)}
-            narrative={regimeNarrative(regime)}
-            cycleSubtext={
-              typeof regime?.yield_curve_slope === "number"
-                ? `10y−2y ${formatSlopeBps(regime.yield_curve_slope)}${
-                    typeof regime?.real_rate === "number"
-                      ? ` · real rate ${regime.real_rate.toFixed(2)}%`
-                      : ""
-                  }`
-                : "Curve inputs unavailable this run"
-            }
-            volLabel={vol.label}
-            volSubtext={vol.sub}
-            factors={factors}
-            factorCoverage={factorCoverage}
-            factorUnavailableReason={
-              factorError
-                ? `portfolio_factor_exposure query failed: ${factorError}`
-                : factors.length === 0
-                  ? "No sized positions yet, so the book has no factor tilt to report."
-                  : undefined
-            }
-            runDate={regime?.run_date}
-          />
-          </TerminalPane>
-
           <TerminalPane id="discovery" title="What the engine is discovering" bare>
             <DiscoveredThemes />
-          </TerminalPane>
-          {/* A panel on the home page, deliberately NOT a fifth destination: the top bar
-              stays at four, per the standing non-goal. `runDate` is passed so the stream
-              sits beside the book's actual age rather than implying the book is live
-              (ADR-0104).
-
-              IN the grid, not after it. As a direct child of the locked shell it had
-              neither `shrink-0` nor a cell, so it claimed 207px of an 814px viewport and
-              starved the grid's `lg:flex-1` -- the pane row collapsed to 65px and every
-              pane with it. A locked shell has no spare space for an unplaced child, which
-              is the one rule ADR-0103 has to hold to. */}
-          <TerminalPane id="live" title="Live news" bare>
-            <LiveNews runDate={runDate} />
           </TerminalPane>
           </div>
         </>
       )}
-
-      <ThemeDerivationDrawer
-        theme={drawerTheme}
-        open={drawerTheme !== null}
-        onClose={() => setDrawerTheme(null)}
-      />
     </main>
   );
 }
+
 
 /** One aggregate in the screening strip: a label, a figure, and an optional qualifier.
  *  Distinct from `Stat` below, which stacks for a card column; this reads inline so four

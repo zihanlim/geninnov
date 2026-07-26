@@ -21,7 +21,7 @@ import { EmptyState } from "@/components/status/EmptyState";
 
 const PAGE = 12;
 
-export function NewsFeed() {
+export function NewsFeed({ embedded = false }: { embedded?: boolean } = {}) {
   const [items, setItems] = useState<NewsItem[]>([]);
   const [runDate, setRunDate] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,27 +47,39 @@ export function NewsFeed() {
     };
   }, []);
 
+  // EMBEDDED drops the section chrome. Inside a TerminalPane the pane already
+  // supplies the heading, the card and the scroll box, so the standalone
+  // version rendered a second <h2> with the same words, a card inside a card,
+  // and an mb-8 that pushed 1,260px of rows through a 418px pane. A component
+  // written as a page section does not become a pane by being placed in one.
+  const Wrapper = embedded ? "div" : "section";
   return (
-    <section id="news" aria-label="Headlines behind today's scores" className="mb-8">
-      <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
-        <h2 className="text-[15px] font-semibold m-0">
-          Headlines behind today&apos;s scores
-        </h2>
-        <p className="m-0 text-[11px] text-text-tertiary">
-          The items the HypeScores above are computed from
-          {runDate ? (
-            <>
-              {" · "}
-              <time dateTime={runDate} className="num">
-                {runDate}
-              </time>
-            </>
-          ) : null}
-        </p>
-      </div>
+    <Wrapper
+      id="news"
+      aria-label={embedded ? undefined : "Headlines behind today's scores"}
+      className={embedded ? "" : "mb-8"}
+    >
+      {!embedded && (
+        <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
+          <h2 className="text-[15px] font-semibold m-0">
+            Headlines behind today&apos;s scores
+          </h2>
+          <p className="m-0 text-[11px] text-text-tertiary">
+            The items the HypeScores above are computed from
+            {runDate ? (
+              <>
+                {" · "}
+                <time dateTime={runDate} className="num">
+                  {runDate}
+                </time>
+              </>
+            ) : null}
+          </p>
+        </div>
+      )}
 
       {loading ? (
-        <div className="skeleton h-[220px] rounded-[10px]" aria-hidden="true" />
+        <div className={`skeleton rounded-[10px] ${embedded ? "h-full min-h-[160px]" : "h-[220px]"}`} aria-hidden="true" />
       ) : error ? (
         <EmptyState
           title="Headlines unavailable"
@@ -85,7 +97,7 @@ export function NewsFeed() {
           compact
         />
       ) : (
-        <div className="card px-[18px] py-1">
+        <div className={embedded ? "px-[18px]" : "card px-[18px] py-1"}>
           <ul className="list-none m-0 p-0">
             {items.slice(0, shown).map((it, i) => (
               <NewsRow key={`${it.headline.slice(0, 32)}-${i}`} item={it} now={now ?? new Date()} />
@@ -108,6 +120,6 @@ export function NewsFeed() {
           </p>
         </div>
       )}
-    </section>
+    </Wrapper>
   );
 }

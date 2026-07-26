@@ -12,6 +12,8 @@ import PredictionMarkets from "@/components/PredictionMarkets";
 import MarketBar from "@/components/MarketBar";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
 import { NewsFeed } from "@/components/news/NewsFeed";
+import { NewsRibbon } from "@/components/news/NewsRibbon";
+import LiveNews from "@/components/live/LiveNews";
 import { fetchLatestNews, type NewsItem } from "@/lib/news";
 import { StatusBadge } from "@/components/status/StatusBadge";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
@@ -463,13 +465,20 @@ function ConvictionPageInner() {
           <div className="shrink-0">
             <MarketBar />
           </div>
-          {/* NewsRibbon REMOVED here (ADR-0103, "the redundancy dies first").
-              It existed because the news was real, persisted, and invisible —
-              3,000px below the fold. In the terminal the HEADLINES pane is on
-              screen at all times, so the ribbon became a second rendering of the
-              pane's own data, which is the defect this layout was adopted to
-              fix. It is still imported nowhere else; if the terminal is ever
-              reverted, restore the ribbon with it. */}
+          {/* RESTORED at the owner's explicit direction, over ADR-0103's
+              "the redundancy dies first".
+              ADR-0103 removed it as a second rendering of the HEADLINES pane's
+              data. That argument is sound only if the pane is genuinely always
+              on screen — and measured, the pane is an inner scroller holding
+              1,292px of content in a 482px box, so most of its list is no more
+              visible than the old feed was. The ribbon and the pane answer
+              different questions: the ribbon is "what broke today" at a glance
+              in one line, the pane is "read the list". Keeping both is the
+              owner's call and is recorded here so it is not re-litigated as an
+              oversight. */}
+          <div className="shrink-0">
+            <NewsRibbon />
+          </div>
           <div className="shrink-0">
           <RegimeHero
             cycle={regime?.cycle ?? "—"}
@@ -558,7 +567,7 @@ function ConvictionPageInner() {
               Only this region is locked. `lg:min-h-0` is what lets it shrink to
               the space the strips above leave; without it the grid keeps its
               content height and the panes never scroll. */}
-          <div className="lg:flex-1 lg:min-h-0 lg:grid lg:grid-cols-3 lg:grid-rows-[minmax(0,1.35fr)_minmax(0,1fr)] lg:gap-4">
+          <div className="lg:flex-1 lg:min-h-0 lg:grid lg:grid-cols-3 lg:grid-rows-[minmax(0,1.75fr)_minmax(0,1fr)] lg:gap-4">
 
           <TerminalPane id="themes" title="Theme scores" bare className="lg:col-span-2">
             {themeError ? (
@@ -619,7 +628,10 @@ function ConvictionPageInner() {
             bare
             className="lg:row-span-2"
           >
-            <NewsFeed />
+            {/* embedded: the pane supplies the heading, the card and the scroll
+                box. Without it the feed rendered its own <h2> with the same
+                words, a card inside a card, and an mb-8. */}
+            <NewsFeed embedded />
           </TerminalPane>
 
           <TerminalPane id="crowd" title="What the crowd is pricing" bare>
@@ -630,6 +642,12 @@ function ConvictionPageInner() {
             <DiscoveredThemes />
           </TerminalPane>
           </div>
+
+          {/* A panel on the home page, deliberately NOT a fifth destination: the top bar
+              stays at four, per the standing non-goal. `runDate` is passed so the stream
+              sits beside the book's actual age rather than implying the book is live
+              (ADR-0103). */}
+          <LiveNews runDate={runDate} />
         </>
       )}
 

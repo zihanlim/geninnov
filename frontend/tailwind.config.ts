@@ -28,7 +28,18 @@ const config: Config = {
       // table would have opened its own horizontal scroller — forever, at every
       // viewport. If you "tidy" this into `xl` (1280px) that is exactly what
       // happens again, silently. See ADR-0084.
-      screens: { wide: "1440px" },
+      // 1424, NOT 1440. A CSS media query matches the viewport width EXCLUDING a
+      // classic scrollbar, and Windows/Linux Chrome uses classic space-taking
+      // scrollbars (see the .scrollbar-none note in globals.css). So a maximised
+      // 1440px window there reports ~1425px, and a `min-width:1440px` gate never
+      // fires — the two-pane layout would be dead on the exact machine it was
+      // built for. It is invisible in headless Chromium, which uses overlay
+      // scrollbars and reports the full 1440.
+      //
+      // The pane arithmetic still clears BOOK_ROW_MIN_W (640px) at the new gate:
+      //   viewport 1424 − 64 (lg gutter) = 1360 content (under the 1400 cap)
+      //   (1360 − 24 gap) / 2            =  668 per pane, 28px of headroom.
+      screens: { wide: "1424px" },
       colors: {
         // "Ledger" light theme — see app/globals.css for the design rationale.
         // Surfaces (warm paper)

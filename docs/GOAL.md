@@ -204,6 +204,24 @@ Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the f
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 101 (2026-07-26) — user caught mojibake on /book; it was whole-file double-encoding
+
+The user spotted the live NET/GROSS cards reading `Long âˆ' short â€" directional tilt` — I had
+glossed over exactly this in iteration 100's screenshot. Root cause was worse than two bad strings:
+`book/page.tsx` had **400+ characters double-encoded** (UTF-8 saved as cp1252-of-UTF-8, so `—`→`â€"`,
+`−`→`âˆ'`, `→`→`â†'`, `Σ`→`Î£`, `·`→`Â·`) plus a stray BOM, and `PositionRow.tsx` was corrupted the same
+way. Same class as the `PROGRESS.md` corruption — this env's tooling mangles non-ASCII on some saves.
+
+**Fixed safely, not with a blanket reversal.** The files are *mixed* — older mojibake beside genuine
+`‖ × —` from newer edits — so `content.encode('cp1252').decode('utf-8')` would throw on `‖` (not in
+cp1252) and corrupt the real chars. Instead I reversed only the non-ASCII runs that cleanly
+round-trip, left the genuine ones, stripped the BOM, and **guarded on the ASCII skeleton being
+byte-identical** (a pure encoding fix touches zero ASCII). `git diff` came back 52/52 symmetric with
+0 skeleton mismatches — no logic touched. Deployed and **re-read the live DOM: 0 mojibake, the card
+now reads `Long − short — directional tilt`**; full pass still 0/16. Saved a memory so recurrence is
+a two-minute grep-and-fix. My two files committed (no co-author) and pushed; the other session's
+in-flight chat-feature WIP left untouched.
+
 ### Loop iteration 100 (2026-07-26) — the core Q1 numbers survive a poke on the live restructured UI
 
 No new code from the other session (their latest, `829e6fbc`, predates my last commit; only a stray

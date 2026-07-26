@@ -19,8 +19,9 @@
 //     from tool reads, and when the tools come back empty the absences ARE the
 //     answer.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { supabase } from "@/lib/supabase";
 import ReasoningStep from "@/components/chat/ReasoningStep";
 import VerifiedProse from "@/components/chat/VerifiedProse";
 import { EmptyState } from "@/components/status/EmptyState";
@@ -49,6 +50,55 @@ export default function AskPage() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // The book the agent will read from, shown beside the composer so the empty
+  // state grounds the question instead of facing a blank page — the "active
+  // context" the reference agent UIs surface. Read-only; a failed read just
+  // leaves the panel out (never a fabricated placeholder).
+  const [runFacts, setRunFacts] = useState<{
+    runDate: string | null;
+    positions: number;
+    longs: number;
+    shorts: number;
+    gross: number | null;
+    net: number | null;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from("research_recommendations")
+      .select("run_date, picks, book_metrics")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        if (cancelled || !data?.[0]) return;
+        const rec = data[0] as {
+          run_date: string | null;
+          picks: unknown;
+          book_metrics: unknown;
+        };
+        const picks = (
+          typeof rec.picks === "string" ? JSON.parse(rec.picks) : rec.picks
+        ) as Array<{ direction?: string }> | null;
+        const bm = (
+          typeof rec.book_metrics === "string"
+            ? JSON.parse(rec.book_metrics)
+            : rec.book_metrics
+        ) as { gross_exposure?: number; net_exposure?: number } | null;
+        setRunFacts({
+          runDate: rec.run_date,
+          positions: picks?.length ?? 0,
+          longs: picks?.filter((p) => p.direction === "long").length ?? 0,
+          shorts: picks?.filter((p) => p.direction === "short").length ?? 0,
+          gross: typeof bm?.gross_exposure === "number" ? bm.gross_exposure : null,
+          net: typeof bm?.net_exposure === "number" ? bm.net_exposure : null,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function ask(q: string) {
     const trimmed = q.trim();
@@ -97,12 +147,20 @@ export default function AskPage() {
 
   return (
     <main
-      className={`mx-auto max-w-[880px] px-4 sm:px-6 wide:px-10 pb-16 ${
+      className={`mx-auto px-4 sm:px-6 wide:px-10 pb-16 ${
         empty
-          ? "flex min-h-[calc(100vh-9rem)] flex-col justify-center"
-          : "py-8"
+          ? "max-w-[1080px] flex min-h-[calc(100vh-9rem)] flex-col justify-center"
+          : "max-w-[880px] py-8"
       }`}
     >
+      <div
+        className={
+          empty
+            ? "grid items-start gap-x-12 gap-y-10 wide:grid-cols-[minmax(0,1fr)_236px]"
+            : ""
+        }
+      >
+        <div className="min-w-0">
       <header className="mb-6">
         <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-text-primary m-0">
           Ask the book
@@ -251,6 +309,44 @@ export default function AskPage() {
           </button>
         </div>
       </form>
+        </div>
+
+        {empty && (
+          <aside className="wide:pt-1">
+            <div className="rounded-lg border border-border bg-bg-surface p-4">
+              <p className="m-0 mb-3 text-[10px] uppercase tracking-[0.13em] font-semibold text-text-tertiary">
+                What it reads
+              </p>
+              {runFacts ? (
+                <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[12px]">
+                  <dt className="text-text-tertiary">Run</dt>
+                  <dd className="num m-0 text-right text-text-primary">
+                    {runFacts.runDate ?? "—"}
+                  </dd>
+                  <dt className="text-text-tertiary">Book</dt>
+                  <dd className="num m-0 text-right text-text-primary">
+                    {runFacts.longs}L / {runFacts.shorts}S
+                  </dd>
+                  <dt className="text-text-tertiary">Gross</dt>
+                  <dd className="num m-0 text-right text-text-primary">
+                    {runFacts.gross != null ? `${(runFacts.gross * 100).toFixed(1)}%` : "—"}
+                  </dd>
+                  <dt className="text-text-tertiary">Net</dt>
+                  <dd className="num m-0 text-right text-text-primary">
+                    {runFacts.net != null ? `${(runFacts.net * 100).toFixed(1)}%` : "—"}
+                  </dd>
+                </dl>
+              ) : (
+                <div className="skeleton h-[76px] rounded" />
+              )}
+              <p className="m-0 mt-3.5 pt-3 border-t border-border text-[11px] leading-[1.55] text-text-tertiary">
+                Every answer is built from these rows — the agent fetches each value
+                and never invents one.
+              </p>
+            </div>
+          </aside>
+        )}
+      </div>
     </main>
   );
 }

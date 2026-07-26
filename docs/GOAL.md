@@ -204,6 +204,26 @@ Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the f
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 99 (2026-07-26) — clean sweep held; poked the restructured UI's numbers, not just its scroll
+
+No new work from the other session (quiet tree). Re-ran the pass: `/`, `/book`, `/risk`, `/method`
+at 1440/1425/1366/375 — **16/16, zero page scroll, zero console errors, zero page errors**, no
+regression from iterations 97–98.
+
+With nothing mechanical to fix, I spent the round on the mandate's *second* priority — every number
+survives a poke — applied to the parts of the UI the layout rewrite touched but I had never
+number-checked. Looked at the home dashboard and `/method`, then cross-checked the live theme
+sub-score heatmap against Supabase: **all seven displayed HypeScores match `themes.hype_score`
+exactly** (Geopolitical 65, US Election 60, Fed Policy 48, Inflation 43, US Dollar 42, China Growth
+40, Corporate Credit 38). The restructure preserved the data path, not just the pixels.
+
+One minor finding, handed off rather than blind-fixed: the EdgeScore is called **"4-component"** in
+four code comments (`EdgeBars`, `TradeDerivationDrawer`, `MethodBody`×2, `positionEdge`) but
+**"5-component"** in `MethodBody`'s authoritative user-facing remedy string, which lists all five
+weights (trend/regime/carry/value/sentiment). It is comments-only — the UI is consistent — and the
+stale ones cite ADR-0031/0032 (the pre-sentiment 4-component era), so fixing them accurately needs
+the sentiment-ADR reference the owner of those files has. Noted for them; not a user-facing defect.
+
 ### Loop iteration 98 (2026-07-26) — fixed the mobile /book scroll too; the whole site is now clean at four widths
 
 The other session left the mobile `/book` scroll from iteration 97 untouched (quiet tree, no new

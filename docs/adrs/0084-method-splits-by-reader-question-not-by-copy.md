@@ -166,7 +166,31 @@ nothing to the header.
   window (84px → 44px). A real, if small, cost against design goal 4.
 - **Density is measured in pixels, not comprehension.** Nobody has tested
   whether an eight-row limit board at `py-[7px]` is still scannable.
-- **The projected 29 → ~21 screens is unverified.** There are no Supabase
-  credentials in this environment, so the post-change scroll has not been
-  re-measured against real data. The projection stands as arithmetic from the
-  measured section sizes, not as an observation.
+- **The projection was wrong. Measured 2026-07-26 against live data**, 1440×900,
+  same methodology as the baseline:
+
+  | Route | Before | After | |
+  |---|---|---|---|
+  | `/` Themes | 3,122px / 3.5 | 3,054px / 3.4 | flat |
+  | `/book` | 4,459px / 5.0 | 3,660px / **4.1** | −18% |
+  | `/risk` | 5,590px / 6.2 | 5,278px / **5.9** | −6% |
+  | `/method` | 13,057px / **14.5** | 7,099px / **7.9** | −46% |
+  | `/method/evidence` | — | 5,210px / 5.8 | new |
+  | **Total** | **29.1 screens** | **27.1 screens** | **−7%** |
+
+  This ADR projected ~20.6 screens (−29%). The real total is **27.1 (−7%)**.
+
+  The arithmetic missed because it treated the page shell as free: splitting
+  `/method` divides its content but **both chapters still carry the header, the
+  chapter control, the section nav and the footer**, so the total barely moves
+  even though each route halves. `/risk` also gained far less than modelled —
+  six of its nine panels declare 560–860px table minimums, so the empty right
+  half was never slack to reclaim.
+
+  **The metric that matched the original complaint did move**: the longest page
+  went 14.5 → 7.9 screens, and no route now exceeds 8. `/book` improved 18%
+  while *gaining* the answer-card block. Whether "total screens across routes"
+  was ever the right measure is doubtful — a reader visits one route at a time.
+
+  Any future projection here should model the shell as a fixed per-route cost
+  and quote **the longest route**, not the sum.

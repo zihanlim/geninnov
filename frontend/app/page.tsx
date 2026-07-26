@@ -646,7 +646,7 @@ function ConvictionPageInner() {
           {/* A panel on the home page, deliberately NOT a fifth destination: the top bar
               stays at four, per the standing non-goal. `runDate` is passed so the stream
               sits beside the book's actual age rather than implying the book is live
-              (ADR-0103). */}
+              (ADR-0104). */}
           <LiveNews runDate={runDate} />
         </>
       )}

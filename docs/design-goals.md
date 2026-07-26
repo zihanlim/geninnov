@@ -185,8 +185,15 @@ Stated so nobody re-litigates them by accident:
 
 - **Dark mode.** Not shipping one. Two themes doubles the contrast-audit surface
   for an audience that reads a daily publication in daylight.
-- **Real-time / tick-level anything.** The pipeline runs once a day after the US
-  close. A live-ticking UI would misrepresent the cadence of the data.
+- **Real-time / tick-level anything** *in the book's own data*. The pipeline runs
+  once a day after the US close. A live-ticking UI would misrepresent the cadence
+  of the data. **One declared exception:** the live news panel on `/` embeds
+  third-party broadcast streams
+  ([ADR-0104](adrs/0104-a-live-news-panel-that-cannot-be-cited-and-says-so.md)).
+  It is scoped by three things — it carries no derived data, it prints the book's
+  `run_date` beside the stream so a moving picture cannot imply a moving book, and
+  it declares in the panel that nothing there is citable. The non-goal still binds
+  everything the pipeline produces: **no figure on this site ticks.**
 - **Mobile-first.** Mobile must *work* — and is verified — but comparison tables
   and factor charts are designed for desktop and degrade gracefully, not the
   reverse.

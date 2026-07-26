@@ -135,6 +135,18 @@ export default function ThesisBlock({ advisory, citations, className }: Props) {
           </span>
         )}
       </div>
+      {/* The badge and evidence count certify the FIGURES only. The citation
+          guardrail (ADR-0012 / ADR-0049) checks every number against what the
+          pipeline fetched but never reads the prose, so the qualitative reasoning
+          — which name is over-owned, which sector is defensive — is the L5 model's
+          synthesis, not a checked fact. Saying so keeps the badge from overclaiming
+          the narrative; it is the same "state the absence" discipline as the rest
+          of the site. */}
+      <p className="m-0 -mt-2 mb-4 text-[11.5px] leading-[1.5] text-text-tertiary">
+        The badge applies to the{" "}
+        <strong className="font-semibold text-text-secondary">figures</strong>; the
+        reasoning that connects them is the model&apos;s own.
+      </p>
       <CitationList text={advisory.body} citations={citations} />
     </div>
   );

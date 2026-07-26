@@ -974,16 +974,27 @@ function BookPageInner() {
           )}
 
 
-          {/* ── Pool depth: the answer to "why not five and five?" ───────── */}
-          {/* Three independent readings of one question — "how solid is this
-              book?" — that were stacked full-width across ~975px and read as a
-              sequence. Side by side they read as what they are: corroboration.
-              lg:2-up then wide:3-up, since none of the three carries a table
-              with a large min-width. */}
+          {/* ── How solid is this book? ──────────────────────────────────── */}
+          {/* Four independent readings of one question, which were stacked
+              full-width across ~975px and read as a sequence. Side by side they
+              read as what they are: corroboration. lg:2-up then wide:3-up, since
+              none of them carries a table with a large min-width.
+
+              The OUTCOME leads. The other three ask whether the machinery is
+              sound — was there a real choice, does it churn, does it reproduce —
+              and those are process questions. Whether the published books were
+              actually right is the question a reader has first, so it is not the
+              one left orphaned at the end of a three-column row. */}
           </section>
 
           <section id="solidity" aria-label="How solid this book is">
           <div className="grid lg:grid-cols-2 wide:grid-cols-3 gap-6 items-start [&>*]:mb-0 mb-6">
+          {/* ── Did the books we already published turn out right? (ADR-0090) ─
+              The instrument lived only on /method, two clicks from the claims it
+              grades. This is the summary at the point of the claim. */}
+          <TrackRecordPanel />
+
+          {/* ── Pool depth: the answer to "why not five and five?" ───────── */}
           <PoolDepth
             ideas={rec?.independent_ideas ?? null}
             heldLongs={(rec?.picks ?? []).filter((p) => p.direction === "long").length}
@@ -999,11 +1010,6 @@ function BookPageInner() {
 
           {/* ── Same inputs, run again: agent churn as against market churn ─ */}
           <Replication />
-
-          {/* ── Did the books we already published turn out right? (ADR-0090) ─
-              The instrument lived only on /method, two clicks from the claims it
-              grades. This is the summary at the point of the claim. */}
-          <TrackRecordPanel />
           </div>
 
           {/* ── Abstention roster ───────────────────────────────────────── */}

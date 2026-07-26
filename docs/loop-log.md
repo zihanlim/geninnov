@@ -20,6 +20,22 @@ does not authorise anything.
 
 ---
 
+### Loop iteration 108 (2026-07-27) — poked the macro regime inputs; all six reconcile against the thesis
+
+Site clean this firing (`/`, `/book`, `/risk`, `/method`, `/ask` at 1440/375 — 0 issues, 0 mojibake;
+the other session's home-ribbon fix `3fb269a7` deployed without regression). The mojibake scan flagged
+`loop-log.md`, but that is a **false positive** — lines 138/150/152 are my own iteration entries
+*quoting* the mojibake bug as examples (`Long âˆ' short â€" directional tilt`), typed deliberately to
+document it; "fixing" them would destroy the record.
+
+With nothing to fix, poked a number-set I had never cross-checked: the macro regime inputs, which drive
+direction and the whole thesis. All six reconcile against the live book on the 2026-07-25 fetch:
+**10y-2y +34 bps** (DGS10 4.71 − DGS2 4.37), **HY OAS 277 bps**, **DFF 3.63%**, **DGS2 4.37%** (SHY's
+carry rationale), **DFII10 2.43%** (GDX's real-yield rationale), and **^VIX 18.58 / ^VIX3M 20.54** →
+the **−1.96 contango** the thesis cites. (The FRED `VIXCLS` series is empty; the pipeline sources VIX
+from yfinance `^VIX`, stored in `macro_indicators` under that id — not a gap, just a different vendor.)
+The regime's inputs survive a poke; the thesis's macro anchor is not decorative.
+
 ### Loop iteration 107 (2026-07-27) — a real, visible /ask change: an active-context rail grounding the composer in the live book
 
 The user pointed out they could not see any `/ask` change — correctly: the iteration-103 centring

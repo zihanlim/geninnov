@@ -3,7 +3,8 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import RegimeHero from "@/components/RegimeHero";
-import { type ConvictionTheme } from "@/components/ConvictionCard";
+import ConvictionCard, { type ConvictionTheme } from "@/components/ConvictionCard";
+import Watchlist from "@/components/Watchlist";
 import ThemeDerivationDrawer from "@/components/ThemeDerivationDrawer";
 import ThemeHeatmap from "@/components/ThemeHeatmap";
 import TerminalPane from "@/components/home/TerminalPane";
@@ -479,35 +480,6 @@ function ConvictionPageInner() {
           <div className="shrink-0">
             <NewsRibbon />
           </div>
-          <div className="shrink-0">
-          <RegimeHero
-            cycle={regime?.cycle ?? "—"}
-            sentiment={regime?.sentiment ?? "—"}
-            headline={regimeHeadline(regime)}
-            narrative={regimeNarrative(regime)}
-            cycleSubtext={
-              typeof regime?.yield_curve_slope === "number"
-                ? `10y−2y ${formatSlopeBps(regime.yield_curve_slope)}${
-                    typeof regime?.real_rate === "number"
-                      ? ` · real rate ${regime.real_rate.toFixed(2)}%`
-                      : ""
-                  }`
-                : "Curve inputs unavailable this run"
-            }
-            volLabel={vol.label}
-            volSubtext={vol.sub}
-            factors={factors}
-            factorCoverage={factorCoverage}
-            factorUnavailableReason={
-              factorError
-                ? `portfolio_factor_exposure query failed: ${factorError}`
-                : factors.length === 0
-                  ? "No sized positions yet, so the book has no factor tilt to report."
-                  : undefined
-            }
-            runDate={regime?.run_date}
-          />
-          </div>
 
           {/* ── Screening: four aggregates, as a strip rather than a pane ────
               These are single figures, not a list — a pane would give them a
@@ -567,9 +539,9 @@ function ConvictionPageInner() {
               Only this region is locked. `lg:min-h-0` is what lets it shrink to
               the space the strips above leave; without it the grid keeps its
               content height and the panes never scroll. */}
-          <div className="lg:flex-1 lg:min-h-0 lg:grid lg:grid-cols-3 lg:grid-rows-[minmax(0,1.75fr)_minmax(0,1fr)] lg:gap-4">
+          <div className="lg:flex-1 lg:min-h-0 lg:grid lg:grid-cols-3 lg:grid-rows-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)] lg:gap-4">
 
-          <TerminalPane id="themes" title="Theme scores" bare className="lg:col-span-2">
+          <TerminalPane id="themes" title="Theme scores" bare className="lg:col-span-2 lg:row-span-2">
             {themeError ? (
               <QueryErrorState
                 what="Themes"
@@ -594,6 +566,76 @@ function ConvictionPageInner() {
                 provByTheme={provenance}
               />
             )}
+
+            {/* RESTORED (user directive, 2026-07-27: "dont drop information").
+                ADR-0103 deleted these two as duplicate renderings of the heatmap. The
+                score BARS were duplicates; these blocks also carried things the table
+                does not -- the rank-over-time sparkline, the derive affordance, and the
+                per-theme momentum ordering. Cutting the whole block to remove the
+                duplicated half was too blunt.
+
+                They live INSIDE the scores pane rather than back on the page, which is
+                what makes both things true at once: nothing is dropped, and the page is
+                still one viewport. The pane scrolls; the document does not. That is the
+                property ADR-0103 bought and the reason the content can come back without
+                the 4.7 screens coming back with it. */}
+          <div className="flex items-baseline justify-between mb-3.5">
+            <h2 className="text-[16px] font-semibold m-0">
+              Top {Math.min(3, top3.length)} themes by attention
+            </h2>
+            <span className="text-text-secondary text-[12px]">
+              Ranked by HypeScore · volume, sentiment, |ρ| and momentum
+            </span>
+          </div>
+          {top3.length === 0 ? (
+            <div className="card mb-8">
+              <EmptyState
+                title="No themes to rank"
+                cause="No theme carries a HypeScore for the latest run."
+                remedy="Run scripts/daily_refresh.py."
+                source="themes.hype_score"
+              />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+              {top3.map((t, i) => (
+                <ConvictionCard
+                  key={t.id}
+                  rank={i + 1}
+                  theme={t}
+                  hero={i === 0}
+                  onOpenDerivation={setDrawerTheme}
+                  edge={edges[t.id]}
+                  abstainThreshold={abstainThreshold}
+                  provenance={provenance[t.id]}
+                  topHeadline={topHeadlineByTheme[t.id] ?? null}
+                />
+              ))}
+            </div>
+          )}
+
+            <div className="mt-6">
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">Theme momentum</span>
+                <span className="num text-text-tertiary text-[11px]">
+                  HypeScore · Δ vs prior run
+                </span>
+              </div>
+              <div className="card-body pt-2">
+                {watchlistItems.length > 0 ? (
+                  <Watchlist items={watchlistItems} />
+                ) : (
+                  <EmptyState
+                    title="Nothing on the watchlist"
+                    cause="No themes are scored for the latest run."
+                    source="themes"
+                    compact
+                  />
+                )}
+              </div>
+            </div>
+            </div>
 
             {/* Both of these are statements ABOUT the scores in this pane — that a Δ
                 is blank rather than zero, or that the history could not be read — so
@@ -626,7 +668,6 @@ function ConvictionPageInner() {
             id="headlines"
             title="Headlines behind today's scores"
             bare
-            className="lg:row-span-2"
           >
             {/* embedded: the pane supplies the heading, the card and the scroll
                 box. Without it the feed rendered its own <h2> with the same
@@ -638,16 +679,57 @@ function ConvictionPageInner() {
             <PredictionMarkets />
           </TerminalPane>
 
+          {/* Out of the strip stack and into the grid: as a strip it claimed 191px
+              of an 814px shell for orientation, which the panes then did not have.
+              It is context, not chrome, so it competes for a cell like everything
+              else. */}
+          <TerminalPane id="regime" title="Macro regime" bare>
+          <RegimeHero
+            cycle={regime?.cycle ?? "—"}
+            sentiment={regime?.sentiment ?? "—"}
+            headline={regimeHeadline(regime)}
+            narrative={regimeNarrative(regime)}
+            cycleSubtext={
+              typeof regime?.yield_curve_slope === "number"
+                ? `10y−2y ${formatSlopeBps(regime.yield_curve_slope)}${
+                    typeof regime?.real_rate === "number"
+                      ? ` · real rate ${regime.real_rate.toFixed(2)}%`
+                      : ""
+                  }`
+                : "Curve inputs unavailable this run"
+            }
+            volLabel={vol.label}
+            volSubtext={vol.sub}
+            factors={factors}
+            factorCoverage={factorCoverage}
+            factorUnavailableReason={
+              factorError
+                ? `portfolio_factor_exposure query failed: ${factorError}`
+                : factors.length === 0
+                  ? "No sized positions yet, so the book has no factor tilt to report."
+                  : undefined
+            }
+            runDate={regime?.run_date}
+          />
+          </TerminalPane>
+
           <TerminalPane id="discovery" title="What the engine is discovering" bare>
             <DiscoveredThemes />
           </TerminalPane>
-          </div>
-
           {/* A panel on the home page, deliberately NOT a fifth destination: the top bar
               stays at four, per the standing non-goal. `runDate` is passed so the stream
               sits beside the book's actual age rather than implying the book is live
-              (ADR-0104). */}
-          <LiveNews runDate={runDate} />
+              (ADR-0104).
+
+              IN the grid, not after it. As a direct child of the locked shell it had
+              neither `shrink-0` nor a cell, so it claimed 207px of an 814px viewport and
+              starved the grid's `lg:flex-1` -- the pane row collapsed to 65px and every
+              pane with it. A locked shell has no spare space for an unplaced child, which
+              is the one rule ADR-0103 has to hold to. */}
+          <TerminalPane id="live" title="Live news" bare>
+            <LiveNews runDate={runDate} />
+          </TerminalPane>
+          </div>
         </>
       )}
 

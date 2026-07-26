@@ -50,19 +50,7 @@ export default function TopBar() {
   // `new Date()` at render time produces one value on the server and a
   // different one in the browser, which is a hydration mismatch — one of the
   // four React hydration errors thrown on every page of this app.
-  const [etNow, setEtNow] = useState<string | null>(null);
   const [live, setLive] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    setEtNow(
-      new Date().toLocaleString("en-CA", {
-        timeZone: "America/New_York",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      })
-    );
-  }, []);
 
   useEffect(() => {
     if (!lastUpdated) return;
@@ -104,14 +92,22 @@ export default function TopBar() {
         })}
       </nav>
 
-      <div className="flex items-center gap-3 text-text-secondary text-[12px] justify-self-end">
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-bg-elevated border border-border rounded-full text-[11px] whitespace-nowrap">
+      {/* Ribbon cluster: grouped cells divided by internal hairlines rather than
+          floated pills with gaps. That is the one structural idea worth taking
+          from the comps' top bar — a run-state group reads as one instrument
+          when its cells share a border, and as loose chrome when they don't. */}
+      <div className="flex items-stretch text-text-secondary text-[12px] justify-self-end border border-border rounded-md overflow-hidden bg-bg-elevated divide-x divide-border">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] whitespace-nowrap">
+          {/* Was bg-long — direction green spent on a freshness state, which is
+              goal 3's failure mode (ADR-0085). The words "live"/"stale" already
+              carry the meaning, so the dot only has to separate the three cases:
+              neutral ink for fresh, --warning for stale, tertiary for unknown. */}
           <span
             className={`w-1.5 h-1.5 rounded-full shrink-0 ${
               live === null
                 ? "bg-text-tertiary"
                 : live
-                  ? "bg-long"
+                  ? "bg-text-secondary"
                   : "bg-warning"
             }`}
           />
@@ -121,7 +117,13 @@ export default function TopBar() {
             {formatTime(lastUpdated)} ET
           </span>
         </span>
-        <span className="hidden md:inline text-text-tertiary num">{etNow ?? "—"}</span>
+        {/* Replaces a stamp of TODAY'S date, which told a reader nothing about a
+            product that publishes once a day. The cadence does. This is static
+            copy on purpose — no ticking element, because the pipeline is a
+            21:30 UTC weekday job and live-updating chrome would misrepresent it. */}
+        <span className="hidden md:inline-flex items-center px-2.5 py-1 text-[11px] text-text-tertiary whitespace-nowrap">
+          Next run <span className="num ml-1">21:30 UTC</span>
+        </span>
       </div>
     </header>
   );

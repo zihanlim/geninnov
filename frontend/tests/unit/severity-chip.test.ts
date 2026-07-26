@@ -19,11 +19,18 @@ const BANDS = ["severe", "high", "moderate", "low"] as const;
 describe("severityChipClass", () => {
   it("fills the two worst bands and only those", () => {
     // Solid token background + white text = readable from across the room.
-    expect(severityChipClass("severe")).toContain("bg-short");
-    expect(severityChipClass("severe")).not.toContain("bg-short-dim");
+    // `severe` was bg-short until ADR-0085 — direction crimson on a scale that
+    // has nothing to do with direction. It could not move to --warning, which
+    // `high` owns, so --warning-deep exists for this one band.
+    expect(severityChipClass("severe")).toContain("bg-warning-deep");
+    expect(severityChipClass("severe")).not.toContain("bg-short");
     expect(severityChipClass("severe")).toContain("text-white");
 
+    // Substring hazard: "bg-warning" is a prefix of "bg-warning-deep", so
+    // asserting `high` contains "bg-warning" would also pass for `severe`.
+    // Pin the exclusion too, or the two filled bands could silently converge.
     expect(severityChipClass("high")).toContain("bg-warning");
+    expect(severityChipClass("high")).not.toContain("bg-warning-deep");
     expect(severityChipClass("high")).not.toContain("bg-warning-dim");
     expect(severityChipClass("high")).toContain("text-white");
 

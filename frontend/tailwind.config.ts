@@ -65,6 +65,10 @@ const config: Config = {
         // but failed tinted on all three (3.96 / 4.18 / 4.35). See globals.css for
         // the derivation and tests/unit/chip-contrast.test.ts for the enforcement.
         warning: "#a83209",
+        // Top of the severity ramp only — see globals.css for the derivation.
+        // Kept in step with the :root value there; Tailwind compiles to literal
+        // RGB and never reads the variable, so these two must move together.
+        "warning-deep": "#7c2d12",
         // Keep the rgb() here in step with `warning` above — this is the same
         // colour at 12%, and a stale triplet silently splits the palette.
         "warning-dim": "rgba(168,50,9,0.12)",

@@ -372,19 +372,12 @@ describe("goal 3 — direction ink stays with direction", () => {
     },
   );
 
-  // The severity scale is NOT asserted yet, and that is a stated gap rather than
-  // an oversight. `severityChipClass("severe")` is `bg-short text-white` — the
-  // direction crimson, used for severity — and it fails this rule today.
-  //
-  // It cannot be fixed by pointing at another existing token. The escalation is
-  // solid-crimson `severe` → solid-orange `high` → orange tint → grey outline, so
-  // `severe` has to out-rank `high`, and `--warning` is already spent on `high`.
-  // The Ledger has no red that is not --short and no green that is not --long, so
-  // both this and methodTones' ok/bad need a NEW non-direction token, measured
-  // against all three surfaces. That is a palette addition with its own ADR, not
-  // a rename — see the ADR-0085 follow-up. Asserting it here before the token
-  // exists would only force someone to weaken the rule to get CI green.
-  it.each(["moderate", "low"] as const)(
+  // All four bands now. `severe` was `bg-short text-white` until --warning-deep
+  // was added for exactly this band — the ramp needed a level above solid
+  // --warning, which `high` owns. methodTones' ok/bad are still outstanding and
+  // are NOT asserted here; they need a positive non-direction tone, which is a
+  // separate decision from this one.
+  it.each(["severe", "high", "moderate", "low"] as const)(
     "severity band %s is not painted with direction ink",
     (band) => {
       const cls = severityChipClass(band);

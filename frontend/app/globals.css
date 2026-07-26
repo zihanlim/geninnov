@@ -59,6 +59,24 @@
        which the filled `severe`/`high` severity chips use.
        tests/unit/chip-contrast.test.ts enforces the floor from here on. */
     --warning: #a83209;      /* tertiary orange — attention / near-limit */
+    /* The top of the severity ramp, and the ONLY reason it exists.
+       `severe` used to be `bg-short` — direction crimson borrowed for severity
+       (ADR-0085). It could not simply move to --warning, because --warning is
+       already spent on `high` and the band above it has to out-rank it.
+       Deliberately an INTENSITY STEP in the attention hue rather than a new red:
+       ADR-0085 established that hue cannot reliably carry meaning at AA, so
+       answering a severity problem with another hue would contradict it. The
+       scale is now four monotonic fill levels —
+         severe   solid --warning-deep   (L 0.0621)
+         high     solid --warning        (L 0.1063)
+         moderate --warning tint
+         low      neutral outline
+       White on it measures 9.37:1, and it sits 1.39:1 from --warning, which is a
+       visible darkness step. Known and accepted: it is only 1.17:1 from --short,
+       so in pure greyscale a SEVERE chip and a SHORT pill are close — acceptable
+       because both carry a wordmark and the hue only reinforces (ADR-0085).
+       Not a general-purpose red. If you want emphasis, use --accent. */
+    --warning-deep: #7c2d12;
     /* Direction — ledger ink */
     /* #147a5c → #126e53 (2026-07-25), hue held at 162°. Same story as --accent
        and --warning: fine as plain text, but `badge-long` / `dir-pill-long` /

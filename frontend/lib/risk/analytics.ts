@@ -298,7 +298,10 @@ export function severityRank(severity: string): number {
 export function severityChipClass(severity: string): string {
   switch ((severity ?? "").toLowerCase()) {
     case "severe":
-      return "bg-short text-white font-semibold tracking-[0.04em]";
+      // Was `bg-short` — direction crimson, on a scale that has nothing to do
+      // with direction (ADR-0085). --warning-deep exists for this one band: the
+      // ramp needed a level ABOVE solid --warning, which `high` already owns.
+      return "bg-warning-deep text-white font-semibold tracking-[0.04em]";
     case "high":
       return "bg-warning text-white font-semibold tracking-[0.04em]";
     case "moderate":

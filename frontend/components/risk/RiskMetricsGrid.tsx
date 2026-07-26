@@ -6,6 +6,7 @@
 // render.
 
 "use client";
+import { markEstimated } from "@/lib/derivations/format";
 import { StatusBadge } from "@/components/status/StatusBadge";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
 import { UncertaintyBand } from "@/components/status/UncertaintyBand";
@@ -219,7 +220,11 @@ function RiskCard({
             present ? color : "text-text-tertiary"
           }`}
         >
-          {suppressed ? "—" : value}
+          {/* markEstimated keys off derivation.display_status, the field the
+              pipeline publishes, so the ≈ cannot disagree with the StatusBadge
+              three pixels above it. `suppressed` wins: a withheld figure is a
+              dash, and a dash is not an estimate of anything. */}
+          {suppressed ? "—" : markEstimated(value, derivation.display_status)}
         </div>
         {present && delta && (
           <DeltaChip

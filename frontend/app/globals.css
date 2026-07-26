@@ -260,6 +260,28 @@
   .dir-pill-long { @apply text-long bg-long-dim; }
   .dir-pill-short { @apply text-short bg-short-dim; }
 
+  /* A direction we did NOT take.
+     `dir-pill-long` on /book means "the book holds this long". ClearedNotTaken
+     rendered the identical hue and the identical wordmark on candidates the book
+     explicitly DECLINED, so one encoding carried two opposite claims — the same
+     trap that makes a competitor's feed render a whale DUMPING a long as an
+     emerald LONG chip.
+     Hue still carries the side, because the list is sorted by it and a reader
+     scans for the short column. What changes is the FILL: held is solid, not-held
+     is an outline. Redundant encoding done the right way round — the wordmark
+     stays, so nothing here depends on colour (ADR-0085), and the fill answers the
+     question the hue cannot.
+     Ink is unchanged from what these cells already rendered, so this opens no new
+     contrast question; the border is the only addition.
+
+     No background is declared at all, deliberately: `bg-transparent` is not a
+     palette colour, so chip-contrast.test.ts cannot composite it and rightly
+     refuses to measure the chip. Inheriting the surface is also the true
+     semantic — the pill sits on the page, a card and a hovered row, and the
+     test measures the ink against all three. */
+  .dir-pill-cand-long  { @apply text-long  border border-long/45; }
+  .dir-pill-cand-short { @apply text-short border border-short/45; }
+
   .filter-btn {
     @apply px-3 py-[5px] rounded-md border border-border bg-bg-elevated text-text-secondary
            text-[12px] font-medium transition-colors hover:text-text-primary hover:bg-bg-hover;

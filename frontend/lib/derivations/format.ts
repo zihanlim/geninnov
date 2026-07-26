@@ -1,7 +1,7 @@
 // frontend/lib/derivations/format.ts
 // Pure formatting helpers. No React, no DOM.
 
-import type { NumericDerivation, NumericUnit } from "./numeric";
+import type { NumericDerivation, NumericStatus, NumericUnit } from "./numeric";
 
 export function formatFreshnessAge(observed_age_seconds: number): string {
   if (observed_age_seconds < 3600) return `${Math.round(observed_age_seconds / 60)}m`;
@@ -11,6 +11,39 @@ export function formatFreshnessAge(observed_age_seconds: number): string {
 
 export function formatBand(low: number, high: number): string {
   return `${low.toFixed(3)}…${high.toFixed(3)}`;
+}
+
+/** U+2248 ALMOST EQUAL TO, as an escape rather than a literal.
+ *
+ *  This environment has twice double-encoded UTF-8 on save (commits 0dbcabcc
+ *  and 25fc0105 repaired em-dashes and minus signs across /book). A glyph that
+ *  prefixes figures is a bad place to rediscover that; an escape cannot rot. */
+const APPROX = "\u2248";
+
+/**
+ * A rendered figure, prefixed with `≈` when the pipeline marked it estimated.
+ *
+ * WHY THIS IS A FUNCTION AND NOT AN INLINE TERNARY. It lives in lib/ for the
+ * same reason statusChips, methodTones and riskChips do: tests run in a `node`
+ * environment with no jsdom and no testing-library, so anything expressed only
+ * inside a component's JSX cannot be asserted on. Extracting the rule makes it
+ * checkable, and it is worth checking — nothing in the live book currently
+ * carries `estimated` status (the /risk tiles read 2 Exact, 4 Unavailable), so
+ * this branch has no on-screen exercise to catch a regression.
+ *
+ * The marker goes ON the value because a reader scanning a column reads the
+ * numbers, not the chips beside them. StatusBadge still names the status in
+ * words; this only makes the distinction survive a scan.
+ */
+export function markEstimated(rendered: string, status: NumericStatus): string {
+  // Only `estimated` is marked. `stale` is a freshness claim, not a precision
+  // one, and `unverified` is about provenance — neither means "approximately".
+  if (status !== "estimated") return rendered;
+  // Idempotent. A formatter that double-marks when applied twice is a latent
+  // bug waiting for the first caller that pre-formats, and "≈≈5" reads as
+  // damage rather than as an estimate.
+  if (rendered.startsWith(APPROX)) return rendered;
+  return `${APPROX}${rendered}`;
 }
 
 export function formatNumericValue(d: NumericDerivation): string {

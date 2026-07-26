@@ -201,6 +201,13 @@ describe("chip contrast", () => {
       "badge-tier-discovered",
       "dir-pill-long",
       "dir-pill-short",
+      // The not-held variants. Pinned because their whole job is to be
+      // DIFFERENT from the two above: a filled pill means the book holds this
+      // side, a hollow one means it considered and declined. Delete these and
+      // ClearedNotTaken silently falls back to rendering candidates in the
+      // held-position treatment, which is the collision they were added to fix.
+      "dir-pill-cand-long",
+      "dir-pill-cand-short",
     ]) {
       expect(
         found,
@@ -520,5 +527,58 @@ describe("goal 3 — direction ink stays with direction", () => {
         `.${name} must keep its direction ink — it is the one place the hue is correct`,
       ).toMatch(DIRECTION_INK);
     }
+  });
+
+  it("separates a held direction from one we passed over, by FILL not hue", () => {
+    // The distinction ClearedNotTaken depends on. Hue must stay on both — the
+    // table sorts shorts first and a reader scans that column by colour — so the
+    // thing that has to differ is the fill: `dir-pill-long` is solid because the
+    // book holds it, `dir-pill-cand-long` is an outline because the book declined
+    // it. Collapse the two and one encoding carries two opposite claims.
+    const found = Object.fromEntries(cssChipVariants());
+
+    for (const side of ["long", "short"]) {
+      const held = found[`dir-pill-${side}`];
+      const cand = found[`dir-pill-cand-${side}`];
+
+      expect(cand, `.dir-pill-cand-${side} is not defined`).toBeDefined();
+      expect(
+        cand,
+        `.dir-pill-cand-${side} must keep direction ink — the hue still says which side the idea was on`,
+      ).toMatch(DIRECTION_INK);
+
+      expect(
+        held,
+        `.dir-pill-${side} must stay FILLED — a solid pill is what "the book holds this" looks like`,
+      ).toMatch(new RegExp(`bg-${side}-dim`));
+      expect(
+        cand,
+        `.dir-pill-cand-${side} must NOT carry a -dim fill — a filled pill is reserved for positions actually held`,
+      ).not.toMatch(/bg-\w+-dim/);
+      expect(
+        cand,
+        `.dir-pill-cand-${side} must carry a border — with no fill, the outline is the only thing giving it a box`,
+      ).toMatch(/border/);
+    }
+  });
+
+  it("ClearedNotTaken renders the candidate pill, never the held one", () => {
+    // The rule above is about the classes; this is about the one component that
+    // has to choose correctly between them. It rendered
+    // `style={{color: var(--long)}}` inline until 2026-07-26 — a THIRD spelling of
+    // direction ink that neither the `badge badge-long` sweep nor the utility-class
+    // sweep can see, on rows the book explicitly did not take.
+    const src = readFileSync(
+      path.resolve(__dirname, "../../components/book/ClearedNotTaken.tsx"),
+      "utf8",
+    );
+    expect(
+      src,
+      "ClearedNotTaken must use the hollow candidate pill for the Side column",
+    ).toMatch(/dir-pill-cand-(long|short)/);
+    expect(
+      src,
+      'ClearedNotTaken must not colour a declined candidate with inline var(--long)/var(--short) — that is the held-position ink, and it is invisible to the class sweeps',
+    ).not.toMatch(/direction === "short" \? "var\(--short\)" : "var\(--long\)"/);
   });
 });

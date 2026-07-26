@@ -231,14 +231,21 @@ export default function ClearedNotTaken({
                   className="border-b border-border last:border-b-0"
                 >
                   <td className="px-[18px] py-[7px] num font-medium">{c.asset}</td>
-                  <td
-                    className="px-3 py-[7px]"
-                    style={{
-                      color:
-                        c.direction === "short" ? "var(--short)" : "var(--long)",
-                    }}
-                  >
-                    {c.direction === "short" ? "Short" : "Long"}
+                  {/* Hollow, not filled — these are sides the book DECLINED, and a
+                      solid dir-pill on /book means "we hold this". Same hue so the
+                      column still scans (the table sorts shorts first for exactly
+                      that reason), same wordmark so nothing rests on colour, but
+                      the fill now separates held from passed-over. */}
+                  <td className="px-3 py-[7px]">
+                    <span
+                      className={`dir-pill ${
+                        c.direction === "short"
+                          ? "dir-pill-cand-short"
+                          : "dir-pill-cand-long"
+                      }`}
+                    >
+                      {c.direction === "short" ? "Short" : "Long"}
+                    </span>
                   </td>
                   <td className="px-3 py-[7px] num text-right text-text-secondary">
                     {c.edge_score === null

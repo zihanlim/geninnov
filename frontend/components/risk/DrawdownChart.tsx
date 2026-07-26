@@ -88,7 +88,15 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
   );
 }
 
-function Chart({ series }: { series: DrawdownSeries }) {
+function Chart({
+  series,
+  benchmark = [],
+}: {
+  series: DrawdownSeries;
+  /** Already filtered to rows with a usable cumulative_return. Drawn only when
+   *  it clears BENCHMARK_MIN_OBS — the caller decides, the chart just draws. */
+  benchmark?: (BenchmarkRow & { cumulative_return: number })[];
+}) {
   const pts = series.points;
   const n = pts.length;
   const hasDaily = pts.some((p) => p.daily !== null);
@@ -122,6 +130,23 @@ function Chart({ series }: { series: DrawdownSeries }) {
     n > 1
       ? `${ddLine} L${xAt(n - 1, n).toFixed(2)},${ddScale.y(0).toFixed(2)} L${xAt(0, n).toFixed(2)},${ddScale.y(0).toFixed(2)} Z`
       : "";
+
+  // The reference curve, plotted on the SAME scale as the book's so the two are
+  // actually comparable, and in the SAME ink. ADR-0085: --long sits 1.03:1 from
+  // --accent and two AA-clearing inks are at most ~3.3:1 apart, so a second hue
+  // would be indistinguishable desaturated and would also spend a semantic the
+  // palette reserves for direction. The dash carries identity instead.
+  const drawBenchmark = benchmark.length >= BENCHMARK_MIN_OBS;
+  const bmLine = drawBenchmark
+    ? benchmark
+        .map(
+          (b, i) =>
+            `${i === 0 ? "M" : "L"}${xAt(i, benchmark.length).toFixed(2)},${cumScale
+              .y(b.cumulative_return)
+              .toFixed(2)}`,
+        )
+        .join(" ")
+    : "";
 
   const last = pts[n - 1];
   const cumColor = last.cum >= 0 ? "var(--long)" : "var(--short)";
@@ -190,6 +215,32 @@ function Chart({ series }: { series: DrawdownSeries }) {
         </text>
         {cumArea && <path d={cumArea} fill={cumColor} fillOpacity={0.14} />}
         <path d={cumLine} fill="none" stroke={cumColor} strokeWidth={1.75} />
+        {/* Benchmark: dashed, same ink, no fill. Identity goes in a pinned
+            end-label rather than a legend — a legend forces a colour lookup,
+            and colour is exactly what is NOT distinguishing these two lines. */}
+        {drawBenchmark && (
+          <>
+            <path
+              d={bmLine}
+              fill="none"
+              stroke={cumColor}
+              strokeWidth={1.25}
+              strokeDasharray="4 3"
+              strokeOpacity={0.75}
+            />
+            <text
+              x={(xAt(benchmark.length - 1, benchmark.length) + 4).toFixed(2)}
+              y={(
+                cumScale.y(benchmark[benchmark.length - 1].cumulative_return) + 3
+              ).toFixed(2)}
+              className="num"
+              fontSize={9}
+              fill="var(--text-tertiary)"
+            >
+              {benchmark[0]?.ticker ?? "^SPX"}
+            </text>
+          </>
+        )}
         {n === 1 && <circle cx={xAt(0, 1)} cy={cumScale.y(pts[0].cum)} r={3} fill={cumColor} />}
 
         {/* ── Panel 2: drawdown from peak ───────────────────────────────── */}
@@ -319,11 +370,33 @@ export interface InceptionRow {
   compounded: boolean;
 }
 
+/** A row of `benchmark_returns` (migration 045, ADR-0094). */
+export interface BenchmarkRow {
+  run_date: string;
+  ticker: string;
+  /** NULL on the first observation — no prior close to difference against. */
+  daily_return: number | null;
+  /** Compounded from the BOOK's inception, so both curves share an origin. */
+  cumulative_return: number | null;
+  inception_date: string | null;
+}
+
+/**
+ * Usable observations before a benchmark comparison is drawn at all.
+ *
+ * 60 to match the bar `/risk` already applies to Sharpe and Beta — a page that
+ * refuses to publish a Sharpe from 3 sessions cannot coherently draw a
+ * head-to-head curve from the same 3. Below it the chart states the count
+ * instead, which is ADR-0058 applied to a comparison rather than to a cell.
+ */
+export const BENCHMARK_MIN_OBS = 60;
+
 export function DrawdownChart({
   loading,
   rows,
   failure,
   inception = null,
+  benchmark = [],
 }: {
   loading: boolean;
   rows: ReturnRow[];
@@ -332,8 +405,21 @@ export function DrawdownChart({
    *  the authoritative number is read from the table rather than only re-derived
    *  here — and so the two can be reconciled in the open. */
   inception?: InceptionRow | null;
+  /** Optional reference series (ADR-0094). Empty before migration 045 has run,
+   *  which walks into the same gate as "too few points" and needs no branch. */
+  benchmark?: BenchmarkRow[];
 }) {
   const series = rows.length > 0 ? buildDrawdownSeries(rows) : null;
+
+  // A row with a null cumulative_return is the series' first observation, which
+  // has no prior close to difference against. It is a real row and not a usable
+  // POINT, so it is filtered here rather than coerced to 0 — plotting it as flat
+  // would invent a day the benchmark did not have (ADR-0066).
+  const usableBenchmark = benchmark.filter(
+    (b): b is BenchmarkRow & { cumulative_return: number } =>
+      b.cumulative_return !== null && Number.isFinite(b.cumulative_return),
+  );
+  const benchmarkTicker = benchmark[0]?.ticker ?? "^SPX";
 
   const methodLabel =
     series?.method === "cumulative_return_column"
@@ -475,7 +561,26 @@ export function DrawdownChart({
             </p>
           )}
 
-          <Chart series={series} />
+          <Chart series={series} benchmark={usableBenchmark} />
+
+          {/* The comparison states itself when it is withheld. "Versus what?" is
+              the reader's next question and silence answers it wrongly — they
+              would conclude no reference exists rather than that one exists and
+              is too short to mean anything. */}
+          {usableBenchmark.length < BENCHMARK_MIN_OBS && (
+            <p className="m-0 mt-2 text-[11px] text-text-tertiary leading-[1.6] max-w-[95ch]">
+              No benchmark drawn. {benchmarkTicker} is persisted in{" "}
+              <Ident>benchmark_returns.cumulative_return</Ident>, compounded from
+              the book&apos;s own inception, but only{" "}
+              <strong>{usableBenchmark.length}</strong>{" "}
+              {usableBenchmark.length === 1
+                ? "usable observation exists"
+                : "usable observations exist"}{" "}
+              against the{" "}
+              {BENCHMARK_MIN_OBS} this page already requires of a Sharpe. Two
+              curves this short would compare noise to noise.
+            </p>
+          )}
 
           <p className="m-0 mt-3 pt-3 border-t border-border text-[11px] text-text-tertiary leading-[1.6] max-w-[95ch]">
             Cumulative series taken from <Ident>{methodLabel}</Ident>. Drawdown is

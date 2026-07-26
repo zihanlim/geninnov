@@ -120,6 +120,7 @@ flowchart TB
         T_DISC["discovered_themes<br/>(LDA∩embedding shadow tiers)"]
         T_PIPE["pipeline_runs<br/>(run_id, stage, status,<br/>duration_s, source_freshness)"]
         T_CUM["portfolio_cumulative_return<br/>(as_of, inception_date,<br/>compounded value)"]
+        T_BENCH["benchmark_returns — m045<br/>(run_date, ticker, daily_return,<br/>cumulative_return)<br/><i>^SPX differenced from levels ALREADY<br/>in macro_daily_history — no new feed;<br/>compounded from BOOK inception (ADR-0094)</i>"]
         T_BT["backtest_results<br/>(hype_ic, edge_ic,<br/>book_replication, l5_eval_battery)"]
         T_OUT["pick_outcomes — m043<br/>(run_date, asset, direction,<br/>horizon_days, verdict,<br/>signed_return, void_reason)<br/><i>FORWARD record: pending at<br/>publication, resolved at +21td<br/>(ADR-0090)</i>"]
         T_CHAT["chat_usage — m039<br/><i>SEALED: RLS with no policies.<br/>Reachable only via chat_rate_limit(),<br/>SECURITY DEFINER, service_role only —<br/>anon EXECUTE would let a stranger<br/>DoS the daily LLM budget</i>"]
@@ -234,6 +235,8 @@ flowchart TB
     POLYSVC --> DB
     PIPE -. "record_pipeline_run" .-> T_PIPE
     PF -->|portfolio_cumulative_return<br/>(since inception, compounded)| T_CUM
+    PF -->|benchmark_returns<br/>(gated at 60 obs before it is drawn)| T_BENCH
+    T_MACRO -. "^SPX levels" .-> T_BENCH
     EX -. "exposure aggregation" .-> TG
 
     %% ───────── Derivations module edges ─────────
@@ -312,7 +315,7 @@ flowchart TB
     classDef ver fill:#fee2e2,stroke:#b91c1c,stroke-width:2px,color:#000
     class N3,N6 llm
     class EVALB,EVALR,REPLT,BTH,RESO ver
-    class DB,T_THEMES,T_TA,T_TS,T_TSH,T_TC,T_PP,T_PR,T_PRISK,T_SC,T_MACRO,T_FE,T_REG,T_RUNS,T_RECS,T_NEWS,T_DISC,T_PIPE,T_CUM,T_BT,T_OUT,V_PFE db
+    class DB,T_THEMES,T_TA,T_TS,T_TSH,T_TC,T_PP,T_PR,T_PRISK,T_SC,T_MACRO,T_FE,T_REG,T_RUNS,T_RECS,T_NEWS,T_DISC,T_PIPE,T_CUM,T_BENCH,T_BT,T_OUT,V_PFE db
     class CRON,FRED,YF,BRAVE,REDDIT,KEN,POLY ext,EXTAGENT
     class L6,L7,PG_HOME,PG_BOOK,PG_RISK,PG_METH,PG_TR,PG_PF,PG_RS,REGIME,CONV,WATCH,TBL,ALLOC,FEAT,DERV,CITE,LENS,FEED,SUPC,STATUS,STATBAD,FRESH,UNC,CUM,DPL,EXS,THB,FELIB,FENUM,FEADV,FEFMT,FASSETMETA fe
     class DRV,DNV,DAV,RR,PF,EX,PIPE,HC,TG,POLYSVC drv
@@ -434,6 +437,7 @@ L7: frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs}.tsx
 | `portfolio_factor_exposure` | **VIEW** (migration 022) — book-level FF5+UMD tilt, one row per portfolio `run_date` | run_date, beta_mkt…beta_umd (signed-weighted so shorts reduce exposure), `coverage` (share of gross weight with R²≥0.10), assets_covered, assets_total. Queried by `/` and `/portfolio`, which previously 404'd against a table that never existed |
 | `pipeline_runs` | Per-stage pipeline execution audit (T10, migration 012). **RLS was off until migration 040** — with the anon key public by design, that made this audit log anon-WRITABLE, so a stranger could have recorded a green run that never happened. Now RLS on + `Public read` (SELECT only); the pipeline writes with the service key, which bypasses RLS | run_id, run_date, stage, status (`success`/`failure`/`partial`), duration_s, source_freshness JSONB, started_at, finished_at, error |
 | `portfolio_cumulative_return` | Since-inception compounded cumulative return, one row per as_of date (T14, migration 014). **RLS was off until migration 040** — anon could have rewritten the since-inception performance number `/risk` renders. Now RLS on + `Public read` (SELECT only) | as_of (PK), inception_date, cumulative_value, compounded (always TRUE), daily_returns_count, source_first_run_id, source_last_run_id, computed_at |
+| `benchmark_returns` | Reference series the book is measured against — `^SPX` differenced from levels already in `macro_daily_history` (no new feed), compounded from the BOOK's inception so both curves share an origin (migration 045, ADR-0094). The overlay is gated at 60 usable observations and states the count below it | run_date, ticker, close_level, daily_return, cumulative_return (NULL on the first obs, never 0), inception_date, observations |
 | `chat_usage` | Per-IP-hash daily request counter for the L8 /ask agent (migration 039, [ADR-0087](docs/adrs/0087-a-chat-that-cannot-do-arithmetic.md)). **Sealed**: RLS is enabled with *no policies*, so anon and authenticated cannot read or write it at all; the only door is `chat_rate_limit(ip_hash, per_ip_cap, global_cap)`, a `SECURITY DEFINER` function granted to `service_role` alone. Granting anon EXECUTE would hand every visitor the ability to burn the global daily budget with curl — a denial of service built out of the spend guard itself | ip_hash (salted SHA-256, never the address), usage_date (UTC), requests (ATTEMPTS, so a blocked caller stays blocked) |
 | `theme_assets.asset_class` | L5 lens filter | ticker, asset_class (rates/credit/equity/fx/commodity) — added in migration 009 |
 

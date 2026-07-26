@@ -1417,6 +1417,127 @@ def reconcile_positions_to_published_book(
     return final
 
 
+# ─── Step 12b: Persist the benchmark series (ADR-0094, migration 045) ───────
+#: The reference the book is measured against. `^SPX` because that is the series
+#: `macro_daily_history` already stores as a daily level — this adds no feed.
+BENCHMARK_TICKER = "^SPX"
+
+
+def persist_benchmark_returns(run_date: date) -> int:
+    """Upsert one `benchmark_returns` row per trading day, from stored levels.
+
+    Derives daily returns by differencing the `^SPX` levels already in
+    `macro_daily_history` and compounds them from the BOOK's inception, so the
+    reference curve and the book's curve share an origin. A benchmark measured
+    over a different window is not a comparison (ADR-0094).
+
+    Deliberately does NOT use `_load_spx_returns`: that path fetches `^GSPC`
+    from yfinance at runtime for the beta regression, and a persisted series
+    should not be hostage to whether one night's network call succeeded.
+
+    Returns the number of rows written. Best-effort — a failure here must not
+    fail the run, because this feeds a display comparison and nothing upstream.
+    """
+    today_str = run_date.isoformat()
+
+    # The book's inception. Without it there is no window to compound over, and
+    # compounding from the SERIES' start would measure a period the book never
+    # traded — so we write nothing rather than write the wrong window.
+    try:
+        cum_rows = (
+            supabase.table("portfolio_cumulative_return")
+            .select("inception_date")
+            .order("as_of", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+    except Exception as exc:
+        print(f"[{today_str}] persist_benchmark_returns: cumulative read failed "
+              f"({exc.__class__.__name__}); skipping.")
+        return 0
+
+    if not cum_rows or not cum_rows[0].get("inception_date"):
+        print(f"[{today_str}] persist_benchmark_returns: no book inception yet; skipping.")
+        return 0
+
+    inception = str(cum_rows[0]["inception_date"])
+
+    try:
+        levels = (
+            supabase.table("macro_daily_history")
+            .select("trading_date, value")
+            .eq("series_id", BENCHMARK_TICKER)
+            .gte("trading_date", inception)
+            .order("trading_date")
+            .execute()
+            .data
+        )
+    except Exception as exc:
+        print(f"[{today_str}] persist_benchmark_returns: level read failed "
+              f"({exc.__class__.__name__}); skipping.")
+        return 0
+
+    # Drop nulls rather than treating a missing level as a flat day: a gap is not
+    # a zero return, and compounding a fabricated 0 through the series would bias
+    # the whole curve toward the book (ADR-0066).
+    clean = [
+        (str(r["trading_date"]), float(r["value"]))
+        for r in levels
+        if r.get("value") is not None
+    ]
+    if len(clean) < 2:
+        print(f"[{today_str}] persist_benchmark_returns: {len(clean)} usable "
+              f"{BENCHMARK_TICKER} level(s) since {inception}; need 2 to difference. Skipping.")
+        return 0
+
+    rows = []
+    growth = 1.0
+    for i, (d, close) in enumerate(clean):
+        if i == 0:
+            # First observation has no prior close. NULL, never 0 — "no return
+            # yet" and "a flat day" are different claims (ADR-0066).
+            rows.append({
+                "run_date": d,
+                "ticker": BENCHMARK_TICKER,
+                "close_level": close,
+                "daily_return": None,
+                "cumulative_return": None,
+                "inception_date": inception,
+                "observations": 0,
+            })
+            continue
+        prev = clean[i - 1][1]
+        if prev == 0:
+            continue
+        daily = close / prev - 1.0
+        growth *= 1.0 + daily
+        rows.append({
+            "run_date": d,
+            "ticker": BENCHMARK_TICKER,
+            "close_level": close,
+            "daily_return": daily,
+            "cumulative_return": growth - 1.0,
+            "inception_date": inception,
+            "observations": i,
+        })
+
+    try:
+        supabase.table("benchmark_returns").upsert(
+            rows, on_conflict="run_date,ticker"
+        ).execute()
+    except Exception as exc:
+        print(f"[{today_str}] persist_benchmark_returns: write failed "
+              f"({exc.__class__.__name__}); continuing.")
+        return 0
+
+    print(
+        f"[{today_str}] {len(rows)} {BENCHMARK_TICKER} benchmark row(s) persisted "
+        f"({clean[0][0]} → {clean[-1][0]}, {growth - 1.0:+.4%} since inception {inception})."
+    )
+    return len(rows)
+
+
 # ─── Step 12 (Phase 3): Compute + persist cumulative return ─────────────────
 def compute_and_persist_cumulative_return(run_date: date) -> None:
     """Upsert a single `portfolio_cumulative_return` row for `as_of=run_date`.
@@ -1720,6 +1841,9 @@ def main():
         compute_and_persist_daily_return(positioned, run_date, cfg.total_capital)
         risk_metrics = compute_and_persist_risk(positioned, run_date, cfg)
         compute_and_persist_cumulative_return(run_date)
+        # After the cumulative row, which is where the book's inception comes
+        # from — the benchmark compounds over the book's window, not its own.
+        persist_benchmark_returns(run_date)
     except Exception as exc:
         try:
             record_pipeline_run(
@@ -1781,6 +1905,7 @@ def main():
             compute_and_persist_daily_return(final_book, run_date, cfg.total_capital)
             compute_and_persist_risk(final_book, run_date, cfg)
             compute_and_persist_cumulative_return(run_date)
+            persist_benchmark_returns(run_date)
         try:
             record_pipeline_run(supabase, l5_id, "success", run_date=run_date, stage="L5", duration_s=(datetime.now(timezone.utc)-l5_started).total_seconds())
         except Exception as exc:

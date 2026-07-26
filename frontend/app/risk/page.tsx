@@ -19,7 +19,11 @@ import { CorrelationMatrix } from "@/components/risk/CorrelationMatrix";
 import { CapUtilisation } from "@/components/risk/CapUtilisation";
 import { BookFactorTilt } from "@/components/risk/BookFactorTilt";
 import { RiskMetricsGrid } from "@/components/risk/RiskMetricsGrid";
-import { DrawdownChart, type InceptionRow } from "@/components/risk/DrawdownChart";
+import {
+  DrawdownChart,
+  type BenchmarkRow,
+  type InceptionRow,
+} from "@/components/risk/DrawdownChart";
 import { SourceCaveat } from "@/components/status/SourceCaveat";
 import { DailyPLHistory } from "@/components/portfolio/DailyPLHistory";
 import { RiskLimitBoard } from "@/components/risk/RiskLimitBoard";
@@ -126,6 +130,8 @@ interface PageData {
   returnsFailure: QueryFailure | null;
   /** Latest persisted since-inception row (portfolio_cumulative_return). */
   inception: InceptionRow | null;
+  /** Reference series for the realised curve (ADR-0094). */
+  benchmark: BenchmarkRow[];
   // ── Actionable-risk inputs ──────────────────────────────────────────────
   positions: PositionRow[];
   positionsFailure: string | null;
@@ -152,6 +158,7 @@ const INITIAL: PageData = {
   returns: [],
   returnsFailure: null,
   inception: null,
+  benchmark: [],
   positions: [],
   positionsFailure: null,
   factors: [],
@@ -193,6 +200,7 @@ function RiskPageInner() {
         configRes,
         themesRes,
         inceptionRes,
+        benchmarkRes,
       ] = await Promise.all([
         supabase
           .from("research_recommendations")
@@ -235,6 +243,15 @@ function RiskPageInner() {
           .select("as_of, inception_date, cumulative_value, daily_returns_count, compounded")
           .order("as_of", { ascending: false })
           .limit(1),
+        // The reference series (ADR-0094, migration 045). Read alongside the
+        // book's own returns so the chart can decide whether a comparison is
+        // meaningful yet; at fewer than BENCHMARK_MIN_OBS usable points it
+        // states the count instead of drawing two noise curves on one axis.
+        supabase
+          .from("benchmark_returns")
+          .select("run_date, ticker, daily_return, cumulative_return, inception_date")
+          .order("run_date")
+          .limit(2000),
       ]);
 
       // portfolio_risk.run_date only exists from migration 016. If ordering by it
@@ -318,6 +335,10 @@ function RiskPageInner() {
         returns: (returnsRes.data as ReturnRow[] | null) ?? [],
         inception:
           ((inceptionRes.data as InceptionRow[] | null) ?? [])[0] ?? null,
+        // Missing table (pre-043) is not an error worth surfacing: the chart's
+        // gate already explains an absent comparison, and an empty array walks
+        // straight into it.
+        benchmark: (benchmarkRes.data as BenchmarkRow[] | null) ?? [],
         returnsFailure: toFailure(
           "portfolio_returns",
           RETURN_COLUMNS,
@@ -765,6 +786,7 @@ function RiskPageInner() {
           rows={data.returns}
           failure={data.returnsFailure}
           inception={data.inception}
+          benchmark={data.benchmark}
         />
         <DailyPLHistory limit={30} />
       </div>

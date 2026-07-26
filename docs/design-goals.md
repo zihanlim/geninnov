@@ -146,7 +146,15 @@ Stated so nobody re-litigates them by accident:
   reverse.
 - **The Bloomberg terminal look.** See ADR-0009. The differentiator is the
   visible rigor of the derivation, not visual fidelity to a terminal.
-- **A sidebar icon rail.** Four top-bar *destinations*. A destination may have
+- **An *unlabelled* sidebar glyph rail.** A rail is permitted when it is
+  **labelled** and does not cost the layout: collapsed 56px is the default and
+  preserves the two-pane position tables; expanded 200px is a reader's explicit
+  choice that suppresses them (two panes need 1,304px of content, so a rail
+  costs viewport one-for-one — see
+  [ADR-0086](adrs/0086-a-labelled-rail-that-collapses-rather-than-a-glyph-rail.md)).
+  Unlabelled glyph rails stay refused: they trade clarity for the appearance of
+  scale, which is what this non-goal was always about. Four top-bar
+  *destinations*. A destination may have
   section sub-routes, and they never appear in the bar — `/method` is two
   chapters (`/method` and `/method/evidence`) behind one header item, and the
   repo has always served `/trades`, `/portfolio` and `/research` as redirects

@@ -204,6 +204,25 @@ Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the f
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 100 (2026-07-26) — the core Q1 numbers survive a poke on the live restructured UI
+
+No new code from the other session (their latest, `829e6fbc`, predates my last commit; only a stray
+capture untracked). Pass held: `/`, `/book`, `/risk`, `/method` at 1440/1425/1366/375 — **0/16 issues**.
+
+Confirmed the live `/book` is current with HEAD — it carries **both** my `SectionNav` wide-gutter fix
+(the "Holdings · How solid · Not taken · Audit" sub-nav) **and** `829e6fbc` (the not-taken panel now
+collapses behind a finding, "most independent: BIL long at ρ 0.16"). The page is the strongest the
+Q1 deliverable has looked: the **four questions above the fold** — *What changed* (4 in · 3 out · 6
+held), *What you're asked to put on* (59.3% gross), *What kills you* (−2.0% melt-up), *What's binding*
+(1 at limit, US geo) — each **citing its own Supabase source**.
+
+Then the poke that matters: cross-checked the live book against `research_recommendations.picks`.
+**All 10 position weights match to the decimal** (SHY 9.3, XLE 6.1, SVXY 3.9, NUE 4.5, UNH 3.2 long;
+GDX 6.4, BABA 8.7, NOC 4.7, ARKK 3.3, PDD 9.3 short), and the recomputed **gross 59.3% / net −5.4%**
+equal the displayed figures exactly. With iteration 99's theme HypeScores, the core Q1 numbers —
+weights, gross, net, theme scores — all trace to persisted data on the live restructured UI. Nothing
+to fix; the deliverable is clean and number-verified.
+
 ### Loop iteration 99 (2026-07-26) — clean sweep held; poked the restructured UI's numbers, not just its scroll
 
 No new work from the other session (quiet tree). Re-ran the pass: `/`, `/book`, `/risk`, `/method`

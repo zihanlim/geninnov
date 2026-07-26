@@ -15,6 +15,20 @@ export interface HeatmapTheme {
   corr_score?: number;
   momentum_score?: number;
   delta_1d?: number;
+  /**
+   * Trailing 7-day average daily mentions — the ABSOLUTE volume beneath the VOL
+   * rank. Optional: a caller with no attention history omits it and the row simply
+   * does not render the line.
+   */
+  mention_count_7d_avg?: number | null;
+  /**
+   * HypeScore percentile within this theme's OWN history: "high" = crowded,
+   * "low" = fading. Undefined under five observations by construction — the row
+   * renders nothing rather than guessing a band (design goal 2).
+   */
+  crowding?: string;
+  /** The raw percentile behind `crowding`, for the tooltip. */
+  crowding_pct?: number;
 }
 
 interface Props<T extends HeatmapTheme> {
@@ -171,6 +185,56 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({
                     <ProvenanceDot source={provByTheme?.[t.id]?.data_source ?? null} size={7} />
                     <span className="truncate">{t.name}</span>
                   </span>
+                  {/* Attention VOLUME and CROWDING, recovered from the ConvictionCard grid
+                      that ADR-0103 deleted from `/`. The cards' score bars genuinely
+                      duplicated this table, but these two did not: neither has a column
+                      here, and neither is derivable from one. They ride under the name
+                      rather than as new columns because the table already carries ten and
+                      the terminal pane is ~620px wide — two more would buy a horizontal
+                      scrollbar to show a figure that fits in the whitespace.
+
+                      VOL/SENT/CORR/MOM are cross-sectional RANKS (0-100); mentions/day is
+                      the absolute count underneath them, which is why a theme can rank 92
+                      on volume off a handful of articles. Crowding is this theme's
+                      HypeScore percentile within its OWN history, so it answers a
+                      different question from every rank on the row: not "loud versus the
+                      others" but "loud versus itself".
+
+                      Absent renders as nothing at all, never as 0 (design goal 2): under
+                      five observations `crowding` is undefined by construction, and a
+                      fabricated "healthy" would be a claim the history cannot support. */}
+                  {(typeof t.mention_count_7d_avg === "number" || t.crowding) && (
+                    <span className="flex items-center gap-1.5 mt-0.5 pl-[15px] text-[10px] font-normal text-text-tertiary leading-tight">
+                      {typeof t.mention_count_7d_avg === "number" && (
+                        <span className="num" title="Trailing 7-day average daily mentions — the absolute volume under the VOL rank">
+                          {t.mention_count_7d_avg.toFixed(1)}/day
+                        </span>
+                      )}
+                      {typeof t.mention_count_7d_avg === "number" && t.crowding && <span>·</span>}
+                      {t.crowding && (
+                        <span
+                          className={
+                            t.crowding === "high"
+                              ? "text-warning"
+                              : t.crowding === "low"
+                              ? "text-text-tertiary"
+                              : "text-text-tertiary"
+                          }
+                          title={
+                            typeof t.crowding_pct === "number"
+                              ? `HypeScore is at the ${t.crowding_pct.toFixed(0)}th percentile of this theme's own 30-day history`
+                              : "Percentile of this theme's HypeScore within its own history"
+                          }
+                        >
+                          {t.crowding === "high"
+                            ? "crowded"
+                            : t.crowding === "low"
+                            ? "fading"
+                            : "steady"}
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </td>
                 <td className="px-2 py-2 text-center text-text-tertiary text-[10.5px]">{tierBadge(t.tier)}</td>
                 <td className="px-2 py-2 text-center whitespace-nowrap">

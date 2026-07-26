@@ -106,7 +106,7 @@ function ScenarioRow({
       </tr>
       {open && (
         <tr id={detailId}>
-          <td colSpan={5} className="px-[18px] py-4 border-b border-border bg-bg-elevated/60">
+          <td colSpan={5} className="px-[18px] py-4 border-b border-border-strong bg-bg-elevated/60">
             <ShockChips shocks={shocks} />
             {breakdown.length > 0 ? (
               <div className="overflow-x-auto">
@@ -200,7 +200,7 @@ export function StressScenarios({
                     <th
                       key={h || `col-${i}`}
                       scope="col"
-                      className={`px-[18px] py-[7px] text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated ${
+                      className={`px-[18px] py-[7px] text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border-strong bg-bg-elevated ${
                         i === 0 ? "text-left" : "text-right"
                       }`}
                     >

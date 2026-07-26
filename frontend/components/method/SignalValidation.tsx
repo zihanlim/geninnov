@@ -119,7 +119,7 @@ export default function SignalValidation() {
                   (h, i) => (
                     <th
                       key={h}
-                      className={`px-[14px] py-2.5 text-[10.5px] uppercase tracking-[0.09em] text-text-tertiary font-medium border-b border-border bg-bg-elevated ${
+                      className={`px-[14px] py-2.5 text-[10.5px] uppercase tracking-[0.09em] text-text-tertiary font-medium border-b border-border-strong bg-bg-elevated ${
                         i === 0 || i === 5 ? "text-left" : "text-right"
                       }`}
                     >

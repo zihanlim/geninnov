@@ -128,7 +128,7 @@ export default function FactorReconciliation() {
             Market beta of benchmark assets against the expected band.
           </caption>
           <thead>
-            <tr className="border-y border-border bg-bg-elevated">
+            <tr className="border-y border-border-strong bg-bg-elevated">
               <th className="text-left font-medium px-[18px] py-2 text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
                 Asset
               </th>

@@ -158,7 +158,7 @@ export default function EdgeValidation() {
             returns, with sample size and significance.
           </caption>
           <thead>
-            <tr className="border-y border-border bg-bg-elevated">
+            <tr className="border-y border-border-strong bg-bg-elevated">
               {["Component", "Weight", "IC", "N", "t", "p", "Hit", "Verdict"].map(
                 (h, i) => (
                   <th

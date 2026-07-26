@@ -137,7 +137,7 @@ export function RiskLimitBoard({
                       <th
                         key={h}
                         scope="col"
-                        className={`px-[16px] py-[7px] text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-y border-border bg-bg-elevated ${
+                        className={`px-[16px] py-[7px] text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-y border-border-strong bg-bg-elevated ${
                           i === 0 ? "text-left" : i === 3 ? "text-left" : "text-right"
                         }`}
                       >

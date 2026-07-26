@@ -40,6 +40,17 @@ const config: Config = {
       //   viewport 1424 − 64 (lg gutter) = 1360 content (under the 1400 cap)
       //   (1360 − 24 gap) / 2            =  668 per pane, 28px of headroom.
       screens: { wide: "1424px" },
+      // Tailwind preflight defaults an uncoloured `border-b` to gray-200
+      // (#e5e7eb), which is NOT in this palette. Measured on /book: 162 of 186
+      // table cells carry `border-b` with no colour class, so 87% of the rules
+      // on that page were painted by Tailwind rather than by the design system.
+      // Under the old warm ground that was a visible clash — cool grey rules on
+      // cream paper — and the cool surface swap accidentally camouflaged it
+      // rather than fixing it.
+      //
+      // Keep this in step with --border in globals.css. It is the same colour;
+      // Tailwind compiles to literal RGB and never reads the variable.
+      borderColor: { DEFAULT: "#dfe3e7" },
       colors: {
         // "Ledger" light theme — see app/globals.css for the design rationale.
         // Surfaces (cool paper — adopted from stitch_remix technical_precision)

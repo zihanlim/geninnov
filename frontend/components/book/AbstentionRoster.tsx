@@ -188,7 +188,7 @@ export default function AbstentionRoster({
                   <th
                     key={h}
                     scope="col"
-                    className={`px-[14px] py-[7px] text-[10.5px] uppercase tracking-[0.09em] text-text-tertiary font-medium border-b border-border bg-bg-elevated ${
+                    className={`px-[14px] py-[7px] text-[10.5px] uppercase tracking-[0.09em] text-text-tertiary font-medium border-b border-border-strong bg-bg-elevated ${
                       i === 0 || i === 6 ? "text-left" : "text-right"
                     }`}
                   >

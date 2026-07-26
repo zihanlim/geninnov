@@ -180,7 +180,7 @@ export function Th({
   return (
     <th
       scope="col"
-      className={`px-[14px] py-[7px] leading-[1.35] text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated whitespace-nowrap ${
+      className={`px-[14px] py-[7px] leading-[1.35] text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border-strong bg-bg-elevated whitespace-nowrap ${
         align === "right" ? "text-right" : "text-left"
       }`}
     >

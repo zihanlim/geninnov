@@ -59,6 +59,7 @@ from .book_metrics import (
 )
 from .scenario_analysis import (
     run_scenario_analysis,
+    run_scenario_analysis_with_scenarios,
     format_scenario_table,
     scenario_results_to_dict,
 )
@@ -891,11 +892,19 @@ def run_scenario_analysis_node(state: Q1State) -> Q1State:
     from .book_metrics import BookMetrics, compute_book_metrics
     bm = compute_book_metrics(enriched_picks, state.get("factor_exposures") or {}, total_capital)
 
+    # Fetch the disruption reading ONCE per run and keep it on state, so node 5's prompt
+    # table and the persisted analytics are stressed by the same signal. With no credential
+    # `fetch_signal` makes no network call at all and returns the neutral 1.0 WITH a reason
+    # (ADR-0095), which is what has to reach /risk — a bare 1.0 is indistinguishable from a
+    # measurement of "no disruption".
+    state["chokepoint_signal"] = _chokepoint_signal()
+
     results = run_scenario_analysis(
         picks=enriched_picks,
         book_metrics=bm,
         total_capital=total_capital,
         factor_exposures=state.get("factor_exposures") or {},
+        chokepoint_signal=state["chokepoint_signal"],
     )
 
     state["scenario_table"] = format_scenario_table(results)
@@ -2319,15 +2328,25 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
     shared_returns = _shared if (_shared is not None and not _shared.empty) else None
 
     corr_pairs = compute_correlation_matrix(picks, lookback_days=252, returns=shared_returns)
-    scenarios = run_scenario_analysis(
+    # `_with_scenarios` so the SAME objects that produced the P&L also supply the persisted
+    # description. Resolving descriptions against the module constant instead would persist a
+    # scaled figure beside the unscaled story — the number and its stated cause disagreeing on
+    # the row /risk renders verbatim (ADR-0095).
+    #
+    # Reuses node 5's reading rather than fetching again: two calls in one run could return
+    # two different disruption levels, and the book would be stressed by one while the page
+    # explained the other.
+    scenario_signal = state.get("chokepoint_signal") or _chokepoint_signal()
+    scenarios, scenario_defs = run_scenario_analysis_with_scenarios(
         picks=picks,
         book_metrics=bm,
         total_capital=total_capital,
         factor_exposures=factor_exp,
+        chokepoint_signal=scenario_signal,
     )
 
     state["book_metrics_final"] = book_metrics_to_dict(bm)
-    state["scenario_results_final"] = scenario_results_to_dict(scenarios)
+    state["scenario_results_final"] = scenario_results_to_dict(scenarios, scenario_defs)
     state["correlation_pairs_final"] = correlation_pairs_to_dict(corr_pairs)
 
     # The book's correlation STRUCTURE, not just its flagged tail (ADR-0072).
@@ -2697,6 +2716,29 @@ def _build_advisory_derivation(state: Q1State) -> AdvisoryDerivation:
 # ─────────────────────────────────────────────────────────────────────────────
 # Persist to Supabase
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _chokepoint_signal():
+    """The run's maritime-disruption reading, or a neutral one carrying the reason why not.
+
+    NEVER returns None and never raises. `scenarios_for_run(None)` means "do not scale and say
+    nothing", which is the state that left S6's calibration silently unexplained on /risk for
+    every run before this was wired. A neutral signal WITH a reason is a different thing: it
+    tells a reader the battery ran on its documented calibration and why (ADR-0095).
+
+    With no credential `fetch_signal` makes no network call at all, so the common path costs
+    nothing.
+    """
+    from .chokepoint_signal import fetch_signal, neutral
+
+    try:
+        return fetch_signal()
+    except Exception as exc:  # noqa: BLE001 — an overlay must never cost the run
+        print(f"[q1_agent] chokepoint signal unavailable ({exc.__class__.__name__}): {exc}")
+        return neutral(
+            f"the disruption reading could not be retrieved ({exc.__class__.__name__}), "
+            f"so S6 ran on its documented calibration"
+        )
+
 
 def _picks_and_gross(state: Q1State) -> tuple[list, float] | None:
     """The sized book and the gross both overlay analytics denominate against.

@@ -1179,10 +1179,17 @@ def test_finalise_book_analytics_tolerates_none_scenario_return(monkeypatch):
     monkeypatch.setattr(q1_agent, "compute_book_metrics",
                         lambda **k: SimpleNamespace(gross_exposure=1.0, net_exposure=0.0))
     monkeypatch.setattr(q1_agent, "compute_correlation_matrix", lambda *a, **k: [])
-    monkeypatch.setattr(q1_agent, "run_scenario_analysis", lambda **k: object())
+    # finalise_book_analytics now takes the run's scenario OBJECTS as well as its results, so
+    # the persisted description matches the shocks the P&L came from (ADR-0095). The doubles
+    # follow that shape; what this test asserts — a None estimate must not crash — is unchanged.
+    monkeypatch.setattr(q1_agent, "run_scenario_analysis_with_scenarios",
+                        lambda **k: (object(), []))
+    # Hermetic: never let a unit test reach the network if a credential happens to be set.
+    monkeypatch.setattr(q1_agent, "_chokepoint_signal",
+                        lambda: SimpleNamespace(measured=False, multiplier=1.0, reason="test"))
     monkeypatch.setattr(q1_agent, "book_metrics_to_dict", lambda bm: {})
     monkeypatch.setattr(q1_agent, "scenario_results_to_dict",
-                        lambda s: [{"estimated_book_return": None}, {"estimated_book_return": -0.05}])
+                        lambda s, defs=None: [{"estimated_book_return": None}, {"estimated_book_return": -0.05}])
     monkeypatch.setattr(q1_agent, "correlation_pairs_to_dict", lambda c: [])
     monkeypatch.setattr(q1_agent, "cap_utilisation", lambda bm, picks: {"violations": []})
     # The hoisted-frame fetch and the Euler decomposition would otherwise hit yfinance.
@@ -1221,9 +1228,11 @@ def test_finalise_book_analytics_wires_euler_decomposition(monkeypatch):
     monkeypatch.setattr(q1_agent, "compute_book_metrics",
                         lambda **k: SimpleNamespace(gross_exposure=1.0, net_exposure=0.1))
     monkeypatch.setattr(q1_agent, "compute_correlation_matrix", lambda *a, **k: [])
-    monkeypatch.setattr(q1_agent, "run_scenario_analysis", lambda **k: [])
+    monkeypatch.setattr(q1_agent, "run_scenario_analysis_with_scenarios", lambda **k: ([], []))
+    monkeypatch.setattr(q1_agent, "_chokepoint_signal",
+                        lambda: SimpleNamespace(measured=False, multiplier=1.0, reason="test"))
     monkeypatch.setattr(q1_agent, "book_metrics_to_dict", lambda bm: {})
-    monkeypatch.setattr(q1_agent, "scenario_results_to_dict", lambda s: [])
+    monkeypatch.setattr(q1_agent, "scenario_results_to_dict", lambda s, defs=None: [])
     monkeypatch.setattr(q1_agent, "correlation_pairs_to_dict", lambda c: [])
     monkeypatch.setattr(q1_agent, "correlation_summary", lambda p: {})
     monkeypatch.setattr(q1_agent, "cap_utilisation", lambda bm, picks: {"violations": []})

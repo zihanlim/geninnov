@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ANDROMEDA - The $100M Book</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&amp;family=JetBrains+Mono:wght@500;700&amp;family=Inter:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "error": "#ba1a1a",
+                        "surface": "#fcf8fa",
+                        "on-primary-fixed": "#131b2e",
+                        "surface-variant": "#e4e2e4",
+                        "on-secondary-fixed-variant": "#004395",
+                        "on-secondary": "#ffffff",
+                        "secondary-container": "#2170e4",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#dec29a",
+                        "tertiary": "#000000",
+                        "on-tertiary-container": "#98805d",
+                        "on-primary-container": "#7c839b",
+                        "on-surface": "#1b1b1d",
+                        "surface-tint": "#565e74",
+                        "on-error-container": "#93000a",
+                        "secondary-fixed-dim": "#adc6ff",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-secondary-container": "#fefcff",
+                        "on-tertiary-fixed-variant": "#574425",
+                        "on-background": "#1b1b1d",
+                        "surface-container-lowest": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "inverse-primary": "#bec6e0",
+                        "inverse-surface": "#303032",
+                        "on-secondary-fixed": "#001a42",
+                        "outline-variant": "#c6c6cd",
+                        "on-tertiary": "#ffffff",
+                        "surface-container": "#f0edef",
+                        "surface-container-low": "#f6f3f5",
+                        "tertiary-container": "#271901",
+                        "outline": "#76777d",
+                        "surface-container-highest": "#e4e2e4",
+                        "on-tertiary-fixed": "#271901",
+                        "surface-dim": "#dcd9db",
+                        "primary-fixed": "#dae2fd",
+                        "background": "#fcf8fa",
+                        "tertiary-fixed": "#fcdeb5",
+                        "surface-bright": "#fcf8fa",
+                        "on-primary-fixed-variant": "#3f465c",
+                        "inverse-on-surface": "#f3f0f2",
+                        "primary-container": "#131b2e",
+                        "primary": "#000000",
+                        "on-surface-variant": "#45464d",
+                        "surface-container-high": "#eae7e9",
+                        "primary-fixed-dim": "#bec6e0",
+                        "on-primary": "#ffffff",
+                        "secondary": "#0058be"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "md": "16px",
+                        "gutter": "16px",
+                        "lg": "24px",
+                        "xl": "32px",
+                        "margin": "24px",
+                        "sm": "8px",
+                        "xs": "4px",
+                        "base": "4px"
+                    },
+                    "fontFamily": {
+                        "display-lg": ["Geist"],
+                        "headline-sm": ["Geist"],
+                        "label-caps": ["Inter"],
+                        "data-tabular": ["JetBrains Mono"],
+                        "headline-md": ["Geist"],
+                        "body-md": ["Inter"],
+                        "body-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "display-lg": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "headline-sm": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                        "data-tabular": ["13px", { "lineHeight": "16px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-sm": ["12px", { "lineHeight": "18px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: #fcf8fa; color: #1b1b1d; font-family: 'Inter', sans-serif; }
+        .row-hover:hover { background-color: #f6f3f5; }
+        .provenance-badge { padding: 2px 6px; border-radius: 9999px; display: inline-block; }
+        
+        /* Drawer animation */
+        .drawer-content { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms ease-out; }
+        .drawer-content.expanded { grid-template-rows: 1fr; }
+        .drawer-inner { overflow: hidden; }
+    </style>
+</head>
+<body class="flex flex-col h-screen overflow-hidden">
+<!-- TopNavBar -->
+<nav class="bg-surface border-b-[0.5px] border-outline-variant flex justify-between items-center w-full px-lg h-16 shrink-0 z-50">
+<div class="flex items-center space-x-6">
+<span class="font-display-lg text-display-lg font-bold text-primary tracking-tighter">ANDROMEDA</span>
+<div class="hidden md:flex space-x-6 h-full items-center">
+<a class="font-headline-sm text-headline-sm text-on-surface-variant font-medium hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-70" href="#">Themes</a>
+<a class="font-headline-sm text-headline-sm text-secondary font-bold border-b-2 border-secondary pb-1 cursor-pointer active:opacity-70" href="#">The $100M Book</a>
+<a class="font-headline-sm text-headline-sm text-on-surface-variant font-medium hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-70" href="#">Risk &amp; Stress</a>
+<a class="font-headline-sm text-headline-sm text-on-surface-variant font-medium hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-70" href="#">Method &amp; Lineage</a>
+</div>
+</div>
+<div class="flex items-center space-x-4">
+<span class="font-label-caps text-label-caps uppercase text-secondary">Late-cycle / Risk-on</span>
+<span class="font-label-caps text-label-caps uppercase text-on-surface-variant border-l-[0.5px] border-outline-variant pl-4">NYSE: OPEN</span>
+<div class="flex space-x-2 pl-4">
+<button class="hover:text-primary transition-colors duration-150 rounded p-1 cursor-pointer active:opacity-70 text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">settings</span></button>
+<button class="hover:text-primary transition-colors duration-150 rounded p-1 cursor-pointer active:opacity-70 text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">notifications</span></button>
+</div>
+</div>
+</nav>
+<div class="flex flex-1 overflow-hidden">
+<!-- SideNavBar -->
+<aside class="bg-surface-container-low border-r-[0.5px] border-outline-variant flex flex-col h-full py-md w-20 hover:w-64 transition-all duration-300 group shrink-0 z-40 hidden md:flex overflow-hidden relative">
+<div class="flex flex-col space-y-2 px-2">
+<button class="flex items-center p-2 text-on-surface-variant hover:bg-surface-container-high rounded transition-all duration-200 ease-in-out w-full" title="Global Macro">
+<span class="material-symbols-outlined shrink-0">public</span>
+<span class="font-body-sm text-body-sm ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">Global Macro</span>
+</button>
+<button class="flex items-center p-2 border-l-2 border-secondary text-secondary bg-secondary-container/10 rounded transition-all duration-200 ease-in-out w-full" title="Equities">
+<span class="material-symbols-outlined shrink-0">leaderboard</span>
+<span class="font-body-sm text-body-sm ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">Equities</span>
+</button>
+<button class="flex items-center p-2 text-on-surface-variant hover:bg-surface-container-high rounded transition-all duration-200 ease-in-out w-full" title="Fixed Income">
+<span class="material-symbols-outlined shrink-0">show_chart</span>
+<span class="font-body-sm text-body-sm ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">Fixed Income</span>
+</button>
+<button class="flex items-center p-2 text-on-surface-variant hover:bg-surface-container-high rounded transition-all duration-200 ease-in-out w-full" title="Commodities">
+<span class="material-symbols-outlined shrink-0">payments</span>
+<span class="font-body-sm text-body-sm ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">Commodities</span>
+</button>
+<button class="flex items-center p-2 text-on-surface-variant hover:bg-surface-container-high rounded transition-all duration-200 ease-in-out w-full" title="FX">
+<span class="material-symbols-outlined shrink-0">currency_exchange</span>
+<span class="font-body-sm text-body-sm ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">FX</span>
+</button>
+</div>
+<div class="mt-auto flex flex-col space-y-2 pt-4 border-t-[0.5px] border-outline-variant w-full px-2">
+<button class="flex items-center p-2 text-on-surface-variant hover:bg-surface-container-high rounded transition-all duration-200 ease-in-out w-full" title="Help">
+<span class="material-symbols-outlined shrink-0">help</span>
+<span class="font-body-sm text-body-sm ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">Help</span>
+</button>
+<button class="flex items-center p-2 text-on-surface-variant hover:bg-surface-container-high rounded transition-all duration-200 ease-in-out w-full" title="Logout">
+<span class="material-symbols-outlined shrink-0">logout</span>
+<span class="font-body-sm text-body-sm ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">Logout</span>
+</button>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-y-auto p-margin flex flex-col gap-md">
+<!-- Portfolio Summary Bar -->
+<section class="bg-surface-container-lowest border-[0.5px] border-outline-variant rounded-lg p-lg flex flex-col md:flex-row justify-between items-start md:items-center shrink-0 gap-4 shadow-sm">
+<div class="flex flex-wrap gap-8">
+<div>
+<div class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">Gross Exp</div>
+<div class="font-data-tabular text-data-tabular text-primary font-bold">150.2%</div>
+</div>
+<div>
+<div class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">Net Exp</div>
+<div class="font-data-tabular text-data-tabular text-secondary font-bold">24.5%</div>
+</div>
+<div>
+<div class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">L/S Weight</div>
+<div class="font-data-tabular text-data-tabular text-on-surface">87.35% / -62.85%</div>
+</div>
+<div>
+<div class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">Est. Sharpe</div>
+<div class="font-data-tabular text-data-tabular text-tertiary">2.14</div>
+</div>
+</div>
+<div class="flex space-x-2">
+<button class="bg-surface border-[0.5px] border-outline-variant px-4 py-2 font-label-caps text-label-caps hover:bg-surface-container-low transition-colors rounded text-on-surface">EXPORT</button>
+<button class="bg-secondary text-on-secondary px-4 py-2 font-label-caps text-label-caps hover:opacity-90 transition-opacity rounded">COMMIT BOOK</button>
+</div>
+</section>
+<!-- Data Grid -->
+<section class="flex-1 border-[0.5px] border-outline-variant bg-surface-container-lowest rounded-lg flex flex-col min-h-0 shadow-sm overflow-hidden">
+<!-- Header -->
+<div class="grid grid-cols-12 gap-gutter px-lg py-sm border-b-[0.5px] border-outline-variant bg-surface-container-low shrink-0">
+<div class="col-span-1 font-label-caps text-label-caps text-on-surface-variant uppercase flex items-center cursor-pointer">Dir <span class="material-symbols-outlined text-[14px] ml-1">expand_more</span></div>
+<div class="col-span-2 font-label-caps text-label-caps text-on-surface-variant uppercase flex items-center cursor-pointer">Ticker <span class="material-symbols-outlined text-[14px] ml-1">expand_more</span></div>
+<div class="col-span-4 font-label-caps text-label-caps text-on-surface-variant uppercase flex items-center cursor-pointer">Theme</div>
+<div class="col-span-2 font-label-caps text-label-caps text-on-surface-variant uppercase text-right">Weight %</div>
+<div class="col-span-2 font-label-caps text-label-caps text-on-surface-variant uppercase text-right">Notional ($M)</div>
+<div class="col-span-1"></div>
+</div>
+<div class="overflow-y-auto flex-1">
+<!-- Row 1: Long (Expanded) -->
+<div class="border-b-[0.5px] border-outline-variant">
+<div class="grid grid-cols-12 gap-gutter px-lg py-sm row-hover items-center cursor-pointer bg-surface-container-high border-l-4 border-secondary" onclick="toggleDrawer('drawer-1')">
+<div class="col-span-1 font-data-tabular text-data-tabular text-secondary font-bold">LONG</div>
+<div class="col-span-2 font-data-tabular text-data-tabular text-on-surface font-bold">NVDA</div>
+<div class="col-span-4 font-body-md text-body-md text-on-surface-variant truncate">AI Infrastructure Buildout</div>
+<div class="col-span-2 font-data-tabular text-data-tabular text-right flex items-center justify-end">
+                                12.5% <span class="provenance-badge bg-secondary/10 text-secondary border-[0.5px] border-secondary/30 font-label-caps text-[9px] ml-2">XACT</span>
+</div>
+<div class="col-span-2 font-data-tabular text-data-tabular text-right flex items-center justify-end">
+                                $12.50 <span class="provenance-badge bg-tertiary/10 text-tertiary-container border-[0.5px] border-tertiary/30 font-label-caps text-[9px] ml-2">EST</span>
+</div>
+<div class="col-span-1 text-right">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]">expand_less</span>
+</div>
+</div>
+<!-- Derivation Drawer -->
+<div class="drawer-content expanded bg-surface-container-low border-t-[0.5px] border-outline-variant" id="drawer-1">
+<div class="drawer-inner p-lg grid grid-cols-12 gap-lg">
+<div class="col-span-12 md:col-span-6 border-b md:border-b-0 md:border-r-[0.5px] border-outline-variant pb-4 md:pb-0 pr-0 md:pr-lg">
+<div class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-3">Thesis Summary</div>
+<p class="font-body-md text-body-md text-on-surface leading-relaxed">
+                                        Data center capex remains highly inelastic despite macro headwinds. Supply chain checks indicate H100 lead times stabilizing but B100 pre-orders exceeding expectations by 40%<sup class="font-label-caps text-[10px] text-secondary cursor-pointer hover:underline">1</sup>. Market underestimates software revenue attach rate which is growing at 3x hardware pace.
+                                    </p>
+</div>
+<div class="col-span-12 md:col-span-3 border-b md:border-b-0 md:border-r-[0.5px] border-outline-variant pb-4 md:pb-0 px-0 md:px-lg">
+<div class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-3">EdgeScore</div>
+<div class="space-y-2">
+<div class="flex justify-between items-center"><span class="font-data-tabular text-data-tabular text-on-surface-variant">Trend</span><span class="font-data-tabular text-data-tabular text-secondary font-medium">+2.4σ</span></div>
+<div class="flex justify-between items-center"><span class="font-data-tabular text-data-tabular text-on-surface-variant">Regime</span><span class="font-data-tabular text-data-tabular text-secondary font-medium">+1.8σ</span></div>
+<div class="flex justify-between items-center"><span class="font-data-tabular text-data-tabular text-on-surface-variant">Carry</span><span class="font-data-tabular text-data-tabular text-on-surface-variant font-medium">0.0σ</span></div>
+<div class="flex justify-between items-center"><span class="font-data-tabular text-data-tabular text-on-surface-variant">Value</span><span class="font-data-tabular text-data-tabular text-error font-medium">-1.2σ</span></div>
+</div>
+</div>
+<div class="col-span-12 md:col-span-3 pl-0 md:pl-lg">
+<div class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-3">Sizing Chain</div>
+<div class="flex flex-col space-y-3 relative before:absolute before:left-[3px] before:top-2 before:bottom-2 before:w-[2px] before:bg-outline-variant">
+<div class="flex items-center pl-6 relative"><span class="absolute left-[-2px] top-1.5 w-3 h-3 rounded-full bg-surface-container-highest border-[2px] border-outline-variant"></span><span class="font-data-tabular text-data-tabular text-on-surface-variant w-20">Raw</span><span class="font-data-tabular text-data-tabular">18.2%</span></div>
+<div class="flex items-center pl-6 relative"><span class="absolute left-[-2px] top-1.5 w-3 h-3 rounded-full bg-surface-container-highest border-[2px] border-outline-variant"></span><span class="font-data-tabular text-data-tabular text-on-surface-variant w-20">Norm</span><span class="font-data-tabular text-data-tabular">14.0%</span></div>
+<div class="flex items-center pl-6 relative"><span class="absolute left-[-2px] top-1.5 w-3 h-3 rounded-full bg-secondary border-[2px] border-secondary"></span><span class="font-data-tabular text-data-tabular text-secondary font-bold w-20">Cap (Risk)</span><span class="font-data-tabular text-data-tabular text-secondary font-bold">12.5%</span></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Row 2: Short -->
+<div class="border-b-[0.5px] border-outline-variant">
+<div class="grid grid-cols-12 gap-gutter px-lg py-sm row-hover items-center cursor-pointer border-l-4 border-transparent">
+<div class="col-span-1 font-data-tabular text-data-tabular text-error font-bold">SHORT</div>
+<div class="col-span-2 font-data-tabular text-data-tabular text-on-surface font-bold">TLT</div>
+<div class="col-span-4 font-body-md text-body-md text-on-surface-variant truncate">Fiscal Dominance / Duration Supply</div>
+<div class="col-span-2 font-data-tabular text-data-tabular text-right flex items-center justify-end">
+                                -8.0% <span class="provenance-badge bg-secondary/10 text-secondary border-[0.5px] border-secondary/30 font-label-caps text-[9px] ml-2">XACT</span>
+</div>
+<div class="col-span-2 font-data-tabular text-data-tabular text-right flex items-center justify-end">
+                                -$8.00 <span class="provenance-badge bg-secondary/10 text-secondary border-[0.5px] border-secondary/30 font-label-caps text-[9px] ml-2">XACT</span>
+</div>
+<div class="col-span-1 text-right">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]">expand_more</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+</div>
+<!-- Footer -->
+<footer class="bg-surface-container-lowest border-t-[0.5px] border-outline-variant flex justify-between items-center w-full px-lg py-xs shrink-0 z-50">
+<span class="font-label-caps text-label-caps text-on-surface-variant">© 2024 Andromeda Research Systems. All data points cited via Method &amp; Lineage protocol.</span>
+<div class="flex space-x-6">
+<a class="font-data-tabular text-data-tabular text-on-surface-variant opacity-80 hover:text-on-surface transition-opacity duration-150" href="#">Terms</a>
+<a class="font-data-tabular text-data-tabular text-on-surface-variant opacity-80 hover:text-on-surface transition-opacity duration-150" href="#">API Status</a>
+<a class="font-data-tabular text-data-tabular text-on-surface-variant opacity-80 hover:text-on-surface transition-opacity duration-150" href="#">Privacy</a>
+</div>
+</footer>
+<script>
+        function toggleDrawer(id) {
+            const drawer = document.getElementById(id);
+            if (drawer.classList.contains('expanded')) {
+                drawer.classList.remove('expanded');
+                drawer.previousElementSibling.classList.remove('bg-surface-container-high', 'border-secondary');
+                drawer.previousElementSibling.classList.add('border-transparent');
+                drawer.previousElementSibling.querySelector('.material-symbols-outlined').textContent = 'expand_more';
+            } else {
+                // Collapse others
+                document.querySelectorAll('.drawer-content').forEach(d => {
+                    d.classList.remove('expanded');
+                    d.previousElementSibling.classList.remove('bg-surface-container-high', 'border-secondary');
+                    d.previousElementSibling.classList.add('border-transparent');
+                    d.previousElementSibling.querySelector('.material-symbols-outlined').textContent = 'expand_more';
+                });
+                drawer.classList.add('expanded');
+                drawer.previousElementSibling.classList.add('bg-surface-container-high', 'border-secondary');
+                drawer.previousElementSibling.classList.remove('border-transparent');
+                drawer.previousElementSibling.querySelector('.material-symbols-outlined').textContent = 'expand_less';
+            }
+        }
+    </script>
+</body></html>

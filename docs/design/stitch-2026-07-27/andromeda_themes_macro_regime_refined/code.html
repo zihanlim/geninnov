@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Andromeda Terminal - Themes</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "error": "#ba1a1a",
+                "surface": "#fcf8fa",
+                "on-primary-fixed": "#131b2e",
+                "surface-variant": "#e4e2e4",
+                "on-secondary-fixed-variant": "#004395",
+                "on-secondary": "#ffffff",
+                "secondary-container": "#2170e4",
+                "on-error": "#ffffff",
+                "tertiary-fixed-dim": "#dec29a",
+                "tertiary": "#000000",
+                "on-tertiary-container": "#98805d",
+                "on-primary-container": "#7c839b",
+                "on-surface": "#1b1b1d",
+                "surface-tint": "#565e74",
+                "on-error-container": "#93000a",
+                "secondary-fixed-dim": "#adc6ff",
+                "secondary-fixed": "#d8e2ff",
+                "on-secondary-container": "#fefcff",
+                "on-tertiary-fixed-variant": "#574425",
+                "on-background": "#1b1b1d",
+                "surface-container-lowest": "#ffffff",
+                "error-container": "#ffdad6",
+                "inverse-primary": "#bec6e0",
+                "inverse-surface": "#303032",
+                "on-secondary-fixed": "#001a42",
+                "outline-variant": "#c6c6cd",
+                "on-tertiary": "#ffffff",
+                "surface-container": "#f0edef",
+                "surface-container-low": "#f6f3f5",
+                "tertiary-container": "#271901",
+                "outline": "#76777d",
+                "surface-container-highest": "#e4e2e4",
+                "on-tertiary-fixed": "#271901",
+                "surface-dim": "#dcd9db",
+                "primary-fixed": "#dae2fd",
+                "background": "#fcf8fa",
+                "tertiary-fixed": "#fcdeb5",
+                "surface-bright": "#fcf8fa",
+                "on-primary-fixed-variant": "#3f465c",
+                "inverse-on-surface": "#f3f0f2",
+                "primary-container": "#131b2e",
+                "primary": "#000000",
+                "on-surface-variant": "#45464d",
+                "surface-container-high": "#eae7e9",
+                "primary-fixed-dim": "#bec6e0",
+                "on-primary": "#ffffff",
+                "secondary": "#0058be"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.25rem",
+                "lg": "0.5rem",
+                "xl": "0.75rem",
+                "full": "9999px"
+        },
+        "spacing": {
+                "md": "16px",
+                "gutter": "16px",
+                "lg": "24px",
+                "xl": "32px",
+                "margin": "24px",
+                "sm": "8px",
+                "xs": "4px",
+                "base": "4px"
+        },
+        "fontFamily": {
+                "display-lg": [
+                        "Geist"
+                ],
+                "headline-sm": [
+                        "Geist"
+                ],
+                "label-caps": [
+                        "Inter"
+                ],
+                "data-tabular": [
+                        "JetBrains Mono"
+                ],
+                "headline-md": [
+                        "Geist"
+                ],
+                "body-md": [
+                        "Inter"
+                ],
+                "body-sm": [
+                        "Inter"
+                ]
+        },
+        "fontSize": {
+                "display-lg": [
+                        "36px",
+                        {
+                                "lineHeight": "44px",
+                                "letterSpacing": "-0.02em",
+                                "fontWeight": "600"
+                        }
+                ],
+                "headline-sm": [
+                        "18px",
+                        {
+                                "lineHeight": "24px",
+                                "fontWeight": "600"
+                        }
+                ],
+                "label-caps": [
+                        "11px",
+                        {
+                                "lineHeight": "16px",
+                                "letterSpacing": "0.05em",
+                                "fontWeight": "700"
+                        }
+                ],
+                "data-tabular": [
+                        "13px",
+                        {
+                                "lineHeight": "16px",
+                                "letterSpacing": "-0.01em",
+                                "fontWeight": "500"
+                        }
+                ],
+                "headline-md": [
+                        "24px",
+                        {
+                                "lineHeight": "32px",
+                                "letterSpacing": "-0.01em",
+                                "fontWeight": "600"
+                        }
+                ],
+                "body-md": [
+                        "14px",
+                        {
+                                "lineHeight": "20px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "body-sm": [
+                        "12px",
+                        {
+                                "lineHeight": "18px",
+                                "fontWeight": "400"
+                        }
+                ]
+        }
+},
+    },
+  }
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&amp;family=JetBrains+Mono:wght@500;700&amp;family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            background-color: #fcf8fa;
+            color: #1b1b1d;
+            margin: 0;
+            overflow-x: hidden;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
+        }
+        
+        .fill-icon {
+            font-variation-settings: 'FILL' 1;
+        }
+
+        /* High-Density Grid System */
+        .dense-grid {
+            display: grid;
+            gap: 16px; /* gutter */
+        }
+        
+        .grid-12 { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+        
+        /* Panel Styling */
+        .panel {
+            background-color: rgba(255, 255, 255, 0.7); /* subtle glassmorphism */
+            backdrop-filter: blur(12px);
+            border: 1px solid #e4e2e4;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .panel-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e4e2e4;
+            background-color: rgba(246, 243, 245, 0.5); /* surface-container-low */
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top-left-radius: 0.5rem;
+            border-top-right-radius: 0.5rem;
+        }
+        
+        .panel-body {
+            padding: 16px;
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+        
+        /* Data Grids */
+        .data-row {
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #f0edef;
+            padding: 8px 16px;
+        }
+        
+        .data-row:last-child {
+            border-bottom: none;
+        }
+        
+        .data-row:hover {
+            background-color: rgba(0, 0, 0, 0.02);
+        }
+        
+        .data-cell {
+            padding-right: 8px;
+        }
+
+        /* Badges */
+        .badge-exact {
+            color: #0058be; /* secondary */
+            border: 1px solid rgba(0, 88, 190, 0.3);
+            background: rgba(0, 88, 190, 0.05);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        
+        .badge-stale {
+            color: #98805d; /* on-tertiary-container */
+            border: 1px solid rgba(152, 128, 93, 0.3);
+            background: rgba(152, 128, 93, 0.05);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #c6c6cd; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #76777d; }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden">
+<!-- SideNavBar (Shell) -->
+<nav class="bg-surface-container-lowest text-on-surface-variant docked left-0 h-full w-16 border-r border-surface-container flex flex-col items-center py-4 space-y-6 hidden md:flex shrink-0 z-50">
+<div class="hidden"></div>
+<div class="flex flex-col space-y-4 w-full px-2">
+<a class="text-on-secondary bg-secondary rounded-lg flex flex-col items-center justify-center py-2 scale-105 duration-75 shadow-sm" href="#">
+<span class="material-symbols-outlined fill-icon text-[20px]">space_dashboard</span>
+<span class="font-label-caps text-[9px] uppercase mt-1 tracking-widest font-bold">Dashboard</span>
+</a>
+<a class="text-on-surface-variant hover:text-secondary hover:bg-secondary-fixed flex flex-col items-center justify-center py-2 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">psychology</span>
+<span class="font-label-caps text-[9px] uppercase mt-1 tracking-widest font-bold">Intelligence</span>
+</a>
+<a class="text-on-surface-variant hover:text-secondary hover:bg-secondary-fixed flex flex-col items-center justify-center py-2 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">sensors</span>
+<span class="font-label-caps text-[9px] uppercase mt-1 tracking-widest font-bold">Signals</span>
+</a>
+<a class="text-on-surface-variant hover:text-secondary hover:bg-secondary-fixed flex flex-col items-center justify-center py-2 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">water_drop</span>
+<span class="font-label-caps text-[9px] uppercase mt-1 tracking-widest font-bold">Liquidity</span>
+</a>
+<a class="text-on-surface-variant hover:text-secondary hover:bg-secondary-fixed flex flex-col items-center justify-center py-2 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">inventory_2</span>
+<span class="font-label-caps text-[9px] uppercase mt-1 tracking-widest font-bold">Archive</span>
+</a>
+</div>
+<div class="flex-grow"></div>
+<div class="flex flex-col space-y-4 w-full px-2">
+<a class="text-on-surface-variant hover:text-secondary hover:bg-secondary-fixed flex flex-col items-center justify-center py-2 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">menu_book</span>
+</a>
+<a class="text-on-surface-variant hover:text-secondary hover:bg-secondary-fixed flex flex-col items-center justify-center py-2 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">contact_support</span>
+</a>
+<div class="mt-4 pt-4 border-t border-surface-container w-full flex justify-center">
+<div class="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center border border-outline-variant shadow-sm" title="System Core">
+<span class="font-label-caps text-label-caps text-secondary font-bold">SC</span>
+</div>
+</div>
+</div>
+</nav>
+<!-- Main Content Area -->
+<div class="flex flex-col flex-grow h-full w-full overflow-hidden bg-background">
+<!-- TopNavBar -->
+<header class="bg-surface-container-lowest text-primary border-b border-surface-container flex justify-between items-center h-14 px-gutter w-full shrink-0 z-40">
+<div class="flex items-center space-x-6 h-full">
+<div class="font-headline-md text-headline-md font-bold tracking-tighter text-primary">ANDROMEDA</div>
+<nav class="hidden md:flex items-center space-x-4 h-full">
+<a class="text-secondary border-b-2 border-secondary font-bold pb-1 h-full flex items-center font-body-md text-body-md tracking-tight opacity-90 scale-95" href="#">Themes</a>
+<a class="text-on-surface-variant hover:text-on-surface transition-colors hover:bg-surface-container-low transition-all h-full flex items-center px-2 font-body-md text-body-md tracking-tight" href="#">The $100M Book</a>
+<a class="text-on-surface-variant hover:text-on-surface transition-colors hover:bg-surface-container-low transition-all h-full flex items-center px-2 font-body-md text-body-md tracking-tight" href="#">Risk &amp; Stress</a>
+<a class="text-on-surface-variant hover:text-on-surface transition-colors hover:bg-surface-container-low transition-all h-full flex items-center px-2 font-body-md text-body-md tracking-tight" href="#">Method &amp; Lineage</a>
+</nav>
+</div>
+<div class="flex items-center space-x-4">
+<div class="hidden lg:flex items-center space-x-3 text-on-surface font-data-tabular text-data-tabular">
+<span class="bg-surface-container px-2 py-1 border border-outline-variant rounded-md shadow-sm">Late-cycle / Risk-on</span>
+<span class="text-on-surface-variant text-body-sm font-body-sm">NYSE: OPEN</span>
+</div>
+<!-- Search Bar Placeholder -->
+<div class="relative w-48 hidden sm:block">
+<span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-[14px] text-outline">search</span>
+<input class="w-full bg-surface-container-lowest border border-outline-variant text-on-surface font-body-sm text-body-sm rounded-md pl-7 pr-2 py-1 h-8 focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary shadow-sm" placeholder="Search entity..." type="text"/>
+</div>
+<div class="flex items-center space-x-2 text-on-surface-variant">
+<button class="hover:text-secondary transition-colors p-1"><span class="material-symbols-outlined text-[20px]">account_tree</span></button>
+<button class="hover:text-secondary transition-colors p-1"><span class="material-symbols-outlined text-[20px]">analytics</span></button>
+<button class="hover:text-secondary transition-colors p-1"><span class="material-symbols-outlined text-[20px]">settings</span></button>
+</div>
+</div>
+</header>
+<!-- Canvas -->
+<main class="flex-grow p-gutter overflow-y-auto w-full">
+<div class="dense-grid grid-12 h-full gap-4">
+<!-- Row 1: Macro Regime Hero (Col 1-12) -->
+<div class="panel col-span-12 h-36 flex flex-row overflow-hidden">
+<div class="w-1/4 border-r border-e4e2e4 p-6 flex flex-col justify-center bg-surface-container-lowest">
+<div class="font-label-caps text-label-caps text-on-surface-variant mb-1 uppercase tracking-widest">Macro Regime</div>
+<div class="font-display-lg text-display-lg text-secondary">LATE-CYCLE</div>
+<div class="font-body-sm text-body-sm text-on-surface mt-2 flex items-center">
+<span class="w-2.5 h-2.5 rounded-full bg-error mr-2 shadow-sm"></span> Risk-On Bias
+                    </div>
+</div>
+<!-- Core Inputs Gauges -->
+<div class="w-3/4 flex flex-row p-6 gap-6 bg-surface-container-lowest/50">
+<!-- Gauge 1: Yield Curve -->
+<div class="flex-1 flex flex-col justify-between">
+<div class="flex justify-between items-start mb-2">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-widest">Yield Curve</span>
+<span class="font-label-caps text-[9px] badge-exact uppercase font-bold tracking-widest">EXACT • 1s</span>
+</div>
+<div class="font-data-tabular text-[16px] text-on-surface font-semibold">-42 bps</div>
+<div class="w-full h-1.5 bg-surface-container mt-3 relative rounded-full overflow-hidden">
+<div class="absolute left-1/2 top-0 h-full w-px bg-outline-variant z-10"></div>
+<div class="absolute right-1/2 top-0 h-full bg-error" style="width: 30%;"></div>
+</div>
+</div>
+<!-- Gauge 2: VIX -->
+<div class="flex-1 flex flex-col justify-between border-l border-surface-container pl-6">
+<div class="flex justify-between items-start mb-2">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-widest">VIX Struct</span>
+<span class="font-label-caps text-[9px] badge-exact uppercase font-bold tracking-widest">EXACT • 1s</span>
+</div>
+<div class="font-data-tabular text-[16px] text-on-surface font-semibold">Contango</div>
+<div class="w-full h-1.5 bg-surface-container mt-3 relative rounded-full overflow-hidden">
+<div class="absolute left-0 top-0 h-full bg-secondary" style="width: 25%;"></div>
+</div>
+</div>
+<!-- Gauge 3: Real Rate -->
+<div class="flex-1 flex flex-col justify-between border-l border-surface-container pl-6">
+<div class="flex justify-between items-start mb-2">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-widest">Real Rate (10Y)</span>
+<span class="font-label-caps text-[9px] badge-stale uppercase font-bold tracking-widest">STALE • 5m</span>
+</div>
+<div class="font-data-tabular text-[16px] text-on-surface font-semibold">1.84%</div>
+<div class="w-full h-1.5 bg-surface-container mt-3 relative rounded-full overflow-hidden">
+<div class="absolute left-0 top-0 h-full bg-tertiary-fixed-dim" style="width: 70%;"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Row 2: HypeScore Heatmap (Col 1-8) & Conviction/Watchlist (Col 9-12) -->
+<!-- HypeScore Heatmap -->
+<div class="panel col-span-12 lg:col-span-8" style="min-height: 450px;">
+<div class="panel-header bg-surface-container-lowest">
+<div class="flex items-center space-x-2">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">grid_view</span>
+<span class="font-label-caps text-label-caps text-on-surface uppercase tracking-widest">Theme Hype Matrix</span>
+</div>
+<div class="flex space-x-1 bg-surface-container p-0.5 rounded-md border border-outline-variant/50">
+<button class="bg-surface-container-lowest text-on-surface px-3 py-1 rounded text-[11px] font-semibold shadow-sm">1D</button>
+<button class="text-on-surface-variant px-3 py-1 rounded text-[11px] font-semibold hover:bg-surface-container-highest">1W</button>
+</div>
+</div>
+<div class="panel-body p-0 bg-surface-container-lowest">
+<!-- Table Header -->
+<div class="flex border-b border-surface-container bg-surface-container-low/50 font-label-caps text-label-caps text-on-surface-variant p-3 sticky top-0 uppercase tracking-widest">
+<div class="w-1/3 pl-3 flex items-center">THEME <span class="material-symbols-outlined text-[14px] ml-1">arrow_drop_down</span></div>
+<div class="w-1/6 text-right">HYPE<sup class="text-secondary ml-0.5 font-bold cursor-pointer">1</sup></div>
+<div class="w-1/6 text-right">VOL</div>
+<div class="w-1/6 text-right">SENT</div>
+<div class="w-1/6 text-right pr-3">MOM</div>
+</div>
+<!-- Heatmap Rows -->
+<div class="flex flex-col">
+<!-- Row 1 -->
+<div class="data-row py-3 relative group cursor-pointer hover:bg-surface-container-low transition-colors">
+<div class="w-1/3 pl-3 flex items-center font-body-sm text-body-sm text-on-surface font-medium">
+<div class="w-1 h-3.5 bg-secondary rounded-full mr-3"></div>
+                                AI Infrastructure
+                            </div>
+<div class="w-1/6 text-right font-data-tabular text-data-tabular">
+<span class="bg-secondary-fixed text-on-secondary-fixed px-2 py-0.5 rounded font-semibold border border-secondary-fixed-dim/30">94</span>
+</div>
+<div class="w-1/6 text-right font-data-tabular text-data-tabular text-on-surface-variant">88</div>
+<div class="w-1/6 text-right font-data-tabular text-data-tabular text-secondary font-medium">+4.2</div>
+<div class="w-1/6 text-right pr-3 font-data-tabular text-data-tabular text-on-surface-variant">96</div>
+<div class="absolute right-3 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center">
+<span class="material-symbols-outlined text-[18px] text-secondary">chevron_right</span>
+</div>
+</div>
+<!-- Row 2 -->
+<div class="data-row py-3 group cursor-pointer hover:bg-surface-container-low transition-colors">
+<div class="w-1/3 pl-3 flex items-center font-body-sm text-body-sm text-on-surface font-medium">
+<div class="w-1 h-3.5 bg-tertiary-fixed-dim rounded-full mr-3"></div>
+                                Energy Transition
+                            </div>
+<div class="w-1/6 text-right font-data-tabular text-data-tabular">
+<span class="bg-surface-container-highest text-on-surface px-2 py-0.5 rounded font-semibold border border-outline-variant">72</span>
+</div>
+<div class="w-1/6 text-right font-data-tabular text-data-tabular text-on-surface-variant">65</div>
+<div class="w-1/6 text-right font-data-tabular text-data-tabular text-error font-medium">-1.1</div>
+<div class="w-1/6 text-right pr-3 font-data-tabular text-data-tabular text-on-surface-variant">80</div>
+</div>
+<!-- Row 3 Active State -->
+<div class="data-row py-3 group cursor-pointer bg-primary-fixed/20 border-l-4 border-l-secondary border-y border-secondary/10 relative">
+<div class="w-1/3 pl-2 flex items-center font-body-sm text-body-sm text-secondary font-semibold">
+<div class="w-1 h-3.5 bg-secondary rounded-full mr-3 hidden"></div> <!-- Hidden because of border-l -->
+                                Deglobalization
+                            </div>
+<div class="w-1/6 text-right font-data-tabular text-data-tabular">
+<span class="bg-secondary text-on-secondary px-2 py-0.5 rounded font-semibold shadow-sm">86</span>
+</div>
+<div class="w-1/6 text-right font-data-tabular text-data-tabular text-on-surface font-medium">79</div>
+<div class="w-1/6 text-right font-data-tabular text-data-tabular text-secondary font-medium">+2.8</div>
+<div class="w-1/6 text-right pr-3 font-data-tabular text-data-tabular text-on-surface font-medium">91</div>
+<div class="absolute right-0 top-0 h-full w-64 bg-surface-container-lowest border border-outline-variant p-3 hidden group-hover:flex flex-col shadow-lg z-10 rounded-l-md">
+<div class="font-label-caps text-label-caps text-secondary uppercase mb-2 border-b border-surface-container pb-1 tracking-widest">Derivation: HYPE</div>
+<div class="font-data-tabular text-[11px] text-on-surface-variant leading-relaxed">
+                                    &gt; calc_hype(vol: 79, sent: 2.8)<br/>
+                                    &gt; weight_vol: 0.6<br/>
+                                    &gt; weight_sent: 0.4<br/>
+                                    &gt; <span class="text-secondary font-semibold">result: 86.4421</span>
+</div>
+</div>
+</div>
+<!-- Filler rows -->
+<div class="data-row py-3 hover:bg-surface-container-low transition-colors"><div class="w-1/3 pl-3 text-on-surface-variant text-body-sm">Sovereign Debt Stress</div><div class="w-2/3 text-right text-data-tabular text-on-surface-variant pr-3">...</div></div>
+<div class="data-row py-3 hover:bg-surface-container-low transition-colors"><div class="w-1/3 pl-3 text-on-surface-variant text-body-sm">GLP-1 Secondaries</div><div class="w-2/3 text-right text-data-tabular text-on-surface-variant pr-3">...</div></div>
+<div class="data-row py-3 hover:bg-surface-container-low transition-colors"><div class="w-1/3 pl-3 text-on-surface-variant text-body-sm">Uranium Cycle</div><div class="w-2/3 text-right text-data-tabular text-on-surface-variant pr-3">...</div></div>
+</div>
+</div>
+</div>
+<!-- Right Column: Conviction & Watchlist -->
+<div class="col-span-12 lg:col-span-4 flex flex-col gap-4">
+<!-- Top-3 Conviction Cards -->
+<div class="panel flex-1">
+<div class="panel-header border-b-0 pb-2 bg-transparent">
+<span class="font-label-caps text-label-caps text-on-surface uppercase tracking-widest">EdgeScore Conviction</span>
+</div>
+<div class="panel-body flex flex-col gap-3 pt-0">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest border border-outline-variant/50 p-4 rounded-lg hover:border-outline-variant hover:shadow-sm transition-all">
+<div class="flex justify-between items-start mb-3">
+<div class="font-body-md text-body-md text-on-surface font-semibold">AI Infrastructure</div>
+<div class="font-data-tabular text-data-tabular text-secondary bg-secondary-fixed/50 px-1.5 py-0.5 rounded font-bold">98.2</div>
+</div>
+<div class="flex justify-between items-end">
+<div class="font-label-caps text-[10px] text-on-surface-variant tracking-wider font-semibold">LONG • NVDA, TSM</div>
+<span class="font-label-caps text-[9px] badge-exact uppercase font-bold tracking-widest">EXACT</span>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container-lowest border border-outline-variant/50 p-4 rounded-lg hover:border-outline-variant hover:shadow-sm transition-all">
+<div class="flex justify-between items-start mb-3">
+<div class="font-body-md text-body-md text-on-surface font-semibold">Commercial RE</div>
+<div class="font-data-tabular text-data-tabular text-error bg-error-container/50 px-1.5 py-0.5 rounded font-bold">12.4</div>
+</div>
+<div class="flex justify-between items-end">
+<div class="font-label-caps text-[10px] text-on-surface-variant tracking-wider font-semibold">SHORT • KRE</div>
+<span class="font-label-caps text-[9px] badge-exact uppercase font-bold tracking-widest">EXACT</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Emerging/Fading Watchlist -->
+<div class="panel flex-1">
+<div class="panel-header bg-transparent border-b border-surface-container pb-3">
+<span class="font-label-caps text-label-caps text-on-surface uppercase tracking-widest">24H Delta Watch</span>
+</div>
+<div class="panel-body p-0">
+<div class="flex flex-col">
+<div class="data-row bg-surface-container-lowest hover:bg-surface-container-low transition-colors px-4 py-3">
+<span class="material-symbols-outlined text-secondary text-[16px] mr-3">trending_up</span>
+<span class="font-body-sm text-body-sm text-on-surface flex-grow font-medium">Japanese Equities</span>
+<span class="font-data-tabular text-data-tabular text-secondary font-semibold">+14.2</span>
+</div>
+<div class="data-row bg-surface-container-lowest hover:bg-surface-container-low transition-colors px-4 py-3">
+<span class="material-symbols-outlined text-secondary text-[16px] mr-3">trending_up</span>
+<span class="font-body-sm text-body-sm text-on-surface flex-grow font-medium">Crypto Infrastructure</span>
+<span class="font-data-tabular text-data-tabular text-secondary font-semibold">+11.8</span>
+</div>
+<div class="data-row bg-surface-container-lowest hover:bg-surface-container-low transition-colors px-4 py-3">
+<span class="material-symbols-outlined text-error text-[16px] mr-3">trending_down</span>
+<span class="font-body-sm text-body-sm text-on-surface flex-grow font-medium">European Luxury</span>
+<span class="font-data-tabular text-data-tabular text-error font-semibold">-9.4</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="bg-surface-container-lowest text-on-surface-variant border-t border-surface-container flex justify-between items-center px-margin h-10 w-full shrink-0 z-40 text-[10px]">
+<div class="font-label-caps uppercase tracking-widest flex items-center space-x-2 font-semibold">
+<span class="text-secondary">© 2024 ANDROMEDA SYSTEMS. Pipeline: OPTIMAL</span>
+</div>
+<div class="flex space-x-6 font-label-caps uppercase tracking-widest hidden sm:flex font-semibold">
+<span>Pipeline Health: <span class="text-on-surface">99.8%</span></span>
+<span>Last Run: <span class="text-on-surface">14:02:11 UTC</span></span>
+<span class="flex items-center"><div class="w-1.5 h-1.5 rounded-full bg-secondary mr-1.5"></div>System Status: NOMINAL</span>
+</div>
+</footer>
+</div>
+</body></html>

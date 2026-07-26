@@ -96,13 +96,24 @@ resolves it. A resolved verdict must carry `entry_price`, `exit_price`, `exit_da
   long. Silently scoring a short as a long inverts its verdict, which is the most
   damaging error this module could make — the same failure ADR-0041 records.
 
-## What this does not do yet
+## The UI (shipped same day)
 
-No UI. The instrument records and resolves; nothing on the site renders it, so today the
-commitment is visible in the database and not to a reader. A `/method` scorecard section
-is the next increment and needs no new logic — it is a render of
-`pick_outcomes` plus `build_scorecard`, which is already tested. Until it ships, the
-accountability this ADR creates is real but private.
+`/method/evidence#track-record` renders it: hit rate, mean signed return, void rate,
+pending count with the first expected maturity, and a split by direction.
+`lib/method/trackRecord.ts` re-implements the aggregate in TS rather than sharing the
+Python one — the backend aggregate is never persisted, only the per-pick rows are, so the
+alternative is not "share the function" but "persist a summary and let it go stale against
+its own rows". Both sides pin the same four semantics (hit rate null not zero, void
+excluded from the hit rate, void rate denominated in matured picks, flat is not a hit).
+
+It shipped **while it had nothing to report**, which is the point: a scorecard that appears
+once there are results is a scorecard whose test was chosen after the fact. Live it reads
+`—` on every outcome-dependent figure, `23` awaiting resolution, first maturity 2026-08-20.
+
+`trackRecordStatus` adds a third state the backend does not need: **`too-thin`**, below 20
+resolved picks. A hit rate over a handful of names is noise with a percentage sign, and
+[ADR-0059](0059-a-single-date-ic-is-not-validation.md) records the same panel-level failure
+on the IC table — a single-date correlation nearly read as validation.
 
 Book-level accountability — what the portfolio actually earned given 50-77% turnover —
 is a **different** instrument and deliberately out of scope. It overlaps

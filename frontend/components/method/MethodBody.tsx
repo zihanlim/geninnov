@@ -54,6 +54,7 @@ import {
 import SignalValidation from "@/components/method/SignalValidation";
 import FactorReconciliation from "@/components/method/FactorReconciliation";
 import EdgeValidation from "@/components/method/EdgeValidation";
+import TrackRecord from "@/components/method/TrackRecord";
 
 /* ══ Row types ═══════════════════════════════════════════════════════════════ */
 
@@ -2431,6 +2432,12 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
         )}
       </Section>
       )}
+
+      {/* Self-contained like SignalValidation/EdgeValidation: it reads pick_outcomes on its
+          own rather than joining the shared useEffect, because it is the one panel whose
+          table may not exist yet on an environment that has not applied migration 043 —
+          and a missing table must degrade to one explained gap, not fail the whole page. */}
+      {chapterOwns(chapter, "track-record") && <TrackRecord />}
 
       <footer className="mt-10 pt-5 border-t border-border text-[11.5px] text-text-tertiary max-w-[92ch]">
         Every figure on this page was read from Supabase in the browser at page load. Formulas are

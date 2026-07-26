@@ -568,17 +568,15 @@ export function DrawdownChart({
               would conclude no reference exists rather than that one exists and
               is too short to mean anything. */}
           {usableBenchmark.length < BENCHMARK_MIN_OBS && (
+            /* One sentence. An earlier draft spent three explaining why a line
+               is absent, which is more words than the chart itself carries —
+               the reader needs the fact and the count, not the argument. */
             <p className="m-0 mt-2 text-[11px] text-text-tertiary leading-[1.6] max-w-[95ch]">
-              No benchmark drawn. {benchmarkTicker} is persisted in{" "}
-              <Ident>benchmark_returns.cumulative_return</Ident>, compounded from
-              the book&apos;s own inception, but only{" "}
-              <strong>{usableBenchmark.length}</strong>{" "}
-              {usableBenchmark.length === 1
-                ? "usable observation exists"
-                : "usable observations exist"}{" "}
-              against the{" "}
-              {BENCHMARK_MIN_OBS} this page already requires of a Sharpe. Two
-              curves this short would compare noise to noise.
+              No {benchmarkTicker} benchmark drawn —{" "}
+              <strong>{usableBenchmark.length}</strong> usable observation
+              {usableBenchmark.length === 1 ? "" : "s"} against the{" "}
+              {BENCHMARK_MIN_OBS} a Sharpe needs.{" "}
+              <Ident>benchmark_returns.cumulative_return</Ident>
             </p>
           )}
 

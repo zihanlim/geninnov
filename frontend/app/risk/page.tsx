@@ -806,12 +806,12 @@ function RiskPageInner() {
         <SourceCaveat source="portfolio_cumulative_return.daily_returns_count">
           {data.inception ? (
             <>
-              Realised, not simulated — but short. {data.inception.daily_returns_count}{" "}
-              daily observation
-              {data.inception.daily_returns_count === 1 ? "" : "s"} since inception{" "}
-              {data.inception.inception_date}, weekdays only. At this length the
-              curve shows what happened; it is not yet a track record and no
-              Sharpe, drawdown or win rate drawn from it is stable.
+              Realised, not simulated — but only{" "}
+              {data.inception.daily_returns_count} daily observation
+              {data.inception.daily_returns_count === 1 ? "" : "s"} since{" "}
+              {data.inception.inception_date}, weekdays only.{" "}
+              <strong>Not yet a track record</strong> — no Sharpe, drawdown or
+              win rate from this sample is stable.
             </>
           ) : (
             <>

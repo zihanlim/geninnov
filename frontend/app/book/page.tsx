@@ -37,6 +37,7 @@ import SizingChainView from "@/components/book/SizingChainView";
 import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import AbstentionRoster from "@/components/book/AbstentionRoster";
 import BookTurnover from "@/components/book/BookTurnover";
+import TrackRecordPanel from "@/components/book/TrackRecordPanel";
 import PoolDepth, { type IndependentIdeas } from "@/components/book/PoolDepth";
 import { WorkedExamplePanel } from "@/components/book/WorkedExamplePanel";
 import type {
@@ -940,6 +941,24 @@ function BookPageInner() {
               />
               </div>
 
+              {/* ONCE, under both tables — not once per section. Rendered inside
+                  PositionSection it repeated the identical sentence under Longs
+                  and again under Shorts, which is boilerplate rather than
+                  provenance: the cadence and the source are facts about the
+                  BOOK, and neither changes with direction. */}
+              {(longs.length > 0 || shorts.length > 0) && (
+                <ProvenanceStrip
+                  className="px-0"
+                  cadence="Published 21:30 UTC, weekdays"
+                  source="research_recommendations.picks"
+                  note={
+                    rec?.run_date
+                      ? `run ${rec.run_date} · L0-L4 deterministic`
+                      : "L0-L4 deterministic"
+                  }
+                />
+              )}
+
               {/* ADR-0081 — Worked example lineage panel. Additive, collapsed by default
                   (a native `<details>`), rendered only when there are picks. Same data
                   the rows above already show, in the order the pipeline performed it. */}
@@ -980,6 +999,11 @@ function BookPageInner() {
 
           {/* ── Same inputs, run again: agent churn as against market churn ─ */}
           <Replication />
+
+          {/* ── Did the books we already published turn out right? (ADR-0090) ─
+              The instrument lived only on /method, two clicks from the claims it
+              grades. This is the summary at the point of the claim. */}
+          <TrackRecordPanel />
           </div>
 
           {/* ── Abstention roster ───────────────────────────────────────── */}
@@ -1236,25 +1260,25 @@ function PositionSection({
             <span>Asset · theme · rationale</span>
             <span className="text-right flex flex-col">
               Weight · notional
-              <span className="text-[9px] tracking-[0.1em] normal-case">
+              <span className="text-[10px] tracking-[0.1em] normal-case">
                 {BOOK_ROW_SCOPES[2]}
               </span>
             </span>
             <span className="text-right flex flex-col">
               Edge
-              <span className="text-[9px] tracking-[0.1em] normal-case">
+              <span className="text-[10px] tracking-[0.1em] normal-case">
                 {BOOK_ROW_SCOPES[3]}
               </span>
             </span>
             <span className="text-right flex flex-col">
               Conv.
-              <span className="text-[9px] tracking-[0.1em] normal-case">
+              <span className="text-[10px] tracking-[0.1em] normal-case">
                 {BOOK_ROW_SCOPES[4]}
               </span>
             </span>
             <span className="text-right flex flex-col">
               Cap
-              <span className="text-[9px] tracking-[0.1em] normal-case">
+              <span className="text-[10px] tracking-[0.1em] normal-case">
                 {BOOK_ROW_SCOPES[5]}
               </span>
             </span>
@@ -1289,17 +1313,6 @@ function PositionSection({
             />
           ))}
         </ScrollArea>
-      )}
-      {picks.length > 0 && (
-        <ProvenanceStrip
-          cadence="Published 21:30 UTC, weekdays"
-          source="research_recommendations.picks"
-          note={
-            bookRunDate
-              ? `run ${bookRunDate} · L0-L4 deterministic`
-              : "L0-L4 deterministic"
-          }
-        />
       )}
     </section>
   );

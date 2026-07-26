@@ -69,10 +69,18 @@ export default function SideRail() {
     });
   };
 
+  // pb-[var(--feed-h)] below is NOT a shorter h-[]. The rail runs the full
+  // viewport height on purpose — its right border and ground have to meet the
+  // bottom of the window, or the column stops in mid-air above the LiveFeed
+  // ribbon and leaves a 30px notch in the page's only vertical rule. So the box
+  // stays full height and the PADDING holds the ribbon's space: `mt-auto` on
+  // the toggle then bottoms out above the bar instead of under it. Without it
+  // the button's lower 21px were covered and the ribbon intercepted its click —
+  // the rail could not be collapsed by mouse at all.
   return (
     <nav
       aria-label="Sections of the product"
-      className={`hidden wide:flex flex-col shrink-0 border-r border-border bg-bg-primary sticky top-14 h-[calc(100vh-56px)] transition-[width] duration-150 ${
+      className={`hidden wide:flex flex-col shrink-0 border-r border-border bg-bg-primary sticky top-14 h-[calc(100vh-56px)] pb-[var(--feed-h)] transition-[width] duration-150 ${
         expanded ? "w-[200px]" : "w-[56px]"
       }`}
     >

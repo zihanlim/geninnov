@@ -151,7 +151,11 @@ export default function LiveFeed() {
   const staleness = assessStaleness(latest?.run_date);
 
   return (
-    <div className="fixed bottom-0 inset-x-0 bg-bg-surface border-t border-border px-5 py-1.5 flex items-center gap-4 text-[11px] text-text-secondary z-40 overflow-x-auto scrollbar-none whitespace-nowrap">
+    // min-h-[var(--feed-h)] is not cosmetic: --feed-h is what SideRail reserves
+    // at its bottom so its collapse button is not painted under this bar. The
+    // floor makes that reservation binding — the bar cannot render shorter than
+    // the space held for it, and `whitespace-nowrap` stops it rendering taller.
+    <div className="fixed bottom-0 inset-x-0 min-h-[var(--feed-h)] bg-bg-surface border-t border-border px-5 py-1.5 flex items-center gap-4 text-[11px] text-text-secondary z-40 overflow-x-auto scrollbar-none whitespace-nowrap">
       <span className="inline-flex items-center gap-1.5" title={state.detail}>
         <span
           className="w-1.5 h-1.5 rounded-full shrink-0"

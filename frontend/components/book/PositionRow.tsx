@@ -217,7 +217,15 @@ export function PositionRow({
         // primary touch target on /book: 9px of padding either side of two lines of
         // 13px text lands it at ~48px, above the 44px WCAG target-size floor.
         // Goal 8 is a floor, so density stops here rather than at the cell value.
-        className={`w-full ${BOOK_ROW_MIN_W} ${BOOK_ROW_GRID} text-left px-4 py-[9px] hover:bg-bg-elevated transition-colors grid items-center gap-3 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent`}
+        // Open-row marking. The closed state keeps a TRANSPARENT border of the
+        // same width so opening a row does not shift its contents 4px sideways.
+        // --accent, never --long: the comp this came from marks its open row
+        // with its LONG colour, which would mean a long and an open short row
+        // read the same (goal 3, ADR-0085). Border-box sizing keeps the 4px
+        // inside BOOK_ROW_MIN_W, so the two-pane arithmetic is untouched.
+        className={`w-full ${BOOK_ROW_MIN_W} ${BOOK_ROW_GRID} text-left px-4 py-[9px] border-l-4 ${
+          open ? "border-accent bg-bg-elevated" : "border-transparent"
+        } hover:bg-bg-elevated transition-colors grid items-center gap-3 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent`}
       >
         <span className="num text-text-tertiary text-[12px]">#{rank}</span>
         <span className="flex flex-col min-w-0 gap-0.5">

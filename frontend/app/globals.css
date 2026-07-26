@@ -114,6 +114,23 @@
        why only three of the five tokens moved. */
     --long: #126e53;         /* forest-emerald — up / long */
     --short: #9f172a;        /* crimson — down / short */
+
+    /* Height of LiveFeed, the fixed pipeline ribbon at the bottom of every page.
+       It is `position: fixed` at z-40, so it is OUT of flow — nothing below it
+       in the document reserves its space, and anything an element anchors to the
+       viewport bottom lands UNDER it.
+       That is not hypothetical: SideRail's expand/collapse button sat at
+       y 859–892 of a 900px viewport while this ribbon started at 870.5, so 21px
+       of a 33px control was covered AND its click point was intercepted — the
+       rail could not be collapsed at all by mouse.
+       Declared here, once, so a bottom-anchored element can reserve it
+       (`pb-[var(--feed-h)]`) instead of hardcoding a number that drifts when the
+       ribbon's padding or type size changes. LiveFeed itself pins its own
+       min-height to this, which is what makes the reservation true rather than a
+       guess: the bar is `whitespace-nowrap`, so it cannot wrap taller, and this
+       floor stops it measuring shorter. Measured 29.5px; 30 is that, rounded up
+       to a whole pixel. */
+    --feed-h: 30px;
   }
 
   html, body {

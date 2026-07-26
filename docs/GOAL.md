@@ -204,6 +204,30 @@ Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the f
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 98 (2026-07-26) — fixed the mobile /book scroll too; the whole site is now clean at four widths
+
+The other session left the mobile `/book` scroll from iteration 97 untouched (quiet tree, no new
+commits), so with no active collision I took it — the mandate is *fix what you find*.
+
+**Diagnosed to the exact element, fixed with their own pattern.** A Playwright DOM-path trace found
+the leak: the `wide:grid-cols-2` Longs/Shorts grid (`book/page.tsx:871`) gave its `PositionSection`
+children `[&>*]:mb-0` but **not `[&>*]:min-w-0`**. A grid item defaults to `min-width:auto`, so each
+section refused to shrink below the 640px `PositionRow` grid nested inside it, stretched to 642px,
+and scrolled the body to 658px on a 375px phone. This is the *exact* min-w-0-on-grid-items rule
+`layout.tsx` already documents — the new grid just missed it. One class (`[&>*]:min-w-0`, commit
+`c73591f4`), which is a no-op at desktop (each pane ≥640px already fits) and the fix on mobile.
+
+**Deployed and verified live — the full sweep is now clean:** `/`, `/book`, `/risk`, `/method` at
+**1440, 1425, 1366, and 375** all report `scrollWidth == viewport` (zero page horizontal scroll),
+zero console errors, zero uncaught page errors — 16/16, issues: 0. Looked at the mobile `/book`
+capture: the book renders intact and each position row scrolls inside its own `ScrollArea` (the
+"swipe" affordance) instead of the page. `docs/captures/2026-07-26/book-{mobile,desktop}.png`
+refreshed to the fixed state.
+
+So both scroll defects the realistic-width sweep exposed (iterations 97–98) are fixed, shipped, and
+live-verified. Only the isolated culprit files touched (`SectionNav.tsx`, then `book/page.tsx`), no
+co-author, each landing on the shared main so the other session sees them.
+
 ### Loop iteration 97 (2026-07-26) — found and fixed a real desktop scroll bug in the shipped rail UI; reported the mobile one
 
 The other session's new rail UI is deployed, so I ran the pass on **it** — at 1440, **1425**, **1366**,

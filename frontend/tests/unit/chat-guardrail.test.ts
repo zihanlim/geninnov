@@ -238,6 +238,39 @@ describe("verifyAnswer — whole-percent facts", () => {
   });
 });
 
+describe("verifyAnswer — numerals that are names, not measurements", () => {
+  // Found in production after the month fix: an answer reading "65.00% of the
+  // S&P 500 above its 200-day moving average" came back unverified on "500".
+  // Marking an index name as unsourced teaches a reader the marks are noise,
+  // which costs more than the one bad figure it might someday catch.
+  const breadth = [
+    result({
+      facts: [fact({ key: "regime.spx_breadth", label: "S&P breadth (% of SPX above 200d MA)", value: 65, unit: "pct_whole" })],
+    }),
+  ];
+
+  it("does not flag the number in an index name", () => {
+    const v = verifyAnswer("65% of the S&P 500 sits above its 200d MA.", breadth);
+    expect(v.verified).toBe(true);
+    expect(v.verdicts.find((x) => x.token === "500")?.grounding).toBe("quoted");
+  });
+
+  it("covers the other indices by name", () => {
+    expect(verifyAnswer("The Russell 2000 lagged.", breadth).verified).toBe(true);
+    expect(verifyAnswer("The Nasdaq 100 led.", breadth).verified).toBe(true);
+  });
+
+  it("still adjudicates a measurement that follows a capitalised name", () => {
+    // The reason this is an explicit list and not "a capitalised word before a
+    // number": VIX 18.58 is a measurement wearing a name.
+    expect(verifyAnswer("VIX 18.58 is moderate.", breadth).unverified).toContain("18.58");
+  });
+
+  it("still adjudicates a quantity even inside an index name, when it carries a unit", () => {
+    expect(verifyAnswer("The S&P 500% move.", breadth).unverified).toContain("500%");
+  });
+});
+
 describe("verifyAnswer — an answer with no figures", () => {
   it("passes prose that states an absence", () => {
     const results = [

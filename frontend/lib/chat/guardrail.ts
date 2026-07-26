@@ -97,6 +97,24 @@ const MONTH_NAMES = [
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Sept", "Oct", "Nov", "Dec"];
 const MONTH = new RegExp(`\\b(?:${[...MONTH_NAMES, ...MONTH_ABBR].join("|")})\\b`, "g");
 
+// Numerals that are part of a NAME rather than a measurement.
+//
+// This is the third instance of one class of false positive, and the pattern is
+// worth naming: an index name carries a number that measures nothing. Marking
+// "S&P 500" as unsourced is not a harmless extra warning — it is the fastest way
+// to teach a reader that the marks are noise, at which point the one mark that
+// matters gets skipped too.
+//
+// The first instance was "200d MA", fixed by grounding fact LABELS. The second
+// was a bare calendar year. This is the third, and it is an explicit list rather
+// than a rule like "a capitalised word before a number", because that rule would
+// also exempt "VIX 18.58" — a measurement wearing a capitalised name.
+//
+// Quoted, never cited: a name is not a measurement, so it can justify repeating
+// the token and can never justify a claim about the book.
+const INDEX_NAME_BEFORE =
+  /\b(?:S&P|SPX|Russell|Nasdaq|NASDAQ|FTSE|Nikkei|Euro\s+Stoxx|Stoxx|STOXX|DAX|CAC|Hang\s+Seng|MSCI|TOPIX|KOSPI|Sensex|Nifty)\s+$/;
+
 /** "2026-07-25" → the month words a correct answer may use for it. */
 function monthsOfDate(iso: string): string[] {
   const m = /^\d{4}-(\d{2})-\d{2}/.exec(iso);
@@ -288,6 +306,13 @@ export function verifyAnswer(
     if (dateSpans.some(([a, b]) => index >= a && index < b)) continue;
     const parsed = parseNumeral(token);
     if (!parsed) continue;
+
+    // Part of an index name ("the S&P 500", "the Russell 2000") — a label, not
+    // a measurement.
+    if (!parsed.suffix && INDEX_NAME_BEFORE.test(answer.slice(Math.max(0, index - 24), index))) {
+      verdicts.push({ token, index, grounding: "quoted" });
+      continue;
+    }
 
     // A bare four-digit integer in the calendar range is a year — "the 2026
     // refinancing wall" — not a figure claiming to be data. Only bare: 2026% or

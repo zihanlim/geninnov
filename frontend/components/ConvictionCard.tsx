@@ -4,6 +4,7 @@ import ScoreDeltaBadge from "./ScoreDeltaBadge";
 import { toDisplayScore, edgeRationale, plainRationale, type ThemeEdge } from "@/lib/themeSignals";
 import { EdgeDirectionChip, ProvenanceDot, PositionsLink, isThemeAbstained } from "./ThemeEdgeChips";
 import { isSynthetic, provenanceLabel, type ThemeProvenance } from "@/lib/themeProvenance";
+import type { NewsItem } from "@/lib/news";
 
 export interface ConvictionTheme {
   id: string;
@@ -46,6 +47,15 @@ interface Props {
   abstainThreshold?: number;
   /** Latest-run data_source provenance for the HypeScore. */
   provenance?: ThemeProvenance;
+  /**
+   * The most recent headline this theme scored from.
+   *
+   * A HypeScore is an attention measurement, and until now the card showed the
+   * measurement with none of the thing measured — the headlines were reachable
+   * only through a 10px hint into a drawer, three sections down. One concrete
+   * item here is what makes the number mean something at a glance.
+   */
+  topHeadline?: NewsItem | null;
 }
 
 // Rank only. The previous labels asserted "High conviction" / "Emerging" purely
@@ -75,6 +85,7 @@ export default function ConvictionCard({
   edge,
   abstainThreshold = 0.15,
   provenance,
+  topHeadline,
 }: Props) {
   const score = Math.round(theme.hype_score ?? 0);
   const delta = theme.delta_1d ?? 0;
@@ -156,12 +167,17 @@ export default function ConvictionCard({
         )}
         <span>·</span>
         <ScoreDeltaBadge delta={delta} variant="1d" />
+        {/* Was `text-[10px] … hidden md:inline` — a 10px hint that did not render
+            below the md breakpoint at all, so on a phone the card was clickable
+            with nothing saying so, and on desktop the only route to every
+            headline behind this score was a whisper. The card itself is the
+            button; this is its label, so it is legible and always present. */}
         {onOpenDerivation && (
           <span
-            className="ml-auto text-[10px] text-text-tertiary group-hover:text-accent transition-colors uppercase tracking-[0.08em] hidden md:inline"
-            title="Click to view score derivation"
+            className="ml-auto text-[11px] font-medium text-text-secondary group-hover:text-accent transition-colors whitespace-nowrap"
+            title="Open the full score derivation, including the headlines behind it"
           >
-            ⓘ derive
+            Derivation &amp; news →
           </span>
         )}
       </div>
@@ -187,6 +203,37 @@ export default function ConvictionCard({
         correlation={toDisplayScore(theme.corr_score)}
         momentum={toDisplayScore(theme.momentum_score)}
       />
+
+      {/* One concrete item behind the score. The card measured attention and
+          showed none of what was being attended to; this is the cheapest
+          possible answer to "what news?". Stops at the card — the rest live in
+          the feed below and the drawer. */}
+      {topHeadline && (
+        <div className="pt-3 mt-3 border-t border-border">
+          <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
+            Latest headline
+          </div>
+          {topHeadline.url ? (
+            <a
+              href={topHeadline.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              // stopPropagation: the whole card is role="button" and opens the
+              // derivation drawer. Without this, following the source also
+              // opens a drawer behind the new tab.
+              onClick={(e) => e.stopPropagation()}
+              className="text-[12px] leading-[1.45] text-text-secondary hover:text-accent underline decoration-border-strong hover:decoration-accent underline-offset-2 line-clamp-2"
+            >
+              {topHeadline.headline}
+              <span className="sr-only"> (opens source in a new tab)</span>
+            </a>
+          ) : (
+            <span className="text-[12px] leading-[1.45] text-text-secondary line-clamp-2">
+              {topHeadline.headline}
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-2.5 pt-3 mt-3 border-t border-border">
         <div>

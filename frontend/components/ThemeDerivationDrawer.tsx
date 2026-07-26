@@ -235,13 +235,23 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
       // left production /ask refusing every question), so the query degrades
       // instead of assuming the deploy order. Once 042 is applied the fallback
       // stops being reachable; until then the rows render exactly as before.
+      // NOT `.eq("run_date", runDate)`. `runDate` falls back to TODAY when the
+      // theme carries none, and the pipeline runs weekdays only — so on a
+      // Saturday, a Sunday, or any morning before 21:30 UTC this asked for a
+      // date that has no rows and rendered "no headlines for this run" over a
+      // perfectly good previous run. That is what made this section look broken
+      // on 2026-07-26 and again on 07-27.
+      //
+      // Instead: take the theme's newest rows by run_date, then keep only the
+      // ones sharing the newest date. One query, always the latest run that
+      // actually exists, and never a mix of two runs in one list.
       const newsCols = "source, headline, published_date, run_date";
       const queryNews = (cols: string) =>
         supabase
           .from("theme_news")
           .select(cols)
           .eq("theme_id", theme.id)
-          .eq("run_date", runDate)
+          .order("run_date", { ascending: false })
           .order("published_date", { ascending: false })
           .limit(40);
 
@@ -261,7 +271,12 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
         // shapes, with and without `url`), so supabase-js cannot infer the row
         // type from a literal and widens it to GenericStringError[]. The runtime
         // shape is still pinned by `newsCols`.
-        const rows = (newsRows ?? []) as unknown as ThemeNewsRow[];
+        const all = (newsRows ?? []) as unknown as ThemeNewsRow[];
+        // Newest run only. The query is ordered run_date desc, so the first
+        // row's date IS the newest; keeping just its siblings stops a 40-row
+        // window from silently spanning two runs and double-counting sources.
+        const newest = all[0]?.run_date ?? null;
+        const rows = newest ? all.filter((r) => r.run_date === newest) : all;
         const counts: Record<string, number> = {};
         for (const r of rows) {
           const key = r.source || "unknown";
@@ -316,6 +331,98 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
         </div>
       }
     >
+      {/* ── Raw headlines behind the score ──────────────────────────────── */}
+      <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mt-6 mb-2">
+        Headlines behind the score
+      </div>
+      <div className="text-[11px] text-text-tertiary mb-2">
+        The actual items collected for this theme on{" "}
+        <span className="num">{fmtDay(theme.run_date ?? null)}</span>, source-tagged.
+        The Volume and Sentiment sub-scores are computed from exactly these.
+      </div>
+      {sourceError ? (
+        <div className="text-text-tertiary text-[12px] py-2">
+          theme_news unavailable ({sourceError})
+        </div>
+      ) : headlines.length === 0 ? (
+        <div className="text-text-tertiary text-[12px] py-2">
+          No headline rows for this theme on this run date (theme_news). The
+          aggregate sub-scores may still exist, but there is no raw item to read
+          behind them.
+        </div>
+      ) : (
+        <ul className="m-0 pl-0 list-none flex flex-col gap-1.5">
+          {headlines.map((h, i) => {
+            const meta = sourceMeta(h.source);
+            return (
+              <li
+                key={`${h.headline}-${i}`}
+                className="rounded-[6px] border border-border bg-bg-elevated px-3 py-2"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span
+                    className="inline-flex items-center rounded px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.06em] num"
+                    style={{
+                      color: meta.color,
+                      border: `1px solid ${meta.color}`,
+                    }}
+                    title={meta.synthetic ? "Synthetic fallback — no live source" : undefined}
+                  >
+                    {meta.label}
+                  </span>
+                  {meta.synthetic && (
+                    <span className="text-warning text-[10px] font-semibold">
+                      synthetic
+                    </span>
+                  )}
+                  <span className="num text-[10.5px] text-text-tertiary ml-auto">
+                    {fmtDay(h.published_date)}
+                  </span>
+                </div>
+                {/* The headline is the evidence behind the HypeScore, so it is
+                    followable when we have a link and honest about it when we do
+                    not (ADR-0089). A null url is NOT rendered as a dead anchor:
+                    "no link" and "link to nowhere" are different claims and the
+                    second one is a lie. Rows written before migration 042 are
+                    permanently null — the fetch responses were never stored — so
+                    this branch is not transitional and does not get to be a TODO. */}
+                {h.url ? (
+                  <a
+                    href={h.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[12.5px] text-text-primary leading-[1.45] hover:text-accent underline decoration-border-strong hover:decoration-accent underline-offset-2"
+                  >
+                    {h.headline}
+                    <span className="sr-only"> (opens source in a new tab)</span>
+                  </a>
+                ) : (
+                  <div className="text-[12.5px] text-text-primary leading-[1.45]">
+                    {h.headline}
+                    <span
+                      className="text-[10.5px] text-text-tertiary ml-1.5 whitespace-nowrap"
+                      title={
+                        meta.synthetic
+                          ? "Mock fallback rows carry no source link."
+                          : "Collected before source links were persisted (migration 042); the URL was not stored and cannot be recovered."
+                      }
+                    >
+                      {meta.synthetic ? "(no source)" : "(link not stored)"}
+                    </span>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {headlines.some((h) => sourceMeta(h.source).synthetic) && (
+        <div className="text-[11px] text-warning mt-2 font-sans">
+          Some items are mock fallback — treat this theme&apos;s HypeScore as
+          estimated, not measured.
+        </div>
+      )}
+
       {/* ── Score breakdown ────────────────────────────────────────────────── */}
       <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-3">
         Score breakdown · raw → normalized → weighted
@@ -466,98 +573,6 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
           )}
         </li>
       </ul>
-
-      {/* ── Raw headlines behind the score ──────────────────────────────── */}
-      <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mt-6 mb-2">
-        Headlines behind the score
-      </div>
-      <div className="text-[11px] text-text-tertiary mb-2">
-        The actual items collected for this theme on{" "}
-        <span className="num">{fmtDay(theme.run_date ?? null)}</span>, source-tagged.
-        The Volume and Sentiment sub-scores are computed from exactly these.
-      </div>
-      {sourceError ? (
-        <div className="text-text-tertiary text-[12px] py-2">
-          theme_news unavailable ({sourceError})
-        </div>
-      ) : headlines.length === 0 ? (
-        <div className="text-text-tertiary text-[12px] py-2">
-          No headline rows for this theme on this run date (theme_news). The
-          aggregate sub-scores may still exist, but there is no raw item to read
-          behind them.
-        </div>
-      ) : (
-        <ul className="m-0 pl-0 list-none flex flex-col gap-1.5">
-          {headlines.map((h, i) => {
-            const meta = sourceMeta(h.source);
-            return (
-              <li
-                key={`${h.headline}-${i}`}
-                className="rounded-[6px] border border-border bg-bg-elevated px-3 py-2"
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span
-                    className="inline-flex items-center rounded px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.06em] num"
-                    style={{
-                      color: meta.color,
-                      border: `1px solid ${meta.color}`,
-                    }}
-                    title={meta.synthetic ? "Synthetic fallback — no live source" : undefined}
-                  >
-                    {meta.label}
-                  </span>
-                  {meta.synthetic && (
-                    <span className="text-warning text-[10px] font-semibold">
-                      synthetic
-                    </span>
-                  )}
-                  <span className="num text-[10.5px] text-text-tertiary ml-auto">
-                    {fmtDay(h.published_date)}
-                  </span>
-                </div>
-                {/* The headline is the evidence behind the HypeScore, so it is
-                    followable when we have a link and honest about it when we do
-                    not (ADR-0089). A null url is NOT rendered as a dead anchor:
-                    "no link" and "link to nowhere" are different claims and the
-                    second one is a lie. Rows written before migration 042 are
-                    permanently null — the fetch responses were never stored — so
-                    this branch is not transitional and does not get to be a TODO. */}
-                {h.url ? (
-                  <a
-                    href={h.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[12.5px] text-text-primary leading-[1.45] hover:text-accent underline decoration-border-strong hover:decoration-accent underline-offset-2"
-                  >
-                    {h.headline}
-                    <span className="sr-only"> (opens source in a new tab)</span>
-                  </a>
-                ) : (
-                  <div className="text-[12.5px] text-text-primary leading-[1.45]">
-                    {h.headline}
-                    <span
-                      className="text-[10.5px] text-text-tertiary ml-1.5 whitespace-nowrap"
-                      title={
-                        meta.synthetic
-                          ? "Mock fallback rows carry no source link."
-                          : "Collected before source links were persisted (migration 042); the URL was not stored and cannot be recovered."
-                      }
-                    >
-                      {meta.synthetic ? "(no source)" : "(link not stored)"}
-                    </span>
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {headlines.some((h) => sourceMeta(h.source).synthetic) && (
-        <div className="text-[11px] text-warning mt-2 font-sans">
-          Some items are mock fallback — treat this theme&apos;s HypeScore as
-          estimated, not measured.
-        </div>
-      )}
 
       {/* ── Cross-theme correlation ─────────────────────────────────────── */}
       <div className="text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mt-6 mb-2">

@@ -13,6 +13,7 @@ import MarketBar from "@/components/MarketBar";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
 import { NewsRibbon } from "@/components/news/NewsRibbon";
 import { NewsFeed } from "@/components/news/NewsFeed";
+import { fetchLatestNews, type NewsItem } from "@/lib/news";
 import { StatusBadge } from "@/components/status/StatusBadge";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
 import { resolveRunDates, ageSeconds } from "@/lib/homeFreshness";
@@ -147,6 +148,13 @@ function ConvictionPageInner() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [edges, setEdges] = useState<Record<string, ThemeEdge>>({});
   const [provenance, setProvenance] = useState<Record<string, ThemeProvenance>>({});
+  /** Newest headline per theme, for the card. Fetched once here rather than
+   *  per-card: eight cards each reading theme_news would be eight round-trips
+   *  for one table. The ribbon and feed below read it independently because
+   *  they are self-contained sections. */
+  const [topHeadlineByTheme, setTopHeadlineByTheme] = useState<
+    Record<string, NewsItem>
+  >({});
   const [abstainThreshold, setAbstainThreshold] = useState<number>(
     DEFAULT_EDGE_WEIGHTS.abstainThreshold
   );
@@ -264,6 +272,17 @@ function ConvictionPageInner() {
       setHistoryError(histErr);
       setEdges(edgeByTheme);
       setProvenance(provByTheme);
+
+      // Newest headline per theme. fetchLatestNews already returns the latest
+      // run's rows sorted newest-first, so the FIRST hit per theme is the one
+      // to show — no sort needed here.
+      const news = await fetchLatestNews(120);
+      const byThemeHeadline: Record<string, NewsItem> = {};
+      for (const it of news.items) {
+        if (!it.theme_id || byThemeHeadline[it.theme_id]) continue;
+        byThemeHeadline[it.theme_id] = it;
+      }
+      setTopHeadlineByTheme(byThemeHeadline);
 
       const cfg = Object.fromEntries(
         ((cfgRes.data ?? []) as { param_name: string; value: string }[]).map(
@@ -546,6 +565,7 @@ function ConvictionPageInner() {
                   edge={edges[t.id]}
                   abstainThreshold={abstainThreshold}
                   provenance={provenance[t.id]}
+                  topHeadline={topHeadlineByTheme[t.id] ?? null}
                 />
               ))}
             </div>

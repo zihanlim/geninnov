@@ -20,6 +20,20 @@ does not authorise anything.
 
 ---
 
+### Loop iteration 107 (2026-07-27) — a real, visible /ask change: an active-context rail grounding the composer in the live book
+
+The user pointed out they could not see any `/ask` change — correctly: the iteration-103 centring
+fix was live but too subtle (it only nudged the empty state down ~79px). This delivers the
+reference-informed improvement I had deferred, now that the other session was off `/ask`. A
+right-hand **"What it reads"** rail (the active-context pattern from the margin-stress and im-Jarvis
+agent UIs, in the Ledger theme) fetches the published run live and shows **Run date · book shape
+(L/S) · gross · net** — the exact book every answer is built from, so the empty state grounds the
+question instead of facing a blank page. Read-only; a failed read omits the panel rather than
+fabricating a placeholder. Two columns at `wide`, stacks below on mobile; reverts to the
+single-column scrolling document once a conversation starts (goal 7). Deployed and verified live —
+rail reads Run 2026-07-25 · 5L/5S · 59.3% gross · −5.4% net (matching the book), full pass 0 issues /
+0 mojibake at 1440/375. `ask/page.tsx` only.
+
 ### Loop iteration 106 (2026-07-27) — fixed the overclaim iteration 105 flagged: the VERIFIED badge now certifies the figures, not the prose
 
 Last firing I flagged that `/book`'s "VERIFIED · N evidence sources" badge overclaims — it certifies

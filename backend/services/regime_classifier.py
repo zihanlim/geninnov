@@ -71,63 +71,114 @@ def _fetch_latest_series(
     return None
 
 
-_SPY_HISTORY_CACHE: Optional["pd.DataFrame"] = None
+# The universe breadth is measured ACROSS. The eleven GICS sector SPDRs cover
+# the whole S&P 500 by construction and partition it without overlap, so "how
+# many of these are above their own 200-day average" is a real breadth reading
+# of the index rather than a restatement of the index itself.
+#
+# WHY NOT THE 500 CONSTITUENTS, which would be the truer measure: there is no
+# constituent list in this repo, and using TODAY's membership to measure a 2025
+# date imports survivorship bias into a historical series — the backfill would
+# be measuring the index that exists now, backwards. Eleven ETFs have no
+# membership question: they existed on every date in the range and still do.
+# The cost is granularity — the reading moves in steps of 1/11 ≈ 9.1 points —
+# and that is disclosed rather than smoothed.
+SECTOR_ETFS = ["XLK", "XLF", "XLV", "XLY", "XLP", "XLE", "XLI", "XLB", "XLRE", "XLU", "XLC"]
+
+#: A reading needs most of the universe present. Below this many members with a
+#: full 200-day window, the share is being computed over whichever tickers
+#: happened to download, and a breadth number whose denominator moved is not
+#: comparable to the day before it.
+MIN_UNIVERSE = 8
+
+_BREADTH_HISTORY_CACHE: Optional["pd.DataFrame"] = None
 
 
-def _spy_history(period: str = "3y") -> Optional["pd.DataFrame"]:
-    """SPY daily closes, fetched once per process.
+def _universe_history(
+    tickers: Optional[list[str]] = None, period: str = "3y"
+) -> Optional["pd.DataFrame"]:
+    """Daily closes for the breadth universe, fetched once per process.
 
     Cached because the backfill asks for breadth on ~250 separate dates off the
-    same series; downloading it 250 times would be 250 identical round trips.
+    same series; downloading it per date would be 250 identical round trips.
     """
-    global _SPY_HISTORY_CACHE
-    if _SPY_HISTORY_CACHE is None:
+    global _BREADTH_HISTORY_CACHE
+    if _BREADTH_HISTORY_CACHE is None:
         try:
-            _SPY_HISTORY_CACHE = yf.Ticker("SPY").history(period=period, interval="1d")
+            raw = yf.download(
+                tickers or SECTOR_ETFS,
+                period=period,
+                interval="1d",
+                progress=False,
+                auto_adjust=True,
+            )
+            if raw is None or raw.empty:
+                return None
+            _BREADTH_HISTORY_CACHE = (
+                raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw[["Close"]]
+            )
         except Exception:
             return None
-    return _SPY_HISTORY_CACHE
+    return _BREADTH_HISTORY_CACHE
 
 
 def _compute_spx_breadth(
     as_of: Optional[date] = None,
     hist: Optional["pd.DataFrame"] = None,
 ) -> Optional[float]:
-    """SPX breadth proxy: is SPY above its own 200-day moving average.
+    """Share of the breadth universe trading above its own 200-day average, 0–100.
 
-    ``as_of`` truncates the price history to that date, and it is not optional
-    in spirit — every OTHER input to `classify()` is already bounded by
-    `run_date` (see `_fetch_latest_series`), and this one was not. Classifying a
-    past date therefore mixed as-of macro readings with TODAY's breadth: a
-    look-ahead leak, and the one input capable of flipping the sentiment label.
-    It was invisible while the only caller was "classify right now"; a backfill
-    makes it wrong 250 times.
+    ``as_of`` truncates the price history to that date. It is not optional in
+    spirit: every OTHER input to `classify()` is bounded by `run_date` (see
+    `_fetch_latest_series`), and this one was not, so classifying a past date
+    mixed as-of macro readings with TODAY's breadth — a look-ahead leak, on the
+    input most able to flip the sentiment label.
 
-    ``hist`` is injectable so the logic can be tested against a synthetic series
-    without touching the network.
+    ``hist`` is injectable so the logic is testable against a synthetic frame
+    without touching the network. Columns are tickers, rows are daily closes.
 
-    HONEST ABOUT WHAT THIS IS: despite the name and the "%" unit the UI gives it,
-    this returns 65.0 or 35.0 and nothing in between. It is a BINARY
-    SPY-above-its-MA flag wearing a percentage, not the share of index members
-    above their own 200d MA. Left as-is here because changing what the number
-    MEANS is a separate decision from fixing when it is measured — but a reader
-    who sees "S&P breadth 65%" is reading a flag, and that deserves its own fix.
+    WHAT THIS REPLACED, and why it mattered more than a label. The previous
+    implementation asked one question — is SPY above its own 200d MA — and
+    returned 65.0 for yes, 35.0 for no. Nothing in between, ever. Read against
+    `_classify_sentiment`, whose rules are `breadth < 40 → risk-off` and
+    `breadth > 60 → risk-on`, those two constants sit deliberately either side
+    of both thresholds: whenever breadth resolved it fired one rule or the
+    other, "neutral" became unreachable, and a four-input sentiment model was in
+    practice a one-bit switch on SPY. The number was not merely mislabelled; it
+    was deciding the answer while looking like a supporting detail.
+
+    A real share can land at 45 or 55 and let the VIX, term-structure and credit
+    rules do their work — which is what those rules were written for.
     """
     try:
-        frame = hist if hist is not None else _spy_history()
+        frame = hist if hist is not None else _universe_history()
         if frame is None or frame.empty:
             return None
         if as_of is not None:
-            # Index is tz-aware from yfinance; compare on calendar dates.
+            # yfinance indexes tz-aware; compare on calendar dates.
             frame = frame[[d.date() <= as_of for d in frame.index]]
         if len(frame) < 200:
             return None
-        ma200 = frame["Close"].rolling(200).mean()
-        latest_close = frame["Close"].iloc[-1]
-        latest_ma = ma200.iloc[-1]
-        if latest_ma != latest_ma:  # NaN — fewer than 200 usable observations
+
+        window = frame.tail(200)
+        above = 0
+        counted = 0
+        for ticker in frame.columns:
+            series = window[ticker].dropna()
+            if len(series) < 200:
+                continue  # not a full window for this member — exclude, don't guess
+            last = float(series.iloc[-1])
+            ma = float(series.mean())
+            if ma != ma or last != last:
+                continue
+            counted += 1
+            if last > ma:
+                above += 1
+
+        if counted < MIN_UNIVERSE:
+            # Say nothing rather than divide by a denominator that moved.
             return None
-        return 65.0 if latest_close > latest_ma else 35.0
+        return round(100.0 * above / counted, 2)
     except Exception:
         return None
 

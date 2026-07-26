@@ -20,48 +20,80 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from backend.services.regime_classifier import _compute_spx_breadth
+from backend.services.regime_classifier import MIN_UNIVERSE, SECTOR_ETFS, _compute_spx_breadth
 from scripts.backfill_regime import MIN_INPUTS, classify_row
 
 
-def _series(values: list[float], end: date) -> pd.DataFrame:
-    """Daily closes ending on `end`, oldest first."""
-    idx = pd.to_datetime([end - timedelta(days=len(values) - 1 - i) for i in range(len(values))])
-    return pd.DataFrame({"Close": values}, index=idx)
+def _universe(members: dict[str, list[float]], end: date) -> pd.DataFrame:
+    """Daily closes per ticker, oldest first, all the same length."""
+    n = len(next(iter(members.values())))
+    idx = pd.to_datetime([end - timedelta(days=n - 1 - i) for i in range(n)])
+    return pd.DataFrame(members, index=idx)
 
 
-# ─── breadth: the as-of bound ────────────────────────────────────────────────
+def _flat_then(last: float, n_members: int, n_above: int, end: date) -> pd.DataFrame:
+    """n_members tickers flat at 100 for 200 days; n_above of them close above."""
+    members = {}
+    for i in range(n_members):
+        tail = last if i < n_above else 50.0
+        members[f"T{i}"] = [100.0] * 200 + [tail]
+    return _universe(members, end)
+
+
+# ─── breadth is a SHARE, not a flag ─────────────────────────────────────────
+
+def test_breadth_is_a_real_share_of_the_universe():
+    end = date(2026, 7, 25)
+    # 5 of 11 above → 45.45%, a value the old binary proxy could never produce
+    # and one that sits BETWEEN the risk-off (<40) and risk-on (>60) thresholds,
+    # so the VIX and credit rules get to decide instead.
+    got = _compute_spx_breadth(hist=_flat_then(150.0, 11, 5, end))
+    assert got == pytest.approx(45.45, abs=0.01)
+    assert 40 <= got <= 60
+
+
+def test_breadth_spans_the_full_range():
+    end = date(2026, 7, 25)
+    assert _compute_spx_breadth(hist=_flat_then(150.0, 11, 0, end)) == 0.0
+    assert _compute_spx_breadth(hist=_flat_then(150.0, 11, 11, end)) == 100.0
+
 
 def test_breadth_needs_two_hundred_observations():
-    hist = _series([100.0] * 199, date(2026, 7, 25))
-    assert _compute_spx_breadth(hist=hist) is None
+    end = date(2026, 7, 25)
+    short = _universe({t: [100.0] * 199 for t in SECTOR_ETFS}, end)
+    assert _compute_spx_breadth(hist=short) is None
 
 
-def test_breadth_reads_above_and_below_the_moving_average():
-    below = _series([100.0] * 200 + [50.0], date(2026, 7, 25))
-    above = _series([100.0] * 200 + [150.0], date(2026, 7, 25))
-    assert _compute_spx_breadth(hist=below) == 35.0
-    assert _compute_spx_breadth(hist=above) == 65.0
+def test_breadth_refuses_a_denominator_that_moved():
+    # Fewer members than MIN_UNIVERSE have a full window. A share computed over
+    # whichever tickers happened to download is not comparable to yesterday's.
+    end = date(2026, 7, 25)
+    frame = _flat_then(150.0, MIN_UNIVERSE - 1, MIN_UNIVERSE - 1, end)
+    assert _compute_spx_breadth(hist=frame) is None
 
 
 def test_breadth_as_of_ignores_everything_after_that_date():
-    # A series that is BELOW its average for the first stretch and rockets above
-    # it at the end. Asked "as of" the earlier date, the later rally must not
-    # exist — that is the entire point of the parameter.
+    # Members below their average for a stretch, then rocketing above it. Asked
+    # "as of" the earlier date, the later rally must not exist — the whole point.
     end = date(2026, 7, 25)
-    values = [100.0] * 200 + [50.0] * 5 + [400.0] * 5
-    hist = _series(values, end)
+    members = {f"T{i}": [100.0] * 200 + [50.0] * 5 + [400.0] * 5 for i in range(11)}
+    hist = _universe(members, end)
 
-    assert _compute_spx_breadth(hist=hist) == 65.0                      # today: the rally counts
+    assert _compute_spx_breadth(hist=hist) == 100.0                     # today: the rally counts
     as_of = end - timedelta(days=5)
-    assert _compute_spx_breadth(as_of=as_of, hist=hist) == 35.0         # then: it had not happened
-
-    # And the unbounded call is the one that would have been wrong 250 times.
-    assert _compute_spx_breadth(hist=hist) != _compute_spx_breadth(as_of=as_of, hist=hist)
+    assert _compute_spx_breadth(as_of=as_of, hist=hist) == 0.0          # then: it had not happened
 
 
-def test_breadth_survives_an_empty_or_missing_frame():
-    assert _compute_spx_breadth(hist=pd.DataFrame({"Close": []})) is None
+def test_breadth_survives_an_empty_frame():
+    assert _compute_spx_breadth(hist=pd.DataFrame()) is None
+
+
+def test_universe_is_the_eleven_sector_spdrs():
+    # Named and fixed on purpose: these existed on every date in the backfill
+    # range, so a historical reading carries no survivorship bias — which using
+    # today's 500 constituents backwards would.
+    assert len(SECTOR_ETFS) == 11
+    assert "XLK" in SECTOR_ETFS and "XLRE" in SECTOR_ETFS
 
 
 # ─── the unit conversion the backfill must not skip ──────────────────────────

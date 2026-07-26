@@ -150,7 +150,10 @@ export default function RegimeInputsPanel({ runDate }: Props) {
     {
       key: "spx_breadth",
       label: "SPX breadth",
-      source: "% of SPX above 200d MA",
+      // Names the UNIVERSE, because the number is a share of it. This read
+      // "% of SPX above 200d MA" while the code asked one question — is SPY
+      // above its own average — and answered 65 or 35, never between.
+      source: "% of 11 GICS sector SPDRs above their 200d MA",
       value: row?.spx_breadth ?? null,
       unit: "%",
       influences: ["sentiment"],

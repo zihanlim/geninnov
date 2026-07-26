@@ -42,22 +42,22 @@ const config: Config = {
       screens: { wide: "1424px" },
       colors: {
         // "Ledger" light theme — see app/globals.css for the design rationale.
-        // Surfaces (warm paper)
-        "bg-primary": "#f6f3ee",
+        // Surfaces (cool paper — adopted from stitch_remix technical_precision)
+        "bg-primary": "#f6fafe",
         "bg-surface": "#ffffff",
-        "bg-elevated": "#fcfaf6",
-        "bg-hover": "#f0ebe2",
-        // Borders (warm hairline)
-        border: "#e7e0d3",
-        "border-strong": "#d6ccb9",
+        "bg-elevated": "#f0f4f8",
+        "bg-hover": "#eaeef2",
+        // Borders (cool hairline)
+        border: "#dfe3e7",
+        "border-strong": "#c6c6cd",
         // Ink
-        "text-primary": "#1c1815",
-        "text-secondary": "#6b6156",
+        "text-primary": "#171c1f",
+        "text-secondary": "#45464d",
         // Darkened for WCAG AA (was #9c9182 at 2.80:1 on paper). Tailwind
         // compiles these to literal RGB at build time — the utility classes do
         // NOT read the :root variables — so this file and globals.css must be
         // changed together or only var() call sites move.
-        "text-tertiary": "#756b5e",
+        "text-tertiary": "#5f6672",
         // Brand / attention
         // 4.58:1 over its own 10% tint (badge-tier-anchor); was #d40e43 at 4.08:1.
         accent: "#c50c3e",          // interactive / active (crimson-pink)
@@ -84,8 +84,8 @@ const config: Config = {
         // colour at 12%, and a stale triplet silently splits the palette.
         "warning-dim": "rgba(168,50,9,0.12)",
         // Legacy alias (kept for backward compat)
-        neutral: "#6b6156",
-        edge: "#e7e0d3",
+        neutral: "#45464d",
+        edge: "#dfe3e7",
       },
       fontFamily: {
         sans: ["var(--font-sans)", "Hanken Grotesk", "system-ui", "sans-serif"],

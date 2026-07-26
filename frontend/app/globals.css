@@ -4,31 +4,48 @@
 
 @layer base {
   /* ─────────────────────────────────────────────────────────────────────────
-     Andromeda "Ledger" — a warm-paper, ledger-inspired quant identity.
-     Cream paper + ink instead of the generic near-black dashboard. Direction is
-     ledger ink: forest-green = long, crimson = short (like red/green in an old
-     ledger). Brand pink (#D40E43) is interactive/emphasis, orange (#C2410C) is
-     attention. Both were darkened from #E11048 / #F97316 on 2026-07-24 to clear
-     WCAG AA 4.5:1 on the paper background — same hues, deeper ink. Every figure is JetBrains Mono — the "tape". Prose is Hanken
-     Grotesk. This palette (crimson / pink / orange on warm paper) is the app's
-     personality; it is deliberately NOT the interchangeable dark-neon default.
+     Andromeda "Ledger" — a cool-paper, precision-instrument quant identity.
+     Cool paper + near-black ink instead of the generic dark dashboard. The
+     surface ramp came from the `technical_precision` set in stitch_remix/ on
+     2026-07-26; the SEMANTIC inks did not move with it, and that split is the
+     whole point. Direction stays ledger ink — forest-green = long, crimson =
+     short — carried by glyph and wordmark with hue only reinforcing (ADR-0085).
+     Crimson-pink (--accent) is interactive/emphasis, orange (--warning) is
+     attention, and --warning-deep tops the severity ramp. Every figure is
+     JetBrains Mono, the "tape"; prose is Hanken Grotesk.
+
+     Four earlier triages of those comps refused this ramp. They were right
+     about the direction colours and wrong to generalise that to the surfaces:
+     a cool ground is what makes the comps read as a precision instrument, and
+     it costs the semantics nothing. Every chip was re-measured against the new
+     surfaces by tests/unit/chip-contrast.test.ts and all 43 assertions held.
      ───────────────────────────────────────────────────────────────────────── */
   :root {
-    /* Surfaces — warm paper */
-    --bg-primary: #f6f3ee;   /* page */
+    /* Surfaces — cool paper.
+       Adopted from the `technical_precision` token set in stitch_remix/ after
+       four triages kept refusing it. The refusals were about the DIRECTION
+       colours and were correct; they were wrongly generalised to the whole
+       palette. This ramp is the reason those comps read as a precision
+       instrument and the warm-cream original did not, and it is the change the
+       owner asked for five times.
+       Mapping: surface → --bg-primary, container-lowest → --bg-surface,
+       container-low → --bg-elevated, container → --bg-hover,
+       surface-variant → --border, outline-variant → --border-strong. */
+    --bg-primary: #f6fafe;   /* page */
     --bg-surface: #ffffff;   /* cards */
-    --bg-elevated: #fcfaf6;  /* raised */
-    --bg-hover: #f0ebe2;     /* hover */
-    --border: #e7e0d3;       /* warm hairline */
-    --border-strong: #d6ccb9;
-    /* Ink */
-    --text-primary: #1c1815; /* warm near-black */
-    --text-secondary: #6b6156;
-    /* Darkened from #9c9182 (2.80:1 on paper) — WCAG AA needs 4.5:1 for body
-       text and this token carries table headers, timestamps and source labels
-       across every page. #756b5e keeps the warm-grey Ledger character at
-       4.72:1 on paper / 5.22:1 on card. */
-    --text-tertiary: #756b5e;
+    --bg-elevated: #f0f4f8;  /* raised */
+    --bg-hover: #eaeef2;     /* hover */
+    --border: #dfe3e7;       /* cool hairline */
+    --border-strong: #c6c6cd;
+    /* Ink — `on-surface` / `on-surface-variant` from the same set. */
+    --text-primary: #171c1f; /* cool near-black */
+    --text-secondary: #45464d;
+    /* Carries table headers, timestamps and source labels across every page, so
+       it is the token most likely to fall under the AA floor unnoticed. The
+       warm #756b5e measured 4.72:1 on paper; this cool equivalent measures
+       5.52:1 on the page, 5.78:1 on a card and 5.23:1 on --bg-elevated — the
+       surface swap bought margin here rather than spending it. */
+    --text-tertiary: #5f6672;
     /* Brand + attention (your palette) */
     /* #e11048 → #d40e43 (2026-07-24) → #c50c3e (2026-07-25). Same crimson-pink,
        progressively deeper. The 2026-07-24 step fixed plain text (4.34:1 → 4.81:1

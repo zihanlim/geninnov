@@ -191,13 +191,31 @@ export default function AskPage() {
         </ul>
       )}
 
-      <ol className="list-none p-0 m-0 space-y-8">
+      <ol className="list-none p-0 m-0 space-y-6">
         {turns.map((turn, i) => (
-          <li key={i}>
-            <p className="m-0 mb-3 text-[14px] font-semibold text-text-primary leading-[1.5]">
-              {turn.question}
-            </p>
+          <li key={i} className="space-y-3">
+            {/* User turn — a right-aligned bubble, the chat convention the reader
+                asked for. Neutral fill, not the crimson accent, so it is never
+                mistaken for direction ink (ADR-0085). */}
+            <div className="flex justify-end">
+              <p className="m-0 max-w-[85%] rounded-2xl rounded-br-md border border-border bg-bg-elevated px-3.5 py-2 text-[13.5px] leading-[1.55] text-text-primary">
+                {turn.question}
+              </p>
+            </div>
 
+            {/* Assistant turn — left-aligned with the Andromeda mark. Chat now,
+                but STILL a scrolling document, not an h-screen chat-app shell:
+                no stream (the citation guardrail must check a figure before it is
+                on screen) and the page keeps scrolling so Ctrl+F and deep links
+                survive (goal 7). The bubble is the only thing that changed. */}
+            <div className="flex items-start gap-2.5">
+              <span
+                aria-hidden
+                className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md bg-accent text-[11px] font-bold leading-none text-white"
+              >
+                A
+              </span>
+              <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md border border-border bg-bg-surface px-4 py-3">
             {turn.transportError && (
               <EmptyState
                 title="The question could not be answered"
@@ -260,6 +278,8 @@ export default function AskPage() {
                 )}
               </div>
             )}
+              </div>
+            </div>
           </li>
         ))}
       </ol>

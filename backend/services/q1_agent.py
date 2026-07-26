@@ -24,7 +24,7 @@ Guardrails:
   • Deterministic fallback if LLM fails → top-5 by HypeScore
 
 Usage:
-    from services.q1_agent import run_q1_agent
+    from backend.services.q1_agent import run_q1_agent
     result = run_q1_agent(run_date, supabase_url, supabase_key,
                           macro_snapshot, regime, candidates, risk_metrics, cfg)
 """

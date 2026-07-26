@@ -31,7 +31,7 @@ Each scenario returns an estimated P&L impact on the book in % and $M,
 computed from factor tilts and historical beta regressions.
 
 Usage:
-    from services.scenario_analysis import run_scenario_analysis, ScenarioResult
+    from backend.services.scenario_analysis import run_scenario_analysis, ScenarioResult
     results = run_scenario_analysis(book_metrics, macro_snapshot, picks, factor_exposures)
 """
 
@@ -48,7 +48,7 @@ from typing import Optional
 # the universe changes: a new energy name added to SECTOR_MAP is stressed by S6 the
 # day it appears, with no edit here. book_metrics does not import this module, so
 # there is no cycle.
-from services.book_metrics import SECTOR_MAP
+from .book_metrics import SECTOR_MAP
 
 
 # ─────────────────────────────────────────────────────────────────────────────

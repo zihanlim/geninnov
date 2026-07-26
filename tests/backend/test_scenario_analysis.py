@@ -109,6 +109,56 @@ def test_credit_widening_scenario():
     assert s.base_asset_shocks["HYG"] < 0  # credit sells off
 
 
+# ─── the import path the nightly pipeline actually uses ──────────────────────
+
+def test_module_imports_without_backend_on_sys_path():
+    """This file inserts `backend/` on sys.path at line 15, which MASKS a bad sibling
+    import. ADR-0088 shipped `from services.book_metrics import SECTOR_MAP`, which only
+    resolves with that insert — so all 46 tests here passed while the real chain
+    `daily_refresh -> backend.services.q1_agent -> .scenario_analysis` raised
+    ModuleNotFoundError. The nightly run would have produced no book.
+
+    A subprocess with only the REPO ROOT on the path is the shape production uses
+    (`daily_refresh.py` does `sys.path.insert(0, Path(__file__).parent.parent)`), so this
+    pins the entry point rather than the function — the same lesson ADR-0065's follow-up
+    recorded for check_data_integrity.
+    """
+    import subprocess
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    proc = subprocess.run(
+        [sys.executable, "-c",
+         "from backend.services.q1_agent import run_q1_agent;"
+         "from backend.services.scenario_analysis import SCENARIOS;"
+         "print('OK', len(SCENARIOS))"],
+        cwd=root, capture_output=True, text=True, timeout=180,
+    )
+    combined = proc.stdout + proc.stderr
+    assert "ModuleNotFoundError" not in combined, combined
+    assert proc.returncode == 0, combined
+    assert "OK 6" in proc.stdout, combined
+
+
+def test_sibling_imports_are_relative_or_fully_qualified():
+    """A bare `from services.…` / `from data.…` in backend/ is importable only when
+    backend/ happens to be on sys.path. Sibling imports must be relative (`.book_metrics`,
+    as q1_agent uses) or absolute (`backend.services.…`, as trade_generator uses).
+
+    Note the trap this closes: the two `from services.…` lines in q1_agent.py and
+    scenario_analysis.py are inside DOCSTRINGS as usage examples, which is what made the
+    bad form look like the house convention.
+    """
+    import re
+    src = os.path.join(os.path.dirname(__file__), "..", "..", "backend", "services",
+                       "scenario_analysis.py")
+    with open(src, encoding="utf-8") as fh:
+        lines = fh.read().split("\n")
+    bad = [
+        (i + 1, ln) for i, ln in enumerate(lines)
+        if re.match(r"^\s*(from|import)\s+(services|data|tools)\b", ln)
+    ]
+    assert bad == [], f"bare sibling import(s), unimportable without backend/ on path: {bad}"
+
+
 # ─── S6: transmission by sector dependency, not market beta (ADR-0088) ───────
 
 def _s6():

@@ -92,6 +92,20 @@ jobs:
           python scripts/backtest_hype.py --horizons 1 5 20 --persist \
             || echo "::warning::HypeScore IC backtest did not complete"
 
+      # Records a `pending` row for every pick in the book just published, and resolves
+      # any whose 21-trading-day horizon has matured (ADR-0090). Runs AFTER the refresh
+      # so today's book is included the day it is published — the commitment is logged
+      # before the outcome is knowable, which is the whole point of the table.
+      #
+      # Non-fatal, like the IC step above: this reports on the book, it does not produce
+      # it, and a yfinance hiccup must never fail a refresh that already persisted a book.
+      # Idempotent, so the next run picks up whatever this one missed.
+      - name: Resolve published-pick outcomes (forward track record)
+        if: success()
+        run: |
+          python -m scripts.resolve_outcomes \
+            || echo "::warning::outcome resolution did not complete"
+
       - name: Data-integrity guard (fabricated-data fingerprint)
         if: always()
         run: python scripts/check_data_integrity.py || echo "::warning::integrity check flagged the output"

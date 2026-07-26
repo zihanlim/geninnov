@@ -46,7 +46,7 @@ The L5 agent supports a **`lens` parameter** that filters the candidate pool by 
 
 | Workflow | Schedule | Runs |
 |---|---|---|
-| `.github/workflows/daily-refresh.yml` | `30 21 * * 1-5` (21:30 UTC weekdays, after the US close) | `daily_refresh.py` (L0–L5), then refreshes the HypeScore IC validation, then the data-integrity guard |
+| `.github/workflows/daily-refresh.yml` | `30 21 * * 1-5` (21:30 UTC weekdays, after the US close) | `daily_refresh.py` (L0–L5), then refreshes the HypeScore IC validation, then `resolve_outcomes.py` (forward track record — ADR-0090), then the data-integrity guard |
 | `.github/workflows/theme-discovery.yml` | `0 6 1 * *` (1st of the month) | `theme_discovery.py` — LDA ∩ embedding candidates → `discovered_themes` (shadow) |
 | `.github/workflows/ci.yml` | on push / PR | backend + frontend tests |
 
@@ -89,6 +89,7 @@ All project documentation lives under `docs/`:
 | `backend/services/book_metrics.py` | L5: value-weighted FF5+UMD book tilts, sector/geo caps, correlation matrix |
 | `backend/services/scenario_analysis.py` | L5: 6-scenario stress test — 4 risk-off (VIX/rates/USD/credit) + 1 risk-on melt-up, so a net-short book is stressed on both tails (ADR-0074), + 1 supply shock that transmits through `SECTOR_MAP` instead of market beta and is inflationary, so a position the factor model cannot see is still stressed and duration stops hedging ([ADR-0088](docs/adrs/0088-a-stress-scenario-that-does-not-transmit-through-market-beta.md)) |
 | `backend/services/q1_agent.py` | L5: 8-node Q1 reasoning agent (`run_q1_agent`) |
+| `backend/services/pick_outcomes.py` | The forward track record — resolves published picks against a **pipeline-assigned** 21-trading-day spec. Pure functions; `scripts/resolve_outcomes.py` runs it. Rows are `pending` at publication so the denominator precedes the outcome. No Brier score: `conviction` is a sizing input, not a probability ([ADR-0090](docs/adrs/0090-a-published-pick-must-be-falsifiable.md)) |
 | `frontend/app/book/page.tsx` | L6: The $100M book — per-trade thesis, pool depth, turnover, replication. (`/research`, `/portfolio`, `/trades` are retired server redirects to it.) |
 | `frontend/lib/supabase.ts` | Supabase client for frontend reads |
 | `frontend/app/ask/page.tsx` | L8: `/ask` — interrogate the published book. Reached from a TopBar control, **not** a fifth nav destination |

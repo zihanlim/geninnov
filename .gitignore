@@ -63,6 +63,10 @@ venv/
 # VERCEL_OIDC_TOKEN, which is a real ~1.2KB JWT. Never commit this.
 .env.vercel
 
+# External design mockups pulled in for reference (Stitch/Auralis SaaS zip etc.).
+# Not Andromeda code — kept out of the repo so `git add -A` never bloats it.
+stitch_remix*
+
 # Playwright run artifacts — regenerated every run, never reviewed.
 frontend/test-results/
 frontend/playwright-report/

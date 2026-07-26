@@ -74,9 +74,61 @@ export function EmptyState({
 }
 
 /**
+ * Classify a PostgREST/supabase-js failure so the panel names the RIGHT cause.
+ *
+ * This used to assert "This is a schema mismatch" for every failure, with a
+ * remedy telling the reader to check the column list against the latest
+ * migration. That is correct for a 400/404 and actively misleading for anything
+ * else — an expired anon key rendered as `Invalid API key … this is a schema
+ * mismatch … check the column list`, sending the reader to diff migrations when
+ * the problem was a credential. Goal 2 is that absence is *stated*, and a
+ * confidently wrong cause is worse than a vague one: it spends the reader's
+ * trust and their afternoon.
+ *
+ * Matched on the message text because supabase-js surfaces the PostgREST body
+ * rather than the HTTP status; each arm is keyed to a string PostgREST actually
+ * emits.
+ */
+function classifyQueryFailure(message: string): { cause: string; remedy: string } {
+  const m = (message ?? "").toLowerCase();
+
+  if (m.includes("api key") || m.includes("jwt") || m.includes("unauthorized")) {
+    return {
+      cause: `The database rejected the credential, not the query: "${message}". Nothing can be read until it is replaced — this says nothing about whether the data exists.`,
+      remedy:
+        "Check NEXT_PUBLIC_SUPABASE_ANON_KEY against the project's current publishable key. A rotated or placeholder key fails every request identically.",
+    };
+  }
+
+  if (m.includes("row-level security") || m.includes("permission denied") || m.includes("rls")) {
+    return {
+      cause: `The row is there; this role may not read it: "${message}". A policy refused the request, so an empty result here is a permissions answer and not a data answer.`,
+      remedy:
+        "Check that a SELECT policy grants the anon role read access to this table, as the other read-only tables have.",
+    };
+  }
+
+  if (m.includes("fetch") || m.includes("network") || m.includes("timeout")) {
+    return {
+      cause: `The request never reached the database: "${message}". Whether the data exists is unknown — this is a transport failure, not an answer.`,
+      remedy: "Check connectivity to the Supabase host, then reload. Nothing here needs changing if it was a blip.",
+    };
+  }
+
+  // The original case, now stated only when it is actually true.
+  return {
+    cause: `The database rejected this query: "${message}". This is a schema mismatch, not an absence of data — the UI is asking for something that does not exist.`,
+    remedy:
+      "Check the column list against the latest migration, then reconcile the query or add the column.",
+  };
+}
+
+/**
  * Empty state for a failed query. A 400/404 from PostgREST means a column or
  * table the frontend expects does not exist — rendering that as "no data" is how
  * three schema mismatches survived in production unnoticed. Show it.
+ *
+ * But show the *right* one: see classifyQueryFailure above.
  */
 export function QueryErrorState({
   what,
@@ -87,11 +139,12 @@ export function QueryErrorState({
   message: string;
   source?: string;
 }) {
+  const { cause, remedy } = classifyQueryFailure(message);
   return (
     <EmptyState
       title={`${what} could not be loaded`}
-      cause={`The database rejected this query: "${message}". This is a schema mismatch, not an absence of data — the UI is asking for something that does not exist.`}
-      remedy="Check the column list against the latest migration, then reconcile the query or add the column."
+      cause={cause}
+      remedy={remedy}
       source={source}
       severity="error"
     />

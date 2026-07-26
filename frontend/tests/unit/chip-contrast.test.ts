@@ -344,3 +344,68 @@ describe("palette integrity", () => {
     expect(drift, `tint drift:\n  ${drift.join("\n  ")}`).toEqual([]);
   });
 });
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Goal 3 — direction ink is not borrowed by anything that is not a direction.
+ *
+ * SCOPE, per ADR-0085: the ENUMERATED CHIP VOCABULARIES only — STATUS_CHIPS and
+ * the severity scale. Inline signed-value colouring (green P&L, crimson
+ * drawdown) is deliberately NOT covered: it already carries its sign from
+ * fmtSigned's +/- glyph, and bringing it in is a separate decision that needs
+ * its own ADR. Do not widen this without one.
+ *
+ * What this cannot catch: it sees that a chip does not NAME a direction token.
+ * It cannot see that `corr >= 0 ? "short" : "long"` is a risk verdict wearing
+ * direction's clothes — meaning is not checkable from a class string.
+ * ──────────────────────────────────────────────────────────────────────────── */
+const DIRECTION_INK =
+  /\b(?:bg|text|border|ring|fill|stroke|from|to|via|decoration)-(?:long|short)(?:-dim)?\b/;
+
+describe("goal 3 — direction ink stays with direction", () => {
+  it.each(Object.entries(STATUS_CHIPS))(
+    "STATUS_CHIPS.%s is not painted with direction ink",
+    (name, chip) => {
+      expect(
+        chip.cls,
+        `provenance status "${name}" uses direction ink (${chip.cls}). Forest-green means LONG and crimson means SHORT; a provenance chip wearing either teaches a reader that the hue means two unrelated things — and on /book they render inches apart. See ADR-0085.`,
+      ).not.toMatch(DIRECTION_INK);
+    },
+  );
+
+  // The severity scale is NOT asserted yet, and that is a stated gap rather than
+  // an oversight. `severityChipClass("severe")` is `bg-short text-white` — the
+  // direction crimson, used for severity — and it fails this rule today.
+  //
+  // It cannot be fixed by pointing at another existing token. The escalation is
+  // solid-crimson `severe` → solid-orange `high` → orange tint → grey outline, so
+  // `severe` has to out-rank `high`, and `--warning` is already spent on `high`.
+  // The Ledger has no red that is not --short and no green that is not --long, so
+  // both this and methodTones' ok/bad need a NEW non-direction token, measured
+  // against all three surfaces. That is a palette addition with its own ADR, not
+  // a rename — see the ADR-0085 follow-up. Asserting it here before the token
+  // exists would only force someone to weaken the rule to get CI green.
+  it.each(["moderate", "low"] as const)(
+    "severity band %s is not painted with direction ink",
+    (band) => {
+      const cls = severityChipClass(band);
+      expect(
+        cls,
+        `severity band "${band}" uses direction ink (${cls}). Severity is attention, not direction — that is what --warning is for. See ADR-0085.`,
+      ).not.toMatch(DIRECTION_INK);
+    },
+  );
+
+  it("keeps the direction chips themselves on direction ink", () => {
+    // The inverse assertion. If a refactor ever neutralises .badge-long or
+    // .dir-pill-long, the vocabulary above would pass while the one thing that
+    // IS a direction stopped looking like one.
+    const found = Object.fromEntries(cssChipVariants());
+    for (const name of ["badge-long", "badge-short", "dir-pill-long", "dir-pill-short"]) {
+      expect(found[name], `.${name} is no longer defined`).toBeDefined();
+      expect(
+        found[name],
+        `.${name} must keep its direction ink — it is the one place the hue is correct`,
+      ).toMatch(DIRECTION_INK);
+    }
+  });
+});

@@ -260,7 +260,11 @@ Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the f
   the first measurable reading (h1 IC −0.23, one date) labelled *"measured · 1 date —
   not yet stable"* and keys "validated" on the IC information ratio (stability across
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
-  `/method` renders every formula from live `scoring_config`.
+  `/method` renders every formula from live `scoring_config`. The `/book` thesis badge
+  now certifies the **figures, not the prose** — a bar-3 audit found the per-position
+  reasoning carries genuine domain claims (a name over-owned, a sector defensive) that the
+  citation guardrail never reads (ADR-0049), so a tertiary line beside the VERIFIED badge
+  says the reasoning that connects the figures is the model's own.
 
 ## Iteration history → `loop-log.md`
 

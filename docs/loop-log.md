@@ -20,6 +20,22 @@ does not authorise anything.
 
 ---
 
+### Loop iteration 106 (2026-07-27) — fixed the overclaim iteration 105 flagged: the VERIFIED badge now certifies the figures, not the prose
+
+Last firing I flagged that `/book`'s "VERIFIED · N evidence sources" badge overclaims — it certifies
+the figures (citation guardrail, ADR-0012/0049) but a reader reads it as the whole thesis, while the
+domain prose (PDD over-owned, healthcare defensive) is the L5 model's unverified synthesis. I had
+deferred it to the trust-UI owner; the other session did not take it and stayed on the home page /
+RegimeHero, so on this firing's re-pick it was the highest-value open item — a real credibility gap,
+the mandate's top priority. The fix is a *precision* clarification, not a redesign, and it is the
+same "state the absence" discipline the badge itself embodies, so it aligns with the design rather
+than fighting it: one tertiary line under the header — **"The badge applies to the figures; the
+reasoning that connects them is the model's own."** Accurate for both the verified and partial
+states (it never claims each figure is checked, only that the reasoning is separate). `ThesisBlock.tsx`
+only; deployed; verified live — the line renders above the thesis body, full pass 0 issues / 0
+mojibake across 6 routes × 1440/375. Committed to the shared main so the other session can revise the
+wording if they want a different phrasing on their citation surface.
+
 ### Loop iteration 105 (2026-07-27) — audited bar 3 against the live thesis; the domain prose outruns the guardrail
 
 Bar 3 says the thesis "turns on nothing asset-specific, only theme-level attention plus macro."

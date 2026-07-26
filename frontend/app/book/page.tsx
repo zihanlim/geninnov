@@ -867,8 +867,12 @@ function BookPageInner() {
                   would open its own horizontal scroller. See tailwind.config.ts.
                   items-start so a 5-row side is not stretched to match an 8-row
                   side; [&>*]:mb-0 because each PositionSection carries its own
-                  bottom margin, which would otherwise double up inside the grid. */}
-              <div className="grid wide:grid-cols-2 gap-6 items-start [&>*]:mb-0 mb-6">
+                  bottom margin, which would otherwise double up inside the grid.
+                  [&>*]:min-w-0 because a grid item defaults to min-width:auto and
+                  refuses to shrink below the 640px row grid nested inside it —
+                  without it the section stretched to 642px and scrolled the body
+                  on a 375px phone instead of letting each row's ScrollArea scroll. */}
+              <div className="grid wide:grid-cols-2 gap-6 items-start [&>*]:mb-0 [&>*]:min-w-0 mb-6">
               <PositionSection
                 title="Longs"
                 glyph="â–²"

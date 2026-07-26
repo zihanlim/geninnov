@@ -124,12 +124,12 @@ export function PositionRow({
 
   // Always-visible plain-English rationale (never hidden behind expand). The
   // numeric component breakdown (edgeRationale) becomes the hover title and the
-  // expanded EdgeScore bars â€” a reader gets the "why" without decoding values.
+  // expanded EdgeScore bars — a reader gets the "why" without decoding values.
   //
   // The driver phrase ALONE does not differentiate: trend has the largest raw
   // magnitudes and wins on nearly every name, so the live book rendered two strings
-  // across nine rows. It is joined to what the name was taken instead of â€” its
-  // independent-idea complex, the same rho 0.70 measurement PoolDepth renders â€” which
+  // across nine rows. It is joined to what the name was taken instead of — its
+  // independent-idea complex, the same rho 0.70 measurement PoolDepth renders — which
   // is the sharpest available answer to "why this ticker". ADR-0054.
   const plain = hasEdge && edge ? plainRationale(edge, edgeWeights) : null;
   // Per-position replication stability (ADR-0057).
@@ -146,7 +146,7 @@ export function PositionRow({
   );
   const rationaleDetail = hasEdge && edge ? edgeRationale(edge) : undefined;
 
-  // The sizing derivation â€” conviction Ã— inverse-vol â†’ cap â†’ notional.
+  // The sizing derivation — conviction × inverse-vol → cap → notional.
   const sizingChain = buildSizingChain({
     direction: pick.direction,
     edge:
@@ -186,7 +186,7 @@ export function PositionRow({
   const sibling = topSibling(pick.asset, correlationPairs);
 
   // Per-position scenario lines, parsed from the breakdown strings the backend
-  // already emits (e.g. "  TLT (long): +8.0% Ã— +4% = +0.32%").
+  // already emits (e.g. "  TLT (long): +8.0% × +4% = +0.32%").
   const perScenario = scenarios
     .map((s) => ({
       label: s.label,
@@ -247,16 +247,16 @@ export function PositionRow({
               </Link>
             ) : (
               <span className="text-text-secondary text-[12px] truncate">
-                {themeName ?? "â€”"}
+                {themeName ?? "—"}
               </span>
             )}
           </span>
-          {/* Always-visible PLAIN rationale â€” the "why this side". Numeric
+          {/* Always-visible PLAIN rationale — the "why this side". Numeric
               component breakdown is the hover title + the expanded bars. */}
           {/* WRAPS, never truncates. The grid is min-w-[640px] inside a horizontal
               ScrollArea, so this cell is ~150px wide at EVERY viewport below desktop
-              â€” measured live at 375px, an ellipsis left exactly 18 characters, which
-              is "Long Â· a strong pâ€¦" on all five longs. No ordering of the clauses
+              — measured live at 375px, an ellipsis left exactly 18 characters, which
+              is "Long · a strong p…" on all five longs. No ordering of the clauses
               fixes a cell that narrow; the truncation is the defect. Wrapping costs
               row height on mobile and shows the whole line, which is the trade this
               page should always make. At 1440px the cell is wide enough that nothing
@@ -270,7 +270,7 @@ export function PositionRow({
           {/* Did the agent pick THIS name every time it was re-run on identical
               inputs? The replication panel reports 33% long-side churn as an
               aggregate, which taints the names that were in fact unanimous. Per
-              position it separates them. Silent when unmeasured â€” a replication
+              position it separates them. Silent when unmeasured — a replication
               from another run_date says nothing about today's names. */}
           {stabilityNote && (
             <span
@@ -283,7 +283,7 @@ export function PositionRow({
               }}
               title={
                 stability === "coinflip"
-                  ? "Re-running the reasoning step on identical inputs did not always produce this position â€” the agent rates several names here equally."
+                  ? "Re-running the reasoning step on identical inputs did not always produce this position — the agent rates several names here equally."
                   : "Re-running the reasoning step on identical inputs produced this position every time."
               }
             >
@@ -299,28 +299,28 @@ export function PositionRow({
             {fmtUSD(pick.notional)}
           </span>
         </span>
-        {/* EdgeScore â€” the number whose sign is the side. */}
+        {/* EdgeScore — the number whose sign is the side. */}
         <span
           className="num text-right text-[12px] font-semibold"
           style={{ color: hasEdge ? dirColor : "var(--text-tertiary)" }}
-          title="EdgeScore = 0.35Â·Trend + 0.25Â·Regime + 0.20Â·Carry + 0.20Â·Value"
+          title="EdgeScore = 0.35·Trend + 0.25·Regime + 0.20·Carry + 0.20·Value"
         >
-          {edge && edge.edge_score !== null ? fmtSigned(edge.edge_score) : "â€”"}
+          {edge && edge.edge_score !== null ? fmtSigned(edge.edge_score) : "—"}
         </span>
-        {/* Conviction chip â€” |Edge|/vol, always visible. */}
+        {/* Conviction chip — |Edge|/vol, always visible. */}
         <span className="text-right">
           {conviction !== null ? (
             <span
               className="num text-[11px] px-1.5 py-0.5 rounded"
               style={{ background: "var(--bg-elevated)", color: "var(--text-secondary)" }}
-              title="Conviction = |EdgeScore| / vol â€” the inverse-vol sizing weight"
+              title="Conviction = |EdgeScore| / vol — the inverse-vol sizing weight"
             >
-              {conviction.toFixed(1)}Ã—
+              {conviction.toFixed(1)}×
             </span>
           ) : (
             <span
               className="text-text-tertiary text-[11px]"
-              title="No conviction persisted â€” this position was sized by HypeScore"
+              title="No conviction persisted — this position was sized by HypeScore"
             >
               hype
             </span>
@@ -342,11 +342,11 @@ export function PositionRow({
               {(cap.utilisation * 100).toFixed(0)}% cap
             </span>
           ) : (
-            <span className="text-text-tertiary text-[11px]">â€”</span>
+            <span className="text-text-tertiary text-[11px]">—</span>
           )}
         </span>
         <span className="text-text-tertiary text-[12px] text-right">
-          {open ? "âˆ’" : "+"}
+          {open ? "−" : "+"}
         </span>
       </div>
 
@@ -360,7 +360,7 @@ export function PositionRow({
               ) : (
                 <p className="m-0 text-[12.5px] text-text-tertiary leading-[1.6]">
                   {pick.thesis
-                    ? "Withheld â€” this run's thesis did not pass citation verification, so it is not shown."
+                    ? "Withheld — this run's thesis did not pass citation verification, so it is not shown."
                     : "No thesis persisted for this position."}
                 </p>
               )}
@@ -386,8 +386,8 @@ export function PositionRow({
                       <span className="num">
                         {pick.ma_context.last.toFixed(2)}
                       </span>{" "}
-                      Â· {pick.ma_context.window}-day MA{" "}
-                      <span className="num">{pick.ma_context.ma.toFixed(2)}</span> Â·{" "}
+                      · {pick.ma_context.window}-day MA{" "}
+                      <span className="num">{pick.ma_context.ma.toFixed(2)}</span> ·{" "}
                       <span
                         className="num"
                         style={{
@@ -400,7 +400,7 @@ export function PositionRow({
                         {fmtSigned(pick.ma_context.pct_from_ma * 100, 1)}%
                       </span>{" "}
                       {Math.abs(pick.ma_context.pct_from_ma) < 0.03
-                        ? "â€” within 3% of the moving average, so an MA-based trigger is close."
+                        ? "— within 3% of the moving average, so an MA-based trigger is close."
                         : "away from it."}
                     </p>
                   )}
@@ -426,14 +426,14 @@ export function PositionRow({
                 </div>
               )}
 
-              {/* P1 â€” marginal contribution to the whole book. */}
+              {/* P1 — marginal contribution to the whole book. */}
               <SubHead className="mt-4">Contribution to book</SubHead>
               <PositionMarginalRisk marginal={marginal} sibling={sibling} />
             </div>
 
             <div>
               <SubHead>
-                Why {isLong ? "long" : "short"} â€” EdgeScore decomposition
+                Why {isLong ? "long" : "short"} — EdgeScore decomposition
               </SubHead>
               {hasEdge && edge ? (
                 <div className="mb-4">
@@ -445,7 +445,7 @@ export function PositionRow({
                   {edge.source === "theme_latest" && (
                     <p className="m-0 mt-2 text-[10.5px] text-text-tertiary leading-[1.5]">
                       From the theme&apos;s latest{" "}
-                      <code className="num">theme_signals_history</code> row â€” the
+                      <code className="num">theme_signals_history</code> row — the
                       position row carried no edge columns, so this is the theme
                       signal, not necessarily the one that sized this book.
                     </p>
@@ -455,19 +455,19 @@ export function PositionRow({
                 <p className="m-0 mb-4 text-[12px] text-text-tertiary leading-[1.6]">
                   Direction is <code className="num">sign(EdgeScore)</code>, where{" "}
                   <code className="num">
-                    EdgeScore = 0.35Â·Trend + 0.25Â·Regime + 0.20Â·Carry +
-                    0.20Â·Value
+                    EdgeScore = 0.35·Trend + 0.25·Regime + 0.20·Carry +
+                    0.20·Value
                   </code>
                   . No component was persisted for this position or its
                   theme&apos;s latest run. See{" "}
                   <Link href="/method#edgescore" className="text-accent">
-                    Method Â§4
+                    Method §4
                   </Link>
                   .
                 </p>
               )}
 
-              <SubHead>Sizing â€” conviction Ã— inverse-vol</SubHead>
+              <SubHead>Sizing — conviction × inverse-vol</SubHead>
               <div className="mb-1">
                 <SizingChainView chain={sizingChain} />
               </div>
@@ -475,11 +475,11 @@ export function PositionRow({
               {pick.factor_tilts && Object.keys(pick.factor_tilts).length > 0 && (
                 <>
                   {/* These are THIS ASSET's own betas, joined from the L2
-                      factor_exposures table â€” not the book's. Until ADR-0075 the model
+                      factor_exposures table — not the book's. Until ADR-0075 the model
                       was asked to fill this field and copied one aggregate row into all
                       ten positions, so SHY and ARKK printed the same market beta. */}
                   <SubHead className="mt-4">
-                    Factor exposure â€” {pick.asset}&rsquo;s own betas
+                    Factor exposure — {pick.asset}&rsquo;s own betas
                   </SubHead>
                   <div className="flex flex-wrap gap-1.5">
                     {Object.entries(pick.factor_tilts).map(([k, v]) => (
@@ -497,7 +497,7 @@ export function PositionRow({
                       <>
                         R<sup>2</sup> <span className="num">{pick.factor_r_squared.toFixed(2)}</span>
                         {pick.factor_r_squared < 0.3
-                          ? " â€” a weak fit, so read these betas loosely."
+                          ? " — a weak fit, so read these betas loosely."
                           : "."}
                       </>
                     ) : (
@@ -521,12 +521,12 @@ export function PositionRow({
                           color:
                             SEVERITY_COLOR[s.severity] ?? "var(--text-secondary)",
                           // The only thing separating `severe` from `high`, both
-                          // crimson â€” see SEVERITY_COLOR.
+                          // crimson — see SEVERITY_COLOR.
                           fontWeight: s.severity === "severe" ? 600 : undefined,
                         }}
                         title={`${s.severity} severity`}
                       >
-                        {s.line?.split("=").pop()?.trim() ?? "â€”"}
+                        {s.line?.split("=").pop()?.trim() ?? "—"}
                       </span>
                     </li>
                   ))}

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -84,12 +84,12 @@ import {
 import { severityRank } from '@/lib/risk/analytics';
 
 /**
- * /book â€” the $100M long-short book, as ONE object.
+ * /book — the $100M long-short book, as ONE object.
  *
  * This replaces the split across /trades (TradeScore ranking), /portfolio
  * (sizes and risk scalars) and /research (thesis prose). Those were three
  * partial views of the same ten positions, drawn from three tables, with no
- * cross-links â€” so "why am I short KWEB at 8%?" could not be answered from any
+ * cross-links — so "why am I short KWEB at 8%?" could not be answered from any
  * single page. Everything a position claim depends on now lives in one row.
  */
 
@@ -176,7 +176,7 @@ function BookPageInner() {
   const [citations, setCitations] = useState<Citation[] | undefined>();
   // Edge for positions' themes only (fast path when position rows lack columns).
   const [edgeByTheme, setEdgeByTheme] = useState<Record<string, ThemeEdge>>({});
-  // Edge for EVERY theme â€” drives the abstention roster.
+  // Edge for EVERY theme — drives the abstention roster.
   const [allEdgeByTheme, setAllEdgeByTheme] = useState<Record<string, ThemeEdge>>({});
   const [themeNames, setThemeNames] = useState<Record<string, string>>({});
   // Migration-025 edge columns on portfolio_positions, keyed by asset.
@@ -189,7 +189,7 @@ function BookPageInner() {
     Record<keyof EdgeWeights, boolean>
   >({ trend: false, regime: false, carry: false, value: false, sentiment: false, abstainThreshold: false });
   const [candidates, setCandidates] = useState<CandidateRow[]>([]);
-  // Per-position replication stability (ADR-0057) â€” which names the agent picked in
+  // Per-position replication stability (ADR-0057) — which names the agent picked in
   // every rerun on identical inputs. Read separately from the book because it is a
   // deliberate harness run, not part of the daily job.
   const [repl, setRepl] = useState<ReplicationNames | null>(null);
@@ -202,7 +202,7 @@ function BookPageInner() {
   useEffect(() => {
     async function load() {
       // The book row, the live scoring weights, the per-position edge columns,
-      // and the full theme roster are independent reads â€” fire them together.
+      // and the full theme roster are independent reads — fire them together.
       const [recRes, cfgRes, posRes, themesRes, candRes] = await Promise.all([
         supabase
           .from("research_recommendations")
@@ -221,7 +221,7 @@ function BookPageInner() {
           ),
         supabase.from("themes").select("id, name"),
         // The L1 pool, so the page can show what cleared the screen and was still
-        // not taken â€” the "why isn't X in the book?" question had no answer here.
+        // not taken — the "why isn't X in the book?" question had no answer here.
         supabase
           .from("trade_candidates")
           .select("asset, direction, edge_score, theme_id, run_date, via_conviction")
@@ -250,7 +250,7 @@ function BookPageInner() {
               samples: n.samples ?? 0,
             });
           } catch {
-            /* advisory only â€” a parse failure must not blank the book */
+            /* advisory only — a parse failure must not blank the book */
           }
         });
 
@@ -280,13 +280,13 @@ function BookPageInner() {
       }
       setPosEdgeByAsset(posMap);
 
-      // Latest run_date only â€” an older vintage would list names that were never
+      // Latest run_date only — an older vintage would list names that were never
       // candidates for today's book.
       const candRows = (candRes.data as (CandidateRow & { run_date: string })[] | null) ?? [];
       const latestCandDate = candRows[0]?.run_date ?? null;
       setCandidates(candRows.filter((c) => c.run_date === latestCandDate));
 
-      // Theme id â†’ name, for the abstention roster and position links.
+      // Theme id → name, for the abstention roster and position links.
       const names: Record<string, string> = {};
       const allThemeIds: string[] = [];
       for (const row of (themesRes.data as { id: string; name: string }[] | null) ??
@@ -319,7 +319,7 @@ function BookPageInner() {
         const picks = parsePicks(r.picks);
         setRec({ ...r, picks });
 
-        // EdgeScore per position theme â€” the theme-latest fallback when a
+        // EdgeScore per position theme — the theme-latest fallback when a
         // position row carries no edge columns (ADR-0031/0032).
         const themeIds = Array.from(
           new Set(picks.map((p) => p.theme_id).filter((x): x is string => !!x))
@@ -354,7 +354,7 @@ function BookPageInner() {
   );
 
   // Resolve the EdgeScore for every position once: position columns first, theme
-  // latest as fallback (positionEdge.resolvePositionEdge). Keyed by "asset" â€” the
+  // latest as fallback (positionEdge.resolvePositionEdge). Keyed by "asset" — the
   // stable identity a pick joins on.
   const edgeByAsset = useMemo(() => {
     const m: Record<string, ResolvedEdge> = {};
@@ -367,7 +367,7 @@ function BookPageInner() {
     return m;
   }, [rec, posEdgeByAsset, edgeByTheme]);
 
-  // Î£ conviction across every sized position with a non-null conviction â€” the
+  // Σ conviction across every sized position with a non-null conviction — the
   // normalisation denominator the sizing chain shows.
   const convictionSum = useMemo(() => {
     let sum = 0;
@@ -397,12 +397,12 @@ function BookPageInner() {
   const bm = rec?.book_metrics ?? null;
 
   // Plain-English lead. A reader should learn what this book SAYS before meeting
-  // any notation â€” the formula is method, not the headline.
+  // any notation — the formula is method, not the headline.
   const plainSummary = useMemo(() => {
     if (!rec) return "No book has been generated yet.";
     const n = longs.length + shorts.length;
     if (n === 0)
-      return "No positions cleared the screen today â€” every theme was scored but held out for weak or conflicting signal.";
+      return "No positions cleared the screen today — every theme was scored but held out for weak or conflicting signal.";
     const sides =
       shorts.length === 0
         ? `${longs.length} long position${longs.length === 1 ? "" : "s"} and no shorts`
@@ -419,7 +419,7 @@ function BookPageInner() {
           ? " It is close to market-neutral."
           : ` It leans net ${net > 0 ? "long" : "short"} at ${fmtPct(Math.abs(net), 0)} of capital.`;
     // Cash is a POSITION, not a rounding error. Once the caps genuinely bind, a
-    // book that cannot be filled inside its own limits deploys less than $100M â€”
+    // book that cannot be filled inside its own limits deploys less than $100M —
     // and a reader who is told "sized across $100M" while the notionals add to
     // $60M is owed the difference and the reason for it.
     const deployed = (rec.picks ?? []).reduce((s, p) => s + (p.notional ?? 0), 0);
@@ -451,7 +451,7 @@ function BookPageInner() {
     return m;
   }, [rec]);
 
-  // Group caps (geography, sector) sitting at their limit â€” the book's binding
+  // Group caps (geography, sector) sitting at their limit — the book's binding
   // constraint. A name scaled below its normalised conviction weight is inside one of
   // these (ADR-0037 clamps a capped group and banks the freed capital as cash), so the
   // sizing chain names them instead of the false "no cap binding".
@@ -467,15 +467,15 @@ function BookPageInner() {
     return out;
   }, [rec]);
 
-  // â”€â”€ Theme focus (?theme=<id>) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // A "positions â†’" link from the heatmap/cards lands here. Honour the param so
+  // ── Theme focus (?theme=<id>) ────────────────────────────────────────────
+  // A "positions →" link from the heatmap/cards lands here. Honour the param so
   // the deep-link is meaningful: name the theme's positions if it holds any, or
-  // â€” the case that used to dead-end silently on an abstained theme â€” say plainly
+  // — the case that used to dead-end silently on an abstained theme — say plainly
   // that it was held out and point at the abstention roster.
   const focusThemeId = useSearchParams().get("theme");
   const focusName = focusThemeId ? themeNames[focusThemeId] ?? null : null;
-  // Picks store the theme NAME (`theme`), not the theme_id â€” theme_id is null on
-  // L5 output â€” so match on the name resolved from the URL's id, with theme_id as
+  // Picks store the theme NAME (`theme`), not the theme_id — theme_id is null on
+  // L5 output — so match on the name resolved from the URL's id, with theme_id as
   // a forward-compatible fallback for when the agent starts populating it.
   const focusPicks = useMemo(() => {
     if (!focusThemeId) return [];
@@ -599,12 +599,12 @@ function BookPageInner() {
               className="num"
               style={staleness.stale ? { color: "var(--warning)" } : undefined}
             >
-              {rec?.run_date ?? "â€”"}
+              {rec?.run_date ?? "—"}
             </span>
           </div>
           <div className="mt-1">
             <span className="text-text-tertiary mr-1.5">LENS</span>
-            <span className="num">{rec?.lens ?? "â€”"}</span>
+            <span className="num">{rec?.lens ?? "—"}</span>
           </div>
         </div>
       </div>
@@ -624,7 +624,7 @@ function BookPageInner() {
           }}
         >
           <span className="font-semibold" style={{ color: "var(--warning)" }}>
-            Stale book â€”{" "}
+            Stale book —{" "}
           </span>
           <span className="text-text-secondary">{staleness.message}</span>
         </div>
@@ -654,7 +654,7 @@ function BookPageInner() {
         </div>
       ) : (
         <>
-          {/* â”€â”€ Theme-focus banner (from a "positions â†’" deep link) â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── Theme-focus banner (from a "positions →" deep link) ──────── */}
           {focusThemeId && focusIsKnown && (
             <div
               className="card p-4 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2"
@@ -672,7 +672,7 @@ function BookPageInner() {
                       {focusName ?? "This theme"}
                     </span>{" "}
                     <span className="text-text-secondary">
-                      is held out of the current book â€” it produced no net-edge
+                      is held out of the current book — it produced no net-edge
                       position this run, so there is nothing to size. See the exact
                       component conflict in the abstention roster below.
                     </span>
@@ -699,7 +699,7 @@ function BookPageInner() {
                     href="#abstention-roster"
                     className="text-accent hover:underline whitespace-nowrap"
                   >
-                    See the roster â†“
+                    See the roster ↓
                   </a>
                 )}
                 <Link
@@ -712,7 +712,7 @@ function BookPageInner() {
             </div>
           )}
 
-          {/* â”€â”€ Fallback banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── Fallback banner ─────────────────────────────────────────── */}
           {isFallback && (
             <div
               className="card p-4 mb-5 border"
@@ -738,7 +738,7 @@ function BookPageInner() {
             </div>
           )}
 
-          {/* â”€â”€ Book header stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── Book header stats ───────────────────────────────────────── */}
           {/* gap-2 (8px), against the 24px page gutter. A metric strip reads as
               ONE instrument rather than six loose cards when its internal gap is
               roughly a third of the gutter separating it from everything else —
@@ -781,16 +781,16 @@ function BookPageInner() {
             <Stat
               label="Gross"
               value={fmtPct(bm?.gross_exposure)}
-              hint="Long + short â€” total capital at risk"
+              hint="Long + short — total capital at risk"
             />
             <Stat
               label="Net"
               value={
                 bm?.net_exposure === undefined
-                  ? "â€”"
+                  ? "—"
                   : `${bm.net_exposure >= 0 ? "+" : ""}${fmtPct(bm.net_exposure)}`
               }
-              hint="Long âˆ’ short â€” directional tilt"
+              hint="Long − short — directional tilt"
             />
             <Stat
               label="Deployed"
@@ -801,7 +801,7 @@ function BookPageInner() {
                 const dep = rec.picks.reduce((s, p) => s + (p.notional ?? 0), 0);
                 const cash = 100_000_000 - dep;
                 return cash > 500_000
-                  ? `of $100M â€” ${fmtUSD(cash)} in cash, held back by position limits`
+                  ? `of $100M — ${fmtUSD(cash)} in cash, held back by position limits`
                   : "Capital allocated of $100M";
               })()}
             />
@@ -810,14 +810,14 @@ function BookPageInner() {
               value={
                 worstScenario
                   ? `${(worstScenario.estimated_book_return * 100).toFixed(1)}%`
-                  : "â€”"
+                  : "—"
               }
               hint={worstScenario?.label}
               color={worstScenario ? "var(--short)" : undefined}
             />
           </div>
 
-          {/* â”€â”€ Book view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── Book view ──────────────────────────────────────────────── */}
           {/* The nav sits below the header banners and the summary tiles: the
               tiles ARE the answer this page exists to give, so they are never
               something a reader has to navigate to. */}
@@ -846,7 +846,7 @@ function BookPageInner() {
             />
           </div>
 
-          {/* â”€â”€ Positions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── Positions ──────────────────────────────────────────────── */}
           {rec.picks.length === 0 ? (
             <div className="card mb-6">
               <EmptyState
@@ -875,7 +875,7 @@ function BookPageInner() {
               <div className="grid wide:grid-cols-2 gap-6 items-start [&>*]:mb-0 [&>*]:min-w-0 mb-6">
               <PositionSection
                 title="Longs"
-                glyph="â–²"
+                glyph="▲"
                 color="var(--long)"
                 picks={longs}
                 openAsset={openAsset}
@@ -896,7 +896,7 @@ function BookPageInner() {
               />
               <PositionSection
                 title="Shorts"
-                glyph="â–¼"
+                glyph="▼"
                 color="var(--short)"
                 picks={shorts}
                 openAsset={openAsset}
@@ -914,7 +914,7 @@ function BookPageInner() {
                 correlationPairs={correlationPairs}
                 ideas={rec?.independent_ideas ?? null}
                 scenarios={rec.scenario_results ?? []}
-                emptyNote="This book has no short positions. A $100M long-short mandate with zero shorts carries full directional market exposure â€” check the screening funnel for why no theme produced a negative TradeScore."
+                emptyNote="This book has no short positions. A $100M long-short mandate with zero shorts carries full directional market exposure — check the screening funnel for why no theme produced a negative TradeScore."
               />
               </div>
 
@@ -933,7 +933,7 @@ function BookPageInner() {
           )}
 
 
-          {/* â”€â”€ Pool depth: the answer to "why not five and five?" â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── Pool depth: the answer to "why not five and five?" ───────── */}
           {/* Three independent readings of one question — "how solid is this
               book?" — that were stacked full-width across ~975px and read as a
               sequence. Side by side they read as what they are: corroboration.
@@ -949,18 +949,18 @@ function BookPageInner() {
             heldShorts={(rec?.picks ?? []).filter((p) => p.direction === "short").length}
           />
 
-          {/* â”€â”€ Turnover vs the previous run â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── Turnover vs the previous run ─────────────────────────────── */}
           <BookTurnover
             current={(rec?.picks ?? []).map((p) => p.asset).filter(Boolean)}
             previous={prevBook?.assets ?? null}
             previousDate={prevBook?.date ?? null}
           />
 
-          {/* â”€â”€ Same inputs, run again: agent churn as against market churn â”€ */}
+          {/* ── Same inputs, run again: agent churn as against market churn ─ */}
           <Replication />
           </div>
 
-          {/* â”€â”€ Abstention roster â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── Abstention roster ───────────────────────────────────────── */}
           </section>
 
           <section id="not-taken" aria-label="Cleared the screen but not taken">
@@ -979,14 +979,14 @@ function BookPageInner() {
             themeNames={themeNames}
             abstainThreshold={edgeWeights.abstainThreshold}
             thresholdIsLive={weightsResolved.abstainThreshold}
-            // Themes that traded, taken from the PUBLISHED BOOK â€” the same source
+            // Themes that traded, taken from the PUBLISHED BOOK — the same source
             // the positions table above renders (ADR-0040). It used to come from
             // portfolio_positions, which disagrees with the book for the several
             // minutes L5 takes: L1 writes its full candidate set there first and it
             // is only reconciled down after the agent picks. During that window
             // every theme looked traded, so this panel printed "Every scored theme
             // cleared the |Edge| >= 0.15 conviction bar" while /method showed
-            // Inflation at +0.117 â€” a confidently wrong sentence, on a page whose
+            // Inflation at +0.117 — a confidently wrong sentence, on a page whose
             // own positions table listed seven names from four themes.
             tradedThemeIds={
               new Set(
@@ -998,7 +998,7 @@ function BookPageInner() {
             focusThemeId={focusHeldOut ? focusThemeId : null}
           />
 
-          {/* â”€â”€ Screening funnel (collapsed â€” audit detail) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── Screening funnel (collapsed — audit detail) ────────────── */}
           </section>
 
           <section id="audit" aria-label="Audit detail">
@@ -1006,7 +1006,7 @@ function BookPageInner() {
             title="Screening funnel"
             summary={
               rec.screening_funnel && rec.screening_funnel.length > 0
-                ? `${rec.screening_funnel[rec.screening_funnel.length - 1]?.remaining ?? "â€”"} names cleared ${rec.screening_funnel.length} filters`
+                ? `${rec.screening_funnel[rec.screening_funnel.length - 1]?.remaining ?? "—"} names cleared ${rec.screening_funnel.length} filters`
                 : "how the universe was filtered to the book"
             }
           >
@@ -1045,7 +1045,7 @@ function BookPageInner() {
                             color: s.removed > 0 ? "var(--short)" : "var(--text-tertiary)",
                           }}
                         >
-                          {s.removed > 0 ? `âˆ’${s.removed}` : "0"}
+                          {s.removed > 0 ? `−${s.removed}` : "0"}
                         </td>
                         <td className="px-[18px] py-2.5 border-b border-border text-text-secondary text-[12px]">
                           {s.reason}
@@ -1066,7 +1066,7 @@ function BookPageInner() {
             )}
           </CollapsibleSection>
 
-          {/* â”€â”€ Book risks (collapsed â€” expand for the tail risks) â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── Book risks (collapsed — expand for the tail risks) ─────── */}
           {canRenderAdvisoryBody(advisory) &&
             rec.book_risks &&
             rec.book_risks.length > 0 && (
@@ -1209,8 +1209,8 @@ function PositionSection({
             className={`${BOOK_ROW_MIN_W} ${BOOK_ROW_GRID} px-[18px] py-2 grid items-center gap-3 border-b border-border bg-bg-elevated text-[10px] uppercase tracking-[0.08em] text-text-tertiary`}
           >
             <span>#</span>
-            <span>Asset Â· theme Â· rationale</span>
-            <span className="text-right">Weight Â· notional</span>
+            <span>Asset · theme · rationale</span>
+            <span className="text-right">Weight · notional</span>
             <span className="text-right">Edge</span>
             <span className="text-right">Conv.</span>
             <span className="text-right">Cap</span>

@@ -32,6 +32,38 @@ export const BOOK_ROW_COLUMNS = [
 ] as const;
 
 /**
+ * What each figure column is measured OVER, rendered as a second header line.
+ *
+ * The legend used to be six bare words. `Conv.` was a ratio with an undisclosed
+ * denominator and `Cap` was headroom against an unstated limit, over the densest
+ * table the app ships — a reader could not answer "per cent of what?" without
+ * leaving the page for /method. Goal 1's test is whether a number's origin can be
+ * found without asking, and always-visible beats a hover the keyboard cannot reach.
+ *
+ * Empty string = no scope line (the rank gutter, the descriptive column and the
+ * caret are not figures and inventing a caption for them is noise). Kept here
+ * rather than inline for the same reason BOOK_ROW_GRID is: the header and the row
+ * must agree, and copy that lives in the markup drifts from the column it labels.
+ *
+ * ASCII only, deliberately. This file's strings are re-encoded on some saves in
+ * this environment; `/` survives where a division sign has not.
+ */
+/* Kept SHORT on purpose. These sit in 78px columns, and the first draft
+   ("OF $100M, THIS RUN", "SIGNED, THIS RUN") wrapped to three lines and pushed
+   the figures down. The per-run scoping is already carried twice on the page —
+   the RUN DATE stamp in the header and the ProvenanceStrip under the table — so
+   repeating "THIS RUN" on all four columns bought nothing and cost the layout. */
+export const BOOK_ROW_SCOPES = [
+  "",
+  "",
+  "OF $100M",
+  "SIGNED",
+  "|EDGE| / VOL",
+  "HEADROOM",
+  "",
+] as const;
+
+/**
  * Shared column template for the /book position rows AND their legend header.
  * Both must use this — `tests/unit/book-row-grid.test.ts` fails if either
  * reintroduces an inline template.

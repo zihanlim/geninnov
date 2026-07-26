@@ -66,6 +66,21 @@ import {
  * page had been giving.
  */
 
+/**
+ * Row cap applied to the `trade_candidates` fetch on /book.
+ *
+ * Exported so the query and the end-of-list terminator read the same number. If
+ * they drift, the page silently claims a truncated list is complete — which is
+ * precisely the failure the terminator exists to catch, so the constant has one
+ * home rather than two literals.
+ *
+ * PostgREST also caps responses server-side (1000 rows by default) and this repo
+ * has already been bitten by that once: `_macro_zscores` had to be rewritten
+ * per-series after a silent truncation. A cap you cannot see is a wrong number
+ * that looks right.
+ */
+export const CANDIDATE_POOL_LIMIT = 200;
+
 export interface CandidateRow {
   asset: string;
   direction: "long" | "short";
@@ -88,6 +103,7 @@ export default function ClearedNotTaken({
   heldDirections = {},
   themeNames,
   correlations = {},
+  poolLimit = CANDIDATE_POOL_LIMIT,
 }: {
   candidates: CandidateRow[];
   /** Assets in today's book. */
@@ -97,6 +113,9 @@ export default function ClearedNotTaken({
   heldDirections?: Record<string, "long" | "short">;
   themeNames: Record<string, string>;
   correlations?: CandidateCorrelations;
+  /** Row cap the candidate query was fetched under. When the pool comes back at
+   *  exactly this size the list is truncated, not complete, and says so. */
+  poolLimit?: number;
 }) {
   const notTaken = candidates
     .filter((c) => !heldAssets.has(c.asset))
@@ -313,6 +332,22 @@ export default function ClearedNotTaken({
           </tbody>
         </table>
       </ScrollArea>
+
+      {/* End-of-list terminator. Without it "that is the whole candidate set" and
+          "the query hit its row cap" render identically — Goal 2's null-vs-zero
+          distinction applied to list LENGTH rather than to a single cell. */}
+      {candidates.length >= poolLimit ? (
+        <p className="m-0 px-[18px] py-2 text-[11px] leading-[1.6] text-warning">
+          List truncated — the candidate query returned {candidates.length} rows,
+          its row cap. There are more names in the pool than are shown here, so
+          treat this as a sample and not as the full screen.
+        </p>
+      ) : (
+        <p className="m-0 px-[18px] py-2 text-[11px] leading-[1.6] text-text-tertiary">
+          End of list — {notTaken.length} not taken, of {candidates.length}{" "}
+          candidates screened this run.
+        </p>
+      )}
     </CollapsibleSection>
   );
 }

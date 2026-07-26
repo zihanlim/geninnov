@@ -54,10 +54,12 @@ import {
   type ReplicationNames,
 } from "@/lib/book/positionStability";
 import ClearedNotTaken, {
+  CANDIDATE_POOL_LIMIT,
   type CandidateRow,
   type CandidateCorrelations,
 } from "@/components/book/ClearedNotTaken";
 import { ScrollArea } from "@/components/ScrollArea";
+import { ProvenanceStrip } from "@/components/status/ProvenanceStrip";
 import { PositionRow } from "@/components/book/PositionRow";
 import {
   FACTOR_LABELS,
@@ -67,7 +69,7 @@ import {
   fmtUSD,
 } from "@/lib/book/format";
 import type { CapRow, Pick, ScenarioResult } from "@/lib/book/types";
-import { BOOK_ROW_GRID, BOOK_ROW_MIN_W } from "@/lib/book/grid";
+import { BOOK_ROW_GRID, BOOK_ROW_MIN_W, BOOK_ROW_SCOPES } from "@/lib/book/grid";
 import { assessStaleness } from "@/lib/freshness";
 import {
   buildSizingChain,
@@ -226,7 +228,9 @@ function BookPageInner() {
           .from("trade_candidates")
           .select("asset, direction, edge_score, theme_id, run_date, via_conviction")
           .order("run_date", { ascending: false })
-          .limit(200),
+          // Shared with the end-of-list terminator in ClearedNotTaken, so a
+          // truncated pool cannot render as a complete one.
+          .limit(CANDIDATE_POOL_LIMIT),
       ]);
 
       // Live EdgeScore weights + abstain threshold. Missing rows fall back to the
@@ -1204,16 +1208,38 @@ function PositionSection({
         </div>
       ) : (
         <ScrollArea className="card" frameClassName="rounded-[10px]">
-          {/* Column legend for the dense row grid below. */}
+          {/* Column legend for the dense row grid below. Each figure column
+              carries a second line naming what it is measured over — see
+              BOOK_ROW_SCOPES for why the copy lives in lib/book/grid.ts. */}
           <div
-            className={`${BOOK_ROW_MIN_W} ${BOOK_ROW_GRID} px-[18px] py-2 grid items-center gap-3 border-b border-border bg-bg-elevated text-[10px] uppercase tracking-[0.08em] text-text-tertiary`}
+            className={`${BOOK_ROW_MIN_W} ${BOOK_ROW_GRID} px-[18px] py-2 grid items-end gap-3 border-b border-border bg-bg-elevated text-[10px] uppercase tracking-[0.08em] text-text-tertiary`}
           >
             <span>#</span>
             <span>Asset · theme · rationale</span>
-            <span className="text-right">Weight · notional</span>
-            <span className="text-right">Edge</span>
-            <span className="text-right">Conv.</span>
-            <span className="text-right">Cap</span>
+            <span className="text-right flex flex-col">
+              Weight · notional
+              <span className="text-[9px] tracking-[0.1em] normal-case">
+                {BOOK_ROW_SCOPES[2]}
+              </span>
+            </span>
+            <span className="text-right flex flex-col">
+              Edge
+              <span className="text-[9px] tracking-[0.1em] normal-case">
+                {BOOK_ROW_SCOPES[3]}
+              </span>
+            </span>
+            <span className="text-right flex flex-col">
+              Conv.
+              <span className="text-[9px] tracking-[0.1em] normal-case">
+                {BOOK_ROW_SCOPES[4]}
+              </span>
+            </span>
+            <span className="text-right flex flex-col">
+              Cap
+              <span className="text-[9px] tracking-[0.1em] normal-case">
+                {BOOK_ROW_SCOPES[5]}
+              </span>
+            </span>
             <span />
           </div>
           {picks.map((p, i) => (
@@ -1245,6 +1271,17 @@ function PositionSection({
             />
           ))}
         </ScrollArea>
+      )}
+      {picks.length > 0 && (
+        <ProvenanceStrip
+          cadence="Published 21:30 UTC, weekdays"
+          source="research_recommendations.picks"
+          note={
+            bookRunDate
+              ? `run ${bookRunDate} · L0-L4 deterministic`
+              : "L0-L4 deterministic"
+          }
+        />
       )}
     </section>
   );

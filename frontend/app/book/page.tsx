@@ -16,6 +16,7 @@ import {
 import ThesisBlock from "@/components/research/ThesisBlock";
 import CollapsibleSection from "@/components/CollapsibleSection";
 import SectionNav from "@/components/SectionNav";
+import AnswerCards from "@/components/book/AnswerCards";
 
 // Four anchored groups, in the order the page already rendered them. Labels are
 // nouns and carry no figure — SectionNav is tested for the absence of digits,
@@ -742,6 +743,28 @@ function BookPageInner() {
               ONE instrument rather than six loose cards when its internal gap is
               roughly a third of the gutter separating it from everything else —
               the grouping is carried by the spacing ratio, not by a border. */}
+          {/* The four questions a PM arrives with, before the detail strip.
+              Two of these facts — what changed, and what is binding — were three
+              screens down and on another route respectively; they are the two a
+              reader needs first. Every figure here is read from the same `rec`
+              the panels below render, so nothing can disagree with anything. */}
+          <AnswerCards
+            current={(rec.picks ?? []).map((p) => p.asset).filter(Boolean)}
+            previous={prevBook?.assets ?? null}
+            previousDate={prevBook?.date ?? null}
+            gross={bm?.gross_exposure ?? null}
+            net={bm?.net_exposure ?? null}
+            deployed={(rec.picks ?? []).reduce((s, p) => s + (p.notional ?? 0), 0)}
+            cash={
+              100_000_000 -
+              (rec.picks ?? []).reduce((s, p) => s + (p.notional ?? 0), 0)
+            }
+            worstLabel={worstScenario?.label ?? null}
+            worstReturn={worstScenario?.estimated_book_return ?? null}
+            bindingCaps={bindingGroupCaps}
+            capsKnown={Boolean(rec?.cap_utilisation)}
+          />
+
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-6">
             <Stat
               label="Positions"

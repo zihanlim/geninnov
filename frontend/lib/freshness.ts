@@ -25,13 +25,52 @@ export function businessDaysBetween(from: Date, to: Date): number {
   return count;
 }
 
+/**
+ * Three states, not two — and the third is the point.
+ *
+ * `stale` alone cannot distinguish "we judged this book and it is current" from "we could
+ * not judge it at all", because both answer `false`. A book row whose `run_date` is null
+ * or unparseable therefore rendered with **no freshness signal whatsoever**, which reads
+ * as currency to anyone scanning it. That is the `known` / `unknown` conflation design
+ * goal 2 exists to forbid, on the one field that tells a reader whether these are today's
+ * positions.
+ *
+ * The original code returned `stale: false` here on purpose, reasoning that inventing a
+ * staleness warning from a missing date would be a fabricated claim. That half is right
+ * and is preserved: `businessDays` stays 0 and `stale` stays false, because a business-day
+ * count we cannot compute must not be asserted. What was missing is that `stale: false`
+ * is *itself* a claim — "a run has not been missed" — and we have no basis for it either.
+ */
+export type FreshnessVerdict =
+  /** Judged, and within the window. */
+  | "current"
+  /** Judged, and a run that should have happened did not. */
+  | "stale"
+  /** Not judgeable — there was no usable run date to measure against. */
+  | "unjudgeable";
+
 export type Staleness = {
-  /** Business days since the run date. 0 = today's run. */
+  /** Business days since the run date. 0 = today's run, and 0 when unjudgeable. */
   businessDays: number;
-  /** True once a run should have happened and did not. */
+  /**
+   * True only when a run should have happened and did not.
+   *
+   * Read `verdict` instead when the distinction matters: `stale === false` covers both
+   * "current" and "we could not tell", and those are different claims.
+   */
   stale: boolean;
   /** Plain sentence for the reader, or null when current. */
   message: string | null;
+  /** Which of the three states this is. */
+  verdict: FreshnessVerdict;
+  /**
+   * Why the verdict is `unjudgeable`, and null otherwise.
+   *
+   * Required in practice for the same reason `pick_outcomes.void_reason` is required by a
+   * CHECK constraint (ADR-0090): an absence with no stated cause is the shape that lets a
+   * gap pass for a pass.
+   */
+  unjudgeableReason: string | null;
 };
 
 /**
@@ -48,19 +87,40 @@ export function assessStaleness(
   today: Date = new Date(),
 ): Staleness {
   if (!runDate) {
-    return { businessDays: 0, stale: false, message: null };
+    return {
+      businessDays: 0,
+      stale: false,
+      message: null,
+      verdict: "unjudgeable",
+      unjudgeableReason:
+        "No run date was returned with this record, so its age cannot be measured.",
+    };
   }
   const parsed = new Date(`${runDate}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) {
-    return { businessDays: 0, stale: false, message: null };
+    return {
+      businessDays: 0,
+      stale: false,
+      message: null,
+      verdict: "unjudgeable",
+      unjudgeableReason: `The run date ${JSON.stringify(runDate)} is not a date, so its age cannot be measured.`,
+    };
   }
   const businessDays = businessDaysBetween(parsed, today);
   if (businessDays < 2) {
-    return { businessDays, stale: false, message: null };
+    return {
+      businessDays,
+      stale: false,
+      message: null,
+      verdict: "current",
+      unjudgeableReason: null,
+    };
   }
   return {
     businessDays,
     stale: true,
+    verdict: "stale",
+    unjudgeableReason: null,
     message:
       `This book is from ${runDate} — ${businessDays} business days ago. ` +
       `The pipeline runs every weekday after the US close, so a book this old means ` +

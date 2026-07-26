@@ -125,7 +125,7 @@ export default function LiveFeed() {
         <span
           className="num"
           style={staleness.stale ? { color: "var(--warning)", fontWeight: 600 } : undefined}
-          title={staleness.message ?? undefined}
+          title={staleness.message ?? staleness.unjudgeableReason ?? undefined}
         >
           {latest?.run_date ?? "—"}
         </span>
@@ -136,6 +136,11 @@ export default function LiveFeed() {
           <span style={{ color: "var(--warning)" }}>
             {" "}· {staleness.businessDays} weekday runs missed
           </span>
+        )}
+        {/* An em dash with no note reads as "nothing to report". Say the age is
+            unmeasurable instead — the tooltip carries the cause. */}
+        {staleness.verdict === "unjudgeable" && (
+          <span className="text-text-tertiary">{" "}· age unknown</span>
         )}
       </span>
       <span className="text-text-tertiary">|</span>

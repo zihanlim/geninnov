@@ -36,6 +36,15 @@ and [ADR-0066](adrs/0066-not-computable-must-persist-as-null.md).
 **Test:** unplug a table. Does the page explain what's missing and how to fix it,
 or does it just go quiet?
 
+A two-state verdict hides this. `assessStaleness` returned `stale: false` both when it had
+judged a book current AND when it had no usable `run_date` to judge — so a record with a
+null date rendered with **no freshness signal at all**, which reads as currency on a page
+of $100M positions. `stale: false` is itself a claim ("no run was missed") and there was no
+basis for it. Any boolean that can mean *both* "measured and fine" and "could not measure"
+needs a third state with a stated cause — `verdict: current | stale | unjudgeable` plus
+`unjudgeableReason`, the same rule `pick_outcomes.void_reason` enforces by CHECK constraint
+([ADR-0090](adrs/0090-a-published-pick-must-be-falsifiable.md)).
+
 ### 3. Direction is glyph + wordmark. Green/crimson reinforce, and nothing else may borrow them
 
 Forest-green `--long` = long, crimson `--short` = short. These are semantics, not

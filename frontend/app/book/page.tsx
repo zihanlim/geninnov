@@ -634,6 +634,24 @@ function BookPageInner() {
         </div>
       )}
 
+      {/* The third state. `stale === false` covers both "current" and "we could not tell",
+          and a record whose run_date is null used to render with NO freshness signal at
+          all — which reads as currency on a page of $100M positions. This says the age is
+          unmeasurable and why, rather than implying it was measured and passed. Not styled
+          as an alert: nothing is known to be wrong, which is exactly the point. */}
+      {staleness.verdict === "unjudgeable" && staleness.unjudgeableReason && (
+        <div
+          role="status"
+          className="mb-6 rounded-[10px] border border-border px-4 py-3 text-[13px] leading-[1.6] bg-bg-elevated"
+        >
+          <span className="font-semibold text-text-primary">Age unknown — </span>
+          <span className="text-text-secondary">
+            {staleness.unjudgeableReason} These positions may or may not be today&rsquo;s;
+            this page cannot tell you which.
+          </span>
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-4">
           <div className="skeleton h-[120px]" />

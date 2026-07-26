@@ -134,9 +134,18 @@ single fact they came for. Two consequences:
 - **Collapse optional detail behind `<details>`**, don't delete it and don't
   make it always-on. The three detail panels on `/risk` are collapsed by
   default for exactly this reason.
-- **Never trap a page in an inner scroller.** Viewport-locked shells
-  (`h-screen` + `overflow-y-auto` on the content) photograph well and break
-  Ctrl+F, deep links, and long candidate tables. Full-page scroll always wins.
+- **Full-page scroll is the default. `/` is the one exception, and it is
+  argued.** Viewport-locked shells (`h-screen` + `overflow-y-auto` on the
+  content) photograph well and break Ctrl+F, deep links, and long candidate
+  tables — so they need a reason, not a preference.
+  [ADR-0103](adrs/0103-the-themes-page-is-a-terminal.md) makes that case for the
+  Themes page only, on a measured 4,186px (4.7 screens), and pays for it with
+  four constraints: the lock applies at `≥1024px` only, every pane is
+  `id`-addressable, the duplicate renderings are deleted rather than relocated,
+  and the palette does not change. **`/book`, `/risk` and `/method` keep
+  full-page scroll** — they carry the long tables and the prose, which is
+  exactly what a pane is bad at. A second page proposing a lock needs its own
+  ADR and its own measurement; "for consistency with `/`" is not one.
 
 ### 8. Accessibility is a floor, not a polish pass
 
@@ -181,8 +190,14 @@ Stated so nobody re-litigates them by accident:
 - **Mobile-first.** Mobile must *work* — and is verified — but comparison tables
   and factor charts are designed for desktop and degrade gracefully, not the
   reverse.
-- **The Bloomberg terminal look.** See ADR-0009. The differentiator is the
-  visible rigor of the derivation, not visual fidelity to a terminal.
+- ~~**The Bloomberg terminal look.**~~ **Reversed for `/` only**, by
+  [ADR-0103](adrs/0103-the-themes-page-is-a-terminal.md). The Themes page is a
+  viewport-locked pane grid at `≥1024px`. What the non-goal was actually
+  protecting still holds everywhere: the differentiator is the visible rigor of
+  the derivation, not visual fidelity to a terminal, so a pane earns its place
+  by showing a derivation more compactly — never by looking more like a trading
+  desk. The **palette** is unchanged (goal 4); a terminal on warm paper is still
+  warm paper. `/book`, `/risk` and `/method` are unaffected.
 - **An *unlabelled* sidebar glyph rail.** A rail is permitted when it is
   **labelled** and does not cost the layout: collapsed 56px is the default and
   preserves the two-pane position tables; expanded 200px is a reader's explicit

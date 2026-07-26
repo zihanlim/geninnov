@@ -84,7 +84,11 @@ export default function RegimeHero({
 }: RegimeHeroProps) {
   return (
     <div
-      className="rounded-[12px] p-7 mb-6 grid gap-8 border border-border grid-cols-1 md:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]"
+      // ADR-0103: at lg the page is a locked terminal, where this block was taking
+      // 263px of an 814px shell -- a third of the viewport for orientation. The lg:
+      // overrides tighten padding, gap and headline ONLY inside the lock; below the
+      // breakpoint the page still scrolls and the original spacing is correct there.
+      className="rounded-[12px] p-7 lg:p-4 mb-6 lg:mb-0 grid gap-8 lg:gap-5 border border-border grid-cols-1 md:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]"
       style={{
         // Ledger light theme: a pale crimson wash into paper gives the hero
         // presence without a dark slab (which left every token-coloured ink
@@ -102,8 +106,8 @@ export default function RegimeHero({
             {SENTIMENT_LABEL[sentiment] ?? sentiment.toUpperCase()}
           </span>
         </div>
-        <div className="text-[20px] font-semibold leading-[1.3] mb-1.5">{headline}</div>
-        <div className="text-text-secondary text-[13px] leading-[1.6]">{narrative}</div>
+        <div className="text-[20px] lg:text-[16px] font-semibold leading-[1.3] mb-1.5">{headline}</div>
+        <div className="text-text-secondary text-[13px] lg:text-[12px] leading-[1.6]">{narrative}</div>
         <RegimeInputsPanel runDate={runDate} />
       </div>
 

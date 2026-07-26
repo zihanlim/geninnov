@@ -3,15 +3,14 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import RegimeHero from "@/components/RegimeHero";
-import ConvictionCard, { ConvictionTheme } from "@/components/ConvictionCard";
-import Watchlist from "@/components/Watchlist";
+import { type ConvictionTheme } from "@/components/ConvictionCard";
 import ThemeDerivationDrawer from "@/components/ThemeDerivationDrawer";
 import ThemeHeatmap from "@/components/ThemeHeatmap";
+import TerminalPane from "@/components/home/TerminalPane";
 import DiscoveredThemes from "@/components/DiscoveredThemes";
 import PredictionMarkets from "@/components/PredictionMarkets";
 import MarketBar from "@/components/MarketBar";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
-import { NewsRibbon } from "@/components/news/NewsRibbon";
 import { NewsFeed } from "@/components/news/NewsFeed";
 import { fetchLatestNews, type NewsItem } from "@/lib/news";
 import { StatusBadge } from "@/components/status/StatusBadge";
@@ -403,13 +402,20 @@ function ConvictionPageInner() {
   );
 
   return (
-    <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-7 pb-20">
-      <div className="flex justify-between items-end mb-7 gap-4 flex-wrap">
+    // ADR-0103: viewport-locked at lg and above, ordinary scrolling page below it.
+    // The height subtracts exactly the two pieces of fixed chrome — TopBar (`h-14`, 56px)
+    // and LiveFeed (`--feed-h`) — rather than a guessed number, so the lock survives a
+    // change to either. `100dvh` not `100vh`: on mobile browsers `vh` includes the
+    // retracting URL bar, and this shell must never be taller than what is actually
+    // visible. `lg:overflow-hidden` is what makes the panes, not the page, do the
+    // scrolling.
+    <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-4 pb-20 lg:pb-3 lg:h-[calc(100dvh-56px-var(--feed-h))] lg:overflow-hidden lg:flex lg:flex-col lg:gap-3">
+      <div className="flex justify-between items-end mb-4 lg:mb-0 gap-4 flex-wrap shrink-0">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
+          <h1 className="text-[19px] font-semibold tracking-[-0.01em] m-0">
             What we&apos;re watching
           </h1>
-          <p className="m-0 text-text-secondary text-[13px]">
+          <p className="m-0 text-text-secondary text-[12.5px]">
             Theme attention, macro regime, and book tilt.{" "}
             <span className="text-text-tertiary text-[12px]">
               Click any theme for its score derivation.
@@ -417,7 +423,7 @@ function ConvictionPageInner() {
           </p>
         </div>
         <div className="text-right text-text-secondary text-[12px]">
-          <div className="flex items-center justify-end gap-3 mb-2">
+          <div className="flex items-center justify-end gap-3 mb-1">
             <StatusBadge status={dashboardStatus} />
           </div>
           <div className="mt-1">
@@ -454,11 +460,17 @@ function ConvictionPageInner() {
         </div>
       ) : (
         <>
-          <MarketBar />
-          {/* The headlines the scores below are computed from, rolling. Above
-              the fold because the complaint it answers was literally "I don't
-              see the news" — the evidence was real, persisted, and invisible. */}
-          <NewsRibbon />
+          <div className="shrink-0">
+            <MarketBar />
+          </div>
+          {/* NewsRibbon REMOVED here (ADR-0103, "the redundancy dies first").
+              It existed because the news was real, persisted, and invisible —
+              3,000px below the fold. In the terminal the HEADLINES pane is on
+              screen at all times, so the ribbon became a second rendering of the
+              pane's own data, which is the defect this layout was adopted to
+              fix. It is still imported nowhere else; if the terminal is ever
+              reverted, restore the ribbon with it. */}
+          <div className="shrink-0">
           <RegimeHero
             cycle={regime?.cycle ?? "—"}
             sentiment={regime?.sentiment ?? "—"}
@@ -486,8 +498,69 @@ function ConvictionPageInner() {
             }
             runDate={regime?.run_date}
           />
+          </div>
 
-          <div className="mb-6">
+          {/* ── Screening: four aggregates, as a strip rather than a pane ────
+              These are single figures, not a list — a pane would give them a
+              scroller they never need and cost the grid a cell. The crowding
+              warning stays inline because it is prose about the figure beside
+              it (design goal 6), not a separate finding. */}
+          <div className="shrink-0 card px-4 py-2.5 flex flex-wrap items-center gap-x-7 gap-y-2 mb-4 lg:mb-0">
+            <StripStat label="Themes tracked" value={String(counts.total)} />
+            <StripStat
+              label="Long / short"
+              value={`${counts.longCount} / ${counts.shortCount}`}
+              sub={`${counts.aboveThreshold} of ${counts.total} cleared ${counts.threshold}`}
+            />
+            <StripStat label="Avg HypeScore" value={counts.avgHype.toFixed(1)} sub={`top ${counts.topScore.toFixed(1)}`} />
+            <StripStat
+              label="Attention concentration"
+              value={attn.top3Share === null ? "—" : `${(attn.top3Share * 100).toFixed(0)}%`}
+              sub={
+                attn.hhi === null
+                  ? "need ≥2 scored themes"
+                  : `top-3 share · HHI ${attn.hhi.toFixed(2)} ≈ ${
+                      attn.effectiveThemes ? attn.effectiveThemes.toFixed(1) : "—"
+                    } effective`
+              }
+            />
+            {attn.hhi !== null && attn.hhi >= 0.25 && (
+              <span className="text-[11.5px] leading-[1.5] text-text-secondary">
+                <span className="text-warning font-semibold">Attention is crowded.</span>{" "}
+                Spread across only{" "}
+                <span className="num text-text-primary">
+                  {attn.effectiveThemes?.toFixed(1) ?? "—"}
+                </span>{" "}
+                effective themes — the attention analogue of the book&apos;s
+                concentration HHI.
+              </span>
+            )}
+            {counts.longCount + counts.shortCount === 0 && counts.total > 0 && (
+              <span className="text-[11.5px] leading-[1.5] text-text-secondary">
+                <span className="text-warning font-semibold">
+                  No candidates cleared screening.
+                </span>{" "}
+                Top HypeScore{" "}
+                <span className="num text-text-primary">{counts.topScore.toFixed(1)}</span>{" "}
+                against a threshold of{" "}
+                <span className="num text-text-primary">{counts.threshold}</span> — short
+                by{" "}
+                <span className="num text-text-primary">
+                  {(counts.threshold - counts.topScore).toFixed(1)}
+                </span>
+                . Adjust <code className="num">scoring_config.hype_score_threshold</code>{" "}
+                or widen the theme set.
+              </span>
+            )}
+          </div>
+
+          {/* ── The pane grid (ADR-0103) ─────────────────────────────────────
+              Only this region is locked. `lg:min-h-0` is what lets it shrink to
+              the space the strips above leave; without it the grid keeps its
+              content height and the panes never scroll. */}
+          <div className="lg:flex-1 lg:min-h-0 lg:grid lg:grid-cols-3 lg:grid-rows-[minmax(0,1.35fr)_minmax(0,1fr)] lg:gap-4">
+
+          <TerminalPane id="themes" title="Theme scores" bare className="lg:col-span-2">
             {themeError ? (
               <QueryErrorState
                 what="Themes"
@@ -512,230 +585,50 @@ function ConvictionPageInner() {
                 provByTheme={provenance}
               />
             )}
-          </div>
 
-          {historyError && (
-            <div className="card mb-6">
-              <QueryErrorState
-                what="Theme attention history"
-                message={historyError}
-                source="theme_signals_history"
-              />
-            </div>
-          )}
-          {!historyError && themes.length > 0 && scoredObs === 0 && (
-            <div className="card mb-6">
-              <EmptyState
-                title="No attention history — deltas and trends unavailable"
-                cause={`theme_signals_history has no rows with a populated hype_score, so there is nothing to compare today against. Every Δ and sparkline on this page is therefore blank rather than zero.`}
-                remedy="Backfill theme_signals_history.hype_score, then each subsequent daily run extends the series."
-                source="theme_signals_history.hype_score"
-                severity="warning"
-                compact
-              />
-            </div>
-          )}
+            {/* Both of these are statements ABOUT the scores in this pane — that a Δ
+                is blank rather than zero, or that the history could not be read — so
+                they belong inside it. As their own full-width cards they used to sit
+                between the scores and the duplicate renderings of the scores. */}
+            {historyError && (
+              <div className="card mt-4">
+                <QueryErrorState
+                  what="Theme attention history"
+                  message={historyError}
+                  source="theme_signals_history"
+                />
+              </div>
+            )}
+            {!historyError && themes.length > 0 && scoredObs === 0 && (
+              <div className="card mt-4">
+                <EmptyState
+                  title="No attention history — deltas and trends unavailable"
+                  cause={`theme_signals_history has no rows with a populated hype_score, so there is nothing to compare today against. Every Δ and sparkline on this page is therefore blank rather than zero.`}
+                  remedy="Backfill theme_signals_history.hype_score, then each subsequent daily run extends the series."
+                  source="theme_signals_history.hype_score"
+                  severity="warning"
+                  compact
+                />
+              </div>
+            )}
+          </TerminalPane>
 
-          <div className="flex items-baseline justify-between mb-3.5">
-            <h2 className="text-[16px] font-semibold m-0">
-              Top {Math.min(3, top3.length)} themes by attention
-            </h2>
-            <span className="text-text-secondary text-[12px]">
-              Ranked by HypeScore · volume, sentiment, |ρ| and momentum
-            </span>
-          </div>
-          {top3.length === 0 ? (
-            <div className="card mb-8">
-              <EmptyState
-                title="No themes to rank"
-                cause="No theme carries a HypeScore for the latest run."
-                remedy="Run scripts/daily_refresh.py."
-                source="themes.hype_score"
-              />
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-              {top3.map((t, i) => (
-                <ConvictionCard
-                  key={t.id}
-                  rank={i + 1}
-                  theme={t}
-                  hero={i === 0}
-                  onOpenDerivation={setDrawerTheme}
-                  edge={edges[t.id]}
-                  abstainThreshold={abstainThreshold}
-                  provenance={provenance[t.id]}
-                  topHeadline={topHeadlineByTheme[t.id] ?? null}
-                />
-              ))}
-            </div>
-          )}
-
-          <div className="flex items-baseline justify-between mb-3.5">
-            <h2 className="text-[16px] font-semibold m-0">
-              Watchlist · emerging or fading
-            </h2>
-            <Link
-              href="/book"
-              className="text-text-secondary text-[12px] hover:text-text-primary"
-            >
-              View the book →
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4">
-            <div className="card">
-              <div className="card-header">
-                <span className="card-title">Theme momentum</span>
-                <span className="num text-text-tertiary text-[11px]">
-                  HypeScore · Δ vs prior run
-                </span>
-              </div>
-              <div className="card-body pt-2">
-                {watchlistItems.length > 0 ? (
-                  <Watchlist items={watchlistItems} />
-                ) : (
-                  <EmptyState
-                    title="Nothing on the watchlist"
-                    cause="No themes are scored for the latest run."
-                    source="themes"
-                    compact
-                  />
-                )}
-              </div>
-            </div>
-            <div className="card">
-              <div className="card-header">
-                <span className="card-title">Screening</span>
-              </div>
-              <div className="card-body flex flex-col gap-3.5">
-                <Stat
-                  label="Themes tracked"
-                  value={String(counts.total)}
-                  sub="Active in the registry"
-                />
-                <Stat
-                  label="Long / short candidates"
-                  value={`${counts.longCount} / ${counts.shortCount}`}
-                  sub={`Sized names in the book · ${counts.aboveThreshold} of ${counts.total} themes cleared HypeScore ${counts.threshold}`}
-                />
-                <Stat
-                  label="Avg HypeScore"
-                  value={counts.avgHype.toFixed(1)}
-                  sub={`Top theme at ${counts.topScore.toFixed(1)}`}
-                />
-                <Stat
-                  label="Attention concentration"
-                  value={
-                    attn.top3Share === null
-                      ? "—"
-                      : `${(attn.top3Share * 100).toFixed(0)}%`
-                  }
-                  sub={
-                    attn.hhi === null
-                      ? "Need ≥2 scored themes to measure crowding"
-                      : `Top-3 share of HypeScore · HHI ${attn.hhi.toFixed(
-                          2
-                        )} ≈ ${
-                          attn.effectiveThemes
-                            ? attn.effectiveThemes.toFixed(1)
-                            : "—"
-                        } effective themes`
-                  }
-                />
-                {attn.hhi !== null && attn.hhi >= 0.25 && (
-                  <div
-                    className="rounded-[6px] border px-3 py-2.5 text-[12px] leading-[1.6]"
-                    style={{
-                      borderColor: "var(--warning)",
-                      background: "var(--bg-elevated)",
-                      color: "var(--text-secondary)",
-                    }}
-                  >
-                    <span className="text-warning font-semibold">
-                      Attention is crowded.
-                    </span>{" "}
-                    The top 3 themes hold{" "}
-                    <span className="num text-text-primary">
-                      {((attn.top3Share ?? 0) * 100).toFixed(0)}%
-                    </span>{" "}
-                    of all HypeScore across{" "}
-                    <span className="num text-text-primary">
-                      {attn.scoredCount}
-                    </span>{" "}
-                    scored themes (HHI{" "}
-                    <span className="num text-text-primary">
-                      {attn.hhi.toFixed(2)}
-                    </span>
-                    ) — today&apos;s attention is spread across only{" "}
-                    <span className="num text-text-primary">
-                      {attn.effectiveThemes?.toFixed(1) ?? "—"}
-                    </span>{" "}
-                    effective themes. The attention analogue of the book&apos;s
-                    concentration HHI.
-                  </div>
-                )}
-                {counts.longCount + counts.shortCount === 0 && counts.total > 0 && (
-                  <div
-                    className="rounded-[6px] border px-3 py-2.5 text-[12px] leading-[1.6]"
-                    style={{
-                      borderColor: "var(--warning)",
-                      background: "var(--bg-elevated)",
-                      color: "var(--text-secondary)",
-                    }}
-                  >
-                    <span className="text-warning font-semibold">
-                      No candidates cleared screening.
-                    </span>{" "}
-                    The highest HypeScore is{" "}
-                    <span className="num text-text-primary">
-                      {counts.topScore.toFixed(1)}
-                    </span>{" "}
-                    against a threshold of{" "}
-                    <span className="num text-text-primary">
-                      {counts.threshold}
-                    </span>{" "}
-                    — short by{" "}
-                    <span className="num text-text-primary">
-                      {(counts.threshold - counts.topScore).toFixed(1)}
-                    </span>
-                    . HypeScore is min-max normalised across the theme set each
-                    day, so it is a relative measure gated by an absolute
-                    threshold. Adjust{" "}
-                    <code className="num">scoring_config.hype_score_threshold</code>{" "}
-                    or widen the theme set.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* ── The evidence behind the scores above ─────────────────────── */}
-          <div className="mt-8">
+          <TerminalPane
+            id="headlines"
+            title="Headlines behind today's scores"
+            bare
+            className="lg:row-span-2"
+          >
             <NewsFeed />
-          </div>
+          </TerminalPane>
 
-          {/* ── Prediction markets — forward macro odds (Polymarket) ─────── */}
-          <div className="mt-8">
-            <h2 className="text-[16px] font-semibold m-0 mb-3.5">
-              What the crowd is pricing
-            </h2>
+          <TerminalPane id="crowd" title="What the crowd is pricing" bare>
             <PredictionMarkets />
-          </div>
+          </TerminalPane>
 
-          {/* ── Discovered themes — the Q2 discovery step made visible ────── */}
-          <div className="mt-8">
-            <div className="flex items-baseline justify-between mb-3.5">
-              <h2 className="text-[16px] font-semibold m-0">
-                What the engine is discovering
-              </h2>
-              <Link
-                href="/method"
-                className="text-text-secondary text-[12px] hover:text-text-primary"
-              >
-                How discovery works →
-              </Link>
-            </div>
+          <TerminalPane id="discovery" title="What the engine is discovering" bare>
             <DiscoveredThemes />
+          </TerminalPane>
           </div>
         </>
       )}
@@ -746,6 +639,31 @@ function ConvictionPageInner() {
         onClose={() => setDrawerTheme(null)}
       />
     </main>
+  );
+}
+
+/** One aggregate in the screening strip: a label, a figure, and an optional qualifier.
+ *  Distinct from `Stat` below, which stacks for a card column; this reads inline so four
+ *  of them fit one row without the strip wrapping on a 1024px viewport. */
+function StripStat({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
+  return (
+    <div className="flex items-baseline gap-2 min-w-0">
+      <span className="text-[10.5px] uppercase tracking-[0.06em] text-text-tertiary whitespace-nowrap">
+        {label}
+      </span>
+      <span className="num text-[15px] font-semibold leading-none">{value}</span>
+      {sub ? (
+        <span className="text-[11px] text-text-tertiary truncate">{sub}</span>
+      ) : null}
+    </div>
   );
 }
 

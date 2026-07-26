@@ -204,6 +204,20 @@ Live at https://andromeda-analytics.vercel.app · 626 backend tests green; the f
   ≥2 dates), not on a lone point estimate. Risk cards state their sample size;
   `/method` renders every formula from live `scoring_config`.
 
+### Loop iteration 102 (2026-07-26) — mojibake fix holds; added a live encoding scan to the standing sweep
+
+The mojibake fix is on origin and holding — **no fresh mojibake anywhere in the source**, and a
+live-DOM scan of every route came back **0 mojibake**. Because this env re-corrupts non-ASCII on some
+saves (iteration 101), I folded a mojibake count (`innerText` match on `â€|âˆ|â†|Î£`) into the pass
+itself, so encoding regressions get caught the same firing as scroll/console ones.
+
+Full sweep: `/`, `/book`, `/risk`, `/method` at 1440/1425/375 — **0 issues, 0 mojibake**. No new
+commits from the other session, but they are **actively mid-edit on 8 files** (a "questflow" feature —
+`LiveFeed`, `TopBar`, `DiscoveredThemes`, three risk components, a migration). Active collision zone,
+so verification only from me; nothing of theirs touched. When they commit + deploy, the standing
+grep + live scan will re-check those files for corruption. Deliverable remains clean, mojibake-free,
+and number-verified.
+
 ### Loop iteration 101 (2026-07-26) — user caught mojibake on /book; it was whole-file double-encoding
 
 The user spotted the live NET/GROSS cards reading `Long âˆ' short â€" directional tilt` — I had

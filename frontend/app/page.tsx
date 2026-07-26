@@ -11,6 +11,8 @@ import DiscoveredThemes from "@/components/DiscoveredThemes";
 import PredictionMarkets from "@/components/PredictionMarkets";
 import MarketBar from "@/components/MarketBar";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
+import { NewsRibbon } from "@/components/news/NewsRibbon";
+import { NewsFeed } from "@/components/news/NewsFeed";
 import { StatusBadge } from "@/components/status/StatusBadge";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
 import { resolveRunDates, ageSeconds } from "@/lib/homeFreshness";
@@ -434,6 +436,10 @@ function ConvictionPageInner() {
       ) : (
         <>
           <MarketBar />
+          {/* The headlines the scores below are computed from, rolling. Above
+              the fold because the complaint it answers was literally "I don't
+              see the news" — the evidence was real, persisted, and invisible. */}
+          <NewsRibbon />
           <RegimeHero
             cycle={regime?.cycle ?? "—"}
             sentiment={regime?.sentiment ?? "—"}
@@ -681,6 +687,11 @@ function ConvictionPageInner() {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* ── The evidence behind the scores above ─────────────────────── */}
+          <div className="mt-8">
+            <NewsFeed />
           </div>
 
           {/* ── Prediction markets — forward macro odds (Polymarket) ─────── */}

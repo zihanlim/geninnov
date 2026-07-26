@@ -54,67 +54,6 @@ def _normal_pdf(x: float) -> float:
     return math.exp(-0.5 * x * x) / math.sqrt(2 * math.pi)
 
 
-def value_at_risk(
-    daily_returns: pd.Series,
-    portfolio_value: float,
-    confidence: float = 0.95,
-) -> Optional[float]:
-    """Parametric (Gaussian) one-day VaR. Positive number = loss magnitude."""
-    if len(daily_returns) < MIN_DAYS_FOR_VAR:
-        return None
-    sigma = float(daily_returns.std(ddof=1))
-    z = _z_score(confidence)
-    return z * sigma * portfolio_value
-
-
-def conditional_value_at_risk(
-    daily_returns: pd.Series,
-    portfolio_value: float,
-    confidence: float = 0.95,
-) -> Optional[float]:
-    """Parametric CVaR (Expected Shortfall). Positive number = average loss beyond VaR.
-
-    Formula: CVaR = sigma * phi(z_alpha) / (1 - alpha) * portfolio_value.
-    """
-    if len(daily_returns) < MIN_DAYS_FOR_VAR:
-        return None
-    sigma = float(daily_returns.std(ddof=1))
-    z = _z_score(confidence)
-    pdf = _normal_pdf(z)
-    return sigma * pdf / (1.0 - confidence) * portfolio_value
-
-
-def sharpe_ratio(
-    daily_returns: pd.Series,
-    risk_free_annual: float = 0.0,
-) -> Optional[float]:
-    """Annualized Sharpe. risk_free_annual as a decimal (e.g. 0.045 for 4.5%)."""
-    if len(daily_returns) < MIN_DAYS_FOR_SHARPE:
-        return None
-    rf_daily = risk_free_annual / 252.0
-    excess = daily_returns - rf_daily
-    if float(excess.std(ddof=1)) == 0:
-        return None
-    return float(excess.mean() / excess.std(ddof=1) * math.sqrt(252))
-
-
-def beta_to_spx(
-    portfolio_returns: pd.Series,
-    spx_returns: pd.Series,
-) -> Optional[float]:
-    """OLS beta of portfolio returns vs SPX returns. Aligned on date index."""
-    aligned = pd.concat(
-        [portfolio_returns.rename("p"), spx_returns.rename("m")], axis=1
-    ).dropna()
-    if len(aligned) < MIN_DAYS_FOR_BETA:
-        return None
-    cov = float(aligned["p"].cov(aligned["m"]))
-    var = float(aligned["m"].var(ddof=1))
-    if var == 0:
-        return None
-    return cov / var
-
-
 def concentration_hhi(weights: list[float]) -> float:
     """Herfindahl-Hirschman Index scaled to 0-10000. weights sum to 1.0."""
     if not weights:
@@ -350,9 +289,3 @@ def compute_risk(
         ),
     }
 
-
-def annualized_vol(daily_returns: pd.Series) -> Optional[float]:
-    """252-day annualized vol (sample stdev * sqrt(252))."""
-    if len(daily_returns) < 2:
-        return None
-    return float(daily_returns.std(ddof=1) * math.sqrt(252))

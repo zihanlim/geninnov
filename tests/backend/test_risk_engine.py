@@ -9,15 +9,14 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 
 from backend.services.risk_engine import (
-    value_at_risk,
-    conditional_value_at_risk,
-    sharpe_ratio,
-    beta_to_spx,
     concentration_hhi,
     compute_risk,
-    annualized_vol,
-    _z_score,
+    _annualized_sharpe,
+    _beta_to_spx,
     _normal_pdf,
+    _parametric_cvar,
+    _parametric_var,
+    _z_score,
 )
 
 
@@ -62,109 +61,127 @@ def test_normal_pdf_at_zero():
     assert abs(_normal_pdf(0) - 0.3989) < 0.001
 
 
-# ── value_at_risk ────────────────────────────────────────────────────────────
+# ── the shipped parametric helpers ──────────────────────────────────────────
+#
+# These test `_parametric_var` / `_parametric_cvar` / `_annualized_sharpe` /
+# `_beta_to_spx`, which is what `compute_risk` actually calls.
+#
+# They used to test a parallel public API — `value_at_risk`, `sharpe_ratio`,
+# `beta_to_spx`, `conditional_value_at_risk`, `annualized_vol` — that had ZERO
+# production callers. Same formulas, but scaled to dollars and gated by
+# MIN_DAYS_FOR_*. So the headline risk numbers were verified 23 times over code
+# the nightly run never executed, and the code it did execute was barely covered.
+# The unused half is deleted (ADR-0101's rule: a live implementation already
+# existed) and the formula assertions moved here, where they bind what ships.
+#
+# The private helpers return a DECIMAL loss fraction; `compute_risk` multiplies by
+# portfolio_value. The scaling is therefore tested against `compute_risk` itself
+# rather than against a helper that no longer takes a portfolio value.
 
 
 def test_var_positive_for_nonzero_returns():
     rets = _returns(np.random.default_rng(0).normal(0, 0.02, 100))
-    var = value_at_risk(rets, portfolio_value=100_000_000, confidence=0.95)
-    assert var is not None
-    assert var > 0
+    assert _parametric_var(rets, 0.95) > 0
 
 
-def test_var_scales_with_portfolio_value():
+def test_var_is_a_decimal_fraction_not_dollars():
+    """The unit boundary that the deleted twin blurred by folding PV into the helper."""
     rets = _returns(np.random.default_rng(0).normal(0, 0.02, 100))
-    var_1x = value_at_risk(rets, portfolio_value=100_000_000)
-    var_2x = value_at_risk(rets, portfolio_value=200_000_000)
-    assert abs(var_2x - 2 * var_1x) < 1e-6
+    assert 0 < _parametric_var(rets, 0.95) < 1
 
 
-def test_var_none_for_insufficient_history():
-    rets = _returns([0.01, -0.02, 0.005])
-    assert value_at_risk(rets, portfolio_value=100_000_000) is None
+def test_var_scales_with_portfolio_value_through_compute_risk():
+    """Scaling now asserted on the SHIPPED path, which is where the multiply happens."""
+    rets = list(np.random.default_rng(0).normal(0, 0.02, 100))
+    spx = list(np.random.default_rng(1).normal(0, 0.02, 100))
+    book = [{"asset": "SPY", "weight": 1.0}]
+    r1 = compute_risk(book=book, history=rets, spx_returns=spx, portfolio_value=100_000_000)
+    r2 = compute_risk(book=book, history=rets, spx_returns=spx, portfolio_value=200_000_000)
+    assert abs(r2["var_95"].value - 2 * r1["var_95"].value) < 1e-6
 
 
-# ── conditional_value_at_risk ───────────────────────────────────────────────
+def test_engine_computes_on_a_short_sample_rather_than_refusing():
+    """DELIBERATE, and the reason the deleted twins' MIN_DAYS gates are not missed.
+
+    The engine computes and persists; the decision not to ASSERT an under-sampled
+    figure lives at the consumers (`lib/risk/sampleAdequacy.ts`, ADR-0100), so that
+    every consumer honours it rather than only the one that drew a tile. A gate here
+    would blank `portfolio_risk` for anyone querying it directly.
+    """
+    rets = list(np.random.default_rng(0).normal(0, 0.02, 3))
+    out = compute_risk(book=[{"asset": "SPY", "weight": 1.0}], history=rets,
+                       spx_returns=rets, portfolio_value=100_000_000)
+    assert out["var_95"].value is not None
+    assert out["var_95"].epistemic == "known"
+
+
+# ── _parametric_cvar ────────────────────────────────────────────────────────
 
 
 def test_cvar_larger_than_var():
-    """For normal returns, CVaR should exceed VaR (tail is heavier than the threshold)."""
+    """For normal returns, CVaR exceeds VaR (the tail is heavier than the threshold)."""
     rets = _returns(np.random.default_rng(0).normal(0, 0.02, 200))
-    var = value_at_risk(rets, 100_000_000)
-    cvar = conditional_value_at_risk(rets, 100_000_000)
-    assert var is not None and cvar is not None
-    assert cvar > var
+    assert _parametric_cvar(rets, 0.95) > _parametric_var(rets, 0.95)
 
 
 def test_cvar_95_matches_formula():
-    """CVaR_0.95 = sigma * phi(1.645) / 0.05 * PV."""
+    """CVaR_0.95 = sigma * phi(1.645) / 0.05, as a decimal."""
     rets = _returns(np.random.default_rng(0).normal(0, 0.02, 200))
     sigma = float(rets.std(ddof=1))
-    expected = sigma * 0.1031 / 0.05 * 100_000_000
-    cvar = conditional_value_at_risk(rets, 100_000_000, confidence=0.95)
-    assert cvar is not None
+    expected = sigma * 0.1031 / 0.05
+    cvar = _parametric_cvar(rets, 0.95)
     assert abs(cvar - expected) / expected < 0.01
 
 
-# ── sharpe_ratio ─────────────────────────────────────────────────────────────
+# ── _annualized_sharpe ──────────────────────────────────────────────────────
 
 
-def test_sharpe_zero_for_zero_returns():
-    """All-zero returns -> std=0 -> Sharpe is undefined, returns None."""
-    rets = _returns([0.0] * 100)
-    assert sharpe_ratio(rets) is None
+def test_sharpe_is_nan_for_zero_variance_returns():
+    """NaN, not None: the shipped helper signals undefined in-band, and `compute_risk`
+    is what converts that into an absent value. The deleted twin returned None, so a
+    caller migrating between them would have silently changed its own None-check."""
+    assert math.isnan(_annualized_sharpe(_returns([0.0] * 100)))
 
 
 def test_sharpe_higher_for_higher_excess_return():
-    """Higher mean / same std -> higher Sharpe."""
     rng = np.random.default_rng(42)
-    rets_low = _returns(rng.normal(0.0001, 0.01, 100))
-    rets_high = _returns(rng.normal(0.001, 0.01, 100))
-    s_low = sharpe_ratio(rets_low)
-    s_high = sharpe_ratio(rets_high)
-    assert s_low is not None and s_high is not None
+    s_low = _annualized_sharpe(_returns(rng.normal(0.0001, 0.01, 100)))
+    s_high = _annualized_sharpe(_returns(rng.normal(0.001, 0.01, 100)))
     assert s_high > s_low
 
 
-def test_sharpe_none_for_insufficient_history():
-    rets = _returns([0.01] * 30)  # < MIN_DAYS_FOR_SHARPE (60)
-    assert sharpe_ratio(rets) is None
+def test_sharpe_subtracts_the_risk_free_rate():
+    rets = _returns(np.random.default_rng(7).normal(0.001, 0.01, 200))
+    assert _annualized_sharpe(rets, risk_free_annual=0.0) > _annualized_sharpe(
+        rets, risk_free_annual=0.05
+    )
 
 
-# ── beta_to_spx ──────────────────────────────────────────────────────────────
+# ── _beta_to_spx ────────────────────────────────────────────────────────────
 
 
 def test_beta_equals_one_when_perfectly_correlated():
     n = 100
     spx = _returns(np.random.default_rng(0).normal(0.001, 0.01, n))
-    port = spx + 0.0001  # identical return stream (no scaling)
-    b = beta_to_spx(port, spx)
-    assert b is not None
-    assert abs(b - 1.0) < 0.01
+    assert abs(_beta_to_spx(spx + 0.0001, spx) - 1.0) < 0.01
 
 
 def test_beta_one_point_five_with_leverage():
     n = 100
     spx = _returns(np.random.default_rng(0).normal(0.001, 0.01, n))
-    port = spx * 1.5 + 0.0001  # 1.5x leveraged exposure
-    b = beta_to_spx(port, spx)
-    assert b is not None
-    assert abs(b - 1.5) < 0.01
+    assert abs(_beta_to_spx(spx * 1.5 + 0.0001, spx) - 1.5) < 0.01
 
 
 def test_beta_negative_for_inverse_returns():
     n = 100
     spx = _returns(np.random.default_rng(0).normal(0.001, 0.01, n))
-    port = -spx + 0.0001
-    b = beta_to_spx(port, spx)
-    assert b is not None
-    assert b < 0
+    assert _beta_to_spx(-spx + 0.0001, spx) < 0
 
 
-def test_beta_none_for_insufficient_history():
-    spx = _returns([0.01, -0.005, 0.002])
-    port = _returns([0.01, -0.005, 0.002])
-    assert beta_to_spx(port, spx) is None
+def test_beta_is_nan_when_the_market_has_no_variance():
+    """Same in-band-NaN contract as the Sharpe helper."""
+    flat = _returns([0.01] * 50)
+    assert math.isnan(_beta_to_spx(_returns(np.random.default_rng(0).normal(0, 0.01, 50)), flat))
 
 
 # ── concentration_hhi ───────────────────────────────────────────────────────
@@ -283,24 +300,6 @@ def test_compute_risk_hhi_empty_book_is_zero():
     assert out["hhi"].value == 0.0
     assert out["hhi"].display_status == "exact"
 
-
-# ── annualized_vol ──────────────────────────────────────────────────────────
-
-
-def test_annualized_vol_zero_for_constant_returns():
-    rets = _returns([0.01] * 100)
-    vol = annualized_vol(rets)
-    assert vol is not None
-    assert abs(vol) < 1e-10
-
-
-def test_annualized_vol_known_value():
-    """Std of 0.01 daily, annualized = 0.01 * sqrt(252) ~ 0.1587."""
-    rets = _returns([0.01, -0.01] * 50)
-    vol = annualized_vol(rets)
-    assert vol is not None
-    expected = 0.01 * math.sqrt(252)
-    assert abs(vol - expected) / expected < 0.01
 
 class TestVaRIsScaledToDollars:
     """VaR/CVaR are persisted to portfolio_risk.var_95 and rendered with a

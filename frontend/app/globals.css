@@ -55,7 +55,18 @@
        "interactive" distinct from "short" is the lightness gap, and every further
        shade spent on contrast margin narrows it. */
     --accent: #c50c3e;       /* interactive / links / active nav (crimson-pink) */
-    --brand: #9f172a;        /* primary crimson — emphasis, brand marks */
+    /* THE LOGO GRADIENT'S SECOND STOP, AND NOTHING ELSE.
+       --brand is byte-identical to --short (#9f172a), so anything painted with
+       it renders in exactly the colour of a short position. That was a live
+       defect: AbstentionRoster's focus highlight used bg-brand-dim/ring-brand,
+       so the "you came from here" marker on a page full of shorts WAS the short
+       colour, and ConvictionCard's emphasis gradient had the same problem. Both
+       moved to --accent, which is what interactive emphasis is for.
+       It survives only in the 22px masthead mark, where the gradient runs
+       accent → brand and no direction can be read into it. Do not reach for it
+       for emphasis; use --accent. (brand-dim is 0.09 alpha against short-dim's
+       0.10, so this is not a pure alias and cannot simply be deleted.) */
+    --brand: #9f172a;        /* logo mark only — identical to --short */
     /* Was #f97316 at 2.53:1 — the worst offender on the site, and it labels the
        things a reader most needs to read ("Not yet validated", near-limit
        chips, HypeScore caveats). Darkened to #c2410c on 2026-07-24, then to

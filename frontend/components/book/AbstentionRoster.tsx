@@ -206,14 +206,14 @@ export default function AbstentionRoster({
                   ref={focused ? focusRowRef : undefined}
                   className={
                     focused
-                      ? "bg-brand-dim ring-1 ring-inset ring-brand"
+                      ? "bg-accent-dim ring-1 ring-inset ring-accent"
                       : "hover:bg-bg-elevated"
                   }
                 >
                   <td className="px-[14px] py-[7px] border-b border-border">
                     <Link
                       href={`/?theme=${e.theme_id}`}
-                      className={`hover:text-accent hover:underline ${focused ? "text-brand font-semibold" : "text-text-primary"}`}
+                      className={`hover:text-accent hover:underline ${focused ? "text-accent font-semibold" : "text-text-primary"}`}
                     >
                       {e.name}
                     </Link>

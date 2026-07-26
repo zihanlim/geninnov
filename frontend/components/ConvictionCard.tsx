@@ -95,7 +95,7 @@ export default function ConvictionCard({
     <div
       className={`flex flex-col rounded-[10px] p-[18px] border cursor-pointer transition-all duration-200 relative group ${
         hero
-          ? "bg-gradient-to-b from-brand-dim to-bg-surface border-border-strong"
+          ? "bg-gradient-to-b from-accent-dim to-bg-surface border-border-strong"
           : "bg-bg-surface border-border hover:border-border-strong hover:bg-bg-elevated"
       }`}
       onClick={() => onOpenDerivation?.(theme)}

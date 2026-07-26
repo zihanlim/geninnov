@@ -73,7 +73,7 @@ const config: Config = {
         // 4.58:1 over its own 10% tint (badge-tier-anchor); was #d40e43 at 4.08:1.
         accent: "#c50c3e",          // interactive / active (crimson-pink)
         "accent-dim": "rgba(197,12,62,0.10)",
-        brand: "#9f172a",           // primary crimson — emphasis
+        brand: "#9f172a",           // LOGO MARK ONLY — identical to --short; see globals.css
         "brand-dim": "rgba(159,23,42,0.09)",
         // Direction (ledger ink: green long / crimson short)
         // 4.81:1 over its own 11% tint (badge-long / dir-pill-long); was #147a5c

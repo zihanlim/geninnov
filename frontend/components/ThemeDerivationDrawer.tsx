@@ -31,11 +31,37 @@ interface ThemeAssetRow {
   asset_class: string | null;
 }
 
+/**
+ * True when a PostgREST failure is specifically "this column does not exist",
+ * for `column`.
+ *
+ * Narrow on purpose. It matches Postgres error code 42703 and requires the
+ * column name to appear in the message, so a transport failure, an RLS refusal
+ * or a 42703 about some OTHER column all fall through to the real error path
+ * and stay visible. A broad `catch` here would turn every query failure into a
+ * silent partial render, which is the opposite of what the error states in
+ * components/status/ exist to do.
+ */
+function isMissingColumn(
+  err: { code?: string | null; message?: string | null },
+  column: string
+): boolean {
+  return err?.code === "42703" && (err?.message ?? "").includes(column);
+}
+
 interface ThemeNewsRow {
   source: string | null;
   headline: string | null;
   published_date: string | null;
   run_date: string | null;
+  /** Source link (migration 042 / ADR-0089). NULL on every row written before
+   *  2026-07-26 — unbackfillable, the fetch responses were never stored — and on
+   *  mock rows. Renders as plain text with a stated cause, never a dead anchor.
+   *
+   *  Optional rather than `string | null` because the key is genuinely ABSENT,
+   *  not null, on the pre-migration fallback path below — and a type that
+   *  promised the key exists would be lying about the case it was added for. */
+  url?: string | null;
 }
 
 /**
@@ -200,20 +226,42 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
       // way that mattered: with empty Reddit credentials the social feed falls
       // back to one synthetic post per theme, so the invented "Reddit 7" masked
       // an absent source.
-      const { data: newsRows, error: newsErr } = await supabase
-        .from("theme_news")
-        .select("source, headline, published_date, run_date")
-        .eq("theme_id", theme.id)
-        .eq("run_date", runDate)
-        .order("published_date", { ascending: false })
-        .limit(40);
+      // `url` arrived with migration 042 (ADR-0089). The frontend deploys from
+      // git and migrations are applied by hand, so the two can land in either
+      // order — and selecting a column the database does not have yet is a hard
+      // PostgREST 400 (42703), which would take the WHOLE headline list dark
+      // rather than just the links. This repo has already shipped one migration
+      // that sat unapplied while the code depending on it was live (039, which
+      // left production /ask refusing every question), so the query degrades
+      // instead of assuming the deploy order. Once 042 is applied the fallback
+      // stops being reachable; until then the rows render exactly as before.
+      const newsCols = "source, headline, published_date, run_date";
+      const queryNews = (cols: string) =>
+        supabase
+          .from("theme_news")
+          .select(cols)
+          .eq("theme_id", theme.id)
+          .eq("run_date", runDate)
+          .order("published_date", { ascending: false })
+          .limit(40);
+
+      let { data: newsRows, error: newsErr } = await queryNews(
+        `${newsCols}, url`
+      );
+      if (newsErr && isMissingColumn(newsErr, "url")) {
+        ({ data: newsRows, error: newsErr } = await queryNews(newsCols));
+      }
       if (cancelled) return;
       if (newsErr) {
         setSourceCounts(null);
         setHeadlines([]);
         setSourceError(newsErr.message);
       } else {
-        const rows = (newsRows ?? []) as ThemeNewsRow[];
+        // Through `unknown`: the select list is built at runtime above (two
+        // shapes, with and without `url`), so supabase-js cannot infer the row
+        // type from a literal and widens it to GenericStringError[]. The runtime
+        // shape is still pinned by `newsCols`.
+        const rows = (newsRows ?? []) as unknown as ThemeNewsRow[];
         const counts: Record<string, number> = {};
         for (const r of rows) {
           const key = r.source || "unknown";
@@ -467,9 +515,38 @@ export default function ThemeDerivationDrawer({ theme, open, onClose }: Props) {
                     {fmtDay(h.published_date)}
                   </span>
                 </div>
-                <div className="text-[12.5px] text-text-primary leading-[1.45]">
-                  {h.headline}
-                </div>
+                {/* The headline is the evidence behind the HypeScore, so it is
+                    followable when we have a link and honest about it when we do
+                    not (ADR-0089). A null url is NOT rendered as a dead anchor:
+                    "no link" and "link to nowhere" are different claims and the
+                    second one is a lie. Rows written before migration 042 are
+                    permanently null — the fetch responses were never stored — so
+                    this branch is not transitional and does not get to be a TODO. */}
+                {h.url ? (
+                  <a
+                    href={h.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[12.5px] text-text-primary leading-[1.45] hover:text-accent underline decoration-border-strong hover:decoration-accent underline-offset-2"
+                  >
+                    {h.headline}
+                    <span className="sr-only"> (opens source in a new tab)</span>
+                  </a>
+                ) : (
+                  <div className="text-[12.5px] text-text-primary leading-[1.45]">
+                    {h.headline}
+                    <span
+                      className="text-[10.5px] text-text-tertiary ml-1.5 whitespace-nowrap"
+                      title={
+                        meta.synthetic
+                          ? "Mock fallback rows carry no source link."
+                          : "Collected before source links were persisted (migration 042); the URL was not stored and cannot be recovered."
+                      }
+                    >
+                      {meta.synthetic ? "(no source)" : "(link not stored)"}
+                    </span>
+                  </div>
+                )}
               </li>
             );
           })}

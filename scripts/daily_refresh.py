@@ -103,6 +103,38 @@ def load_themes():
     return supabase.table("themes").select("*").execute().data
 
 
+#: Placeholder the mock news fixtures ship as a URL. It is not a source, and
+#: persisting it would let a fallback run render a link to nowhere in the slot
+#: where real provenance goes.
+_MOCK_URL_PLACEHOLDER = "https://example.com"
+
+
+def _source_url(source: str, url: str | None) -> str | None:
+    """The link to persist for a collected item, or None.
+
+    None is the correct value in three cases and each is a claim we want to keep
+    distinct from "here is where this came from" (ADR-0089):
+
+    * the fetcher returned nothing (Reddit's mock fixtures carry no url at all),
+    * the item is a `mock_` fallback, whose placeholder must not be stored,
+    * the value is not an http(s) URL, so rendering it as an anchor would be a
+      dead link at best and an injection vector at worst.
+
+    A null lands in the drawer as plain text with a stated cause, never as an
+    anchor that goes nowhere.
+    """
+    if str(source).startswith("mock_"):
+        return None
+    if not url:
+        return None
+    u = str(url).strip()
+    if u == _MOCK_URL_PLACEHOLDER:
+        return None
+    if not u.startswith(("http://", "https://")):
+        return None
+    return u
+
+
 def _classify_data_source(headlines: list[dict]) -> str:
     """Provenance of a theme's collected text.
 
@@ -159,11 +191,27 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
         # (persisted to theme_news by persist_theme_news → read by
         # q1_agent.aggregate_context). Each item is source-tagged; a "mock_"
         # prefix marks fallback data (see reddit_client / brave_client).
+        # `url` is carried through here because this mapping is where it used to
+        # be lost: both fetchers return a link (brave `url`, reddit `post.url`)
+        # and this comprehension rebuilt the item without one, so persist_theme_news
+        # never had a link to write and the drawer rendered unfollowable evidence.
+        # See ADR-0089. `_source_url` returns None for mock rows so a fallback run
+        # cannot dress itself up as sourced.
         headlines = [
-            {"source": n.get("source", "brave"), "text": n["headline"], "date": n.get("date", "")}
+            {
+                "source": n.get("source", "brave"),
+                "text": n["headline"],
+                "date": n.get("date", ""),
+                "url": _source_url(n.get("source", "brave"), n.get("url")),
+            }
             for n in news
         ] + [
-            {"source": p.get("source", "reddit"), "text": p["title"], "date": p.get("date", "")}
+            {
+                "source": p.get("source", "reddit"),
+                "text": p["title"],
+                "date": p.get("date", ""),
+                "url": _source_url(p.get("source", "reddit"), p.get("url")),
+            }
             for p in posts
         ]
 
@@ -173,6 +221,18 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
             scores = [0.0]
         else:
             scores = batch_sentiment(all_texts)
+
+        # Attach the PER-ITEM score before it is averaged away. `all_texts` is
+        # built above in the same order as `headlines` (news, then posts), so
+        # scores[i] belongs to headlines[i]. theme_news.sentiment has been
+        # declared since migration 018 and never written, because this value was
+        # computed, immediately collapsed into the mean below, and discarded — a
+        # column that is always null reads to the next person as "we measured
+        # this and it came back empty" (ADR-0089). Zip stops at the shorter of
+        # the two, which is what makes the empty case (`scores = [0.0]` against
+        # an empty headline list) a no-op rather than a misalignment.
+        for h, s in zip(headlines, scores):
+            h["sentiment"] = float(s)
 
         avg_sentiment = float(pd.Series(scores).mean()) if scores else 0.0
 
@@ -739,6 +799,14 @@ def persist_theme_news(run_date: date, scored: list[dict]) -> int:
                 "source": source,
                 "headline": text[:1000],
                 "published_date": _safe_iso_date(h.get("date")),
+                # Both added by ADR-0089 / migration 042. `url` was fetched on
+                # every run and discarded before it reached this row; `sentiment`
+                # has been a declared-but-never-written column since migration
+                # 018. Either may legitimately be None — a mock row, a fetcher
+                # that returned no link — and None is persisted as NULL rather
+                # than coerced, so the frontend can tell "no link" from "link".
+                "url": h.get("url"),
+                "sentiment": h.get("sentiment"),
             })
     if dropped_mock:
         print(f"[{today_str}] persist_theme_news: dropped {dropped_mock} mock headline(s) "

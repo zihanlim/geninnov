@@ -1256,3 +1256,57 @@ def test_main_uses_the_utc_helper():
     assert "utc_run_date()" in src
     # The exact line that caused the split must not come back.
     assert "run_date = date.today()" not in src
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _source_url — the link persisted to theme_news.url (migration 042 / ADR-0089)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_source_url_keeps_a_real_link():
+    """A live fetcher's http(s) URL is persisted as-is."""
+    from daily_refresh import _source_url
+    assert _source_url("brave", "https://reuters.com/a") == "https://reuters.com/a"
+    assert _source_url("reddit", "http://redd.it/xyz") == "http://redd.it/xyz"
+
+
+def test_source_url_strips_surrounding_whitespace():
+    from daily_refresh import _source_url
+    assert _source_url("brave", "  https://x.com/p  ") == "https://x.com/p"
+
+
+def test_source_url_refuses_mock_rows():
+    """A mock_ row must not carry a link, even when the fixture supplies one.
+
+    Otherwise a fallback run renders a source in the slot real provenance
+    occupies — the exact confusion `data_source` labelling exists to prevent.
+    """
+    from daily_refresh import _source_url
+    assert _source_url("mock_brave", "https://example.com") is None
+    assert _source_url("mock_brave", "https://reuters.com/a") is None
+    assert _source_url("mock_reddit", None) is None
+
+
+def test_source_url_refuses_the_fixture_placeholder():
+    """https://example.com is the mock fixture's placeholder, not a source."""
+    from daily_refresh import _source_url
+    assert _source_url("brave", "https://example.com") is None
+
+
+def test_source_url_refuses_absent_or_empty():
+    from daily_refresh import _source_url
+    assert _source_url("brave", None) is None
+    assert _source_url("brave", "") is None
+    assert _source_url("brave", "   ") is None
+
+
+def test_source_url_refuses_non_http_schemes():
+    """The value becomes an href, so anything that is not http(s) is refused.
+
+    `javascript:` is the reason this is a whitelist and not a blacklist: the
+    drawer renders this straight into an anchor.
+    """
+    from daily_refresh import _source_url
+    assert _source_url("brave", "javascript:alert(1)") is None
+    assert _source_url("brave", "data:text/html,<script>") is None
+    assert _source_url("brave", "ftp://f.example/x") is None
+    assert _source_url("brave", "//protocol-relative.example") is None

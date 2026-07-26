@@ -31,7 +31,24 @@ export default function Sparkline({ points, color = "var(--accent)", height = 36
       preserveAspectRatio="none"
       style={{ height }}
     >
-      <polyline fill="none" stroke={color} strokeWidth={1.5} points={poly} />
+      {/* vector-effect pairs with preserveAspectRatio="none" above. That
+          attribute stretches a 100-unit viewBox to whatever width the card is,
+          which scales the STROKE with it — so the same 1.5px line renders
+          thicker on a wide card than a narrow one, and thickness reads as
+          emphasis the data does not carry. non-scaling-stroke keeps the width
+          in screen pixels while the geometry stretches.
+
+          aria-hidden because this is decoration: every value it plots is also
+          rendered as a figure in the card around it, so announcing an unlabelled
+          polyline adds noise to a screen reader without adding a fact. */}
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+        vectorEffect="non-scaling-stroke"
+        points={poly}
+        aria-hidden="true"
+      />
     </svg>
   );
 }

@@ -209,6 +209,22 @@ export function StressScenarios({
               </span>
             </div>
           )}
+          {/* Stated before the table, because the omission is only visible to a
+              reader who already knows to look for it. Six scenarios ranked by
+              severity, with a "worst case" called out above, reads like a tail
+              distribution — and a reader can reasonably start averaging them or
+              treating the worst as an expected loss. Nothing in L0–L5 produces a
+              probability: `scenario_results` persists a severity label and an
+              estimated return, and weighting them here would fabricate the one
+              number the page does not have (goal 1). */}
+          <p className="m-0 mb-2 text-[11.5px] leading-[1.6] text-text-tertiary max-w-[95ch]">
+            These scenarios are <strong>not probability-weighted</strong>. Each is
+            an independent what-if, not a draw from a distribution, so they do not
+            sum and the worst is not an expected loss — it is the largest of six
+            hypotheticals.{" "}
+            <Ident>research_recommendations.scenario_results</Ident> persists a
+            severity label and an estimated return, and no likelihood.
+          </p>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[13px] min-w-[720px]">
               <caption className="sr-only">

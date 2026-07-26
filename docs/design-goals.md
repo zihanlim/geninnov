@@ -36,7 +36,7 @@ and [ADR-0066](adrs/0066-not-computable-must-persist-as-null.md).
 **Test:** unplug a table. Does the page explain what's missing and how to fix it,
 or does it just go quiet?
 
-### 3. Direction owns green/crimson. Nothing else may borrow them
+### 3. Direction is glyph + wordmark. Green/crimson reinforce, and nothing else may borrow them
 
 Forest-green `--long` = long, crimson `--short` = short. These are semantics, not
 decoration. Interactive/emphasis is `--accent` (crimson-pink); attention is
@@ -44,8 +44,22 @@ decoration. Interactive/emphasis is `--accent` (crimson-pink); attention is
 destroyed a semantic to gain nothing — this is the single most common failure
 mode in outside mockups.
 
-**Test:** desaturate the page. Can you still tell longs from shorts? Can you
-still tell what's clickable?
+**Every element whose meaning is a book direction must render a `▲`/`▼` glyph or a
+`LONG`/`SHORT` wordmark beside the colour.** Hue is redundant encoding here, never
+the carrier — because it cannot be the carrier. Measured relative luminance:
+`--long` 0.1191, `--short` 0.0815, `--accent` 0.1248 — **1.29:1** between long and
+short, **1.03:1** between long and the interactive accent. Desaturated, those are the
+same grey, and always have been. No palette fixes it: an ink clearing AA 4.5:1 on
+white needs luminance ≤ 0.1833, so two such inks are at most ~3.3:1 apart, at which
+point the darker sits ~1.2:1 from body text. Goal 8 and tonal direction-separation
+cannot both hold. See [ADR-0085](adrs/0085-direction-cannot-be-carried-by-hue-alone.md).
+
+**Test:** desaturate the page. Can you still tell longs from shorts *by glyph or
+wordmark*? Then: does any chip that is **not** a direction use `--long`/`--short`?
+The second half is machine-enforced over the enumerated chip vocabularies
+(`lib/statusChips.ts`, `lib/methodTones.ts`, the severity maps, and the `.badge-*` /
+`.dir-pill-*` rules). Inline signed-value colouring is deliberately out of scope — it
+already carries its `+`/`−` — and widening that scope needs its own ADR.
 
 ### 4. Warm paper, not the interchangeable dark dashboard
 

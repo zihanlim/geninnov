@@ -71,6 +71,22 @@ book once a day rather than candidates on demand. If a filter box appears on `/`
 because "terminals have them", that is ADR-0054 being violated, not this ADR being
 applied.
 
+## Partly superseded within hours — `NewsRibbon` is back
+
+**The ribbon removal below did not survive the day.** This ADR argued the ribbon had
+become a second rendering of the HEADLINES pane's data once that pane was always on
+screen. A concurrent session restored it in `3fb269a7` ("restore the ribbon, and stop the
+feed fighting the pane it sits in") and then built further on it in `ded98103`.
+
+Recorded here because an ADR that describes code the repo no longer has is worse than no
+ADR: a reader six months out would grep for a ribbon this document says was deleted. **The
+removal argument is not withdrawn and the restoration is not overturned** — the two
+sessions reached different answers, and the person to settle it is the reader of the page,
+not either agent. What is settled is the fact: the ribbon is live.
+
+Everything else in this ADR — the lock, the four constraints, the deleted duplicate
+renderings of the theme scores — is unaffected and still describes the code.
+
 ## What this also reverses, recorded late
 
 The original draft of this ADR named only goal 7 and the *"Bloomberg terminal look"*

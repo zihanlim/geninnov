@@ -82,9 +82,14 @@ export default function MarketBar() {
 
   // ── Loading skeleton ─────────────────────────────────────────────────────
   if (assets === null) {
+    // flex-wrap to match the loaded MarketBar (line ~133): the real tape wraps its
+    // indices on a narrow screen. Without it the skeleton's 5 non-wrapping items are
+    // ~700px, so on a 375 phone the loading state — not the settled one — flashes a
+    // horizontal scroll (body to 841px) for the second before data arrives. The
+    // skeleton must obey the same containment as what it stands in for.
     return (
       <div
-        className="flex gap-3 px-4 py-2.5 bg-bg-surface border border-border rounded-[8px] mb-6"
+        className="flex flex-wrap gap-3 px-4 py-2.5 bg-bg-surface border border-border rounded-[8px] mb-6"
         data-testid="market-bar-skeleton"
       >
         {Array.from({ length: 5 }).map((_, i) => (

@@ -106,14 +106,8 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({
     ? sorted.filter((t) => isSynthetic(provByTheme[t.id]?.data_source ?? null)).length
     : 0;
 
-  // min-w-0: this card is a grid item on the home page, and its 760px table
-  // (below, in a ScrollArea) gives it a min-content of 760. Without min-w-0 the
-  // item keeps min-width:auto and, in the moment the rows arrive from Supabase
-  // before the layout settles, pushes the body to 841px on a 375 phone — a
-  // ~1s horizontal-scroll flash on load. min-w-0 lets the card shrink to its
-  // cell so the ScrollArea scrolls instead, from the first paint.
   return (
-    <div className="card overflow-hidden min-w-0">
+    <div className="card overflow-hidden">
       <div className="card-header flex-wrap gap-2">
         <div>
           <span className="card-title">Theme × Sub-score heatmap</span>

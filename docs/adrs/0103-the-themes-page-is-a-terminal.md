@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-27
 **Status:** Accepted
-**Reverses:** [design goal 7](../design-goals.md) (the inner-scroller ban) and the *"Bloomberg terminal look"* non-goal from [0009](0009-frontend-stack.md)
+**Reverses:** [design goal 7](../design-goals.md) (the inner-scroller ban), and from [0009](0009-research-first-design-philosophy.md) the *"Bloomberg terminal look"* non-goal **and its decisions 1 and 4** — see *What this also reverses, recorded late* below
 **Does NOT reverse:** [0054](0054-a-daily-publication-not-a-scanner.md), [0084](0084-method-splits-by-reader-question-not-by-copy.md)
 **Relates to:** [0086](0086-a-labelled-rail-that-collapses-rather-than-a-glyph-rail.md)
 
@@ -70,6 +70,45 @@ streaming quotes. The terminal is a *layout*, and this app still delivers a fini
 book once a day rather than candidates on demand. If a filter box appears on `/`
 because "terminals have them", that is ADR-0054 being violated, not this ADR being
 applied.
+
+## What this also reverses, recorded late
+
+The original draft of this ADR named only goal 7 and the *"Bloomberg terminal look"*
+non-goal. That was **incomplete**, and the omission was found when the decision was
+questioned rather than when it was made — which is the failure mode an ADR exists to
+prevent, so it is corrected here rather than quietly.
+
+[ADR-0009](0009-research-first-design-philosophy.md) decision **1** reads: *"Top 3 themes
+get a card with thesis sentence, sparkline, sub-score bars, catalyst, crowding, and
+1-day delta — **not a list of numbers**."* Decision **4** reads: *"Narrative over density.
+Prefer 3 well-explained cards over 20 dense rows. **The user reads the system, not scans
+it.**"*
+
+Deleting the `ConvictionCard` grid and keeping the heatmap is exactly the trade those two
+decisions refused: a list of numbers instead of three explained cards, scanning instead
+of reading. **This ADR reverses them for `/`.** The justification is not that ADR-0009 was
+wrong — it is that its own *Negative consequences* section already accepted the cost that
+came due here: *"Less information density per screen — more scrolling required."* 4,186px
+was that cost, and the user, who is the reader ADR-0009 was reasoning about, judged it
+too high. A trade-off knowingly taken can be knowingly re-taken when the measured price
+arrives.
+
+**What survives from ADR-0009 and still binds `/`:** decision 2, every numeric claim
+auditable (the heatmap rows still open the derivation drawer); decision 3, the Q1 thesis
+as the primary deliverable (untouched, it lives on `/book`); and both of ADR-0009's
+actual *arguments* — that this is a daily-cadence conviction output rather than a
+tick-latency execution surface, and that the differentiator must be the visible rigor of
+the derivation rather than fidelity to a terminal. **The second argument is the reason
+the palette did not change.** ADR-0009's category-mistake risk — *"the review panel will
+see 'yet another dark finance dashboard' and pattern-match it to dozens of similar
+tools"* — bites hardest on colour, not on layout. A dense pane grid on warm paper is not
+a thing a reviewer has seen a dozen times; the same grid in dark neon is. Anyone
+proposing the dark palette must answer that specific argument, not merely cite this ADR
+as precedent.
+
+Note also that ADR-0009 **retained dark mode** ("Linear meets a research dashboard"). The
+warm-paper identity comes from design goal 4, which supersedes that clause. "Warm paper"
+was never ADR-0009's position and should not be attributed to it.
 
 ## Consequences
 

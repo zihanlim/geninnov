@@ -10,11 +10,15 @@
 // 56px is the widest rail that still leaves room for it. 64px does not fit;
 // neither does the comps' own 72px.
 //
-// NO ICONS, deliberately. The non-goal this amends objects to UNLABELLED glyph
-// rails, so the label IS the rail — and our destinations are short enough for
-// that to work at 56px where the comps' were not (theirs clipped DASHBOARD and
-// INTELLIGENCE to "ASHBOAR" and "NTELLIGENCE"). Adding an icon above a label
-// would cost vertical space and a dependency to say the same thing twice.
+// ICON *AND* LABEL, never icon alone. The non-goal this amends objects to
+// UNLABELLED glyph rails — an icon is fine, an icon INSTEAD OF a word is not.
+// Both together is redundant encoding, which is the same principle ADR-0085
+// applied to direction: the word carries, the glyph reinforces, and a reader
+// who does not recognise a radar dish still knows it says Themes.
+//
+// A full-height rail holding four items has ~700px of vertical slack, so the
+// stacked icon+label costs nothing that matters. lucide-react is already a
+// dependency (DisclosureChevron), so this adds no weight either.
 //
 // The rail is hidden below `wide`. Below that breakpoint there is no two-pane
 // layout to protect, but there is also not enough width to spend on chrome —
@@ -23,12 +27,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { BookOpen, ChevronLeft, PanelLeftOpen, Radar, ShieldAlert, Sigma } from "lucide-react";
 
 const DESTINATIONS = [
-  { href: "/", label: "Themes" },
-  { href: "/book", label: "Book" },
-  { href: "/risk", label: "Risk" },
-  { href: "/method", label: "Method" },
+  // Radar: what the engine is detecting. BookOpen: the published book.
+  // ShieldAlert: what could hurt it. Sigma: how every number is built.
+  { href: "/", label: "Themes", Icon: Radar },
+  { href: "/book", label: "Book", Icon: BookOpen },
+  { href: "/risk", label: "Risk", Icon: ShieldAlert },
+  { href: "/method", label: "Method", Icon: Sigma },
 ];
 
 const STORAGE_KEY = "andromeda:rail-expanded";
@@ -84,16 +91,20 @@ export default function SideRail() {
               <Link
                 href={d.href}
                 aria-current={active ? "page" : undefined}
-                title={expanded ? undefined : d.label}
-                className={`block rounded-md text-[11px] font-medium transition-colors ${
-                  expanded ? "px-3 py-2 text-[13px] text-left" : "px-1 py-2 text-center"
+                className={`flex rounded-md font-medium transition-colors ${
+                  expanded
+                    ? "flex-row items-center gap-2.5 px-3 py-2 text-[13px]"
+                    : "flex-col items-center gap-1 px-1 py-2 text-[10px]"
                 } ${
                   active
                     ? "text-text-primary bg-bg-elevated"
                     : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
                 }`}
               >
-                {d.label}
+                {/* aria-hidden: the label beside it is the accessible name, so
+                    the glyph must not be announced twice. */}
+                <d.Icon size={expanded ? 15 : 17} aria-hidden strokeWidth={1.75} />
+                <span>{d.label}</span>
               </Link>
             </li>
           );
@@ -104,12 +115,20 @@ export default function SideRail() {
         type="button"
         onClick={toggle}
         aria-expanded={expanded}
-        className="mt-auto m-2 px-2 py-2 rounded-md border border-border text-[11px] text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
+        className="mt-auto m-2 px-2 py-2 rounded-md border border-border text-[11px] text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors flex items-center justify-center gap-1.5"
       >
-        {/* Names the CONSEQUENCE, not just the direction, because expanding
-            costs the two-pane layout below a 1,568px viewport (ADR-0086) and a
-            reader should not discover that by watching the page reflow. */}
-        {expanded ? "‹ Narrow" : "›"}
+        {/* The sr-only text names the CONSEQUENCE, not just the direction,
+            because expanding costs the two-pane layout below a 1,568px viewport
+            (ADR-0086) and a reader should not discover that by watching the
+            page reflow. */}
+        {expanded ? (
+          <>
+            <ChevronLeft size={14} aria-hidden strokeWidth={1.75} />
+            Narrow
+          </>
+        ) : (
+          <PanelLeftOpen size={15} aria-hidden strokeWidth={1.75} />
+        )}
         <span className="sr-only">
           {expanded
             ? "Collapse the rail to 56 pixels, which restores the side-by-side position tables"

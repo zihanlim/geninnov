@@ -1,6 +1,7 @@
 "use client";
 
 import { ScrollArea } from "@/components/ScrollArea";
+import CollapsibleSection from "@/components/CollapsibleSection";
 import {
   classifyOverlap,
   overlapLabel,
@@ -110,15 +111,49 @@ export default function ClearedNotTaken({
 
   const shorts = notTaken.filter((c) => c.direction === "short").length;
 
+  // The panel collapses, so the summary has to carry the FINDING, not a count.
+  //
+  // This is the answer to the sharpest question a reviewer asks — "what did you
+  // look at and decline?" — and its own docstring says so. Hiding it behind
+  // "12 held back" would hide the interesting part and leave only the
+  // bookkeeping. The interesting part is the name that was genuinely
+  // INDEPENDENT of everything the book holds and was passed over anyway:
+  // same-bet and offsets candidates are explicable (already owned, or would net
+  // against a position), an independent one is a live question.
+  //
+  // Safari and Firefox do NOT auto-expand a closed <details> for find-in-page,
+  // so anything a reader might search for has to appear in the summary text.
+  // Naming the ticker here is what keeps Ctrl+F working for the one name that
+  // matters.
+  const mostIndependent = notTaken
+    .map((c) => {
+      const corr = correlations[c.asset];
+      const { aligned, kind } = classifyOverlap(
+        c.direction,
+        corr ? heldDirections[corr.closest] : undefined,
+        corr?.corr,
+      );
+      return { asset: c.asset, direction: c.direction, aligned, kind };
+    })
+    .filter((r) => r.kind === "independent" && typeof r.aligned === "number")
+    .sort((a, b) => Math.abs(a.aligned as number) - Math.abs(b.aligned as number))[0];
+
+  const summary = [
+    `${notTaken.length} held back`,
+    shorts > 0 ? `${shorts} short` : null,
+    mostIndependent
+      ? `most independent: ${mostIndependent.asset} ${mostIndependent.direction} at ρ ${(mostIndependent.aligned as number).toFixed(2)} to anything held`
+      : "none measurably independent of the book",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <div className="card mb-6">
-      <div className="card-header">
-        <span className="card-title">Cleared the screen — not taken</span>
-        <span className="num text-[11px] text-text-tertiary">
-          {notTaken.length} held back
-          {shorts > 0 ? ` · ${shorts} short` : ""}
-        </span>
-      </div>
+    <CollapsibleSection
+      title="Cleared the screen — not taken"
+      summary={summary}
+      className="mb-6"
+    >
 
       <p className="m-0 px-[18px] py-3 text-[12.5px] text-text-secondary leading-[1.6] max-w-[92ch]">
         These names passed every screen and still did not make the book.{" "}
@@ -278,6 +313,6 @@ export default function ClearedNotTaken({
           </tbody>
         </table>
       </ScrollArea>
-    </div>
+    </CollapsibleSection>
   );
 }

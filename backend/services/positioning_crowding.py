@@ -215,7 +215,9 @@ def describe(pc: PositioningCrowding) -> str:
             "No position in this book trades against a futures contract with a usable "
             "Commitments of Traders history, so external positioning can say nothing about "
             f"it. That is a gap in coverage, not evidence that the book is uncrowded. "
-            f"{len(pc.unobservable)} position(s) were checked and found unobservable."
+            f"{len(pc.unobservable)} "
+            f"{'position was' if len(pc.unobservable) == 1 else 'positions were'} "
+            f"checked and found unobservable."
         )
 
     cov_txt = (
@@ -246,10 +248,15 @@ def describe(pc: PositioningCrowding) -> str:
             f"exposure to that consensus unwinding rather than confirmation of the view."
         )
 
-    base += (
-        f" The remaining {len(pc.unobservable)} position(s) have no contract and their "
-        f"crowding is unobservable, not zero."
-    )
+    n = len(pc.unobservable)
+    if n:
+        # Written out rather than "position(s)": this sentence is persisted, rendered on
+        # /risk verbatim, and served to /ask and the MCP server, so a lazy plural reads as
+        # machine output in all three places at once.
+        base += (
+            f" The remaining {n} {'position has' if n == 1 else 'positions have'} no "
+            f"contract and their crowding is unobservable, not zero."
+        )
     if pc.as_of:
         base += (
             f" Positions are as of {pc.as_of}, the CFTC observation date — the report is "

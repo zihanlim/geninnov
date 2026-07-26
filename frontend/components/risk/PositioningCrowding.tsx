@@ -18,6 +18,24 @@ import { Ident, SectionGap, SectionSkeleton } from "./SectionGap";
 // Renders the PERSISTED assessment. The contract mapping is a judgement, and a second copy
 // of a judgement drifts into a confidently wrong classification with no visible symptom.
 
+type Unobservable = PositioningCrowdingRow["unobservable"][number];
+
+/**
+ * Collapse positions onto their shared reason, preserving first-seen (weight-sorted) order.
+ *
+ * The reasons are keyed on sector upstream, so several positions legitimately share one
+ * string. Rendering per position printed that string once per name.
+ */
+function groupByReason(rows: Unobservable[]): Array<{ reason: string; members: Unobservable[] }> {
+  const out: Array<{ reason: string; members: Unobservable[] }> = [];
+  for (const r of rows) {
+    const hit = out.find((g) => g.reason === r.reason);
+    if (hit) hit.members.push(r);
+    else out.push({ reason: r.reason, members: [r] });
+  }
+  return out;
+}
+
 /** The side pill, using the `dir-pill-*` primitive (ADR-0085) — glyph AND wordmark. */
 function dirLabel(d: string): { text: string; cls: string } {
   if (d === "long") return { text: "▲ LONG", cls: "dir-pill-long" };
@@ -77,9 +95,10 @@ export function PositioningCrowding({
         <h2 id="risk-positioning-heading" className="card-title m-0">
           External positioning (CFTC)
         </h2>
-        <span className="text-[11px] text-text-tertiary">
-          {x ? `${x.rows.length} of ${total} positions observable` : "speculator crowding"}
-        </span>
+        {/* Deliberately NOT the coverage count: the strip below already states it, and the
+            persisted summary states it again verbatim. Three restatements in three rows read
+            as a stutter when this was first rendered. */}
+        <span className="text-[11px] text-text-tertiary">speculator crowding</span>
       </div>
 
       {state.status === "loading" ? (
@@ -92,33 +111,46 @@ export function PositioningCrowding({
         </p>
       ) : (
         <>
-          {/* Coverage first, deliberately. */}
-          <div className="px-[18px] py-3 border-b border-border text-[13px]">
-            <span className="font-semibold">COT can see</span>
-            {isNum(x.coverage_share) ? (
-              <>
-                {" "}
-                <span className="num font-semibold">
-                  {(x.coverage_share * 100).toFixed(0)}%
-                </span>
-                <span className="text-text-secondary"> of this book&rsquo;s gross</span>
-              </>
-            ) : (
-              <span className="text-text-secondary"> an unmeasurable share of gross</span>
-            )}
-            <span className="text-text-tertiary mx-1.5">·</span>
-            <span className="text-text-secondary">
-              {x.rows.length} of {total} positions map to a futures contract
-            </span>
-            {isNum(x.crowded_share) && x.crowded_share > 0 ? (
-              <>
-                <span className="text-text-tertiary mx-1.5">·</span>
-                <span className="num font-semibold" style={{ color: "var(--warning)" }}>
-                  {(x.crowded_share * 100).toFixed(1)}%
-                </span>
-                <span className="text-text-secondary"> agrees with a crowded consensus</span>
-              </>
-            ) : null}
+          {/* Coverage first, as FIGURES rather than as a sentence.
+              This strip used to read "COT can see 22% of this book's gross · 2 of 10
+              positions map to a futures contract", directly above a persisted summary
+              opening with the same words. Two correct rules collided: the summary renders
+              verbatim so the page cannot restate the finding differently, and the strip
+              exists so the number is scannable. Rendering the strip as a stat block keeps
+              the scannable figure without competing with the prose for the same sentence. */}
+          <div className="flex flex-wrap gap-x-8 gap-y-3 px-[18px] py-3 border-b border-border">
+            <div>
+              <div className="num text-[20px] font-semibold leading-[1.1]">
+                {isNum(x.coverage_share) ? `${(x.coverage_share * 100).toFixed(0)}%` : "—"}
+              </div>
+              <div className="text-[10.5px] uppercase tracking-[0.09em] text-text-tertiary mt-0.5">
+                of gross observable
+              </div>
+            </div>
+            <div>
+              <div className="num text-[20px] font-semibold leading-[1.1]">
+                {x.rows.length}
+                <span className="text-text-tertiary">/{total}</span>
+              </div>
+              <div className="text-[10.5px] uppercase tracking-[0.09em] text-text-tertiary mt-0.5">
+                positions mapped
+              </div>
+            </div>
+            <div>
+              <div
+                className="num text-[20px] font-semibold leading-[1.1]"
+                style={
+                  isNum(x.crowded_share) && x.crowded_share > 0
+                    ? { color: "var(--warning)" }
+                    : undefined
+                }
+              >
+                {isNum(x.crowded_share) ? `${(x.crowded_share * 100).toFixed(1)}%` : "—"}
+              </div>
+              <div className="text-[10.5px] uppercase tracking-[0.09em] text-text-tertiary mt-0.5">
+                with the crowd
+              </div>
+            </div>
           </div>
 
           {/* The persisted sentence, verbatim — the page must not restate the finding in
@@ -183,11 +215,14 @@ export function PositioningCrowding({
                       </td>
                       <td className="px-[14px] py-2 border-b border-border text-text-secondary">
                         <IndexBar index={r.cot_index} high={x.crowded_high} low={x.crowded_low} />
-                        <span className="block mt-1 text-[10.5px] text-text-tertiary">
-                          {r.crowded_side
-                            ? `specs crowded ${r.crowded_side}`
-                            : `mid-range (crowded outside ${x.crowded_low}–${x.crowded_high})`}
-                        </span>
+                        {/* Only the CROWDED case gets a subtitle. "mid-range" here plus
+                            "Not at a speculator extreme" in the verdict column said the same
+                            thing twice on every row; the threshold is in the footnote. */}
+                        {r.crowded_side ? (
+                          <span className="block mt-1 text-[10.5px] text-text-tertiary">
+                            specs crowded {r.crowded_side}
+                          </span>
+                        ) : null}
                       </td>
                       <td className="px-[14px] py-2 border-b border-border text-[11.5px] leading-[1.5] max-w-[34ch]">
                         {r.agrees_with_crowd ? (
@@ -211,21 +246,31 @@ export function PositioningCrowding({
           {x.unobservable.length > 0 ? (
             <details className="border-t border-border">
               <summary className="px-[18px] py-2.5 text-[11.5px] text-text-secondary cursor-pointer select-none">
-                {x.unobservable.length} position(s) COT cannot see — and why
+                {x.unobservable.length === 1
+                  ? "1 position COT cannot see — and why"
+                  : `${x.unobservable.length} positions COT cannot see — and why`}
               </summary>
+              {/* Grouped BY REASON, not listed per position. Reasons are keyed on sector, so
+                  a per-position list printed the identical paragraph for every name sharing
+                  one — PDD and BABA both got "No US futures contract…", which read as a
+                  copy-paste bug rather than a shared cause. Grouping also makes the real
+                  shape visible: four causes, not eight coincidences. */}
               <ul className="m-0 list-none px-[18px] pb-3 pt-1">
-                {x.unobservable.map((u) => (
-                  <li
-                    key={`${u.asset}-${u.direction}`}
-                    className="py-1.5 border-b border-border last:border-b-0"
-                  >
-                    <span className="num text-text-primary text-[12.5px]">{u.asset}</span>
-                    <span className="text-text-tertiary mx-1.5">·</span>
-                    <span className="num text-text-secondary text-[11.5px]">
-                      {u.direction} {(u.weight * 100).toFixed(2)}%
+                {groupByReason(x.unobservable).map((g) => (
+                  <li key={g.reason} className="py-2 border-b border-border last:border-b-0">
+                    <span className="block text-[11.5px] text-text-tertiary leading-[1.55] max-w-[92ch]">
+                      {g.reason}
                     </span>
-                    <span className="block mt-0.5 text-[11.5px] text-text-tertiary leading-[1.55] max-w-[92ch]">
-                      {u.reason}
+                    <span className="block mt-1">
+                      {g.members.map((u, i) => (
+                        <span key={`${u.asset}-${u.direction}`}>
+                          {i > 0 ? <span className="text-text-tertiary">, </span> : null}
+                          <span className="num text-text-primary text-[12.5px]">{u.asset}</span>{" "}
+                          <span className="num text-text-secondary text-[11.5px]">
+                            {u.direction} {(u.weight * 100).toFixed(2)}%
+                          </span>
+                        </span>
+                      ))}
                     </span>
                   </li>
                 ))}
@@ -238,15 +283,12 @@ export function PositioningCrowding({
             of its own three-year range; crowded is defined as {x.crowded_low} or below and{" "}
             {x.crowded_high} or above, the conventional threshold rather than a fitted one.
             Agreeing with a crowded consensus is <em>risk</em> — exposure to that consensus
-            unwinding — and never a reason to hold a position.{" "}
-            {x.as_of ? (
-              <>
-                Positions are as of <span className="num">{x.as_of}</span>, the CFTC
-                observation date; the report publishes the following Friday, so this reading
-                is days old by construction.{" "}
-              </>
-            ) : null}
-            Source: <Ident>research_recommendations.positioning_crowding</Ident>.
+            {/* The observation date and its publication lag are NOT repeated here — the
+                persisted summary above already states them, and printing the same sentence
+                twice two paragraphs apart is what the first version did. Rationale belongs
+                in this comment, not in the copy a reader sees. */}
+            unwinding — and never a reason to hold a position. Source:{" "}
+            <Ident>research_recommendations.positioning_crowding</Ident>.
           </p>
         </>
       )}

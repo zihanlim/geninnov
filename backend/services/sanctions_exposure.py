@@ -189,7 +189,8 @@ def describe(exp: SanctionsExposure) -> str:
 
     if exp.unclassified:
         base += (
-            f" {len(exp.unclassified)} position(s) could not be classified "
+            f" {len(exp.unclassified)} "
+            f"{'position' if len(exp.unclassified) == 1 else 'positions'} could not be classified "
             f"({', '.join(sorted(set(exp.unclassified)))}) — their sanctions exposure is "
             f"unknown, not absent."
         )

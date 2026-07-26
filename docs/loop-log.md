@@ -20,6 +20,27 @@ does not authorise anything.
 
 ---
 
+### Loop iteration 105 (2026-07-27) — audited bar 3 against the live thesis; the domain prose outruns the guardrail
+
+Bar 3 says the thesis "turns on nothing asset-specific, only theme-level attention plus macro."
+Tested against the live book, that premise is **false** — the per-position rationales are richly
+asset-specific: SHY on the 2y carry (DGS2 4.37%), GDX on gold (4067.6) vs real yields (2.43%), SVXY
+on the VIX term structure (−1.96 contango), and per-asset FF5 factor profiles for NUE/BABA/NOC/ARKK.
+Several carry genuine **domain** claims: XLE "Hormuz geopolitics," NOC "defense name… appears
+over-owned," PDD "hyper-competitive China e-commerce with margin pressure, regulatory risk."
+
+The honest residual is sharper than the bar's version: the **figures** are grounded and
+citation-checked, but that domain **prose is the model's own synthesis** — [ADR-0049](adrs/0049-the-guardrail-does-not-read-the-prose.md)
+states the guardrail never inspects the thesis prose, and no surface distinguishes the two. The
+`/book` "VERIFIED · 20 evidence sources" badge means the *figures* were traced; a reader can
+reasonably read it as the whole narrative being verified. That is exactly bar 3's "confidently wrong
+without domain knowledge" risk, surviving in the qualitative layer under a badge that only covers the
+numeric one. **Flagged for the trust-UI owner** (the other session) rather than unilaterally
+re-labelling their citation badge — a load-bearing ADR-0012/0049 surface. The cheap honest move, if
+they take it: the badge (or a line beside it) should say it certifies the figures, and that the
+reading is the model's. Site clean this firing (6 routes × 1440/375, 0 issues, 0 mojibake); the new
+`/method` source-freshness panel reconciles (6 sources, 5 contributed, 3 can report observation age).
+
 ### Loop iteration 104 (2026-07-27) — verified the other session's new bar-panels (numbers hold); repaired an ADR-index mojibake recurrence
 
 The other session is systematically answering the four transcript bars in the frontend —

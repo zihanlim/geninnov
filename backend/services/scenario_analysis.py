@@ -4,11 +4,28 @@ Scenario analysis — quant book construction layer.
 Standard macro stress scenarios run against the portfolio to answer:
 "what happens to this book if [X]?" — required for any professional pitch book.
 
-Four scenarios:
+Six scenarios:
   S1: VIX spike        — VIX > 30 (systematic deleveraging)
   S2: Rate shock       — 10y Treasury +50bps (duration pain)
   S3: USD strength     — DXY +5% (EM/commodity headwind)
   S4: Credit widening  — HY OAS +150bps (risk-off credit selloff)
+  S5: Melt-up          — SPX +10% (the risk-ON tail; see ADR-0074)
+  S6: Supply shock     — maritime chokepoint closure (the PHYSICAL tail)
+
+S1-S5 all transmit through the same channel: a factor beta scaled by a market
+shock. That makes them differ in sign and size but not in SHAPE, and it means a
+book can only be hedged against them one way. S6 transmits through SECTOR
+DEPENDENCY instead — a crude-supply disruption is not a beta event, it is an
+asymmetric repricing of who buys energy and who sells it. Two consequences no
+other scenario reproduces:
+
+  * duration does NOT hedge. A supply shock is inflationary, so Treasuries fall
+    with equities rather than rallying against them. In S1 and S4, TLT is +4%
+    and +6%; here it is negative. A book that hedges risk-off with duration is
+    unhedged in exactly this state.
+  * positions that are implicitly SHORT geopolitical risk — short gold, short
+    defense — surface as losses. Nothing in S1-S5 reveals them, because their
+    market betas are unremarkable.
 
 Each scenario returns an estimated P&L impact on the book in % and $M,
 computed from factor tilts and historical beta regressions.
@@ -25,6 +42,13 @@ import yfinance as yf
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Optional
+
+# The sector taxonomy the book is already capped and reported against. S6 shocks
+# THROUGH it rather than through a per-ticker list, so a scenario stays correct as
+# the universe changes: a new energy name added to SECTOR_MAP is stressed by S6 the
+# day it appears, with no edit here. book_metrics does not import this module, so
+# there is no cycle.
+from services.book_metrics import SECTOR_MAP
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -79,6 +103,11 @@ class Scenario:
     factor_shocks: dict[str, float]    # {factor_name: return_shock_as_decimal}
     # e.g. {"mkt": -0.15} means SPX -15%
     base_asset_shocks: dict[str, float]  # {asset_ticker: return_shock} for direct assets
+    # {SECTOR_MAP sector: return_shock} — the fallback applied to any pick whose
+    # ticker is absent from base_asset_shocks. Ticker beats sector, so a name that
+    # behaves unlike its bucket keeps an override: SVXY is filed under "Rates" but
+    # is short-vol, and inherits nothing sensible from a rates shock.
+    sector_shocks: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -188,12 +217,93 @@ SCENARIOS: list[Scenario] = [
             "HYG":   +0.04,    # credit tightens
         },
     ),
+    Scenario(
+        name="S6_supply_shock",
+        label="Supply Shock (chokepoint closure)",
+        description="A maritime chokepoint closes and crude supply is disrupted. Energy "
+                    "producers and defense re-rate up; energy-importing economies, long-duration "
+                    "equity and autos re-rate down. Unlike the other risk-off shocks this one is "
+                    "INFLATIONARY, so Treasuries fall alongside equities instead of hedging them. "
+                    "Transmission is by sector dependency, not by market beta.",
+        # Deliberately sparse. The market-beta channel is what the other five already
+        # measure; routing S6 through it too would collapse it into a smaller S1. The
+        # small negative keeps broad equity from being unshocked, and the sector map
+        # below carries the actual asymmetry.
+        factor_shocks={"mkt": -0.04},
+        base_asset_shocks={
+            # Ticker overrides where a name does not behave like its sector bucket.
+            "SVXY":  -0.18,    # filed under "Rates" but is short-vol; VIX spikes here
+            "TLT":   -0.07,    # 20y duration against an inflationary shock
+            "IEF":   -0.03,    # intermediate duration, same sign, less of it
+            "SHY":   -0.005,   # ~2y duration — nearly immune, and must not read as immune-by-omission
+            "CL":    +0.25,    # the disrupted commodity itself, not a producer of it
+            "UNG":   +0.20,    # gas bid as the crude substitute
+            "TIPS":  +0.03,    # breakevens widen faster than real yields rise
+            "UUP":   +0.04,    # dollar catches the haven bid
+        },
+        sector_shocks={
+            # Supply side — gains from the disruption
+            "Energy":               +0.18,
+            "Energy-Commodity":     +0.25,
+            "Energy-NatGas":        +0.20,
+            "Defense":              +0.10,   # escalation premium
+            "Gold Miners":          +0.12,   # miners lever the metal
+            "Gold":                 +0.08,
+            "Inflation":            +0.03,
+            "FX":                   +0.04,
+            "FX-EM":                +0.02,   # commodity exporters partly insulated
+            # Demand side — pays for it, scaled by energy-import dependence
+            "China Equities":       -0.12,   # largest crude importer; most chokepoint-exposed
+            "Japan Equities":       -0.11,   # near-total energy import dependence
+            "EM Equities":          -0.10,
+            "Developed Equities":   -0.09,   # Europe carries the import exposure
+            "Tech Growth":          -0.09,   # long duration meets input costs
+            "Disruptive Innovation":-0.14,   # highest duration, least pricing power
+            "Autos":                -0.13,   # input costs plus supply chain, no pass-through
+            "US Equities":          -0.07,   # energy self-sufficient: least exposed equity bloc
+            "Financials":           -0.05,
+            "Credit":               -0.05,
+            "Metals":               -0.04,   # industrial demand fear outweighs supply tightness
+            "Rates":                -0.02,   # inflationary: duration does not hedge
+            "Healthcare":           -0.02,   # defensive
+        },
+    ),
 ]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # P&L estimation engine
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _resolve_shock(scenario: Scenario, asset: str) -> tuple[Optional[float], str]:
+    """The direct shock for one asset, and where it came from.
+
+    Ticker beats sector: ``base_asset_shocks`` is the override list for names that do
+    not behave like their bucket. Returns ``(None, "")`` when the scenario calibrates
+    neither, which is what the factor path is for.
+
+    Both the P&L loop and the ``covered_frac`` gate call this. They used to be able to
+    disagree about what "covered" meant, and a gate that counts an asset the P&L loop
+    skips silently picks the wrong estimator.
+    """
+    if asset in scenario.base_asset_shocks:
+        return scenario.base_asset_shocks[asset], ""
+    sector = SECTOR_MAP.get(asset)
+    if sector is not None and sector in scenario.sector_shocks:
+        return scenario.sector_shocks[sector], f" via {sector}"
+    return None, ""
+
+
+def _fmt_shock(shock: float) -> str:
+    """Percent with enough precision that the row's own arithmetic checks out.
+
+    The breakdown rows are self-checking by design — a reader multiplies the two
+    printed numbers and must get the printed result. At ``:+.0%`` a sub-1% shock
+    prints as "+0%", so SHY's -0.5% would read as an unshocked position that
+    nonetheless multiplies to a non-zero P&L.
+    """
+    return f"{shock:+.1%}" if abs(shock) < 0.01 else f"{shock:+.0%}"
+
 
 def _fetch_latest_price(ticker: str) -> Optional[float]:
     """Get the most recent close price for a ticker."""
@@ -302,16 +412,21 @@ def estimate_scenario_pnl(
         # Direction sign: short positions flip the P&L direction
         sign = 1.0 if p.get("direction") == "long" else -1.0
 
-        if asset in scenario.base_asset_shocks:
-            shock = scenario.base_asset_shocks[asset]
+        shock, origin = _resolve_shock(scenario, asset)
+        if shock is not None:
             pnl = sign * w * shock
             direct_pnl += pnl
             # Show the SIGNED weight so the line's own arithmetic checks out. A short
             # gains when its name falls, so with the unsigned weight the row read
             # "+9.0% × -20% = +1.80%" — a product that does not equal its result, the
             # first thing a reviewer poking a stress row would catch. -9.0% × -20% does.
+            #
+            # `origin` names the sector when the shock was inherited rather than set on
+            # the ticker, so a reader can trace the number to the row of the transmission
+            # map it came from instead of wondering why NUE moved.
             contributions.append(
-                f"  {asset} ({p.get('direction', '?')}): {sign * w:+.1%} × {shock:+.0%} = {pnl:+.2%}"
+                f"  {asset} ({p.get('direction', '?')}){origin}: "
+                f"{sign * w:+.1%} × {_fmt_shock(shock)} = {pnl:+.2%}"
             )
 
     # Blend: use direct PnL only when it has actual non-zero contributions;
@@ -321,7 +436,7 @@ def estimate_scenario_pnl(
     covered_weight = sum(
         abs(p.get("weight", 0.0))
         for p in picks
-        if p.get("asset") in scenario.base_asset_shocks
+        if _resolve_shock(scenario, p.get("asset", ""))[0] is not None
     )
     gross = max(book_metrics.gross_exposure, 0.01)
     covered_frac = covered_weight / gross if gross > 0 else 0.0
@@ -419,6 +534,11 @@ def scenario_results_to_dict(results: list[ScenarioResult]) -> list[dict]:
             "label": r.label,
             "description": scenario.description if scenario else "",
             "factor_shocks": dict(scenario.factor_shocks) if scenario else {},
+            # Emitted so /risk can show what S6 actually did. The UI builds its shock
+            # chips from these two maps; a sector-transmitted scenario that shipped only
+            # factor_shocks would render a near-empty chip row under a material P&L —
+            # a number on the page with its cause left off (design goal 1).
+            "sector_shocks": dict(scenario.sector_shocks) if scenario else {},
             "estimated_book_return": r.estimated_book_return,
             "estimated_dollar_pnl": r.estimated_dollar_pnl,
             "severity": r.severity,

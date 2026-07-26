@@ -51,12 +51,12 @@ def _pick(asset, direction, weight):
 # SCENARIOS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_five_scenarios_defined_covering_both_tails():
-    assert len(SCENARIOS) == 5
+def test_six_scenarios_defined_covering_both_tails():
+    assert len(SCENARIOS) == 6
     names = {s.name for s in SCENARIOS}
     assert names == {
         "S1_vix_spike", "S2_rate_shock", "S3_usd_strength",
-        "S4_credit_widening", "S5_melt_up",
+        "S4_credit_widening", "S5_melt_up", "S6_supply_shock",
     }
     # Both tails: at least one risk-off (mkt down) and one risk-on (mkt up) shock, so a
     # net-short book cannot escape stress the way it did when all four were risk-off.
@@ -107,6 +107,144 @@ def test_credit_widening_scenario():
     s = next(x for x in SCENARIOS if x.name == "S4_credit_widening")
     assert "HYG" in s.base_asset_shocks
     assert s.base_asset_shocks["HYG"] < 0  # credit sells off
+
+
+# ─── S6: transmission by sector dependency, not market beta (ADR-0088) ───────
+
+def _s6():
+    return next(s for s in SCENARIOS if s.name == "S6_supply_shock")
+
+
+def test_only_the_supply_shock_transmits_through_sectors():
+    """S1-S5 are all beta-transmitted. If one of them grows a sector_shocks map the
+    distinction ADR-0088 rests on has quietly gone, and S6 is no longer measuring a
+    channel the others miss."""
+    for s in SCENARIOS:
+        if s.name == "S6_supply_shock":
+            assert s.sector_shocks, "S6 must carry a sector transmission map"
+        else:
+            assert s.sector_shocks == {}, f"{s.name} unexpectedly transmits by sector"
+
+
+def test_a_ticker_shock_overrides_its_sector():
+    """SVXY is filed under "Rates" but is short-vol: a supply shock spikes VIX, so it
+    must NOT inherit the small negative the rates bucket carries."""
+    from backend.services.scenario_analysis import _resolve_shock
+    from backend.services.book_metrics import SECTOR_MAP
+
+    assert SECTOR_MAP["SVXY"] == "Rates"
+    sector = _s6().sector_shocks["Rates"]
+    shock, origin = _resolve_shock(_s6(), "SVXY")
+    assert shock == _s6().base_asset_shocks["SVXY"]
+    assert shock < sector, "the override must be more severe than the bucket default"
+    assert origin == "", "an overridden ticker must not claim to come from its sector"
+
+
+def test_a_sector_inherited_shock_names_its_origin():
+    """Design goal 1: a reader must be able to trace the number. XOM is not in
+    base_asset_shocks — its shock comes from the Energy row of the transmission map,
+    and the breakdown says so."""
+    from backend.services.scenario_analysis import _resolve_shock
+
+    shock, origin = _resolve_shock(_s6(), "XOM")
+    assert shock == _s6().sector_shocks["Energy"]
+    assert origin == " via Energy"
+
+    result = estimate_scenario_pnl(_s6(), [_pick("XOM", "long", 0.20)], _bm(gross=0.20), 1e8)
+    assert any("via Energy" in c for c in result.contribution_breakdown)
+
+
+def test_duration_does_not_hedge_a_supply_shock():
+    """The structural difference from every other risk-off scenario. S1 and S4 pay a
+    long-duration book (+4%, +6% on TLT) because they are deflationary risk-off. A
+    supply shock is INFLATIONARY, so Treasuries fall with equities and a book that
+    hedges risk-off with duration is unhedged in exactly this state."""
+    assert _s6().base_asset_shocks["TLT"] < 0
+    for name in ("S1_vix_spike", "S4_credit_widening"):
+        other = next(s for s in SCENARIOS if s.name == name)
+        assert other.base_asset_shocks["TLT"] > 0
+
+    picks = [_pick("TLT", "long", 0.20)]
+    assert estimate_scenario_pnl(_s6(), picks, _bm(gross=0.20), 1e8).estimated_book_return < 0
+
+
+def test_supply_shock_stresses_a_position_the_factor_path_cannot_see():
+    """The reason S6 exists, measured on the live 2026-07-25 book.
+
+    NOC carries beta_mkt -0.014 and appears in no S1-S5 shock list, so every
+    beta-transmitted scenario reads it as ~flat: its worst case across all five was 9
+    basis points on a 4.7% short whose entire thesis is geopolitical. A defense short
+    is short escalation, and nothing in the suite priced that until the transmission
+    ran through the Defense sector instead of through market beta.
+    """
+    from backend.services.scenario_analysis import _resolve_shock
+
+    for s in SCENARIOS:
+        if s.name != "S6_supply_shock":
+            assert _resolve_shock(s, "NOC")[0] is None, f"{s.name} now shocks NOC directly"
+
+    fe = {"NOC": {"beta_mkt": -0.0137045}}
+    picks = [_pick("NOC", "short", 0.0473)]
+    bm = _bm(gross=0.0473)
+
+    pre = max(
+        abs(estimate_scenario_pnl(s, picks, bm, 1e8, fe).estimated_book_return)
+        for s in SCENARIOS if s.name != "S6_supply_shock"
+    )
+    s6 = estimate_scenario_pnl(_s6(), picks, bm, 1e8, fe)
+    assert pre < 0.002, "precondition: NOC was effectively unstressed pre-S6"
+    assert s6.estimated_book_return < -0.004, "a defense short must lose in an escalation"
+    assert abs(s6.estimated_book_return) > 3 * pre
+
+
+def test_supply_shock_covers_every_position_in_the_tier1_universe():
+    """Sector transmission generalises where a ticker list does not: a name added to
+    SECTOR_MAP is stressed by S6 the day it appears, with no edit to the scenario."""
+    from backend.services.scenario_analysis import _resolve_shock
+    from backend.services.book_metrics import SECTOR_MAP
+
+    missing = [a for a in SECTOR_MAP if _resolve_shock(_s6(), a)[0] is None]
+    assert missing == [], f"S6 has no shock for {missing} — add their sector to the map"
+
+
+def test_supply_shock_breakdown_reconciles():
+    """A sector-transmitted scenario covers 100% of gross, so the direct path wins and
+    the per-position legs must still sum to the header."""
+    picks = [
+        _pick("XLE", "long", 0.061302483263712196),
+        _pick("GDX", "short", 0.06395089283902591),
+        _pick("NOC", "short", 0.04733485997962091),
+        _pick("PDD", "short", 0.0925279954328765),
+    ]
+    bm = _bm(gross=sum(p["weight"] for p in picks))
+    result = estimate_scenario_pnl(_s6(), picks, bm, 1e8)
+    assert abs(_breakdown_total(result) - result.estimated_book_return) < 1e-3
+
+
+def test_subpercent_shock_prints_with_enough_precision_to_multiply_out():
+    """SHY takes -0.5%. At the table's old :+.0% that printed "+0%", giving a row whose
+    own numbers multiply to zero under a non-zero result."""
+    import re
+
+    result = estimate_scenario_pnl(_s6(), [_pick("SHY", "long", 0.20)], _bm(gross=0.20), 1e8)
+    row = next(c for c in result.contribution_breakdown if "SHY" in c)
+    nums = [float(x) / 100 for x in re.findall(r"([+-]?\d+\.?\d*)%", row)]
+    weight, shock, pnl = nums
+    assert shock != 0.0, f"shock rounded away to zero in {row!r}"
+    assert abs(weight * shock - pnl) < 1e-4, f"row arithmetic does not check out: {row!r}"
+
+
+def test_sector_shocks_are_persisted_for_the_ui():
+    """/risk builds its shock chips from the persisted maps. A sector-transmitted
+    scenario that shipped only factor_shocks would render a near-empty chip row under a
+    material P&L — a number on the page with its cause left off."""
+    from backend.services.scenario_analysis import scenario_results_to_dict
+
+    picks = [_pick("XLE", "long", 0.20)]
+    results = run_scenario_analysis(picks, _bm(gross=0.20), 1e8)
+    row = next(d for d in scenario_results_to_dict(results) if d["scenario_name"] == "S6_supply_shock")
+    assert row["sector_shocks"]["Energy"] > 0
+    assert row["description"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -290,7 +428,7 @@ def test_run_all_scenarios():
     picks = [_pick("SPY", "long", 0.10)]
     bm = _bm(gross=0.10, beta_mkt=1.0)
     results = run_scenario_analysis(picks, bm, 100_000_000.0)
-    assert len(results) == 5
+    assert len(results) == 6
 
 
 def test_run_scenario_analysis_sorts_by_severity():

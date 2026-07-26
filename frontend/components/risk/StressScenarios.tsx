@@ -1,7 +1,8 @@
 // frontend/components/risk/StressScenarios.tsx
 //
 // The headline section of /risk: what the sized book loses under each of the
-// four calibrated shocks the L5 agent runs (scenario_analysis.SCENARIOS).
+// calibrated shocks the L5 agent runs (scenario_analysis.SCENARIOS — six as of
+// ADR-0088; the count is read off the data, never hardcoded here).
 // Sorted worst-first, because the first question about a book is "how bad does
 // this get", not "what is scenario S1".
 
@@ -19,18 +20,38 @@ import {
 } from "@/lib/risk/analytics";
 import { Ident, SectionGap, SectionSkeleton } from "./SectionGap";
 
-function ShockChips({ shocks }: { shocks: Record<string, number> }) {
-  const entries = Object.entries(shocks).filter(([, v]) => isNum(v));
-  if (entries.length === 0) return null;
+// A scenario states its shocks in one or both of two vocabularies: factor betas
+// (S1-S5) and sector dependency (S6, ADR-0088). Rendering only the first left the
+// sector-transmitted scenario with an empty chip row under a material P&L — the
+// number on the page with its cause left off, which design goal 1 forbids.
+function ShockChips({
+  factorShocks,
+  sectorShocks,
+}: {
+  factorShocks: Record<string, number>;
+  sectorShocks: Record<string, number>;
+}) {
+  const factors = Object.entries(factorShocks).filter(([, v]) => isNum(v));
+  const sectors = Object.entries(sectorShocks).filter(([, v]) => isNum(v));
+  if (factors.length === 0 && sectors.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1.5 mb-2.5">
-      {entries.map(([factor, shock]) => (
+      {factors.map(([factor, shock]) => (
         <span
-          key={factor}
+          key={`f-${factor}`}
           className="badge badge-neutral num"
           title={`${factor} factor shocked by ${fmtSignedPct(shock)}`}
         >
           {factor.toUpperCase()} {fmtSignedPct(shock)}
+        </span>
+      ))}
+      {sectors.map(([sector, shock]) => (
+        <span
+          key={`s-${sector}`}
+          className="badge badge-neutral num"
+          title={`Every position in the ${sector} sector shocked by ${fmtSignedPct(shock)}`}
+        >
+          {sector} {fmtSignedPct(shock)}
         </span>
       ))}
     </div>
@@ -61,7 +82,8 @@ function ScenarioRow({
   const breakdown = (scenario.contribution_breakdown ?? []).filter(
     (line) => typeof line === "string" && line.trim().length > 0,
   );
-  const shocks = scenario.factor_shocks ?? {};
+  const factorShocks = scenario.factor_shocks ?? {};
+  const sectorShocks = scenario.sector_shocks ?? {};
 
   return (
     <Fragment>
@@ -107,7 +129,7 @@ function ScenarioRow({
       {open && (
         <tr id={detailId}>
           <td colSpan={5} className="px-[18px] py-4 border-b border-border-strong bg-bg-elevated/60">
-            <ShockChips shocks={shocks} />
+            <ShockChips factorShocks={factorShocks} sectorShocks={sectorShocks} />
             {breakdown.length > 0 ? (
               <div className="overflow-x-auto">
                 <pre className="num m-0 text-[12px] leading-[1.7] text-text-secondary whitespace-pre">
@@ -224,7 +246,10 @@ export function StressScenarios({
           </div>
           <p className="m-0 px-[18px] py-3 text-[11px] text-text-tertiary leading-[1.6] max-w-[90ch]">
             Estimates combine a factor path (signed weight × beta × factor shock) with
-            direct per-asset shocks where the scenario calibrates one. They are
+            direct shocks where the scenario calibrates one — per asset, or inherited
+            from the position&rsquo;s sector when the scenario transmits through sector
+            dependency rather than through market beta. A breakdown row reading{" "}
+            <Ident>via Energy</Ident> took its shock from the sector map. They are
             model estimates from historical regressions, not forecasts. Source:{" "}
             <Ident>research_recommendations.scenario_results</Ident>.
           </p>

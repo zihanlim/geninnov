@@ -87,7 +87,7 @@ All project documentation lives under `docs/`:
 | `backend/data/factor_fetcher.py` | L2: Ken French FF5 + UMD factor exposures |
 | `backend/services/regime_classifier.py` | L3: Rule-based cycle × sentiment classifier |
 | `backend/services/book_metrics.py` | L5: value-weighted FF5+UMD book tilts, sector/geo caps, correlation matrix |
-| `backend/services/scenario_analysis.py` | L5: 5-scenario stress test — 4 risk-off (VIX/rates/USD/credit) + 1 risk-on melt-up, so a net-short book is stressed on both tails (ADR-0074) |
+| `backend/services/scenario_analysis.py` | L5: 6-scenario stress test — 4 risk-off (VIX/rates/USD/credit) + 1 risk-on melt-up, so a net-short book is stressed on both tails (ADR-0074), + 1 supply shock that transmits through `SECTOR_MAP` instead of market beta and is inflationary, so a position the factor model cannot see is still stressed and duration stops hedging ([ADR-0088](docs/adrs/0088-a-stress-scenario-that-does-not-transmit-through-market-beta.md)) |
 | `backend/services/q1_agent.py` | L5: 8-node Q1 reasoning agent (`run_q1_agent`) |
 | `frontend/app/book/page.tsx` | L6: The $100M book — per-trade thesis, pool depth, turnover, replication. (`/research`, `/portfolio`, `/trades` are retired server redirects to it.) |
 | `frontend/lib/supabase.ts` | Supabase client for frontend reads |

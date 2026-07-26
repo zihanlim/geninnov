@@ -23,6 +23,12 @@ export interface ScenarioResult {
   description?: string | null;
   /** {factor: return_shock_as_decimal}, e.g. {"mkt": -0.18}. */
   factor_shocks?: Record<string, number> | null;
+  /**
+   * {sector: return_shock_as_decimal} — S6's transmission channel (ADR-0088).
+   * Absent on every row written before S6 shipped, and empty on S1-S5, which
+   * transmit through factor betas instead.
+   */
+  sector_shocks?: Record<string, number> | null;
   /** Decimal, e.g. -0.048 = -4.8%. */
   estimated_book_return: number;
   /** Already denominated in $M by the backend (ScenarioResult.estimated_dollar_pnl). */

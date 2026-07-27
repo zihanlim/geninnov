@@ -1023,6 +1023,51 @@ def rank_and_persist_trade_candidates(
     return longs, shorts
 
 
+def record_published_claims(agent_result: dict | None, run_date: date) -> int:
+    """Put every pick just published on the record, pending, before any price exists.
+
+    ADR-0090 fixes the denominator at publication so a scored set cannot later omit the
+    calls that went wrong. The guarantee was only ever enforced by `resolve_outcomes.py`
+    running as a **sibling step in `daily-refresh.yml`** — so a book published any other
+    way had no rows at all, and on 2026-07-27 that was 9 of 32 published claims. A
+    falsifiability guarantee that depends on a neighbouring line of YAML is not a
+    guarantee; it belongs on the path that does the publishing.
+
+    **Insert-if-absent, never upsert.** `resolve_outcomes.py` upserts because it is
+    supposed to turn a `pending` row into a verdict. This must do the opposite: a re-run
+    of an older `run_date` would otherwise write `pending` over a resolved `hit` and
+    destroy the outcome. `ignore_duplicates` makes "already recorded" a no-op, which is
+    the only safe direction for a write that is not looking at prices.
+
+    Never raises. A book that is published but unrecorded is bad; a book that fails to
+    publish because its bookkeeping fell over is worse. The gap is loud in the log and
+    `check_data_integrity` fails on it separately.
+    """
+    picks = (agent_result or {}).get("picks") or []
+    if not picks:
+        return 0
+    try:
+        from backend.services.pick_outcomes import commitment_rows
+
+        rows = commitment_rows(run_date, picks)
+        if not rows:
+            return 0
+        supabase.table("pick_outcomes").upsert(
+            rows,
+            on_conflict="run_date,asset,direction,horizon_days,spec_version",
+            ignore_duplicates=True,
+        ).execute()
+        print(f"[{run_date}] [L5] recorded {len(rows)} published claim(s) as pending (ADR-0090).")
+        return len(rows)
+    except Exception as exc:
+        print(
+            f"[{run_date}] WARNING could not record published claims "
+            f"({exc.__class__.__name__}): {exc}. The book is published but NOT on the "
+            f"record — run `python -m scripts.resolve_outcomes` to repair."
+        )
+        return 0
+
+
 # ─── Step 9 (Phase 3): Allocate + persist portfolio positions ────────────────
 def allocate_and_persist_portfolio(
     candidates: list[TradeCandidate],
@@ -2026,6 +2071,7 @@ def main():
         )
         if agent_result:
             print(f"[{run_date}] [L5] Q1 recommendations persisted.")
+            record_published_claims(agent_result, run_date)
         else:
             print(f"[{run_date}] [L5] Q1 agent declined to produce output (fallback active).")
 

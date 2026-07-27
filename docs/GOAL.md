@@ -132,6 +132,17 @@ this repo's standing move (ADR-0066, ADR-0094, ADR-0097).
    back: it is written by `resolve_outcomes.py`, displayed on `/method`, and consumed by
    no pipeline step.
    **Test:** does any published number differ because of a resolved outcome? Today: no.
+   **The disclosure surface exists** — `TrackRecordPanel` renders on `/book` at the point
+   of the claim, and `/method` keeps the full table. **The blocker was NOT only the
+   calendar.** Audited 2026-07-27: the live book had published 9 claims and recorded
+   **0** `pick_outcomes` rows — 28% of every claim the project had ever made, permanently
+   ungradeable, and invisible because the panel counts what IS recorded, so a missing
+   claim reads as a smaller denominator rather than a gap. ADR-0090's "record the
+   commitment" was enforced only by `resolve_outcomes.py` running as a sibling step in
+   `daily-refresh.yml`. Fixed and repaired ([ADR-0117](adrs/0117-a-falsifiability-guarantee-that-lives-in-a-yaml-step-is-not-a-guarantee.md));
+   all 5 books now reconcile 32/32. **What remains is genuinely the calendar and only
+   that:** earliest book 2026-07-22 + 21 trading days, so nothing resolves before
+   2026-08-20, and there is no older history to backfill.
    **The honest version is not RL** — the sample is far too small to tune on, and fitting
    thresholds to a dozen resolved picks would be overfitting dressed as learning. It is
    **disclosure**: the track record visible next to the claim it grades.

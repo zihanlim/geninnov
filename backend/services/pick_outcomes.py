@@ -239,3 +239,44 @@ def build_scorecard(
                 "hit_rate": sum(o.verdict == "hit" for o in side_rows) / len(side_rows),
             }
     return sc
+
+
+def commitment_rows(
+    run_date: date,
+    picks: Sequence[dict],
+    horizon_days: int = DEFAULT_HORIZON_DAYS,
+) -> list[dict]:
+    """The claim, recorded at publication, before any price for it exists.
+
+    ADR-0090's first job is *record the commitment*: every published pick gets a row as
+    soon as its book exists, so the denominator is fixed before any outcome is known. A
+    scored set assembled after the fact can quietly omit the calls that went wrong.
+
+    That guarantee was **not enforced by the publishing path**. The only writer was
+    `scripts/resolve_outcomes.py`, invoked as a sibling step in `daily-refresh.yml`, so
+    a book published any other way — a manual `python -m scripts.daily_refresh`, a
+    `workflow_dispatch` that failed after the L5 step — published claims nothing ever
+    recorded. Measured on 2026-07-27: **9 of 32 published claims (28%) had no row**, and
+    they would simply never have been graded.
+
+    Needs no network and no prices, which is the point: `resolve_pick` on an empty series
+    already returns `pending`, so recording a commitment cannot fail for the reasons
+    fetching prices can. Publication and commitment then succeed or fail together.
+
+    Deduped on (asset, direction): a book upserts on `run_date`, so a name may appear
+    once per book, and a duplicate inside one book would double-count the denominator.
+    """
+    seen: set[tuple[str, str]] = set()
+    rows: list[dict] = []
+    for pick in picks or []:
+        asset, direction = pick.get("asset"), pick.get("direction")
+        if not asset or direction not in ("long", "short"):
+            continue
+        key = (str(asset), str(direction))
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(
+            resolve_pick(run_date, str(asset), str(direction), (), horizon_days).to_row()
+        )
+    return rows

@@ -616,6 +616,52 @@ WORKFLOW_TIMEOUT_MINUTES = 60   # daily-refresh.yml `timeout-minutes`
 STALE_STAGE_MARGIN_MINUTES = 30
 
 
+def check_published_claims_are_on_the_record(
+    rec_row: dict | None,
+    outcome_rows: list[dict] | None,
+) -> list[str]:
+    """Is every published pick actually on the record, ready to be graded?
+
+    ADR-0090 fixes the denominator at publication precisely so a scored set cannot later
+    omit the calls that went wrong. Nothing checked that it happened. It did not: the
+    only writer was `resolve_outcomes.py` running as a sibling step in
+    `daily-refresh.yml`, so a book published any other way had no rows, and on
+    2026-07-27 the published book's **9 claims had 0 rows** — permanently ungradeable,
+    and invisible because the track-record panel counts what IS recorded.
+
+    That is the exact shape ADR-0040 exists for: **check the published book, do not
+    assume it.** A guarantee nothing verifies is a hope. `daily_refresh` now records at
+    publication, and this is what catches the day that stops working — including the
+    case where the recording silently writes fewer rows than the book has picks.
+
+    Deduped on (asset, direction), matching `commitment_rows`, so a name appearing twice
+    in one book is one claim here and there.
+    """
+    if not rec_row:
+        return []
+    run = str(rec_row.get("run_date") or "")
+    published = {
+        (str(p.get("asset")), str(p.get("direction")))
+        for p in (rec_row.get("picks") or [])
+        if p.get("asset") and p.get("direction") in ("long", "short")
+    }
+    if not published:
+        return []
+    recorded = {
+        (str(r.get("asset")), str(r.get("direction")))
+        for r in (outcome_rows or [])
+    }
+    missing = sorted(published - recorded)
+    if not missing:
+        return []
+    return [
+        f"{len(missing)} of {len(published)} published claims in the {run} book have no "
+        f"pick_outcomes row, so they can never be graded: "
+        + ", ".join(f"{d} {a}" for a, d in missing)
+        + ". Repair with `python -m scripts.resolve_outcomes` (ADR-0090)."
+    ]
+
+
 def check_stalled_stages(
     rows: list[dict] | None,
     now: "datetime | None" = None,
@@ -680,6 +726,7 @@ def run_book_checks(
     rec: dict,
     candidates: list[dict] | None,
     regime: dict | None,
+    outcome_rows: list[dict] | None = None,
 ) -> list[tuple[str, list[str], str]]:
     """Every check that reads the published book, as `(headline, flags, ok-message)`.
 
@@ -696,6 +743,9 @@ def run_book_checks(
     """
     run = rec.get("run_date", "?")
     return [
+        ("a published claim was never put on the record",
+         check_published_claims_are_on_the_record(rec, outcome_rows),
+         f"Every pick in the {run} book has a pick_outcomes row and can be graded."),
         ("the PUBLISHED thesis makes a claim its own inputs contradict",
          check_published_book_claims(rec, candidates),
          f"Published thesis for {run} makes no contradicted claim "
@@ -840,7 +890,15 @@ def main() -> int:
         )
         regime = regime_rows[0] if regime_rows else None
 
-        for headline, flags, ok in run_book_checks(rec, cands, regime):
+        outcome_rows = (
+            sb.table("pick_outcomes")
+            .select("asset, direction")
+            .eq("run_date", run)
+            .execute()
+            .data
+        )
+
+        for headline, flags, ok in run_book_checks(rec, cands, regime, outcome_rows):
             if flags:
                 failed = True
                 print(f"✗ DATA INTEGRITY CHECK FAILED — {headline}:")

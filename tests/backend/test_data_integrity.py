@@ -809,7 +809,7 @@ def test_a_clean_book_reports_every_check_as_passing():
            "book_risks": [], "book_metrics": {}, "picks": [], "cap_utilisation": {}}
     results = run_book_checks(row, [], {"yield_curve_slope": 0.34})
     assert all(not flags for _, flags, _ in results)
-    assert len(results) == 6
+    assert len(results) == 7
 
 
 def test_every_check_runs_even_when_an_earlier_one_fails():
@@ -817,5 +817,5 @@ def test_every_check_runs_even_when_an_earlier_one_fails():
     from scripts.check_data_integrity import run_book_checks
 
     results = run_book_checks(_three_defect_row(), [], None)
-    assert len(results) == 6
+    assert len(results) == 7
     assert all(isinstance(ok, str) and ok for _, _, ok in results)

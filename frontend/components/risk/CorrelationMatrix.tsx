@@ -19,6 +19,7 @@ import {
   thresholdFromPairs,
   type AnalyticsState,
   type CorrelationPair,
+  type CorrelationSummary,
 } from "@/lib/risk/analytics";
 import { Ident, SectionGap, SectionSkeleton } from "./SectionGap";
 
@@ -125,10 +126,69 @@ function Heatmap({
   );
 }
 
+function FullHeatmap({
+  assets,
+  lookup,
+}: {
+  assets: string[];
+  lookup: Map<string, number>;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="border-collapse text-[11px]">
+        <caption className="sr-only">
+          Full pairwise correlation heatmap for all assets with persisted return data.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" className="sticky left-0 z-10 bg-bg-surface px-2 py-1.5 text-left text-text-tertiary font-medium">
+              <span className="sr-only">Asset</span>
+            </th>
+            {assets.map((asset) => (
+              <th key={asset} scope="col" className="px-2 py-1.5 text-text-secondary font-medium num whitespace-nowrap">
+                {asset}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {assets.map((rowAsset) => (
+            <tr key={rowAsset}>
+              <th scope="row" className="sticky left-0 z-10 bg-bg-surface px-2 py-1.5 text-left text-text-secondary font-medium num whitespace-nowrap border-r border-border">
+                {rowAsset}
+              </th>
+              {assets.map((colAsset) => {
+                if (rowAsset === colAsset) {
+                  return <td key={colAsset} className="px-2 py-1.5 text-center num text-text-tertiary bg-bg-elevated border border-bg-primary">1.00</td>;
+                }
+                const corr = lookupCorr(lookup, rowAsset, colAsset);
+                return (
+                  <td
+                    key={colAsset}
+                    className="px-2 py-1.5 text-center num border border-bg-primary"
+                    style={corr === undefined ? undefined : { background: correlationCellColor(corr) }}
+                    title={corr === undefined ? `${rowAsset}/${colAsset}: correlation unavailable` : `${rowAsset}/${colAsset}: rho = ${fmtSignedBeta(corr)}`}
+                  >
+                    {corr === undefined ? "-" : fmtSignedBeta(corr)}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function CorrelationMatrix({
   state,
+  summary,
+  matrix,
 }: {
   state: AnalyticsState<CorrelationPair[]>;
+  summary?: CorrelationSummary | null;
+  matrix?: CorrelationPair[] | null;
 }) {
   const gap = explainGap(state, {
     column: "correlation_pairs",
@@ -142,12 +202,32 @@ export function CorrelationMatrix({
   const threshold = thresholdFromPairs(pairs);
   const assets = assetsFromPairs(pairs);
   const lookup = correlationLookup(pairs);
-  const sameDirection = pairs.filter((p) =>
+  const matrixPairs = Array.isArray(matrix) ? matrix : [];
+  const matrixAssets = assetsFromPairs(matrixPairs);
+  // The header prints two counts side by side, and they MUST share a denominator.
+  // Counting "same-direction" over the flagged subset while the first number counts
+  // the full matrix reads as "0 of 36 move together" when it means "0 of 0 flagged".
+  const hasMatrix = matrixAssets.length >= 2;
+  const counted = hasMatrix ? matrixPairs : pairs;
+  const sameDirection = counted.filter((p) =>
     p.relationship ? p.relationship === "same-direction" : p.corr > 0,
   ).length;
+  const matrixBlock = hasMatrix ? (
+    <div className="px-[18px] py-4 border-b border-border">
+      <div className="flex items-center justify-between mb-2.5 gap-4 flex-wrap">
+        <h3 className="card-title m-0">Heatmap · all measured pairs</h3>
+        <span className="text-[11px] text-text-tertiary num">{matrixPairs.length} pairs · 252d returns</span>
+      </div>
+      <FullHeatmap assets={matrixAssets} lookup={correlationLookup(matrixPairs)} />
+      <p className="m-0 mt-2.5 text-[11px] text-text-tertiary leading-[1.6] max-w-[90ch]">
+        Complete pairwise correlation structure for the held assets. A dash means that pair
+        could not be measured from the shared return window; it is not zero. Source: <Ident>research_recommendations.book_metrics.correlation_matrix</Ident>.
+      </p>
+    </div>
+  ) : null;
 
   return (
-    <details className="card mb-6 group" aria-labelledby="risk-corr-heading">
+    <details open className="card mb-6 group" aria-labelledby="risk-corr-heading">
       <summary className="card-header cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
         <h2 id="risk-corr-heading" className="card-title m-0">
           Correlation — flagged pairs
@@ -155,8 +235,8 @@ export function CorrelationMatrix({
         <span className="flex items-center gap-2">
           <span className="text-[11px] text-text-tertiary num">
             {state.status === "ok"
-              ? `${pairs.length} flagged · ${sameDirection} same-direction${
-                  threshold !== null ? ` · |ρ| ≥ ${threshold.toFixed(2)}` : ""
+              ? `${counted.length} ${hasMatrix ? "measured" : "flagged"} · ${sameDirection} same-direction${
+                  threshold !== null ? ` · flag |ρ| ≥ ${threshold.toFixed(2)}` : ""
                 }`
               : "252d lookback"}
           </span>
@@ -167,9 +247,27 @@ export function CorrelationMatrix({
       {state.status === "loading" ? (
         <SectionSkeleton height={200} />
       ) : gap ? (
-        <SectionGap copy={gap} tone={state.status === "query_error" ? "error" : "empty"} />
+        <>
+          {matrixBlock}
+          {summary?.max_abs_pair && typeof summary.max_abs_pair.corr === "number" && (
+            <div className="px-[18px] pt-3.5">
+              <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-text-tertiary">
+                <span>
+                  Highest pair: <span className="num text-text-secondary">
+                    {summary.max_abs_pair.asset_a ?? "—"} × {summary.max_abs_pair.asset_b ?? "—"} {fmtSignedBeta(summary.max_abs_pair.corr)}
+                  </span>
+                </span>
+                {typeof summary.mean_abs_corr === "number" && (
+                  <span>Mean |ρ|: <span className="num text-text-secondary">{summary.mean_abs_corr.toFixed(2)}</span></span>
+                )}
+              </div>
+            </div>
+          )}
+          <SectionGap copy={gap} tone={state.status === "query_error" ? "error" : "empty"} />
+        </>
       ) : (
         <>
+          {matrixBlock}
           <div className="px-[18px] pt-3.5">
             <div className="inline-flex items-center gap-2 rounded-md border border-border bg-bg-elevated px-3 py-1.5">
               <span className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
@@ -179,6 +277,18 @@ export function CorrelationMatrix({
                 {threshold !== null ? `|ρ| ≥ ${threshold.toFixed(2)}` : "not recorded"}
               </span>
             </div>
+            {summary?.max_abs_pair && typeof summary.max_abs_pair.corr === "number" && (
+              <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-[11px] text-text-tertiary">
+                <span>
+                  Highest pair: <span className="num text-text-secondary">
+                    {summary.max_abs_pair.asset_a ?? "—"} × {summary.max_abs_pair.asset_b ?? "—"} {fmtSignedBeta(summary.max_abs_pair.corr)}
+                  </span>
+                </span>
+                {typeof summary.mean_abs_corr === "number" && (
+                  <span>Mean |ρ|: <span className="num text-text-secondary">{summary.mean_abs_corr.toFixed(2)}</span></span>
+                )}
+              </div>
+            )}
             <p className="m-0 mt-1.5 text-[11px] text-text-tertiary leading-[1.6] max-w-[86ch]">
               Only pairs whose 252-day |ρ| clears this threshold are persisted to{" "}
               <Ident>correlation_pairs</Ident>. Every unflagged pair — and every empty

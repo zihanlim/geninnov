@@ -24,145 +24,100 @@ import yfinance as yf
 # Asset metadata
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Sector and geography mappings for the Tier 1 universe.
-# Keyed by ETF/common equity ticker.
-SECTOR_MAP: dict[str, str] = {
+# One record per ticker. 2026-07-27 produced four SVXY defects, and the fourth
+# (ADR-0121) had a specific shape: sector, geography and asset class lived in THREE
+# separately-editable dicts across two modules, so a fix landed in two of them and
+# missed the third -- which was the one with the consequence. The maps below are now
+# DERIVED VIEWS of this record, so a ticker's identity cannot be half-edited. Edit
+# ASSETS, never the views.
+#
+# What deliberately does NOT live here: DEFAULT_TICKER_BETAS (a prior estimate, not an
+# identity), cot_fetcher's ContractMap (a futures mapping), theme membership, and the
+# DB column theme_assets.asset_class (the lens filter, cross-checked nightly). Those
+# are different facts about a ticker, not the same fact repeated (ADR-0122, ADR-0125).
+@dataclass(frozen=True)
+class AssetRecord:
+    sector: str
+    geo: str
+    asset_class: str
+
+
+ASSETS: dict[str, AssetRecord] = {
     # Fixed income
-    "TLT":   "Rates",
-    # NOT "Rates". SVXY is short-volatility — a levered long-equity risk premium, not a
-    # haven — and this repo already measures it as one: market beta +2.08, VIX spike
-    # -35%, melt-up +18%, and `cot_fetcher` maps it to VIX FUTURES as INVERSE. Sitting
-    # in "Rates" put it in a sector cap alongside AGG/BIL/IEF/SHY/TLT, and fed
-    # `asset_class="rates"` into `regime_direction_bias`, whose risk beta for rates is
-    # -1.0 — so EdgeScore's regime term FAVOURED it in a risk-off tape, the exact tape
-    # that takes it to -35%. Grouping it with US equities is also the conservative
-    # reading of the cap: SPY, QQQ and a short-vol position are one risk, and now share
-    # one 30% limit. See ADR-0119.
-    "SVXY":  "US Equities",
-    "IEF":   "Rates",
-    "SHY":   "Rates",
-    "AGG":   "Rates",
-    "LQD":   "Credit",
-    "HYG":   "Credit",
-    "JNK":   "Credit",
-    "BKLN":  "Credit",
-    "ANGL":  "Credit",
-    "EMB":   "Credit",
-    "BIL":   "Rates",
+    "TLT":   AssetRecord("Rates",                    "US",        "rates"),
+    # SVXY is EQUITY, not rates: short-volatility is a levered long-equity risk
+    # premium -- measured beta +2.08, VIX spike -35%, melt-up +18%, COT-mapped to
+    # VIX futures as INVERSE. Filed under rates it fed risk_beta -1.0 into the
+    # regime term, favouring it in the tape that destroys it (ADR-0119, ADR-0121).
+    "SVXY":  AssetRecord("US Equities",              "US",        "equity"),
+    "IEF":   AssetRecord("Rates",                    "US",        "rates"),
+    "SHY":   AssetRecord("Rates",                    "US",        "rates"),
+    "AGG":   AssetRecord("Rates",                    "US",        "rates"),
+    "LQD":   AssetRecord("Credit",                   "US",        "credit"),
+    "HYG":   AssetRecord("Credit",                   "US",        "credit"),
+    "JNK":   AssetRecord("Credit",                   "US",        "credit"),
+    "BKLN":  AssetRecord("Credit",                   "US",        "credit"),
+    "ANGL":  AssetRecord("Credit",                   "US",        "credit"),
+    "EMB":   AssetRecord("Credit",                   "EM",        "credit"),
+    "BIL":   AssetRecord("Rates",                    "US",        "rates"),
     # Metals / inflation
-    "GLD":   "Metals",
-    "SLV":   "Metals",
-    "TIPS":  "Inflation",
+    "GLD":   AssetRecord("Metals",                   "Global",    "commodity"),
+    "SLV":   AssetRecord("Metals",                   "Global",    "commodity"),
+    "TIPS":  AssetRecord("Inflation",                "US",        "rates"),
     # FX
-    "UUP":   "FX",
-    "FXE":   "FX",
-    # NOT "FX-EM". EWZ is the iShares MSCI BRAZIL ETF — Brazilian equities, whose
-    # measured beta_mkt is +0.98. It was filed as FX and `asset_class='fx'`, and
-    # ASSET_CLASS_RISK_BETA['fx'] is -1.0, so EdgeScore's regime term treated a
-    # near-unit-beta equity fund as a haven. Same defect as SVXY (ADR-0119), found by
-    # the check that defect motivated (ADR-0120). `LENS_TICKER_FALLBACK` already had it
-    # under "equity", so the code contradicted the database.
-    "EWZ":   "EM Equities",
+    "UUP":   AssetRecord("FX",                       "US",        "fx"),
+    "FXE":   AssetRecord("FX",                       "Europe",    "fx"),
+    # EWZ is the iShares MSCI BRAZIL ETF -- equities, measured beta +0.98. Filed
+    # as fx it was scored as a haven; the ADR-0120 guard's first live catch.
+    "EWZ":   AssetRecord("EM Equities",              "EM",        "equity"),
     # China equities
-    "FXI":   "China Equities",
-    "MCHI":  "China Equities",
-    "BABA":  "China Equities",
-    "KWEB":  "China Equities",
-    # Geopolitical / defensive
-    "EWJ":   "Japan Equities",
-    "EFA":   "Developed Equities",
-    "EEM":   "EM Equities",
+    "FXI":   AssetRecord("China Equities",           "China",     "equity"),
+    "MCHI":  AssetRecord("China Equities",           "China",     "equity"),
+    "BABA":  AssetRecord("China Equities",           "China",     "equity"),
+    "KWEB":  AssetRecord("China Equities",           "China",     "equity"),
+    # Geopolitical / developed
+    "EWJ":   AssetRecord("Japan Equities",           "Japan",     "equity"),
+    "EFA":   AssetRecord("Developed Equities",       "DM ex-US",  "equity"),
+    "EEM":   AssetRecord("EM Equities",              "EM",        "equity"),
     # Energy
-    "XLE":   "Energy",
-    "OIH":   "Energy",
-    "CL":    "Energy-Commodity",
-    "UNG":   "Energy-NatGas",
+    "XLE":   AssetRecord("Energy",                   "US",        "equity"),
+    "OIH":   AssetRecord("Energy",                   "US",        "commodity"),
+    "CL":    AssetRecord("Energy-Commodity",         "Global",    "commodity"),
+    "UNG":   AssetRecord("Energy-NatGas",            "Global",    "commodity"),
     # US election
-    "QQQ":   "Tech Growth",
-    "XLV":   "Healthcare",
-    "XLF":   "Financials",
-    "ARKK":  "Disruptive Innovation",
+    "QQQ":   AssetRecord("Tech Growth",              "US",        "equity"),
+    "XLV":   AssetRecord("Healthcare",               "US",        "equity"),
+    "XLF":   AssetRecord("Financials",               "US",        "equity"),
+    "ARKK":  AssetRecord("Disruptive Innovation",    "US",        "equity"),
     # US equities (broad market ETFs)
-    "SPY":   "US Equities",
-    "IWM":   "US Equities",
-    "BULL":  "US Equities",
-    # Metals / inflation
-    "GDX":   "Gold Miners",
-    "IAU":   "Gold",
-    # Single companies (ADR-0043) — see the ADR for why each maps to its theme.
-    "JPM":   "Financials",
-    "GS":    "Financials",
-    "XOM":   "Energy",
-    "CVX":   "Energy",
-    "SLB":   "Energy",
-    "UNH":   "Healthcare",
-    "LMT":   "Defense",
-    "NOC":   "Defense",
-    "RTX":   "Defense",
-    "F":     "Autos",
-    "JD":    "China Equities",
-    "PDD":   "China Equities",
-    "FCX":   "Metals",
-    "NEM":   "Gold Miners",
-    "NUE":   "Metals",
+    "SPY":   AssetRecord("US Equities",              "US",        "equity"),
+    "IWM":   AssetRecord("US Equities",              "US",        "equity"),
+    "BULL":  AssetRecord("US Equities",              "US",        "equity"),
+    # Gold complex. GDX holds gold-miner EQUITIES: class equity, sector Gold Miners.
+    "GDX":   AssetRecord("Gold Miners",              "Global",    "equity"),
+    "IAU":   AssetRecord("Gold",                     "Global",    "commodity"),
+    # Single companies (ADR-0043) -- see the ADR for why each maps to its theme
+    "JPM":   AssetRecord("Financials",               "US",        "equity"),
+    "GS":    AssetRecord("Financials",               "US",        "equity"),
+    "XOM":   AssetRecord("Energy",                   "US",        "equity"),
+    "CVX":   AssetRecord("Energy",                   "US",        "equity"),
+    "SLB":   AssetRecord("Energy",                   "US",        "equity"),
+    "UNH":   AssetRecord("Healthcare",               "US",        "equity"),
+    "LMT":   AssetRecord("Defense",                  "US",        "equity"),
+    "NOC":   AssetRecord("Defense",                  "US",        "equity"),
+    "RTX":   AssetRecord("Defense",                  "US",        "equity"),
+    "F":     AssetRecord("Autos",                    "US",        "equity"),
+    "JD":    AssetRecord("China Equities",           "China",     "equity"),
+    "PDD":   AssetRecord("China Equities",           "China",     "equity"),
+    "FCX":   AssetRecord("Metals",                   "US",        "equity"),
+    "NEM":   AssetRecord("Gold Miners",              "US",        "equity"),
+    "NUE":   AssetRecord("Metals",                   "US",        "equity"),
 }
 
-GEO_MAP: dict[str, str] = {
-    "TLT":   "US",
-    "SVXY":  "US",
-    "IEF":   "US",
-    "SHY":   "US",
-    "AGG":   "US",
-    "LQD":   "US",
-    "HYG":   "US",
-    "JNK":   "US",
-    "BKLN":  "US",
-    "ANGL":  "US",
-    "EMB":   "EM",
-    "BIL":   "US",
-    "GLD":   "Global",
-    "SLV":   "Global",
-    "TIPS":  "US",
-    "UUP":   "US",
-    "FXE":   "Europe",
-    "EWZ":   "EM",
-    "FXI":   "China",
-    "MCHI":  "China",
-    "BABA":  "China",
-    "KWEB":  "China",
-    "EWJ":   "Japan",
-    "EFA":   "DM ex-US",
-    "EEM":   "EM",
-    "XLE":   "US",
-    "OIH":   "US",
-    "CL":    "Global",
-    "UNG":   "Global",
-    "QQQ":   "US",
-    "XLV":   "US",
-    "XLF":   "US",
-    "ARKK":  "US",
-    "SPY":   "US",
-    "IWM":   "US",
-    "BULL":  "US",
-    "GDX":   "Global",
-    "IAU":   "Global",
-    # Single companies (ADR-0043)
-    "JPM":   "US",
-    "GS":    "US",
-    "XOM":   "US",
-    "CVX":   "US",
-    "SLB":   "US",
-    "UNH":   "US",
-    "LMT":   "US",
-    "NOC":   "US",
-    "RTX":   "US",
-    "F":     "US",
-    "JD":    "China",
-    "PDD":   "China",
-    "FCX":   "US",
-    "NEM":   "US",
-    "NUE":   "US",
-}
+# Derived views, one per consumer vocabulary. Plain dicts, built once at import;
+# nothing mutates them at runtime (verified before deriving -- ADR-0125).
+SECTOR_MAP: dict[str, str] = {t: r.sector for t, r in ASSETS.items()}
+GEO_MAP: dict[str, str] = {t: r.geo for t, r in ASSETS.items()}
 
 # Risk caps
 MAX_SINGLE_NAME_WEIGHT = 0.20      # no single position > 20% of book

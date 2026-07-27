@@ -28,61 +28,32 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 # Re-exported from book_metrics for use by callers
-from .book_metrics import SECTOR_MAP, GEO_MAP
+from .book_metrics import ASSETS, SECTOR_MAP, GEO_MAP
 from .book_metrics import (
     MAX_SINGLE_NAME_WEIGHT,
     MAX_SECTOR_WEIGHT,
     MAX_GEO_WEIGHT,
 )
 
-# Asset-class mirror of the DB taxonomy (supabase/migrations/009_asset_class_lens.sql).
-# Kept in sync with theme_assets.asset_class so the L5 seam can classify without
-# a DB round-trip. Frontend mirror lives in frontend/lib/assetMetadata.ts.
-_ASSET_CLASS_MAP: dict[str, str] = {
-    # credit
-    "HYG": "credit", "LQD": "credit", "JNK": "credit",
-    "BKLN": "credit", "ANGL": "credit", "EMB": "credit",
-    # rates
-    "TLT": "rates", "IEF": "rates", "SHY": "rates",
-    "TIPS": "rates", "AGG": "rates", "BIL": "rates",
-    # equity
-    "QQQ": "equity", "SPY": "equity", "IWM": "equity",
-    "FXI": "equity", "MCHI": "equity", "BABA": "equity", "KWEB": "equity",
-    "XLE": "equity", "XLF": "equity", "XLV": "equity", "ARKK": "equity",
-    "EWJ": "equity", "EFA": "equity", "EEM": "equity", "BULL": "equity",
-    # fx
-    "UUP": "fx", "FXE": "fx",
-    # SVXY and EWZ live HERE, not under rates/fx. This map — not
-    # `theme_assets.asset_class` — is what `classify()` returns and therefore what
-    # reaches `regime_direction_bias`, so it is the one with the consequence.
-    # ADR-0119 and ADR-0120 fixed SECTOR_MAP and the database column and left this
-    # untouched, which meant the regime term stayed inverted while a new guard
-    # reported clean. SVXY is short volatility (beta +2.08); EWZ is the iShares MSCI
-    # Brazil ETF (beta +0.98). Both are equity. See ADR-0121.
-    "SVXY": "equity", "EWZ": "equity",
-    # commodity
-    "GLD": "commodity", "SLV": "commodity", "UNG": "commodity",
-    "OIH": "commodity", "CL": "commodity", "IAU": "commodity",
-    # equity (GDX holds gold-miner equities, so it is an equity ETF even though
-    # its theme is commodity-adjacent)
-    "GDX": "equity",
-    # equity — single companies (ADR-0043)
-    "JPM": "equity",
-    "GS": "equity",
-    "XOM": "equity",
-    "CVX": "equity",
-    "SLB": "equity",
-    "UNH": "equity",
-    "LMT": "equity",
-    "NOC": "equity",
-    "RTX": "equity",
-    "F": "equity",
-    "JD": "equity",
-    "PDD": "equity",
-    "FCX": "equity",
-    "NEM": "equity",
-    "NUE": "equity",
-}
+# The THIRD derived view of book_metrics.ASSETS -- one record per ticker, ADR-0125.
+# This map is what classify() returns and therefore what reaches
+# regime_direction_bias. On 2026-07-27 it was a separate hand-edited literal: a fix
+# landed in SECTOR_MAP and the DB column and missed this one, and the regime term
+# stayed inverted while a guard read the DB column and reported clean (ADR-0121).
+# Derived, that failure is unrepresentable. DB mirror: theme_assets.asset_class (the
+# lens filter, m009), cross-checked nightly. Frontend mirror:
+# frontend/lib/assetMetadata.ts (hydrated rows, no literal).
+_ASSET_CLASS_MAP: dict[str, str] = {t: r.asset_class for t, r in ASSETS.items()}
+
+
+# Public alias, deliberately the SAME dict object rather than a copy.
+#
+# ADR-0121's failure was two asset-class maps that could disagree, so a consumer
+# outside this module must not get its own snapshot. `build_theme_signals` needs
+# the whole map at once (it groups a theme's mapped tickers by class) rather than
+# one lookup at a time, which is what `classify()` offers; binding the same object
+# gives it that without minting a second source of truth.
+ASSET_CLASS_MAP = _ASSET_CLASS_MAP
 
 
 def is_classified(ticker: str) -> bool:

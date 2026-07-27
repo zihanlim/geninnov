@@ -101,6 +101,24 @@ class OptimizerConstraints:
     # Named separately from `max_single` rather than aliased, so the two can diverge
     # later with an argument rather than by accident.
     max_complex: float = MAX_SINGLE_NAME_WEIGHT
+    # ...AND at most one name's worth of RISK. Added to the weight cap above, never
+    # substituted for it, so this can only ever tighten (ADR-0110's rule).
+    #
+    # A cap denominated in CAPITAL is not neutral between the instruments that express
+    # one idea. At equal Sharpe, the member delivering the most expected return per unit
+    # of capital is the highest-vol one, so a weight cap silently rewards leverage; and
+    # equalising mu instead to dodge that rewards the lowest-vol member with a Sharpe no
+    # instrument has. Both are corners, and ADR-0116 shipped one of them.
+    #
+    # In risk units the bias disappears. Holding member i alone at budget B takes weight
+    # B/sigma_i and returns (IC*sigma_i*z)*(B/sigma_i) = IC*z*B — the SAME for every
+    # member. The optimizer is then genuinely indifferent, which is the truth, and the
+    # residual correlation decides: spreading beats concentrating, by more the less
+    # correlated the members are. That is the basket ADR-0115 wanted, arrived at without
+    # a table of which instruments are sound.
+    #
+    # None disables it. See ADR-0118.
+    max_complex_risk_mult: float | None = MAX_SINGLE_NAME_WEIGHT
     max_gross: float = 1.0
     # None leaves deployment to the objective (the ADR-0037 reading). A float pins
     # `gross == target_gross`, which the scenario objectives require to be well-posed.
@@ -169,6 +187,22 @@ class OptimizationResult:
             "warnings": list(self.warnings),
             "reason": self.reason,
         }
+
+
+def _psd_sqrt(matrix: np.ndarray) -> np.ndarray:
+    """A symmetric square root of a covariance block, via eigendecomposition.
+
+    Cholesky is the obvious choice and the wrong one here: a correlation complex is
+    NEAR-SINGULAR by construction — its members are correlated at 0.70 or above, and on
+    the live book at 0.99 — so `np.linalg.cholesky` raises on the exact input this is
+    always given. `eigh` is stable on a symmetric matrix and lets the negative
+    eigenvalues that floating-point noise produces be clipped to zero rather than
+    crashing or producing a complex root.
+    """
+    sym = (np.asarray(matrix, dtype=float) + np.asarray(matrix, dtype=float).T) / 2.0
+    eigenvalues, eigenvectors = np.linalg.eigh(sym)
+    eigenvalues = np.clip(eigenvalues, 0.0, None)
+    return eigenvectors @ np.diag(np.sqrt(eigenvalues)) @ eigenvectors.T
 
 
 def _cap_vector(assets: list[str], constraints: OptimizerConstraints) -> np.ndarray:
@@ -335,15 +369,22 @@ def optimize(
     # while neither member breaches 30%. Summing the group is the whole point.
     sector_map = inputs.sector_map or SECTOR_MAP
     geo_map = inputs.geo_map or GEO_MAP
-    for group_of, cap, label in (
-        (sector_map, c.max_sector, "sector"),
-        (geo_map, c.max_geo, "geo"),
+    complex_members: dict[str, list[int]] = {}
+    for group_of, cap, label, sparse in (
+        (sector_map, c.max_sector, "sector", False),
+        (geo_map, c.max_geo, "geo", False),
         # A complex is one idea expressed across several tickers. Without this the
         # single-name cap is trivially evaded: three names correlated at 0.9 can hold 60%
         # of gross between them while each reports comfortable headroom. Same failure the
         # SECTOR cap exists for (ADR-0037), on a grouping the correlation matrix defines
         # rather than the taxonomy.
-        (inputs.complex_map or {}, c.max_complex, "correlation complex"),
+        #
+        # SPARSE, unlike the other two. An unclassified SECTOR is a taxonomy gap and must
+        # be reported; a name in no complex is simply correlated with nothing, which is
+        # the common case. Warning on it buried the real gaps under one line per
+        # standalone name — `trade_ranker._apply_group_cap` already carries the same
+        # distinction, for the same reason.
+        (inputs.complex_map or {}, c.max_complex, "correlation complex", True),
     ):
         if cap is None or cap <= 0:
             continue
@@ -351,11 +392,42 @@ def optimize(
         for i, asset in enumerate(assets):
             key = group_of.get(asset)
             if key is None:
-                warnings.append(f"{asset}: no {label} mapping, {label} cap not applied")
+                if not sparse:
+                    warnings.append(
+                        f"{asset}: no {label} mapping, {label} cap not applied"
+                    )
                 continue
             members.setdefault(key, []).append(i)
         for _key, idx in members.items():
             cons.append(cp.sum(magnitude[idx]) <= cap)
+        if sparse:
+            complex_members = members
+
+    # ── The complex's RISK budget, on top of its capital budget ──────────────────
+    # `||Sigma_C^(1/2) w_C|| <= B` — the sub-portfolio's standalone volatility. A second-
+    # order cone, so mean-variance stays a QCQP and the two scenario LPs become SOCPs;
+    # cvxpy handles both. Deliberately NOT an Euler contribution, which divides by the
+    # whole book's sigma and is not convex.
+    #
+    # B scales with the BOOK's median vol, not the complex's own. Scaling it with the
+    # complex's members would hand a complex of levered instruments a bigger risk budget
+    # for being volatile, which is precisely backwards.
+    complex_risk_budget: float | None = None
+    if c.max_complex_risk_mult and complex_members:
+        variances = np.diag(cov)
+        vols_all = np.sqrt(np.clip(variances, 0.0, None))
+        usable = vols_all[np.isfinite(vols_all) & (vols_all > 0)]
+        if usable.size:
+            complex_risk_budget = float(c.max_complex_risk_mult) * float(np.median(usable))
+            for _key, idx in complex_members.items():
+                if len(idx) < 2:
+                    # A one-member complex is already governed by the single-name cap;
+                    # adding a risk cap would silently tighten a standalone name for the
+                    # accident of being clustered with nothing.
+                    continue
+                sub = cov[np.ix_(idx, idx)]
+                root = _psd_sqrt(sub)
+                cons.append(cp.norm(root @ w[idx], 2) <= complex_risk_budget)
 
     if c.max_turnover is not None:
         cons.append(cp.norm1(w - w0) <= float(c.max_turnover))
@@ -480,6 +552,20 @@ def optimize(
         for key, total in totals.items():
             if abs(total - cap) < 1e-4:
                 binding.append(f"{key} at {label} cap")
+    # The risk budget binds silently otherwise: the complex would sit visibly BELOW its
+    # capital cap while being the thing that stopped the book, and a reader would read
+    # the headroom as slack. Report it in the same vocabulary as the weight caps.
+    if complex_risk_budget:
+        for key, idx in complex_members.items():
+            if len(idx) < 2:
+                continue
+            sub_w = np.array([vector[i] for i in idx])
+            standalone = float(np.sqrt(max(0.0, sub_w @ cov[np.ix_(idx, idx)] @ sub_w)))
+            if abs(standalone - complex_risk_budget) < 1e-4:
+                binding.append(
+                    f"{key} at correlation complex RISK cap "
+                    f"({standalone:.1%} vol vs {complex_risk_budget:.1%} budget)"
+                )
     budget = c.target_gross if c.target_gross is not None else c.max_gross
     if abs(gross - budget) < 1e-4:
         binding.append("gross at budget")

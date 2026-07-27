@@ -64,7 +64,13 @@ from .scenario_analysis import (
     format_scenario_table,
     scenario_results_to_dict,
 )
-from .expected_returns import IcReading, build_mu, composite_edge_ic
+from .expected_returns import (
+    IcReading,
+    annualised_vol,
+    build_mu,
+    composite_edge_ic,
+    equalise_signal_within_complexes,
+)
 from .position_dossier import dossier_block
 from .optimizer import (
     OptimizerConstraints,
@@ -2564,6 +2570,14 @@ def size_positions(state: Q1State) -> Q1State:
                     for p in kept if p["asset"] in priced
                 ]
                 mu, mu_dropped = build_mu(priced_picks, returns, ic)
+                # One idea, one signal. Without it the optimizer ranks members
+                # of a complex on EdgeScore, which at rho 0.99 is noise; with it
+                # every member sits on an identical Sharpe and the RISK cap in
+                # the optimizer makes the choice between them genuinely neutral
+                # (ADR-0118). Neither half works alone.
+                mu, mu_complex_provenance = equalise_signal_within_complexes(
+                    mu, complex_map, annualised_vol(returns)
+                )
                 if not mu:
                     reason = "expected returns could not be built for any held name"
                 else:
@@ -2611,6 +2625,14 @@ def size_positions(state: Q1State) -> Q1State:
                         # crowding check could reach — GOAL.md's constraint, and the reason
                         # this block leads with `coverage_share` rather than the verdict.
                         payload["crowding"] = crowding_provenance
+                        # What the complex machinery did, both halves. The risk
+                        # budget binds while the CAPITAL cap still shows headroom,
+                        # so a reader seeing only the weight cap would read slack
+                        # that is not there (ADR-0118).
+                        payload["complex_sizing"] = {
+                            "mu_signal_equalised": mu_complex_provenance,
+                            "risk_cap_multiple_of_single_name": 1.0,
+                        }
                         state["optimizer_result"] = payload
                         state["efficient_frontier"] = efficient_frontier(
                             # The SAME constraints the book was solved under, crowding caps

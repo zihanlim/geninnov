@@ -326,3 +326,85 @@ def build_mu(
         for asset, edge in signed_edges.items()
     }
     return mu, sorted(set(dropped))
+
+
+def equalise_signal_within_complexes(
+    mu: dict[str, float],
+    complex_map: dict[str, str],
+    vols: dict[str, float],
+) -> tuple[dict[str, float], dict]:
+    """One idea, one SIGNAL — rescaled by each member's own vol.
+
+    Kept out of `build_mu`, which is Grinold-Kahn and nothing else. This is a separate
+    assertion about what a complex means, and composing them lets each be tested for
+    what it claims.
+
+    **Why the signal and not mu.** `mu = IC * sigma * z`. Members of a complex share the
+    idea, so what they have in common is `z`, not `mu` — a levered member expressing the
+    same view genuinely has a higher expected return, because it also carries the risk
+    that earns it. Averaging `mu` directly asserts the opposite: it hands a low-vol
+    member a high-vol member's return AT ITS OWN RISK, inventing a Sharpe no instrument
+    has. [ADR-0116](../../docs/adrs/0116-the-optimizer-chooses-the-instrument-the-thesis-argues-the-idea.md)
+    shipped that and a dry run measured the book jumping from 58.4% to 98.8% gross with
+    three substitutes pinned to the single-name cap. Dividing sigma out, averaging, and
+    multiplying it back leaves every member on an identical Sharpe, which is what "the
+    same bet" actually means.
+
+    **On its own this is not enough, and that is the point.** Equal Sharpe under a
+    CAPITAL cap favours the highest-vol member, because that is the one delivering the
+    most return per unit of capital. It is only neutral under the risk-denominated
+    complex cap in `optimizer.OptimizerConstraints.max_complex_risk_mult`, where holding
+    any member alone returns `IC * z * B` regardless of which member it is. The two
+    are one change (ADR-0118).
+
+    Assets absent from `complex_map`, or without a usable vol, are untouched and absent
+    from the provenance — a name correlated with nothing is not part of an idea.
+    """
+    provenance: dict = {"applied": False, "complexes": [], "skipped": []}
+    if not mu or not complex_map or not vols:
+        return dict(mu), provenance
+
+    groups: dict[str, list[str]] = {}
+    for asset, complex_id in complex_map.items():
+        if asset in mu:
+            groups.setdefault(str(complex_id), []).append(str(asset))
+
+    out = dict(mu)
+    for complex_id, members in sorted(groups.items()):
+        members = sorted(members)
+        if len(members) < 2:
+            continue
+        usable = [
+            a for a in members
+            if vols.get(a) is not None and math.isfinite(vols[a]) and vols[a] > 0
+        ]
+        if len(usable) != len(members):
+            provenance["skipped"].append({
+                "id": complex_id, "members": members,
+                "reason": "a member has no usable vol, so signals are not comparable",
+            })
+            continue
+        signals = [mu[a] / vols[a] for a in members]
+        # Same-side by construction (`_complex_map` namespaces ids by side, and
+        # `correlation_clusters` excludes inverse pairs). If that ever breaks, averaging
+        # across a hedge invents a signal neither side holds — refuse and say so.
+        if len({s > 0 for s in signals if s != 0.0}) > 1:
+            provenance["skipped"].append({
+                "id": complex_id, "members": members,
+                "reason": "members disagree in sign — not one idea, left untouched",
+            })
+            continue
+        shared = sum(signals) / len(signals)
+        for asset in members:
+            out[asset] = shared * vols[asset]
+        provenance["complexes"].append({
+            "id": complex_id,
+            "members": members,
+            "basis": "signal (mu / sigma), rescaled by each member's own sigma",
+            "shared_signal": shared,
+            "mu_before": {a: mu[a] for a in members},
+            "mu_after": {a: out[a] for a in members},
+        })
+
+    provenance["applied"] = bool(provenance["complexes"])
+    return out, provenance

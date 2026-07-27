@@ -36,7 +36,16 @@ except ImportError as exc:  # pragma: no cover
     print(f"backtest_edge needs yfinance + scipy + requests ({exc}).")
     sys.exit(1)
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
+# The REPO ROOT, not `backend/`. This inserted `../backend` while every import below
+# says `backend.services.…`, so running it the documented way — `python
+# scripts/backtest_edge.py`, as the usage line at the top of this file says — died at
+# import with ModuleNotFoundError. It only ever worked as `python -m scripts.backtest_edge`,
+# which puts the repo root on sys.path for a different reason.
+#
+# Same defect `check_data_integrity` carries a comment about, and the same one the
+# memory note records: verify under the invocation that actually runs, not a convenient
+# one. A script whose own usage string does not work has not been run recently.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend.services.edge_signals import carry_signal, value_signal  # noqa: E402
 
 PANEL = [
@@ -181,6 +190,116 @@ def _macro_ic(close: pd.DataFrame, api_key: str) -> tuple[dict, dict]:
     return _ic(carry_sig, carry_fwd), _ic(value_sig, value_fwd)
 
 
+# PANEL ticker -> the asset class `regime_direction_bias` prices risk for. Only the
+# classes ASSET_CLASS_RISK_BETA knows; an unmapped ticker is skipped rather than
+# defaulted, because `.get(ac, 0.0)` would silently score it as a zero-beta commodity
+# and quietly dilute the IC with observations carrying no signal.
+REGIME_ASSET_CLASS: dict[str, str] = {
+    "SPY": "equity", "QQQ": "equity", "IWM": "equity",
+    "FXI": "equity", "EEM": "equity", "EFA": "equity",
+    "TLT": "rates", "IEF": "rates", "SHY": "rates",
+    "LQD": "credit", "HYG": "credit",
+    "UUP": "fx",
+    "GLD": "commodity", "SLV": "commodity", "XLE": "commodity",
+}
+
+
+def _regime_ic(close: pd.DataFrame) -> dict:
+    """Regime IC over the classified history that actually exists.
+
+    This component was hardcoded to `n=0, testable=false` with the note that it "needs
+    per-theme history the daily job is only now accruing". That was true of the *theme*
+    signal table, which holds six days. It was never true of the component itself:
+    `regime_direction_bias` is a PURE function of `(asset_class, cycle, sentiment,
+    appetite)`, and `risk_appetite` is a pure function of four columns
+    `regime_classifications` stores — for **269 real days** since 2025-07-22, backfilled
+    from `macro_daily_history` by `backfill_regime.py`.
+
+    So the test needs no reconstruction and no new data: real classified regimes, the
+    production bias function, real forward returns. Nothing is simulated and nothing is
+    written back to a published table.
+
+    **Month-ends, like the other components.** Daily sampling would pool ~4,000
+    observations of a 21-day forward return — overlapping windows that inflate `n`
+    roughly twenty-fold while adding almost no independent information, and the t-stat
+    would be nonsense. The honest sample is one observation per asset per month-end.
+
+    **The cross-section is only partly independent, and the payload says so.** Regime is
+    a market-wide variable; every asset on a date shares one `appetite`, and the only
+    cross-sectional variation comes from `ASSET_CLASS_RISK_BETA`. It does discriminate —
+    long equity/credit against short rates/fx in a risk-on tape is a real call the
+    forward returns can refute — but `n` counts (asset, date) pairs, not independent
+    draws, so `n_dates` travels beside it.
+    """
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        print("  skip Regime: no SUPABASE_URL/SERVICE_KEY to read regime_classifications")
+        return _ic([], [])
+    try:
+        from supabase import create_client
+        from backend.services.edge_signals import regime_direction_bias
+        from backend.services.regime_classifier import risk_appetite
+
+        rows = (
+            create_client(url, key)
+            .table("regime_classifications")
+            .select("run_date, cycle, sentiment, vix_level, hy_oas, vix_term_diff, spx_breadth")
+            .order("run_date")
+            .execute()
+            .data
+        ) or []
+    except Exception as exc:
+        print(f"  skip Regime: could not read regime_classifications ({exc})")
+        return _ic([], [])
+
+    by_date = {}
+    for r in rows:
+        try:
+            d = pd.Timestamp(r["run_date"]).normalize()
+        except Exception:
+            continue
+        by_date[d] = (
+            r.get("cycle"),
+            r.get("sentiment"),
+            # The CONTINUOUS appetite, recomputed from the stored inputs. Production
+            # prefers it over the discrete label for the reason ADR-0067 records: the
+            # label is a step function on a term big enough to invert the book.
+            risk_appetite(r.get("vix_level"), r.get("hy_oas"),
+                          r.get("vix_term_diff"), r.get("spx_breadth")),
+        )
+    if not by_date:
+        return _ic([], [])
+
+    regime_days = pd.DatetimeIndex(sorted(by_date))
+    month_ends = close.resample("ME").last().index
+    sig, fwd, used_dates = [], [], set()
+    for tkr, asset_class in REGIME_ASSET_CLASS.items():
+        if tkr not in close.columns:
+            continue
+        s = close[tkr].dropna()
+        for dt in month_ends:
+            # The most recent classification AT OR BEFORE dt — never after, or the
+            # signal would be reading the month it is being asked to predict.
+            prior = regime_days[regime_days <= dt]
+            if len(prior) == 0:
+                continue
+            cycle, sentiment, appetite = by_date[prior[-1]]
+            fwd_slice = s.loc[dt:]
+            if len(fwd_slice) < FWD_WINDOW + 1:
+                continue
+            f = float(fwd_slice.iloc[FWD_WINDOW] / fwd_slice.iloc[0] - 1.0)
+            if not np.isfinite(f):
+                continue
+            sig.append(regime_direction_bias(asset_class, cycle, sentiment, appetite))
+            fwd.append(f)
+            used_dates.add(dt)
+
+    out = _ic(sig, fwd)
+    out["n_dates"] = len(used_dates)
+    return out
+
+
 def _shrink_weights(ics: dict[str, dict], priors: dict[str, float], alpha: float = 0.5) -> dict[str, float]:
     """IC-informed weights, shrunk toward priors. Measured components are nudged by
     their relative positive IC; unmeasured (nan IC) keep their prior. alpha=0 -> all
@@ -208,9 +327,15 @@ def main() -> None:
     else:
         print("No FRED_API_KEY — skipping Carry/Value IC.")
         ics["Carry"] = ics["Value"] = _ic([], [])
-    # Not IC-testable yet (thin per-theme history) — stay on priors, flagged.
-    ics["Regime"] = ics["Sentiment"] = {"n": 0, "ic": float("nan"), "t": float("nan"),
-                                        "p": float("nan"), "hit": float("nan")}
+    # Regime IS testable — see `_regime_ic`. It was hardcoded untestable on the belief
+    # that it needed per-theme history; it needs `regime_classifications`, which holds a
+    # year of real classified days. Sentiment genuinely is not: its input is the
+    # contrarian tilt on per-theme news sentiment, which exists for six days and cannot
+    # be reconstructed, because Brave and Reddit are recency-biased and nothing can say
+    # how a theme read on a past date (see `backfill_regime.py`).
+    ics["Regime"] = _regime_ic(close)
+    ics["Sentiment"] = {"n": 0, "ic": float("nan"), "t": float("nan"),
+                        "p": float("nan"), "hit": float("nan")}
 
     print("\n===== EdgeScore component IC (rank IC vs forward 1m return) =====")
     print(f"{'component':<10}{'N':>7}{'IC':>9}{'t':>7}{'p':>8}{'hit':>8}")
@@ -227,7 +352,13 @@ def main() -> None:
     print("\n===== IC-informed weights (shrunk 50% toward priors) =====")
     for k in ("Trend", "Regime", "Carry", "Value", "Sentiment"):
         print(f"  edge_{k.lower()}_weight : {weights[k]:.4f}   (prior {priors[k]:.2f})")
-    print("\nRegime + Sentiment keep priors (not IC-testable yet — thin history).")
+    n_dates = ics["Regime"].get("n_dates")
+    if n_dates:
+        print(f"\nRegime measured over {n_dates} month-end dates x asset class "
+              f"({ics['Regime']['n']} obs). n counts (asset, date) pairs, and the "
+              "cross-section shares one appetite — NOT that many independent draws.")
+    print("Sentiment keeps its prior: per-theme news sentiment exists for six days "
+          "and is not reconstructible (recency-biased sources).")
     print("Copy these into scoring_config (migration) once you're satisfied with N.")
 
     _persist(ics)
@@ -287,6 +418,15 @@ def _persist(ics: dict[str, dict]) -> None:
                             "horizon_days": FWD_WINDOW,
                             "panel": len(PANEL),
                             "testable": bool(np.isfinite(ic)),
+                            # How many INDEPENDENT time points `n` was pooled from,
+                            # where the component knows. `n` counts (asset, date)
+                            # pairs; for a market-wide signal like Regime the
+                            # cross-section shares one appetite, so n grossly
+                            # overstates the independent sample and the t-stat is
+                            # optimistic. The caveat travels in the payload rather
+                            # than in page copy, because /ask and MCP read this
+                            # (ADR-0112, ADR-0100).
+                            **({"n_dates": int(v["n_dates"])} if v.get("n_dates") else {}),
                         }
                     ),
                 }

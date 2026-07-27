@@ -1408,6 +1408,11 @@ def _make_theme_table(theme_scores: list[dict]) -> str:
     return header + "\n" + "\n".join(rows)
 
 
+# A value no real score takes, so `_num(raw, _NUM_SENTINEL) == _NUM_SENTINEL`
+# distinguishes "did not parse" from "parsed as 0.0".
+_NUM_SENTINEL = -1.0e308
+
+
 def _num(v, default: float = 0.0) -> float:
     """Coerce a possibly-NULL DB numeric to a float for formatting.
 
@@ -2435,31 +2440,54 @@ def size_positions(state: Q1State) -> Q1State:
     sizable: list[TradeCandidate] = []
     kept: list[dict] = []
     dropped: list[str] = []
+    non_numeric: list[str] = []
     for p in picks:
         asset = p.get("asset", "")
         if asset not in SECTOR_MAP or asset not in GEO_MAP:
             dropped.append(asset or "<blank>")
             continue
         src = edge_by_asset.get(asset, {})
+        # `_num`, not bare `float`. These fields come off the MODEL's pick objects,
+        # and `x or 0.0` only guards FALSY values — None, "", 0 — not a non-empty
+        # non-numeric string. On 2026-07-27 the model answered the trade_score field
+        # with 'N/A - ARKK not mapped to L1 theme set', a truthy string that reached
+        # float() and raised ValueError, so a run that had already produced a verified
+        # thesis (90% of citations grounded) threw the whole book away at the sizing
+        # step. _num's own docstring already says it exists for exactly this; this
+        # path simply never used it.
+        for field in ("trade_score", "hype_score", "avg_sentiment"):
+            raw = p.get(field)
+            if raw is not None and raw != "" and _num(raw, _NUM_SENTINEL) == _NUM_SENTINEL:
+                non_numeric.append(f"{asset}.{field}={raw!r}")
         sizable.append(TradeCandidate(
             theme_id=p.get("theme_id") or "",
             asset=asset,
             direction=p.get("direction", "long"),
-            trade_score=float(p.get("trade_score") or 0.0),
-            hype_score=float(p.get("hype_score") or 0.0),
-            avg_sentiment=float(p.get("avg_sentiment") or 0.0),
+            trade_score=_num(p.get("trade_score")),
+            hype_score=_num(p.get("hype_score")),
+            avg_sentiment=_num(p.get("avg_sentiment")),
             # Candidate first, pick as a fallback. Without these the dataclass
             # defaults them to 0.0, allocate_portfolio sees no conviction anywhere,
             # and it falls back to HypeScore weighting — which is what the published
             # book was actually sized by. ADR-0053.
-            edge_score=float(src.get("edge_score") or p.get("edge_score") or 0.0),
-            vol=float(src.get("vol") or p.get("vol") or 0.0),
-            conviction=float(src.get("conviction") or p.get("conviction") or 0.0),
+            edge_score=_num(src.get("edge_score") or p.get("edge_score")),
+            vol=_num(src.get("vol") or p.get("vol")),
+            conviction=_num(src.get("conviction") or p.get("conviction")),
         ))
         kept.append(p)
 
     if dropped:
         print(f"[size_positions] Dropped unmappable tickers (no sector/geo): {dropped}")
+
+    if non_numeric:
+        # Reported, not silent. Coercing to 0.0 matches what an ABSENT field already
+        # did, and "N/A - not mapped to L1 theme set" is a statement of absence — but
+        # the run should say which fields the model answered in prose, because a
+        # silently-zeroed score still feeds the sizer.
+        print(
+            "[size_positions] Non-numeric score field(s) from the model, read as 0.0: "
+            + ", ".join(non_numeric)
+        )
 
     if not sizable:
         state["error"] = "No sizable picks after taxonomy check — using fallback"
@@ -2812,6 +2840,9 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
             picks, lookback_days=252, threshold=0.0, returns=shared_returns
         )
         state["book_metrics_final"]["correlation_summary"] = correlation_summary(all_pairs)
+        state["book_metrics_final"]["correlation_matrix"] = correlation_pairs_to_dict(
+            all_pairs, threshold=0.0
+        )
     except Exception as exc:   # pragma: no cover - network/data
         # An explanatory measurement must never break the book — the rule
         # candidate_correlations already follows.

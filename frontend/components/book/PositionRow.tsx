@@ -236,22 +236,6 @@ export function PositionRow({
             >
               {pick.asset}
             </span>
-            {/*
-              An instrument the OPTIMIZER chose, not L5 — ADR-0116. It carries an idea
-              argued under another position, so the row says whose argument it is held
-              under before a reader reads a word of thesis. Without this the book shows
-              a holding nobody appears to have made a case for.
-            */}
-            {pick.named_by_llm === false && pick.expresses_pick ? (
-              <span
-                className="shrink-0 rounded-sm border border-border px-1.5 py-px text-[10px] text-text-tertiary"
-                title={`Chosen by the optimizer as a lower-variance way to hold ${
-                  pick.exposure ?? "the same idea"
-                }. The argument for it is ${pick.expresses_pick}'s.`}
-              >
-                expresses {pick.expresses_pick}
-              </span>
-            ) : null}
             {pick.theme_id && themeName ? (
               <Link
                 href={`/?theme=${pick.theme_id}`}
@@ -370,26 +354,6 @@ export function PositionRow({
         <div className="px-[18px] pb-5 pt-1 bg-bg-elevated/40">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div>
-              {/*
-                The bet, above the instrument holding it. Positions sharing an exposure
-                are one idea — the correlation matrix says so — and the optimizer may
-                move which member carries it, so this is the label that stays true
-                (ADR-0116).
-              */}
-              {pick.exposure ? (
-                <p className="m-0 mb-3 text-[12.5px] text-text-secondary leading-[1.6]">
-                  <span className="text-text-tertiary">The bet:</span>{" "}
-                  {pick.exposure}
-                  {pick.named_by_llm === false && pick.expresses_pick ? (
-                    <>
-                      {" — held through "}
-                      {pick.asset} rather than {pick.expresses_pick} because it
-                      carries the same exposure at lower variance. The argument is{" "}
-                      {pick.expresses_pick}&rsquo;s.
-                    </>
-                  ) : null}
-                </p>
-              ) : null}
               <SubHead>Thesis</SubHead>
               {showProse && pick.thesis ? (
                 <CitationList text={pick.thesis} citations={citations} />

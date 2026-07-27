@@ -131,10 +131,6 @@ class OptimizerInputs:
     # above 0.70 share an id; a name correlated with nothing is absent, and is therefore
     # governed by the single-name cap alone.
     complex_map: dict[str, str] | None = None
-    # {complex_id: human label}. Without it `binding_constraints` reports an internal
-    # index — "long::0 at correlation complex cap" — which names nothing a reader can
-    # act on. The label is L5's `exposure` for the idea, falling back to its members.
-    complex_labels: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -339,21 +335,15 @@ def optimize(
     # while neither member breaches 30%. Summing the group is the whole point.
     sector_map = inputs.sector_map or SECTOR_MAP
     geo_map = inputs.geo_map or GEO_MAP
-    for group_of, cap, label, sparse in (
-        (sector_map, c.max_sector, "sector", False),
-        (geo_map, c.max_geo, "geo", False),
+    for group_of, cap, label in (
+        (sector_map, c.max_sector, "sector"),
+        (geo_map, c.max_geo, "geo"),
         # A complex is one idea expressed across several tickers. Without this the
         # single-name cap is trivially evaded: three names correlated at 0.9 can hold 60%
         # of gross between them while each reports comfortable headroom. Same failure the
         # SECTOR cap exists for (ADR-0037), on a grouping the correlation matrix defines
         # rather than the taxonomy.
-        #
-        # Sparse, unlike the other two. An unclassified SECTOR is a taxonomy gap and must
-        # be reported; a name in no complex is simply correlated with nothing, which is
-        # the common case. Warning on it buried the real gaps under one line per
-        # standalone name — `trade_ranker._apply_group_cap` already carries this same
-        # distinction, and the optimizer needs it for the same reason.
-        (inputs.complex_map or {}, c.max_complex, "correlation complex", True),
+        (inputs.complex_map or {}, c.max_complex, "correlation complex"),
     ):
         if cap is None or cap <= 0:
             continue
@@ -361,10 +351,7 @@ def optimize(
         for i, asset in enumerate(assets):
             key = group_of.get(asset)
             if key is None:
-                if not sparse:
-                    warnings.append(
-                        f"{asset}: no {label} mapping, {label} cap not applied"
-                    )
+                warnings.append(f"{asset}: no {label} mapping, {label} cap not applied")
                 continue
             members.setdefault(key, []).append(i)
         for _key, idx in members.items():
@@ -480,13 +467,10 @@ def optimize(
                 f"{asset} at tightened single-name cap ({float(caps[index]):.1%})"
                 if tightened else f"{asset} at single-name cap"
             )
-    # A sector key names itself; a complex id does not. `complex_labels` turns
-    # "long::0 at correlation complex cap" into something a reader can act on.
-    complex_names = inputs.complex_labels or {}
-    for group_of, cap, label, names in (
-        (sector_map, c.max_sector, "sector", {}),
-        (geo_map, c.max_geo, "geo", {}),
-        (inputs.complex_map or {}, c.max_complex, "correlation complex", complex_names),
+    for group_of, cap, label in (
+        (sector_map, c.max_sector, "sector"),
+        (geo_map, c.max_geo, "geo"),
+        (inputs.complex_map or {}, c.max_complex, "correlation complex"),
     ):
         totals: dict[str, float] = {}
         for asset in assets:
@@ -495,7 +479,7 @@ def optimize(
                 totals[key] = totals.get(key, 0.0) + abs(weights[asset])
         for key, total in totals.items():
             if abs(total - cap) < 1e-4:
-                binding.append(f"{names.get(key, key)} at {label} cap")
+                binding.append(f"{key} at {label} cap")
     budget = c.target_gross if c.target_gross is not None else c.max_gross
     if abs(gross - budget) < 1e-4:
         binding.append("gross at budget")

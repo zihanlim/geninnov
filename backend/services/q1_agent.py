@@ -64,12 +64,7 @@ from .scenario_analysis import (
     format_scenario_table,
     scenario_results_to_dict,
 )
-from .expected_returns import (
-    IcReading,
-    build_mu,
-    composite_edge_ic,
-    equalise_within_complexes,
-)
+from .expected_returns import IcReading, build_mu, composite_edge_ic
 from .position_dossier import dossier_block
 from .optimizer import (
     OptimizerConstraints,
@@ -1111,11 +1106,6 @@ REASON_PICKS_SCHEMA = {
                     "rank": {"type": "integer"},
                     "direction": {"type": "string", "enum": ["long", "short"]},
                     "asset": {"type": "string"},
-                    # What the trade is a bet ON, as distinct from the ticker holding
-                    # it. The optimizer may express one idea through a different member
-                    # of the same correlation complex, so the book groups and labels by
-                    # this rather than by instrument (ADR-0116).
-                    "exposure": {"type": "string"},
                     "theme": {"type": "string"},
                     "hype_score": {"type": "number"},
                     "trade_score": {"type": "number"},
@@ -1176,7 +1166,6 @@ Output format (respond ONLY with valid JSON, no markdown):
       "rank": 1,
       "direction": "long",
       "asset": "TLT",
-      "exposure": "What this trade is a bet ON, not the ticker. E.g. 'long US duration', 'short China internet regulatory risk'. One clause. The book groups positions by this, and the optimizer may express the same idea through a correlated instrument — so write it so it stays true if the ticker changes",
       "theme": "Fed Policy",
       "hype_score": 72.3,
       "trade_score": 0.41,
@@ -1208,11 +1197,6 @@ Rules:
 - every numeric value in thesis, catalysts, risk, counter_thesis, or book_view MUST cite a source
 - time_horizon must be specific: "1-2 weeks" | "2-4 weeks" | "1-3 months" | "3-6 months"
 - counter_thesis MUST include a measurable disqualifier: a specific price/yield/data level, not a vague concern
-- exposure names the BET, not the instrument. The sizer may hold the same idea through a
-  different, highly correlated ticker than the one you name, so write the thesis to argue
-  the exposure. If your case depends on something only THIS instrument does — a structural
-  feature, a decay profile, a specific term structure — say so explicitly in the thesis,
-  because that is what marks it as not substitutable
 - do NOT emit factor_tilts. Each pick's FF5+UMD betas are joined from the L2
   factor_exposures table after you answer — they are measured per asset, and the
   book's are recomputed on your actual weights
@@ -2387,183 +2371,6 @@ def _complex_map(state: Q1State) -> dict[str, str]:
     return out
 
 
-def _complex_expressions(
-    kept: list[dict],
-    candidates: list[dict],
-    complex_map: dict[str, str],
-) -> list[dict]:
-    """Pool members of a picked name's complex that L5 did not itself name.
-
-    ADR-0115 capped a complex at one name's worth but still sized only the members L5
-    happened to list. So the cap bounded the exposure while the CHOICE of instrument
-    remained `max(members, key=|EdgeScore|)` — made by the model rather than by
-    `independent_ideas`, but on the same criterion, and it is that criterion which put
-    a -0.5x inverse-VIX product in the book at 10.79%.
-
-    Widening the menu is only safe once `equalise_within_complexes` has removed
-    EdgeScore from the ranking. On its own it is actively worse: measured, a five-name
-    menu ranked by mu still funds one name at 100%, and it is a wider field over which
-    to select on noise. The two changes are one change.
-
-    **Optimizer path only.** The conviction sizer has no covariance, so it cannot rank
-    members by cost of expression — handed a wider menu it would size correlated names
-    by |EdgeScore|/vol and CONCENTRATE the very exposure this spreads. So the fallback
-    book continues to hold exactly the names L5 listed. That is a real divergence
-    between the two sizers and ADR-0053 is the reason it is stated in the payload
-    rather than left for a reader to discover.
-
-    A member is admitted only if it is in this run's candidate pool (so it carries an
-    L1 edge and vol), sits on the same side as the complex, and is taxonomy-mappable.
-    Absent from the pool means absent here — never fetched specially, because a name
-    the screen did not pass is not a name the book may hold.
-    """
-    if not complex_map or not kept:
-        return []
-
-    picked = {p.get("asset") for p in kept if p.get("asset")}
-    # Only complexes L5 actually bought into. A complex it ignored stays ignored:
-    # this widens HOW an idea is expressed, never WHICH ideas the book holds.
-    wanted: dict[str, dict] = {}
-    for pick in kept:
-        asset = pick.get("asset") or ""
-        complex_id = complex_map.get(asset)
-        if not complex_id:
-            continue
-        side = str(complex_id).split("::")[0]
-        if pick.get("direction", "long") != side:
-            continue
-        wanted.setdefault(complex_id, pick)
-
-    by_asset: dict[str, dict] = {}
-    for cand in candidates or []:
-        asset = cand.get("asset")
-        if asset and asset not in by_asset:
-            by_asset[asset] = cand
-
-    out: list[dict] = []
-    for asset, complex_id in sorted(complex_map.items()):
-        named_pick = wanted.get(complex_id)
-        if named_pick is None or asset in picked:
-            continue
-        cand = by_asset.get(asset)
-        if cand is None or asset not in SECTOR_MAP or asset not in GEO_MAP:
-            continue
-        side = str(complex_id).split("::")[0]
-        if cand.get("direction") != side:
-            continue
-        out.append({
-            "asset": asset,
-            "direction": side,
-            "theme_id": cand.get("theme_id") or named_pick.get("theme_id") or "",
-            "edge_score": float(cand.get("edge_score") or 0.0),
-            # Which idea this expresses, and which named pick carries its thesis. A
-            # position with no thesis of its own must be able to point at the one it
-            # is held under, or the book publishes a holding nobody argued for.
-            "expression_of": complex_id,
-            "expresses_pick": named_pick.get("asset"),
-            "named_by_llm": False,
-        })
-    return out
-
-
-def _complex_labels(kept: list[dict], complex_map: dict[str, str]) -> dict[str, str]:
-    """`{complex_id: idea name}` — what the optimizer should call a group in its output.
-
-    Sourced from the `exposure` of whichever pick bought into the complex, because that
-    is the only place in the pipeline that knows what the bet WAS. A complex no pick
-    labelled falls back to its member list. Either beats `long::0`, which is what
-    `binding_constraints` printed before and which names nothing a reader can act on.
-    """
-    out: dict[str, str] = {}
-    for pick in kept:
-        complex_id = complex_map.get(pick.get("asset") or "")
-        if not complex_id or complex_id in out:
-            continue
-        label = str(pick.get("exposure") or "").strip()
-        if label:
-            out[complex_id] = label
-    for complex_id in set(complex_map.values()):
-        if complex_id not in out:
-            members = sorted(a for a, k in complex_map.items() if k == complex_id)
-            side = str(complex_id).split("::")[0]
-            out[complex_id] = f"{side} {' / '.join(members)}"
-    return out
-
-
-def _idea_label(pick: dict, complex_map: dict[str, str], state: Q1State) -> str:
-    """What a position is a bet ON, independent of the ticker expressing it.
-
-    L5 supplies this as `exposure`, because only the reasoner knows what it meant by a
-    pick. Where it did not — an older run, the fallback path, a model that omitted the
-    field — name the complex's members instead. That is at least true, and it is never
-    the opaque `long::0` that `binding_constraints` printed before this.
-    """
-    stated = str(pick.get("exposure") or "").strip()
-    if stated:
-        return stated
-    asset = pick.get("asset") or ""
-    complex_id = complex_map.get(asset)
-    if not complex_id:
-        return str(pick.get("theme") or asset).strip()
-    members = sorted(a for a, cid in complex_map.items() if cid == complex_id)
-    side = str(complex_id).split("::")[0]
-    return f"{side} {' / '.join(members)}"
-
-
-def _expression_position(
-    expression: dict,
-    parent: dict,
-    weight: float,
-    total_capital: float,
-    state: Q1State,
-) -> dict:
-    """A funded complex member L5 did not name, as a book position.
-
-    **Its thesis does not restate the parent's argument.** Copying prose written about
-    one ticker onto another is the precise failure this change exists to remove: a
-    reader would meet a paragraph arguing SVXY on a row holding SPY. So the thesis field
-    carries a deterministic sentence saying what the position is and where its argument
-    lives, and `expresses_pick` makes the link machine-readable for the book view.
-
-    **Citations stay on the pick that earned them.** `verify_citations` adjudicated the
-    parent's numerals against a thesis this position does not claim to have written;
-    inheriting them would launder a verified claim onto unverified prose. This row's
-    prose contains no numerals at all, which is why it needs none.
-    """
-    # The parent's label is already resolved — the `kept` loop runs first, precisely so
-    # every expression inherits the same idea name its pick was published under.
-    label = str(parent.get("exposure") or expression["expression_of"])
-    named = expression["expresses_pick"]
-    side = "Long" if expression["direction"] == "long" else "Short"
-    return {
-        "asset": expression["asset"],
-        "direction": expression["direction"],
-        "theme": parent.get("theme"),
-        "theme_id": expression.get("theme_id") or parent.get("theme_id") or "",
-        "idea_id": expression["expression_of"],
-        "exposure": label,
-        "named_by_llm": False,
-        "expresses_pick": named,
-        "thesis": (
-            f"{side} {expression['asset']} is held to express {label}, the idea argued "
-            f"under {named}. The optimizer chose it as the lower-variance way to carry "
-            f"that exposure: it sits in the same correlation complex, so the two are "
-            f"one bet, and this instrument carries it at less risk per unit held. The "
-            f"argument for the idea is {named}'s and is not restated here."
-        ),
-        "counter_thesis": (
-            f"This position is disqualified by whatever disqualifies {named} — it is "
-            f"the same idea. See that trade's counter-thesis for the measurable trigger."
-        ),
-        "time_horizon": parent.get("time_horizon"),
-        "catalysts": [],
-        "citations": [],
-        "weight": abs(weight),
-        "signed_weight": weight,
-        "notional": abs(weight) * total_capital,
-    }
-
-
 def size_positions(state: Q1State) -> Q1State:
     """
     HypeScore-weighted allocation of $100M across the 10 picks, WITH the
@@ -2684,7 +2491,6 @@ def size_positions(state: Q1State) -> Q1State:
 
     # One idea may hold at most what one name may — see `_complex_map`.
     complex_map = _complex_map(state)
-    complex_labels = _complex_labels(kept, complex_map)
     if complex_map:
         print(f"[size_positions] {len(set(complex_map.values()))} correlation complex(es) capped")
 
@@ -2720,29 +2526,12 @@ def size_positions(state: Q1State) -> Q1State:
     state["efficient_frontier"] = None
     state["rebalance_cost"] = None
 
-    # Declared out here because the final book has to read it. Only the optimizer path
-    # populates it, and `chosen` on the fallback path is the conviction book, which
-    # holds no expression assets — so the fallback book cannot acquire one by accident.
-    expressions: list[dict] = []
-    mu_complex_provenance: dict | None = None
-
     ic: IcReading | None = state.get("edge_ic")
     if ic is None:
         reason = state.get("edge_ic_reason") or "no measured EdgeScore IC"
     else:
         try:
-            # The menu, not just the names L5 listed — see `_complex_expressions`.
-            # Safe only in combination with `equalise_within_complexes` below.
-            expressions = _complex_expressions(
-                kept, state.get("candidates") or [], complex_map
-            )
-            if expressions:
-                print(
-                    f"[size_positions] {len(expressions)} complex expression(s) offered "
-                    "to the optimizer: "
-                    + ", ".join(f"{e['asset']}<-{e['expresses_pick']}" for e in expressions)
-                )
-            assets = [p["asset"] for p in kept] + [e["asset"] for e in expressions]
+            assets = [p["asset"] for p in kept]
             returns = _hoist_returns(state, assets)
             cov, priced, unpriced = covariance_from_returns(returns, assets)
             if cov is None:
@@ -2764,7 +2553,7 @@ def size_positions(state: Q1State) -> Q1State:
                 # This is ADR-0053's trap exactly — the same seam, one layer along — and
                 # `sizable` already holds the candidate-first resolution, so use it.
                 edge_by_sizable = {c.asset: c for c in sizable}
-                sizing_universe = [
+                priced_picks = [
                     {
                         "asset": p["asset"],
                         "direction": p.get("direction", "long"),
@@ -2772,21 +2561,9 @@ def size_positions(state: Q1State) -> Q1State:
                             edge_by_sizable.get(p["asset"]), "edge_score", 0.0
                         ),
                     }
-                    for p in kept
-                ] + [
-                    {
-                        "asset": e["asset"],
-                        "direction": e["direction"],
-                        "edge_score": e["edge_score"],
-                    }
-                    for e in expressions
+                    for p in kept if p["asset"] in priced
                 ]
-                priced_picks = [p for p in sizing_universe if p["asset"] in priced]
                 mu, mu_dropped = build_mu(priced_picks, returns, ic)
-                # One idea, one expected return. This is what stops the wider menu
-                # above from simply selecting harder on EdgeScore noise, and it is
-                # what makes the covariance — not the signal — choose the instrument.
-                mu, mu_complex_provenance = equalise_within_complexes(mu, complex_map)
                 if not mu:
                     reason = "expected returns could not be built for any held name"
                 else:
@@ -2801,7 +2578,6 @@ def size_positions(state: Q1State) -> Q1State:
                         # actually has: what did the optimizer change, and what did it buy?
                         weights0={a: heuristic.get(a, 0.0) for a in priced},
                         complex_map=complex_map,
-                        complex_labels=complex_labels,
                     )
                     result = optimize(
                         inputs, "mean_variance",
@@ -2835,22 +2611,6 @@ def size_positions(state: Q1State) -> Q1State:
                         # crowding check could reach — GOAL.md's constraint, and the reason
                         # this block leads with `coverage_share` rather than the verdict.
                         payload["crowding"] = crowding_provenance
-                        # What the wider menu did, and what it cost to state it. Both
-                        # halves travel: the members offered, and the mu equalisation
-                        # without which offering them would select harder on noise.
-                        payload["complex_expression"] = {
-                            "offered": [
-                                {"asset": e["asset"], "expresses": e["expresses_pick"],
-                                 "idea": e["expression_of"]}
-                                for e in expressions
-                            ],
-                            "funded": sorted(
-                                e["asset"] for e in expressions
-                                if chosen and chosen.get(e["asset"], 0.0) != 0.0
-                            ),
-                            "mu_equalised": mu_complex_provenance,
-                            "fallback_sizer_sees_named_picks_only": True,
-                        }
                         state["optimizer_result"] = payload
                         state["efficient_frontier"] = efficient_frontier(
                             # The SAME constraints the book was solved under, crowding caps
@@ -2897,13 +2657,6 @@ def size_positions(state: Q1State) -> Q1State:
     # `optimizer_result.zeroed` carries).
     final: list[dict] = []
     for pick in kept:
-        pick.setdefault("named_by_llm", True)
-        pick["idea_id"] = complex_map.get(pick["asset"]) or f"solo::{pick['asset']}"
-        # The same label the optimizer reported its cap against, so the book and the
-        # binding constraints cannot name one idea two different things.
-        pick["exposure"] = complex_labels.get(pick["idea_id"]) or _idea_label(
-            pick, complex_map, state
-        )
         weight = chosen.get(pick["asset"], 0.0)
         if weight == 0.0:
             continue
@@ -2911,22 +2664,6 @@ def size_positions(state: Q1State) -> Q1State:
         pick["signed_weight"] = weight
         pick["notional"] = abs(weight) * total_capital
         final.append(pick)
-
-    # An expression the optimizer funded is a real holding and must appear as one. It
-    # carries no thesis of its own — the argument lives on the pick that named the idea
-    # — so it points at that pick rather than restating its case under a ticker the
-    # model never wrote about. See `_expression_position`.
-    by_named = {p["asset"]: p for p in kept}
-    for expression in expressions:
-        weight = chosen.get(expression["asset"], 0.0)
-        if weight == 0.0:
-            continue
-        parent = by_named.get(expression["expresses_pick"])
-        if parent is None:                       # pragma: no cover - defensive
-            continue
-        final.append(
-            _expression_position(expression, parent, weight, total_capital, state)
-        )
 
     if not final:
         state["error"] = "Sizing produced no funded positions — using fallback"

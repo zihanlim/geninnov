@@ -284,19 +284,6 @@ const positionDetail: ToolSpec = {
       notes: {
         direction: pick.direction.toUpperCase(),
         ...(pick.theme_name ? { theme: pick.theme_name } : {}),
-        // What the position is a bet ON, and — when the optimizer rather than L5
-        // chose the instrument — whose argument it is held under (ADR-0116). A
-        // reader asking /ask "why do we own SPY?" must get the same answer /book
-        // gives, or the thesis-to-holding link exists in one consumer only
-        // (ADR-0100).
-        ...(pick.exposure ? { exposure: pick.exposure } : {}),
-        ...(pick.named_by_llm === false && pick.expresses_pick
-          ? {
-              instrument_chosen_by: "optimizer",
-              expresses_pick: pick.expresses_pick,
-              thesis_note: `This position has no thesis of its own — it carries ${pick.expresses_pick}'s idea at lower variance. Quote that position's thesis, not this one's.`,
-            }
-          : {}),
         ...(pick.thesis ? { thesis: pick.thesis } : {}),
         ...(pick.catalysts?.length ? { catalysts: pick.catalysts } : {}),
         ...(pick.risk ? { risk: pick.risk } : {}),

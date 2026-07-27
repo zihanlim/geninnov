@@ -1,6 +1,6 @@
 # ADR-0116: The optimizer chooses the instrument; the thesis argues the idea
 
-**Status:** Accepted
+**Status:** REVERTED on the day it was accepted — the code is backed out, this record is kept
 **Date:** 2026-07-27
 **Supersedes:** the "let the covariance decide the split" claim in [ADR-0115](0115-a-complex-is-one-idea.md) — its cap stands, its mechanism did not work
 **Related:** [ADR-0048](0048-count-independent-ideas-not-candidates.md), [ADR-0053](0053-the-published-book-was-sized-by-hype.md), [ADR-0100](0100-a-guard-that-lives-in-a-component-guards-one-consumer.md), [ADR-0107](0107-the-optimizer-sizes-what-l5-chose.md), [ADR-0108](0108-expected-returns-are-constructed-not-assumed.md), [ADR-0111](0111-mu-is-the-return-input-and-here-is-what-it-is-not.md)
@@ -64,3 +64,52 @@ A funded expression becomes a real position carrying a deterministic sentence na
 **No migration.** `picks` is JSONB on `research_recommendations`, so `exposure`, `idea_id`, `named_by_llm` and `expresses_pick` travel without a schema change.
 
 **A defect in ADR-0115's implementation, fixed here.** The optimizer warned `no correlation complex mapping` for every name absent from a sparse map — one line per standalone name, burying the real taxonomy gaps the sector and geo warnings exist to surface. `trade_ranker._apply_group_cap` already carried this distinction; the optimizer needed it for the same reason.
+
+
+---
+
+## Reverted — the mechanism does not do what this ADR claims
+
+Backed out the same day, before it could publish. A read-only dry run of the new sizer
+against the live 2026-07-27 picks — no LLM call, holding L5's picks constant so only the
+sizing changed — showed two things this ADR asserts to be false.
+
+**1. Gross went from 58.4% to 98.8%.** Three substitutes pinned to the single-name cap:
+EEM +20.00%, IAU −20.00%, KWEB −19.50%. The cause is the mean-μ choice recorded above
+under *"The mean, and what else it could have been"*. Averaging μ hands a low-vol member
+a high-vol member's expected return **at its own risk** — a Sharpe no instrument has.
+Mean-variance correctly maximises it. The consequence was not anticipated when that
+paragraph was written.
+
+**2. The headline claim was an artifact of that error.** This ADR says SVXY goes to 0%
+"because it costs 56% vol to express a bet SPY expresses at 15%". Under Grinold-Kahn
+`μ = IC × σ × z`, the higher vol is *compensated* — that sentence assumed its conclusion.
+Correcting the equalisation to the **signal** (`μ_i = IC × σ_i × z̄`, so every member
+holds an identical Sharpe) and re-running gives the opposite result:
+
+```
+SVXY: 0.19999988    <- the entire complex, not SPY
+complex total: 0.20000334  > the 20% cap
+```
+
+The reason is structural: **the complex cap binds on WEIGHT, not on risk.** At equal
+Sharpe, the member delivering the most μ per unit of *capital* is the highest-vol one. So
+averaging μ systematically favours the lowest-vol member and averaging the signal
+systematically favours the highest-vol member. Neither is neutral, and neither is the
+covariance "deciding" anything — both are corner solutions produced by which quantity the
+cap happens to constrain.
+
+**What this means for the original question.** Excluding SVXY requires an
+instrument-integrity judgement — decay, path dependence, termination risk — which the
+covariance cannot see. [ADR-0115](0115-a-complex-is-one-idea.md) declined to encode that
+and was right to; this ADR claimed to obtain it for free from the optimizer, and did not.
+The choice is still there, and it is still not being made on any stated ground.
+
+**Also found and not yet fixed:** the complex total exceeded its cap by 3.3e-6, past
+`CAP_EPSILON`. `_round_weights` floors single-name magnitudes but nothing enforces the
+floor on a GROUP sum.
+
+**What survives.** The measurement stands: a 5% μ difference inside a near-singular
+complex does produce a 100/0/0 corner, and a wider menu ranked by EdgeScore selects the
+same name out of five as out of three. The problem this ADR describes is real. The
+mechanism it proposes is not a solution to it.

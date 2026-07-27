@@ -687,6 +687,45 @@ def check_asset_class_matches_measured_beta(
     return failures
 
 
+def check_asset_class_maps_agree(
+    code_class_by_ticker: dict[str, str] | None,
+    db_class_by_ticker: dict[str, str] | None,
+) -> list[str]:
+    """Do the two asset-class maps agree with each other?
+
+    There are TWO, and they do different jobs:
+
+      * `trade_ranker._ASSET_CLASS_MAP` — what `classify()` returns, and therefore what
+        reaches `regime_direction_bias` and EdgeScore. **This is the one with the
+        consequence.**
+      * `theme_assets.asset_class` — the lens filter (ADR-0015).
+
+    Nothing compared them, and the cost was immediate. [ADR-0119](../docs/adrs/0119-svxy-is-equity-risk-and-the-taxonomy-said-haven.md)
+    corrected SVXY in `SECTOR_MAP` and the database and left `_ASSET_CLASS_MAP` on
+    `rates`; [ADR-0120](../docs/adrs/0120-the-guard-reads-the-taxonomy-not-just-the-book.md)
+    then built a beta check that read the database column only. So the regime term stayed
+    inverted for the book's second-largest position **while a guard reported the taxonomy
+    clean** — worse than no guard, because it converts an unknown into a false assurance.
+
+    A disagreement is a defect regardless of which side is right: two maps of one truth
+    means every consumer gets whichever it happened to import.
+    """
+    if not code_class_by_ticker or not db_class_by_ticker:
+        return []
+    failures: list[str] = []
+    for ticker in sorted(set(code_class_by_ticker) & set(db_class_by_ticker)):
+        code_class = str(code_class_by_ticker[ticker] or "")
+        db_class = str(db_class_by_ticker[ticker] or "")
+        if code_class and db_class and code_class != db_class:
+            failures.append(
+                f"{ticker}: trade_ranker._ASSET_CLASS_MAP says '{code_class}' but "
+                f"theme_assets.asset_class says '{db_class}'. The code map is what "
+                f"reaches regime_direction_bias; the database column is the lens "
+                f"filter. Two maps of one truth (ADR-0121)."
+            )
+    return failures
+
+
 def check_published_claims_are_on_the_record(
     rec_row: dict | None,
     outcome_rows: list[dict] | None,
@@ -981,25 +1020,42 @@ def main() -> int:
             r["asset"]: r["beta_mkt"] for r in betas
             if r.get("asset") and r.get("beta_mkt") is not None
         }
-        class_flags = check_asset_class_matches_measured_beta(
-            class_by_ticker, beta_by_ticker
+        # The CODE map is what classify() returns and therefore what reaches
+        # regime_direction_bias. ADR-0120 checked the database column alone, which is
+        # the lens filter, so it reported clean while the regime term was inverted.
+        # Check the map with the consequence, and check the two agree (ADR-0121).
+        try:
+            from backend.services.trade_ranker import _ASSET_CLASS_MAP as code_classes
+        except Exception as exc:                    # pragma: no cover - defensive
+            print(f"WARN could not import the runtime asset-class map ({exc}).")
+            code_classes = {}
+        class_flags = (
+            check_asset_class_matches_measured_beta(
+                dict(code_classes), beta_by_ticker,
+                source="factor_exposures.beta_mkt vs trade_ranker._ASSET_CLASS_MAP",
+            )
+            + check_asset_class_matches_measured_beta(
+                class_by_ticker, beta_by_ticker,
+                source="factor_exposures.beta_mkt vs theme_assets.asset_class",
+            )
+            + check_asset_class_maps_agree(dict(code_classes), class_by_ticker)
         )
         # Coverage first (ADR-0097): a clean result over three names is not a clean
         # taxonomy, and the reader is owed the denominator either way.
         checked = sum(
-            1 for t, c in class_by_ticker.items()
+            1 for t, c in dict(code_classes).items()
             if CLASS_EXPECTED_BETA_SIGN.get(str(c)) and t in beta_by_ticker
         )
         if class_flags:
             failed = True
             print("")
             print(f"FAIL an asset's class contradicts its own measured beta "
-                  f"({checked} of {len(class_by_ticker)} classified tickers checkable):")
+                  f"({checked} of {len(code_classes)} runtime-classified tickers checkable):")
             for flag in class_flags:
                 print(f"  - {flag}")
         else:
             print(f"OK   every classified asset's beta agrees with its class "
-                  f"({checked} of {len(class_by_ticker)} classified tickers checkable).")
+                  f"({checked} of {len(code_classes)} runtime-classified tickers checkable).")
 
         outcome_rows = (
             sb.table("pick_outcomes")

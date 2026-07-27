@@ -120,3 +120,64 @@ class TestTheMessage:
         )
         assert len(flags) == 2
         assert {"SVXY", "EWZ"} == {f.split()[0] for f in flags}
+
+
+class TestTheTwoMapsMustAgree:
+    """ADR-0121. There are two asset-class maps and they do different jobs:
+    `trade_ranker._ASSET_CLASS_MAP` is what `classify()` returns and therefore what
+    reaches `regime_direction_bias`; `theme_assets.asset_class` is the lens filter.
+
+    Nothing compared them, and the cost was immediate: ADR-0119 fixed SVXY in SECTOR_MAP
+    and the database and left the code map on `rates`, then ADR-0120 built a beta check
+    that read the database column only. The regime term stayed inverted while the guard
+    reported clean — a false assurance, which is worse than no guard.
+    """
+
+    def test_flags_the_divergence_that_shipped(self):
+        from scripts.check_data_integrity import check_asset_class_maps_agree
+
+        flags = check_asset_class_maps_agree(
+            {"SVXY": "rates"},        # what classify() returned after ADR-0119
+            {"SVXY": "equity"},       # what migration 049 wrote
+        )
+        assert len(flags) == 1
+        assert "_ASSET_CLASS_MAP says 'rates'" in flags[0]
+        assert "theme_assets.asset_class says 'equity'" in flags[0]
+        assert "regime_direction_bias" in flags[0]
+
+    def test_silent_when_they_agree(self):
+        from scripts.check_data_integrity import check_asset_class_maps_agree
+
+        assert check_asset_class_maps_agree(
+            {"SVXY": "equity", "EWZ": "equity"},
+            {"SVXY": "equity", "EWZ": "equity"},
+        ) == []
+
+    def test_a_ticker_in_only_one_map_is_not_a_disagreement(self):
+        """The code map covers 53 tickers and the database column 23. Absence from one
+        is a coverage gap, not a contradiction, and conflating them would bury the real
+        divergences under noise."""
+        from scripts.check_data_integrity import check_asset_class_maps_agree
+
+        assert check_asset_class_maps_agree({"A": "equity"}, {"B": "rates"}) == []
+
+    def test_the_live_maps_agree(self):
+        """The regression this whole ADR chain exists for, asserted against the real
+        maps rather than a fixture."""
+        from backend.services.trade_ranker import _ASSET_CLASS_MAP
+
+        assert _ASSET_CLASS_MAP["SVXY"] == "equity"
+        assert _ASSET_CLASS_MAP["EWZ"] == "equity"
+
+    def test_classify_is_what_reaches_the_regime_term(self):
+        """The seam the earlier fix missed: SECTOR_MAP and the database column were
+        corrected while `classify()` — the function feeding regime_direction_bias — kept
+        returning the old class."""
+        from backend.services.trade_ranker import classify
+        from backend.services.edge_signals import regime_direction_bias
+
+        for ticker in ("SVXY", "EWZ"):
+            asset_class = classify(ticker)["asset_class"]
+            assert asset_class == "equity", ticker
+            # Risk-off must FADE a levered equity proxy, not favour it.
+            assert regime_direction_bias(asset_class, "mid", "neutral", -0.8) < 0

@@ -44,14 +44,22 @@ _ASSET_CLASS_MAP: dict[str, str] = {
     "BKLN": "credit", "ANGL": "credit", "EMB": "credit",
     # rates
     "TLT": "rates", "IEF": "rates", "SHY": "rates",
-    "TIPS": "rates", "AGG": "rates", "BIL": "rates", "SVXY": "rates",
+    "TIPS": "rates", "AGG": "rates", "BIL": "rates",
     # equity
     "QQQ": "equity", "SPY": "equity", "IWM": "equity",
     "FXI": "equity", "MCHI": "equity", "BABA": "equity", "KWEB": "equity",
     "XLE": "equity", "XLF": "equity", "XLV": "equity", "ARKK": "equity",
     "EWJ": "equity", "EFA": "equity", "EEM": "equity", "BULL": "equity",
     # fx
-    "UUP": "fx", "FXE": "fx", "EWZ": "fx",
+    "UUP": "fx", "FXE": "fx",
+    # SVXY and EWZ live HERE, not under rates/fx. This map — not
+    # `theme_assets.asset_class` — is what `classify()` returns and therefore what
+    # reaches `regime_direction_bias`, so it is the one with the consequence.
+    # ADR-0119 and ADR-0120 fixed SECTOR_MAP and the database column and left this
+    # untouched, which meant the regime term stayed inverted while a new guard
+    # reported clean. SVXY is short volatility (beta +2.08); EWZ is the iShares MSCI
+    # Brazil ETF (beta +0.98). Both are equity. See ADR-0121.
+    "SVXY": "equity", "EWZ": "equity",
     # commodity
     "GLD": "commodity", "SLV": "commodity", "UNG": "commodity",
     "OIH": "commodity", "CL": "commodity", "IAU": "commodity",

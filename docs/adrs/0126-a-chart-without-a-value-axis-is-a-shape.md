@@ -1,4 +1,4 @@
-# ADR-0125: A chart without a value axis is a shape
+# ADR-0126: A chart without a value axis is a shape
 
 **Status:** Accepted
 **Date:** 2026-07-28

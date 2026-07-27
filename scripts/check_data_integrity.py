@@ -18,6 +18,7 @@ Run:  python -m scripts.check_data_integrity      # exits 1 if fabricated
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sys
@@ -616,6 +617,76 @@ WORKFLOW_TIMEOUT_MINUTES = 60   # daily-refresh.yml `timeout-minutes`
 STALE_STAGE_MARGIN_MINUTES = 30
 
 
+# A class's expected sign of market beta, from ASSET_CLASS_RISK_BETA in edge_signals:
+# equity/credit are risk assets (+1.0), rates/fx are havens (-1.0), commodity is 0.0 and
+# therefore claims nothing. Kept as SIGNS rather than importing the betas, because what
+# is being checked is the direction the classification asserts, not its magnitude.
+CLASS_EXPECTED_BETA_SIGN: dict[str, int] = {
+    "equity": 1, "credit": 1, "rates": -1, "fx": -1, "commodity": 0,
+}
+
+# Below this, a sign disagreement is noise rather than a contradiction. TLT measures
+# beta_mkt +0.11 against a rates class expecting negative; that is a near-zero beta, and
+# calling a Treasury fund a haven is a policy statement the equity beta does not refute.
+# EWZ at +0.98 and SVXY at +2.08 are a different claim entirely.
+MATERIAL_CLASS_BETA = 0.5
+
+
+def check_asset_class_matches_measured_beta(
+    class_by_ticker: dict[str, str] | None,
+    beta_by_ticker: dict[str, float] | None,
+    source: str = "factor_exposures.beta_mkt",
+    material: float = MATERIAL_CLASS_BETA,
+) -> list[str]:
+    """Does an asset's declared CLASS agree with its own measured market beta?
+
+    This repo validates its computations far harder than its inputs. Three separate SVXY
+    defects landed on 2026-07-27 — the stress signs (+0.20 -> -0.35), the market beta
+    (-0.60 -> +2.08) and the classification (`rates` -> `equity`, [ADR-0119]) — and every
+    one was a wrong INPUT that every downstream computation then faithfully propagated.
+    Seven checks read the published book; none read the taxonomy underneath it.
+
+    The classification is not decoration. `edge_signals.regime_direction_bias` multiplies
+    `ASSET_CLASS_RISK_BETA[asset_class]` by the regime's risk appetite, so a class of
+    `rates` (-1.0) on an instrument with beta +2.08 makes EdgeScore's largest-weight term
+    FAVOUR it in the tape that takes it to -35%.
+
+    A contradiction is only reported when the beta is MATERIAL. A near-zero beta refutes
+    nothing: TLT at +0.11 against a rates class is a Treasury fund whose equity beta
+    happens to be slightly positive, not a misfiling.
+
+    `commodity` asserts a risk beta of 0.0, so it makes no directional claim and is never
+    flagged — that is the ADR-0036 discipline, not an oversight.
+    """
+    if not class_by_ticker or not beta_by_ticker:
+        return []
+    failures: list[str] = []
+    for ticker in sorted(class_by_ticker):
+        asset_class = str(class_by_ticker[ticker] or "")
+        expected = CLASS_EXPECTED_BETA_SIGN.get(asset_class)
+        if not expected:                  # unknown class, or commodity's honest 0
+            continue
+        beta = beta_by_ticker.get(ticker)
+        if beta is None:
+            continue
+        try:
+            beta = float(beta)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(beta) or abs(beta) < material:
+            continue
+        if (beta > 0) == (expected > 0):
+            continue
+        wants = "negative" if expected < 0 else "positive"
+        failures.append(
+            f"{ticker} is classified '{asset_class}', which asserts a {wants} market "
+            f"beta, but {source} measures {beta:+.2f}. That sign reaches EdgeScore "
+            f"through regime_direction_bias, so the regime term is inverted for this "
+            f"name (ADR-0119)."
+        )
+    return failures
+
+
 def check_published_claims_are_on_the_record(
     rec_row: dict | None,
     outcome_rows: list[dict] | None,
@@ -889,6 +960,46 @@ def main() -> int:
             .data
         )
         regime = regime_rows[0] if regime_rows else None
+
+        # The TAXONOMY under the book, not the book. See
+        # check_asset_class_matches_measured_beta for why this is worth a daily read.
+        classes = (
+            sb.table("theme_assets").select("ticker, asset_class").execute().data
+        ) or []
+        betas = (
+            sb.table("factor_exposures")
+            .select("asset, beta_mkt")
+            .eq("run_date", run)
+            .execute()
+            .data
+        ) or []
+        class_by_ticker = {
+            r["ticker"]: r["asset_class"] for r in classes
+            if r.get("ticker") and r.get("asset_class")
+        }
+        beta_by_ticker = {
+            r["asset"]: r["beta_mkt"] for r in betas
+            if r.get("asset") and r.get("beta_mkt") is not None
+        }
+        class_flags = check_asset_class_matches_measured_beta(
+            class_by_ticker, beta_by_ticker
+        )
+        # Coverage first (ADR-0097): a clean result over three names is not a clean
+        # taxonomy, and the reader is owed the denominator either way.
+        checked = sum(
+            1 for t, c in class_by_ticker.items()
+            if CLASS_EXPECTED_BETA_SIGN.get(str(c)) and t in beta_by_ticker
+        )
+        if class_flags:
+            failed = True
+            print("")
+            print(f"FAIL an asset's class contradicts its own measured beta "
+                  f"({checked} of {len(class_by_ticker)} classified tickers checkable):")
+            for flag in class_flags:
+                print(f"  - {flag}")
+        else:
+            print(f"OK   every classified asset's beta agrees with its class "
+                  f"({checked} of {len(class_by_ticker)} classified tickers checkable).")
 
         outcome_rows = (
             sb.table("pick_outcomes")

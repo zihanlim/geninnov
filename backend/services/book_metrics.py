@@ -56,7 +56,13 @@ SECTOR_MAP: dict[str, str] = {
     # FX
     "UUP":   "FX",
     "FXE":   "FX",
-    "EWZ":   "FX-EM",
+    # NOT "FX-EM". EWZ is the iShares MSCI BRAZIL ETF — Brazilian equities, whose
+    # measured beta_mkt is +0.98. It was filed as FX and `asset_class='fx'`, and
+    # ASSET_CLASS_RISK_BETA['fx'] is -1.0, so EdgeScore's regime term treated a
+    # near-unit-beta equity fund as a haven. Same defect as SVXY (ADR-0119), found by
+    # the check that defect motivated (ADR-0120). `LENS_TICKER_FALLBACK` already had it
+    # under "equity", so the code contradicted the database.
+    "EWZ":   "EM Equities",
     # China equities
     "FXI":   "China Equities",
     "MCHI":  "China Equities",

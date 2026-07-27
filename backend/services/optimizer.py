@@ -89,7 +89,12 @@ class OptimizerConstraints:
     `cap_utilisation` cannot disagree about what the limits are.
     """
 
-    max_single: float = MAX_SINGLE_NAME_WEIGHT
+    # A float applies to every name. A dict tightens the names it lists and leaves every
+    # other name on `default_single` — absence is neutrality, which is what lets a signal
+    # observable on a fifth of the book size that fifth without touching the rest
+    # (ADR-0110). It is never used to RAISE a cap: `_cap_vector` takes the min.
+    max_single: float | dict[str, float] = MAX_SINGLE_NAME_WEIGHT
+    default_single: float = MAX_SINGLE_NAME_WEIGHT
     max_sector: float = MAX_SECTOR_WEIGHT
     max_geo: float = MAX_GEO_WEIGHT
     max_gross: float = 1.0
@@ -156,6 +161,25 @@ class OptimizationResult:
             "warnings": list(self.warnings),
             "reason": self.reason,
         }
+
+
+def _cap_vector(assets: list[str], constraints: OptimizerConstraints) -> np.ndarray:
+    """Per-name single-name limits, in `assets` order.
+
+    A scalar `max_single` applies everywhere. A dict tightens only the names it lists; a name
+    it omits keeps `default_single`, unchanged. The `min` is deliberate — a per-name entry may
+    only ever tighten. A crowding signal that could *raise* a limit would let an external
+    reading loosen this book's published risk policy, which is not a thing a COT print is
+    allowed to do.
+    """
+    per_name = constraints.max_single
+    if not isinstance(per_name, dict):
+        return np.full(len(assets), float(per_name))
+    base = float(constraints.default_single)
+    return np.array(
+        [min(base, float(per_name.get(asset, base))) for asset in assets],
+        dtype=float,
+    )
 
 
 def _infeasible(objective: str, status: str, reason: str,
@@ -230,8 +254,23 @@ def _round_weights(raw: np.ndarray, assets: list[str], signs: np.ndarray) -> dic
         # The pin is `s_i * w_i >= 0`; a solver may land a hair the wrong side of it.
         if value * float(signs[i]) < 0:
             value = 0.0
-        value = round(value, WEIGHT_PLACES)
-        out[asset] = 0.0 if abs(value) < WEIGHT_DUST else value
+        # FLOOR the magnitude toward zero rather than rounding it.
+        #
+        # A convex solver satisfies its constraints to its OWN tolerance, around 1e-8 —
+        # ten times coarser than `book_metrics.CAP_EPSILON` (1e-9), which decides whether
+        # a cap has been breached. Rounding half-up preserved the overshoot, so on the
+        # 2026-07-27 run the US geography summed to 0.35000001 against its 0.35 cap and
+        # `/risk` reported a violation of "0.00pp over its 35% cap" on a book that had not
+        # breached anything. That is exactly what ADR-0068 forbids: a cap breach decided by
+        # float error.
+        #
+        # Flooring guarantees a stored weight never exceeds the solved one in magnitude, so
+        # every constraint the solve satisfied — including GROUP sums, which no per-name
+        # clamp could protect — still holds in the stored book. The cost is up to 1e-8 of
+        # deployment per position, which is $1 on $100M.
+        scale = 10 ** WEIGHT_PLACES
+        magnitude = math.floor(abs(value) * scale) / scale
+        out[asset] = 0.0 if magnitude < WEIGHT_DUST else math.copysign(magnitude, value)
     return out
 
 
@@ -274,7 +313,8 @@ def optimize(
     w = cp.Variable(n)
     magnitude = cp.multiply(signs, w)      # >= 0 once pinned; linear, not cp.abs
 
-    cons: list = [magnitude >= 0, magnitude <= c.max_single]
+    caps = _cap_vector(assets, c)
+    cons: list = [magnitude >= 0, magnitude <= caps]
 
     if c.target_gross is not None:
         cons.append(cp.sum(magnitude) == c.target_gross)
@@ -402,9 +442,17 @@ def optimize(
     turnover = float(sum(abs(d) for d in delta.values()))
 
     binding: list[str] = []
-    for asset in assets:
-        if abs(abs(weights[asset]) - c.max_single) < 1e-4:
-            binding.append(f"{asset} at single-name cap")
+    for index, asset in enumerate(assets):
+        if abs(abs(weights[asset]) - float(caps[index])) < 1e-4:
+            # Name the cap when it is not the book-wide one, so a reader can see that this
+            # position was limited by something specific to it rather than by the standing
+            # 20% (ADR-0110). A tightened cap that reported itself as "the single-name cap"
+            # would be the sizing input going in silently, which is the thing bar 1 forbids.
+            tightened = float(caps[index]) < float(c.default_single) - 1e-12
+            binding.append(
+                f"{asset} at tightened single-name cap ({float(caps[index]):.1%})"
+                if tightened else f"{asset} at single-name cap"
+            )
     for group_of, cap, label in (
         (sector_map, c.max_sector, "sector"),
         (geo_map, c.max_geo, "geo"),
@@ -542,6 +590,7 @@ def efficient_frontier(
             "mean_variance",
             OptimizerConstraints(
                 max_single=base.max_single,
+                default_single=base.default_single,
                 max_sector=base.max_sector,
                 max_geo=base.max_geo,
                 max_gross=base.max_gross,

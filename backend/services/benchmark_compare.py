@@ -44,7 +44,20 @@ TRADING_DAYS = 252
 # Below this, an annualised tracking error is an artefact of the sample rather than a
 # measurement of the book. The number is still returned — with `n` beside it, so the
 # reader can discount it — but `sufficient` says plainly that it is thin.
-MIN_OBS_FOR_STATISTICS = 20
+#
+# 60 rather than a threshold of its own: tracking error and the information ratio are
+# annualised ratios of exactly the same family as Sharpe, which `risk_engine` gates at
+# MIN_DAYS_FOR_SHARPE = 60. Two different minimums for two statistics that annualise the
+# same way would be a distinction the mathematics does not support.
+#
+# This is the SOURCE of the publication gate as well as the warning: `tracking_error` and
+# `information_ratio` are stored on `portfolio_risk`, so `lib/risk/sampleAdequacy.ts`
+# mirrors this constant and `risk-thresholds.test.ts` parses THIS FILE and fails if the two
+# disagree. Without an entry there they would be quotable unguarded through /ask and MCP,
+# which is the hole ADR-0100 was written about (and which these two fields still had after
+# migration 047, because they are computed here rather than in `compute_risk`).
+MIN_DAYS_FOR_TRACKING_ERROR = 60
+MIN_OBS_FOR_STATISTICS = MIN_DAYS_FOR_TRACKING_ERROR
 
 
 @dataclass(frozen=True)

@@ -35,6 +35,20 @@ export const MIN_SESSIONS_BY_FIELD: Record<string, number> = {
   cvar_95: 30,
   sharpe: 60,
   beta: 60,
+  // Added with the historical/downside estimators (migration 047). A field ABSENT from this
+  // map is not gated at all — `sampleAdequacy` returns ok for an unknown field — so shipping
+  // an estimated metric without an entry here reproduces exactly the hole this file was
+  // written to close, on the new columns.
+  var_95_historical: 100,
+  es_95_historical: 100,
+  sortino: 60,
+  max_drawdown: 30,
+  calmar: 252,
+  // Computed in `backend/services/benchmark_compare.py`, not `risk_engine.py` — but stored
+  // on `portfolio_risk` all the same, so they need an entry here or they are ungated
+  // exactly as the five above were. Mirrors MIN_DAYS_FOR_TRACKING_ERROR there.
+  tracking_error: 60,
+  information_ratio: 60,
 };
 
 export type Adequacy =

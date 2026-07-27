@@ -51,7 +51,11 @@ async function latestBook(
 ): Promise<{ rows: Record<string, unknown>[]; error: string | null }> {
   return db.select(
     "research_recommendations",
-    "run_date, picks, book_view, book_risks, book_metrics, scenario_results, cap_utilisation, screening_funnel, independent_ideas, correlation_pairs, lens",
+    "run_date, picks, book_view, book_risks, book_metrics, scenario_results, cap_utilisation, screening_funnel, independent_ideas, correlation_pairs, lens, " +
+      // Ex-ante risk (038, 047) and sizing provenance (047). Added to the SHARED reader so
+      // every tool sees the same book row — a second select would let two tools answer from
+      // two different runs if one landed mid-publication.
+      "risk_decomposition, monte_carlo_var, var_forecast, sizing_method, sizing_reason, optimizer_result, heuristic_weights, rebalance_cost",
     { order: { column: "run_date", ascending: false }, limit },
   );
 }
@@ -358,7 +362,7 @@ const riskMetrics: ToolSpec = {
   args: {},
   async run(args, { db }) {
     const [riskRes, bookRes, sessionsRes] = await Promise.all([
-      db.select("portfolio_risk", "total_capital, var_95, cvar_95, sharpe, beta, concentration_hhi, updated_at", {
+      db.select("portfolio_risk", "total_capital, var_95, cvar_95, sharpe, beta, concentration_hhi, updated_at, var_95_historical, es_95_historical, sortino, max_drawdown, calmar, tracking_error, information_ratio", {
         order: { column: "updated_at", ascending: false },
         limit: 1,
       }),
@@ -385,10 +389,22 @@ const riskMetrics: ToolSpec = {
     const withheld: string[] = [];
 
     if (risk) {
+      // EVERY LABEL CARRIES ITS METHOD AND HORIZON. There are now four figures a reader
+      // may call "VaR" and they differ by an order of magnitude, mostly because of
+      // horizon rather than method. A model handed two facts both labelled "VaR 95%"
+      // will state one and cite the other — the regression PROGRESS records twice
+      // (ADR-0082). The label is the only thing standing between it and that.
       for (const [k, label, unit] of [
-        ["var_95", "VaR 95%", "usd"],
-        ["cvar_95", "CVaR 95%", "usd"],
-        ["sharpe", "Sharpe", "x"],
+        ["var_95", "VaR 95% (parametric, 1-day, realised)", "usd"],
+        ["cvar_95", "CVaR 95% (parametric, 1-day, realised)", "usd"],
+        ["var_95_historical", "VaR 95% (historical/empirical, 1-day, realised)", "usd"],
+        ["es_95_historical", "Expected shortfall 95% (historical, 1-day, realised)", "usd"],
+        ["sharpe", "Sharpe (annualised)", "x"],
+        ["sortino", "Sortino (annualised, downside-only denominator)", "x"],
+        ["calmar", "Calmar (annualised return over max drawdown)", "x"],
+        ["max_drawdown", "Max drawdown (realised, peak-to-trough, negative)", "pct"],
+        ["tracking_error", "Tracking error vs benchmark (annualised)", "pct"],
+        ["information_ratio", "Information ratio vs benchmark", "x"],
         ["beta", "Beta", "x"],
         ["concentration_hhi", "Concentration HHI", "x"],
         ["total_capital", "Total capital", "usd"],
@@ -406,6 +422,56 @@ const riskMetrics: ToolSpec = {
         facts.push(f(`risk.${k}`, label, v, `portfolio_risk.${k}`, unit, runDate));
       }
     }
+    // ── Ex-ante risk, from the CONSTITUENTS' covariance ────────────────────────────
+    // Deliberately NOT gated on `sessions`. These borrow history from the assets rather
+    // than from the book, which is the entire reason they exist: a two-day-old book has a
+    // meaningful ex-ante VaR and a meaningless realised one. Gating them on the book's own
+    // age would withhold the only risk numbers it has.
+    const decomposition = book?.risk_decomposition as Record<string, unknown> | null;
+    const exAnteVar = num(decomposition?.portfolio_var);
+    if (exAnteVar !== null) {
+      facts.push(f("risk.var_95_ex_ante", "VaR 95% (ex-ante, from constituent covariance, ANNUALISED)", exAnteVar, "research_recommendations.risk_decomposition.portfolio_var", "pct", runDate));
+    }
+    const exAnteVol = num(decomposition?.portfolio_vol);
+    if (exAnteVol !== null) {
+      facts.push(f("risk.portfolio_vol_ex_ante", "Book volatility (ex-ante, annualised)", exAnteVol, "research_recommendations.risk_decomposition.portfolio_vol", "pct", runDate));
+    }
+
+    const mc = book?.monte_carlo_var as Record<string, unknown> | null;
+    const mcHorizon = num(mc?.horizon_days);
+    const mcBands = Array.isArray(mc?.bands) ? (mc!.bands as Record<string, unknown>[]) : [];
+    for (const band of mcBands) {
+      const conf = num(band.confidence);
+      const value = num(band.var);
+      if (conf === null || value === null) continue;
+      const pctLabel = `${(conf * 100).toFixed(0)}%`;
+      facts.push(f(
+        `risk.monte_carlo_var_${pctLabel.replace("%", "")}`,
+        `VaR ${pctLabel} (Monte Carlo, Student-t, ${mcHorizon ?? 21}-day, ex-ante)`,
+        value,
+        "research_recommendations.monte_carlo_var.bands[].var",
+        "pct",
+        runDate,
+      ));
+    }
+
+    const fanBands = Array.isArray((book?.var_forecast as Record<string, unknown> | null)?.bands)
+      ? ((book!.var_forecast as Record<string, unknown>).bands as Record<string, unknown>[])
+      : [];
+    for (const band of fanBands) {
+      const horizon = num(band.horizon_days);
+      const p95 = num((band.quantiles as Record<string, unknown> | undefined)?.p95);
+      if (horizon === null || p95 === null) continue;
+      facts.push(f(
+        `risk.var_forecast_${horizon}d`,
+        `VaR 95% (square-root-of-time projection, ${horizon}-day, ex-ante)`,
+        p95,
+        "research_recommendations.var_forecast.bands[].quantiles.p95",
+        "pct",
+        runDate,
+      ));
+    }
+
     const scenarios = (book?.scenario_results ?? null) as ScenarioResult[] | null;
     for (const s of scenarios ?? []) {
       const r = num(s.estimated_book_return);
@@ -662,6 +728,135 @@ const bookTurnover: ToolSpec = {
   },
 };
 
+
+/**
+ * How the published book was sized.
+ *
+ * The single most-asked question about a book after "what is in it" is "why that size",
+ * and until migration 047 the answer was not in the data at all — ADR-0053 records a book
+ * every surface described as conviction-sized while it was in fact hype-sized, because
+ * nothing persisted which path had run.
+ *
+ * Deliberately a SEPARATE tool from `position_detail`, which answers the per-name sizing
+ * chain. This answers the book-level question: which model sized it, what the other one
+ * would have done, and what the crowding input reached.
+ */
+const sizingProvenance: ToolSpec = {
+  name: "sizing_provenance",
+  description:
+    "How the published book was sized: which model set the weights (constrained mean-variance optimizer, or the conviction fallback, and why), the expected-return IC it used, what the alternative sizing would have given, the cost of the difference, and how much of the book the crowding input could actually see. Call this for anything about position sizing, weights, why a position is the size it is, the optimizer, or the efficient frontier.",
+  args: {},
+  async run(args, { db }) {
+    const bookRes = await latestBook(db);
+    const book = bookRes.rows[0];
+    if (!book) {
+      return {
+        tool: "sizing_provenance",
+        args,
+        facts: [],
+        absence:
+          bookRes.error
+            ? `research_recommendations could not be read (${bookRes.error}).`
+            : "research_recommendations has no rows — no book has been published, so there is no sizing to describe.",
+      };
+    }
+    const runDate = str(book.run_date);
+    const method = str(book.sizing_method);
+    const reason = str(book.sizing_reason);
+    const result = (book.optimizer_result ?? null) as Record<string, unknown> | null;
+    const facts: Fact[] = [];
+    const notes: Record<string, string | string[]> = {};
+
+    // The method is a STRING fact, not a number, because it is the load-bearing claim here
+    // and a guardrail that only checks numerals would let a wrong one through unnoticed.
+    if (method) {
+      facts.push(f("sizing.method", "Sizing method", method, "research_recommendations.sizing_method", "text", runDate));
+    }
+    if (reason) notes.why_not_optimizer = reason;
+
+    const feasible = result?.feasible === true;
+    if (result) {
+      notes.optimizer_status = str(result.status) ?? "unknown";
+      if (feasible) {
+        for (const [key, label, unit] of [
+          ["gross", "Gross deployed", "pct"],
+          ["net", "Net exposure", "pct"],
+          ["cash", "Held in cash", "pct"],
+          ["volatility", "Ex-ante volatility of the sized book (annualised)", "pct"],
+          ["expected_return", "Expected return of the sized book (annualised)", "pct"],
+          ["turnover", "Turnover versus the conviction book", "pct"],
+        ] as const) {
+          const v = num(result[key]);
+          if (v !== null) {
+            facts.push(f(`sizing.${key}`, label, v, `research_recommendations.optimizer_result.${key}`, unit, runDate));
+          }
+        }
+        const ic = num((result.ic as Record<string, unknown> | undefined)?.value);
+        if (ic !== null) {
+          facts.push(f("sizing.ic", "EdgeScore IC used to build expected returns (after 50% shrinkage)", ic, "research_recommendations.optimizer_result.ic.value", "x", runDate));
+        }
+        const binding = Array.isArray(result.binding_constraints) ? (result.binding_constraints as string[]) : [];
+        if (binding.length) notes.binding_constraints = binding;
+        const zeroed = Array.isArray(result.zeroed) ? (result.zeroed as string[]) : [];
+        if (zeroed.length) notes.priced_out = zeroed;
+      }
+    }
+
+    const cost = num((book.rebalance_cost as Record<string, unknown> | null)?.total_cost);
+    if (cost !== null) {
+      facts.push(f("sizing.rebalance_cost", "Estimated cost of moving from the conviction book to the published one", cost, "research_recommendations.rebalance_cost.total_cost", "usd", runDate));
+    }
+
+    // ── Crowding: COVERAGE FIRST, always ─────────────────────────────────────────
+    // A verdict without its denominator is the failure ADR-0097 exists to prevent, and it
+    // is worse through this surface than on the page: a model told "no position is crowded"
+    // with no coverage figure will state the book was checked for crowding when four fifths
+    // of it cannot be.
+    const crowding = (result?.crowding ?? null) as Record<string, unknown> | null;
+    if (crowding) {
+      const coverage = num(crowding.coverage_share);
+      if (coverage !== null) {
+        facts.push(f("sizing.crowding_coverage", "Share of book gross external positioning can observe at all", coverage, "research_recommendations.optimizer_result.crowding.coverage_share", "pct", runDate));
+      }
+      const crowded = num(crowding.crowded_share);
+      if (crowded !== null) {
+        facts.push(f("sizing.crowded_share", "Share of book gross sitting with a crowded speculator consensus", crowded, "research_recommendations.optimizer_result.crowding.crowded_share", "pct", runDate));
+      }
+      const tightened = Array.isArray(crowding.tightened) ? (crowding.tightened as Record<string, unknown>[]) : [];
+      facts.push(f("sizing.crowding_tightened_count", "Positions whose single-name cap was tightened for crowding", tightened.length, "research_recommendations.optimizer_result.crowding.tightened[]", "count", runDate));
+      if (tightened.length) {
+        notes.crowding_tightened = tightened.map(
+          (t) => `${str(t.asset)} capped at ${num(t.cap) !== null ? `${(num(t.cap)! * 100).toFixed(1)}%` : "?"} (specs crowded ${str(t.crowded_side)} at ${num(t.cot_index)?.toFixed(0) ?? "?"}; book side in the contract: ${str(t.effective_side)})`,
+        );
+      } else {
+        const why = str(crowding.reason);
+        // Why nothing was tightened is the whole finding when nothing was: "we did not
+        // look", "nothing maps", and "checked and uncrowded" are three different facts.
+        if (why) notes.crowding_not_applied = why;
+      }
+    }
+
+    const heuristic = (book.heuristic_weights ?? null) as Record<string, number> | null;
+    if (heuristic && Object.keys(heuristic).length) {
+      notes.conviction_book = Object.entries(heuristic)
+        .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+        .map(([asset, w]) => `${asset} ${(w * 100).toFixed(2)}%`);
+    }
+
+    return {
+      tool: "sizing_provenance",
+      args,
+      facts,
+      notes: Object.keys(notes).length ? notes : undefined,
+      absence: !method
+        ? "This book predates the column that records the sizing method (migration 047), so which model set these weights cannot be read off the row. Do NOT infer it was conviction-sized — say it was not recorded."
+        : method === "conviction"
+          ? `The optimizer did not size this book${reason ? `: ${reason}` : ", and no reason was recorded"}. Weights are proportional to conviction (|EdgeScore| / volatility), clamped to the published limits.`
+          : undefined,
+    };
+  },
+};
+
 export const TOOLS: ToolSpec[] = [
   bookSummary,
   positionDetail,
@@ -672,6 +867,7 @@ export const TOOLS: ToolSpec[] = [
   pipelineStatus,
   screeningFunnel,
   bookTurnover,
+  sizingProvenance,
 ];
 
 export const TOOL_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));

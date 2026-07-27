@@ -17,6 +17,7 @@
 
 import type { OptimizerResult, SizingMethod } from "@/lib/book/sizingProvenance";
 import {
+  describeCrowding,
   describeSizing,
   frontierPath,
   sizingRows,
@@ -70,6 +71,7 @@ export default function SizingProvenance({
   const summary = describeSizing(method, reason, result);
   const rows = sizingRows(result, heuristicWeights);
   const path = frontierPath(frontier);
+  const crowding = describeCrowding(result?.crowding);
 
   return (
     <div data-testid="sizing-provenance">
@@ -174,14 +176,56 @@ export default function SizingProvenance({
                 <Num value={rebalanceCost.turnover} digits={1} />
               </span>
               <span className="text-text-secondary">Estimated cost of that move</span>
-              <span className="text-right">
-                <Num
-                  value={rebalanceCost.total_cost}
-                  digits={0}
-                  suffix=""
-                />
+              <span className="text-right num">
+                {typeof rebalanceCost.total_cost === "number" &&
+                Number.isFinite(rebalanceCost.total_cost)
+                  ? rebalanceCost.total_cost.toLocaleString("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                      maximumFractionDigits: 0,
+                    })
+                  : "n/a"}
               </span>
             </>
+          )}
+        </div>
+      )}
+
+      {/* ── Crowding, the third sizing input (ADR-0110) ─────────────────────
+             Coverage is rendered whether or not anything was tightened, and it is
+             rendered FIRST. "Nothing was crowded" and "almost nothing could be
+             checked" are the two readings a reader has to be able to tell apart,
+             and a verdict without its denominator lets the second read as the
+             first — GOAL.md's constraint, stated at the point of use. */}
+      {crowding && (
+        <div
+          className="rounded-md border border-border px-3 py-2.5 mb-3 text-[11.5px] leading-[1.55]"
+          data-testid="crowding-sizing"
+        >
+          <div className="text-text-secondary mb-1">
+            <strong>Crowding.</strong> {crowding.coverage}
+          </div>
+          <div className="text-text-tertiary">{crowding.verdict}</div>
+          {crowding.tightened.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5 list-none p-0 m-0">
+              {crowding.tightened.map((t) => (
+                <li key={t.asset} className="text-text-secondary">
+                  <span className="num">{t.asset}</span> — book{" "}
+                  {t.direction ?? "?"}
+                  {t.inverse ? (
+                    <>
+                      , which is <span className="num">{t.effective_side}</span> the
+                      contract (inverse product)
+                    </>
+                  ) : null}
+                  ; specs crowded {t.crowded_side} at{" "}
+                  <span className="num">
+                    {typeof t.cot_index === "number" ? t.cot_index.toFixed(0) : "—"}
+                  </span>
+                  . Capped at <span className="num">{(t.cap * 100).toFixed(1)}%</span>.
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}
@@ -195,11 +239,15 @@ export default function SizingProvenance({
 
       {/* The frontier, with "you are here". A frontier on its own is decoration; the
           only question a reader has is where this book sits against it. */}
+      {/* The svg is capped near its natural size. `w-full` alone stretched a 320-unit
+          viewBox across the whole panel — about 1300px — which scales strokeWidth 1.5 to
+          ~6px and the 9px label to ~36px type, so the chart swallowed the table it exists
+          to annotate. Caught by screenshotting the page, not by any test. */}
       {path && (
         <figure className="m-0">
           <svg
             viewBox={`0 0 ${path.width} ${path.height}`}
-            className="w-full h-auto"
+            className="w-full max-w-[440px] h-auto"
             role="img"
             aria-label={`Efficient frontier: ${path.points.length} points from ${(path.minVol * 100).toFixed(1)}% to ${(path.maxVol * 100).toFixed(1)}% volatility, with the published book marked.`}
             data-testid="efficient-frontier"

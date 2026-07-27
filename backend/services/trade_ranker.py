@@ -410,10 +410,11 @@ def allocate_portfolio(
     total_capital: float,
     sector_map: dict[str, str] | None = None,
     geo_map: dict[str, str] | None = None,
-    max_single: float = MAX_SINGLE_NAME_WEIGHT,
+    max_single: float | dict[str, float] = MAX_SINGLE_NAME_WEIGHT,
     max_sector: float = MAX_SECTOR_WEIGHT,
     max_geo: float = MAX_GEO_WEIGHT,
     size_by: str = "hype",
+    default_single: float = MAX_SINGLE_NAME_WEIGHT,
 ) -> list[tuple[TradeCandidate, float, float]]:
     """Size positions per spec section 7.1 with sector/geo/single-name caps.
 
@@ -422,7 +423,13 @@ def allocate_portfolio(
         total_capital: $100M
         sector_map:    {ticker -> sector name}, defaults to SECTOR_MAP
         geo_map:      {ticker -> geography name}, defaults to GEO_MAP
-        max_single:  max weight per single name (default 20%)
+        max_single:  max weight per single name (default 20%). A dict tightens only the
+                     names it lists; every other name keeps ``default_single``, unchanged.
+                     A per-name entry may only ever TIGHTEN — the min is taken — so an
+                     external reading can never loosen this book's published risk policy
+                     (ADR-0110). This mirrors ``optimizer.OptimizerConstraints`` exactly:
+                     the two sizing paths must apply the same limits, or a fallback run
+                     silently drops a sizing input (the ADR-0053 failure).
         max_sector:  max weight per sector (default 30%)
         max_geo:     max weight per geography (default 35%)
         size_by:     "hype" (default, ∝ HypeScore) or "conviction" (Stage-4:
@@ -480,14 +487,25 @@ def allocate_portfolio(
     # Iterating to a fixed point means the excess stops somewhere real: it lands on
     # names that can still take it, and once nobody can, it stays undeployed as cash
     # rather than being forced into a name whose conviction never earned it.
+    # Per-name limits, in candidate order. A scalar applies everywhere; a dict tightens only
+    # the names it lists and every other name keeps `default_single`. `min` is deliberate —
+    # a per-name entry may only tighten, never raise (ADR-0110).
+    if isinstance(max_single, dict):
+        caps = [
+            min(default_single, float(max_single.get(c.asset, default_single)))
+            for c in candidates
+        ]
+    else:
+        caps = [float(max_single)] * len(candidates)
+
     for _ in range(50):
-        over = [i for i, w in enumerate(weights) if w > max_single + 1e-12]
+        over = [i for i, w in enumerate(weights) if w > caps[i] + 1e-12]
         if not over:
             break
-        under = [i for i, w in enumerate(weights) if w < max_single - 1e-12]
-        freed = sum(weights[i] - max_single for i in over)
+        under = [i for i, w in enumerate(weights) if w < caps[i] - 1e-12]
+        freed = sum(weights[i] - caps[i] for i in over)
         for i in over:
-            weights[i] = max_single
+            weights[i] = caps[i]
         under_sum = sum(weights[i] for i in under)
         if not under or under_sum <= 0:
             break          # nowhere left to put it → it becomes cash

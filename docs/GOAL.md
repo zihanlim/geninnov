@@ -78,6 +78,34 @@ this repo's standing move (ADR-0066, ADR-0094, ADR-0097).
    **with its coverage stated at the point of use** — never silently, or the caps become
    a claim the data cannot support. Raising coverage is the honest prerequisite.
 
+   **SETTLED 2026-07-27 — three of four, and the fourth is stated rather than filled.**
+   *Vol and conviction* now enter through `expected_returns.build_mu`
+   (`μ = IC × σ × z`, [ADR-0108](adrs/0108-expected-returns-are-constructed-not-assumed.md)),
+   which the optimizer trades off against variance ([ADR-0107](adrs/0107-the-optimizer-sizes-what-l5-chose.md)).
+   *Crowding* enters as a **per-name cap**, not a μ haircut
+   ([ADR-0110](adrs/0110-crowding-caps-what-it-can-see.md)) — the exit being narrow
+   supports holding *less*, not a claim about returns, and a cap is visible in
+   `binding_constraints` where a μ adjustment would leave a smaller weight
+   unattributable. The test above is now `test_at_equal_conviction_the_crowded_position_is_smaller_*`,
+   asserted on **both** sizing paths; the constraint is
+   `test_crowding_is_neutral_where_unobservable`, which requires an unmapped name's
+   weight to be **bit-identical** with the input wired and unwired.
+   *Upside* is **addressed in units, absent in substance** and stays on this register
+   ([ADR-0111](adrs/0111-mu-is-the-return-input-and-what-it-is-not.md)): `optimizer_result.mu`
+   is denominated in expected return, but its cross-sectional content is
+   `sign × |EdgeScore| × σ` — a rank in return units, carrying no view of how far a name
+   can travel. The claim above that `expected_return` appears nowhere is therefore
+   **stale**; it now appears, as this construction and not as a target. Closing it needs
+   a fundamentals or estimates feed with a per-name valuation anchor, which this repo
+   does not have.
+   **Measured on the live book: nothing was tightened.** Coverage 22.2%, and both
+   observable positions (SHY 69.9, SVXY 33.2) sit mid-range against the 80/20 threshold,
+   so the recorded reason is *"2 observable positions were checked and none sits at a
+   speculator extreme"*. The machinery is wired and correct and today changes no weight,
+   because the data says nothing. That is the result, not a reason to loosen the
+   multiplier. **The bias remains and is watched, not solved**: penalising only what is
+   observable advantages what is not, so `coverage_share` is persisted every run.
+
 2. **The alpha is in data neither the quant nor the fundamental process can use.**
    The examples are scraped state highway-patrol data and hand-mapped fire perimeters:
    too few tickers to backtest, too much scraping to be desk work. Andromeda's attention

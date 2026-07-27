@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  describeCrowding,
   describeSizing,
   frontierPath,
   sizingRows,
@@ -159,5 +160,74 @@ describe("frontierPath", () => {
     })!;
     expect(path.points).toHaveLength(2);
     expect(path.polyline).not.toContain("NaN");
+  });
+});
+
+describe("describeCrowding", () => {
+  const tightened = {
+    applied: true,
+    reason: null,
+    multiplier: 0.5,
+    coverage_share: 0.222,
+    observed_positions: 2,
+    unobservable_positions: 8,
+    as_of: "2026-07-21",
+    tightened: [
+      {
+        asset: "SVXY",
+        cap: 0.1,
+        direction: "long",
+        effective_side: "short",
+        inverse: true,
+        cot_index: 12,
+        crowded_side: "short",
+      },
+    ],
+  };
+
+  it("states coverage whether or not anything was tightened", () => {
+    // GOAL.md's constraint: an input unmeasurable on four fifths of the book must degrade
+    // to neutral WITH its coverage stated at the point of use. A verdict without its
+    // denominator lets "almost nothing could be checked" read as "nothing was crowded".
+    for (const block of [tightened, { ...tightened, applied: false, tightened: [], reason: "none sits at a speculator extreme" }]) {
+      const summary = describeCrowding(block)!;
+      expect(summary.coverage).toContain("22%");
+      expect(summary.coverage).toContain("2 of 10");
+      expect(summary.coverage).toContain("2026-07-21");
+    }
+  });
+
+  it("distinguishes 'nothing crowded' from 'nothing observable'", () => {
+    const uncrowded = describeCrowding({
+      ...tightened, applied: false, tightened: [],
+      reason: "2 observable positions were checked and none sits at a speculator extreme",
+    })!;
+    const unobservable = describeCrowding({
+      ...tightened, applied: false, tightened: [], observed_positions: 0,
+      unobservable_positions: 10, coverage_share: 0,
+      reason: "no position in the book maps to a futures contract with a usable history",
+    })!;
+    expect(uncrowded.verdict).not.toEqual(unobservable.verdict);
+    expect(uncrowded.verdict).toContain("none sits at a speculator extreme");
+    expect(unobservable.verdict).toContain("maps to a futures contract");
+  });
+
+  it("says plainly that unobservable positions were not affected", () => {
+    const summary = describeCrowding({ ...tightened, applied: false, tightened: [] })!;
+    expect(summary.verdict).toMatch(/sized exactly as they would be without this check/);
+  });
+
+  it("surfaces the resolved side for an inverse product", () => {
+    // Long SVXY is short VIX. Rendering the book side beside "specs crowded short" would
+    // read as a contradiction; the flip has to reach the copy.
+    const summary = describeCrowding(tightened)!;
+    expect(summary.tightened[0].effective_side).toBe("short");
+    expect(summary.tightened[0].inverse).toBe(true);
+  });
+
+  it("returns null only when the column is absent", () => {
+    expect(describeCrowding(null)).toBeNull();
+    expect(describeCrowding(undefined)).toBeNull();
+    expect(describeCrowding({})).not.toBeNull();
   });
 });

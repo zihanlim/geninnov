@@ -203,7 +203,12 @@ describe("risk_metrics", () => {
       portfolio_returns: sessions(3),
     }));
     expect(out.absence).toMatch(/EXIST in portfolio_risk/);
-    expect(out.absence).toMatch(/Sharpe \(3 sessions of return history, needs 60/);
+    // Labels now carry method and horizon. There are four figures a reader may call "VaR",
+    // and a model handed two bare "VaR 95%" facts will state one while citing the other —
+    // the regression PROGRESS records twice (ADR-0082). The qualifier is load-bearing, so
+    // it is asserted rather than tolerated.
+    expect(out.absence).toMatch(/Sharpe \(annualised\) \(3 sessions of return history, needs 60/);
+    expect(out.absence).toMatch(/VaR 95% \(parametric, 1-day, realised\)/);
     expect(out.absence).toMatch(/do NOT say they are unavailable/);
   });
 
@@ -304,5 +309,117 @@ describe("runTool", () => {
   it("reports an unknown tool without pretending it read anything", async () => {
     const out = await runTool("get_prices", {}, ctx({}));
     expect(out.absence).toMatch(/No tool named/);
+  });
+});
+
+// ─── sizing_provenance ───────────────────────────────────────────────────────
+//
+// The book-level "why that size" question. It reaches an external model through MCP with
+// no auth and no rate limit, so the properties that matter are the ones about what it
+// REFUSES to imply: that a missing method means conviction, and that a crowding verdict
+// can travel without its coverage.
+
+const SIZED_BOOK = {
+  run_date: "2026-07-25",
+  sizing_method: "optimizer",
+  sizing_reason: null,
+  optimizer_result: {
+    feasible: true,
+    status: "optimal",
+    gross: 0.561,
+    net: 0.016,
+    cash: 0.439,
+    volatility: 0.0744,
+    expected_return: 0.00728,
+    turnover: 0.363,
+    ic: { value: 0.0373 },
+    binding_constraints: ["US at geo cap"],
+    zeroed: ["SHY"],
+    crowding: {
+      applied: true,
+      coverage_share: 0.222,
+      crowded_share: 0.09,
+      reason: null,
+      tightened: [
+        { asset: "SVXY", cap: 0.1, cot_index: 12, crowded_side: "short", effective_side: "short" },
+      ],
+    },
+  },
+  rebalance_cost: { total_cost: 54_412 },
+  heuristic_weights: { SVXY: 0.0394, GDX: -0.064 },
+};
+
+describe("sizing_provenance", () => {
+  it("reports which model sized the book, and the IC it used", async () => {
+    const out = await runTool("sizing_provenance", {}, ctx({ research_recommendations: [SIZED_BOOK] }));
+    const byKey = Object.fromEntries(out.facts.map((f) => [f.key, f]));
+    expect(byKey["sizing.method"].value).toBe("optimizer");
+    expect(byKey["sizing.ic"].value).toBeCloseTo(0.0373);
+    expect(byKey["sizing.gross"].value).toBeCloseTo(0.561);
+    expect(byKey["sizing.cash"].value).toBeCloseTo(0.439);
+    expect(out.absence).toBeUndefined();
+    for (const fact of out.facts) expect(fact.source).toMatch(/^research_recommendations\./);
+  });
+
+  it("emits crowding COVERAGE, not just the verdict", async () => {
+    // Through this surface the omission is worse than on the page: a model told "no
+    // position is crowded" without a coverage figure will report the book as checked for
+    // crowding when four fifths of it cannot be (ADR-0097).
+    const out = await runTool("sizing_provenance", {}, ctx({ research_recommendations: [SIZED_BOOK] }));
+    const byKey = Object.fromEntries(out.facts.map((f) => [f.key, f]));
+    expect(byKey["sizing.crowding_coverage"].value).toBeCloseTo(0.222);
+    expect(byKey["sizing.crowded_share"].value).toBeCloseTo(0.09);
+    expect(byKey["sizing.crowding_tightened_count"].value).toBe(1);
+    // And the resolved side travels, or "long SVXY / crowded short" reads as a mistake.
+    expect((out.notes?.crowding_tightened as string[])[0]).toContain("SVXY");
+    expect((out.notes?.crowding_tightened as string[])[0]).toContain("short");
+  });
+
+  it("says why nothing was tightened when nothing was", async () => {
+    const uncrowded = {
+      ...SIZED_BOOK,
+      optimizer_result: {
+        ...SIZED_BOOK.optimizer_result,
+        crowding: {
+          applied: false,
+          coverage_share: 0.222,
+          crowded_share: 0,
+          reason: "2 observable positions were checked and none sits at a speculator extreme",
+          tightened: [],
+        },
+      },
+    };
+    const out = await runTool("sizing_provenance", {}, ctx({ research_recommendations: [uncrowded] }));
+    expect(out.notes?.crowding_not_applied).toContain("none sits at a speculator extreme");
+    const byKey = Object.fromEntries(out.facts.map((f) => [f.key, f]));
+    // Coverage is still emitted — "nothing crowded" is only meaningful beside it.
+    expect(byKey["sizing.crowding_coverage"].value).toBeCloseTo(0.222);
+  });
+
+  it("refuses to infer conviction sizing from a missing column", async () => {
+    // Every pre-047 book WAS conviction-sized, so saying so would be right — which is
+    // exactly why it is the wrong habit. The same path runs when a future write fails.
+    const { sizing_method: _m, ...legacy } = SIZED_BOOK;
+    const out = await runTool("sizing_provenance", {}, ctx({ research_recommendations: [legacy] }));
+    expect(out.absence).toMatch(/predates the column/);
+    expect(out.absence).toMatch(/Do NOT infer it was conviction-sized/);
+  });
+
+  it("carries the fallback reason when the optimizer did not run", async () => {
+    const fallback = {
+      run_date: "2026-07-25",
+      sizing_method: "conviction",
+      sizing_reason: "no EdgeScore IC has been measured yet",
+      optimizer_result: { feasible: false, status: "not_run", reason: "no EdgeScore IC has been measured yet" },
+    };
+    const out = await runTool("sizing_provenance", {}, ctx({ research_recommendations: [fallback] }));
+    expect(out.absence).toContain("no EdgeScore IC has been measured yet");
+    expect(out.notes?.why_not_optimizer).toBe("no EdgeScore IC has been measured yet");
+  });
+
+  it("states an absence rather than an empty answer when no book exists", async () => {
+    const out = await runTool("sizing_provenance", {}, ctx({ research_recommendations: [] }));
+    expect(out.facts).toEqual([]);
+    expect(out.absence).toMatch(/no rows/);
   });
 });

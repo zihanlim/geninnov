@@ -54,6 +54,7 @@ from .book_metrics import (
     cap_utilisation,
     independent_ideas,
     MIN_ADV_Millions,
+    MAX_SINGLE_NAME_WEIGHT,
     SECTOR_MAP,
     GEO_MAP,
 )
@@ -503,6 +504,37 @@ def _load_recent_headlines(sb: Client, run_date: str, lookback_days: int = 7) ->
     ]
 
 
+# Sentinel: "the key was never set", as distinct from "fetched and got None/{}". A plain
+# `.get(key)` returning None cannot tell those apart, and they mean different things — the
+# first should fetch, the second must not.
+_COT_NOT_FETCHED = object()
+
+
+def _fetch_cot_readings(picks_or_candidates: list[dict]) -> dict | None:
+    """The run's ONE read of CFTC speculator positioning. Never raises.
+
+    Fetched here, ahead of sizing, because `crowding_caps` now tightens a position's limit
+    (ADR-0110) and `_positioning_row` explains it — and those two must be the same reading.
+    Returns None on a wholesale failure, which persists as `fetched=False`: "we did not look"
+    is a different claim from "nothing is crowded" (ADR-0097).
+    """
+    try:
+        from ..data.cot_fetcher import fetch_readings
+    except Exception as exc:  # noqa: BLE001 — an overlay must never cost the run
+        print(f"[cot] fetcher unavailable ({exc.__class__.__name__}): {exc}")
+        return None
+    assets = [c.get("asset") for c in (picks_or_candidates or []) if c.get("asset")]
+    if not assets:
+        return None
+    try:
+        readings = fetch_readings(assets)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[cot] fetch failed ({exc.__class__.__name__}): {exc}")
+        return None
+    print(f"[cot] {len(readings)} of {len(set(assets))} assets have a usable reading")
+    return readings
+
+
 def _load_edge_ic(sb: Client) -> tuple[IcReading | None, str | None]:
     """The most recent measured EdgeScore component ICs, blended into one number.
 
@@ -623,6 +655,12 @@ def aggregate_context(state: Q1State) -> Q1State:
     # no return forecast to work from, and the run sizes by conviction instead. The
     # reason travels so the book can say which of the two sized it.
     state["edge_ic"], state["edge_ic_reason"] = _load_edge_ic(sb)
+
+    # The run's one COT read, over the CANDIDATE pool — picks are a subset of it, so this
+    # covers whatever L5 goes on to choose without needing to know the choice yet, and it
+    # happens off the LLM's critical path. `size_positions` tightens caps from it and
+    # `_positioning_row` explains those caps from the same object (ADR-0110).
+    state["cot_readings"] = _fetch_cot_readings(state.get("candidates") or [])
 
     state["theme_scores"] = theme_scores
     state["factor_exposures"] = factor_exposures
@@ -2214,6 +2252,47 @@ def attach_asset_factor_tilts(
     return picks
 
 
+def _benchmark_series(state: Q1State) -> list[tuple[str, float]] | None:
+    """A 252-day reference series for the fixed-weight backtest.
+
+    `benchmark_returns` only covers the BOOK's inception window — three sessions — so it
+    cannot answer "how did these weights behave against the market last year". This fetches
+    the index over the backtest window instead.
+
+    Deliberately a separate fetch rather than an extra column on the shared returns frame:
+    that frame feeds the covariance, the correlation matrix and the Euler decomposition, and
+    a benchmark column sitting in it is one careless `returns.columns` away from being
+    treated as a position.
+
+    Never raises — the backtest is still worth having without a comparison.
+    """
+    cached = state.get("benchmark_series")
+    if cached is not None:
+        return cached or None
+    try:
+        import yfinance as yf
+
+        data = yf.download("^GSPC", period="2y", progress=False, auto_adjust=True)
+        if data is None or data.empty:
+            state["benchmark_series"] = []
+            return None
+        close = data["Close"]
+        if hasattr(close, "columns"):
+            close = close.iloc[:, 0]
+        rets = close.pct_change().dropna()
+        series = [
+            (d.strftime("%Y-%m-%d"), float(v))
+            for d, v in zip(rets.index, rets.values)
+            if v == v
+        ]
+    except Exception as exc:                          # pragma: no cover - network
+        print(f"[_benchmark_series] unavailable ({exc.__class__.__name__}): {exc}")
+        state["benchmark_series"] = []
+        return None
+    state["benchmark_series"] = series
+    return series or None
+
+
 def _hoist_returns(state: Q1State, assets: list[str]):
     """Fetch ONE 252-day returns frame per run and cache it on state.
 
@@ -2336,6 +2415,41 @@ def size_positions(state: Q1State) -> Q1State:
         state["error"] = "No sizable picks after taxonomy check — using fallback"
         return fallback_picks(state)
 
+    # ── Crowding as a per-name limit (ADR-0110) ──────────────────────────────────
+    # Bar 1: sizing takes four inputs, not two. This is the third. It tightens the
+    # single-name cap on positions sitting with an extreme speculator consensus, and it
+    # returns a map containing ONLY those names — so a position COT cannot see keeps the
+    # base cap and is sized bit-for-bit as it would have been. That neutrality is the
+    # constraint GOAL.md imposes, and `test_crowding_is_neutral_where_unobservable` pins it.
+    #
+    # Computed ONCE and handed to whichever sizer runs. A crowding input the optimizer
+    # respected and the fallback ignored would be ADR-0053 again: two sizing paths, one of
+    # them quietly not doing what every surface says it does.
+    crowding_caps_map: dict[str, float] = {}
+    crowding_provenance: dict | None = None
+    try:
+        from .positioning_crowding import assess as assess_crowding, crowding_caps
+        sized_picks = [
+            {"asset": c.asset, "direction": c.direction, "weight": 1.0 / max(len(sizable), 1)}
+            for c in sizable
+        ]
+        # Equal weights here on purpose: the caps must not depend on the sizes they are
+        # about to constrain, or the input becomes circular. `crowding_caps` reads only
+        # `agrees_with_crowd`, which is weight-independent; the weights exist so the
+        # coverage share in the provenance is denominated in something real.
+        assessment = assess_crowding(sized_picks, 1.0, state.get("cot_readings"))
+        crowding_caps_map, crowding_provenance = crowding_caps(
+            assessment, MAX_SINGLE_NAME_WEIGHT
+        )
+    except Exception as exc:                         # pragma: no cover - defensive
+        print(f"[size_positions] crowding caps skipped ({exc.__class__.__name__}): {exc}")
+
+    if crowding_caps_map:
+        print(
+            f"[size_positions] crowding tightened {len(crowding_caps_map)} cap(s): "
+            + ", ".join(f"{a} -> {w:.1%}" for a, w in sorted(crowding_caps_map.items()))
+        )
+
     # ── The conviction book: always computed, for two reasons ────────────────────
     # It is the FALLBACK when the optimizer cannot run, and it is the BASELINE the
     # optimizer is measured against. size_by="conviction" is the documented Stage-4
@@ -2347,6 +2461,8 @@ def size_positions(state: Q1State) -> Q1State:
         sector_map=SECTOR_MAP,
         geo_map=GEO_MAP,
         size_by="conviction",
+        max_single=crowding_caps_map or MAX_SINGLE_NAME_WEIGHT,
+        default_single=MAX_SINGLE_NAME_WEIGHT,
     )
     heuristic: dict[str, float] = {}
     for pick, (_cand, _notional, weight) in zip(kept, positioned):
@@ -2417,7 +2533,13 @@ def size_positions(state: Q1State) -> Q1State:
                         # actually has: what did the optimizer change, and what did it buy?
                         weights0={a: heuristic.get(a, 0.0) for a in priced},
                     )
-                    result = optimize(inputs, "mean_variance", OptimizerConstraints())
+                    result = optimize(
+                        inputs, "mean_variance",
+                        OptimizerConstraints(
+                            max_single=crowding_caps_map or MAX_SINGLE_NAME_WEIGHT,
+                            default_single=MAX_SINGLE_NAME_WEIGHT,
+                        ),
+                    )
                     if not result.feasible:
                         reason = result.reason or f"optimizer returned {result.status}"
                     elif not any(result.signed_weights.values()):
@@ -2438,9 +2560,21 @@ def size_positions(state: Q1State) -> Q1State:
                         payload["unpriced_assets"] = sorted(set(unpriced) | set(mu_dropped))
                         payload["mu"] = mu
                         payload["baseline"] = "conviction (ADR-0032)"
+                        # Coverage at the point of use. A reader must never see a position
+                        # sized smaller without also seeing what fraction of the book the
+                        # crowding check could reach — GOAL.md's constraint, and the reason
+                        # this block leads with `coverage_share` rather than the verdict.
+                        payload["crowding"] = crowding_provenance
                         state["optimizer_result"] = payload
                         state["efficient_frontier"] = efficient_frontier(
-                            inputs, OptimizerConstraints()
+                            # The SAME constraints the book was solved under, crowding caps
+                            # included — a frontier drawn under looser limits would put the
+                            # published book below a curve it was never allowed to reach.
+                            inputs,
+                            OptimizerConstraints(
+                                max_single=crowding_caps_map or MAX_SINGLE_NAME_WEIGHT,
+                                default_single=MAX_SINGLE_NAME_WEIGHT,
+                            ),
                         ).to_dict()
                         # What the move from the conviction book to this one costs.
                         state["rebalance_cost"] = estimate_portfolio_costs(
@@ -2457,6 +2591,10 @@ def size_positions(state: Q1State) -> Q1State:
             "objective": "mean_variance",
             "status": "not_run",
             "reason": reason,
+            # The fallback applies the same crowding caps, so the provenance travels on the
+            # fallback path too. Omitting it here would make the sizing input look like an
+            # optimizer-only feature when both paths honour it.
+            "crowding": crowding_provenance,
         }
 
     state["sizing_method"] = method
@@ -2679,6 +2817,48 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
             state["var_forecast_final"] = fan.to_dict() if fan else None
     except Exception as exc:
         print(f"[finalise_book_analytics] MC/VaR-fan skipped "
+              f"({exc.__class__.__name__}): {exc}")
+
+    # What these weights WOULD have done over the constituents' own year — the path
+    # statistics (drawdown, downside asymmetry, capture) that ex-ante risk structurally
+    # cannot produce and that a three-session book cannot either.
+    #
+    # Explicitly NOT a track record, and never written to `portfolio_returns`. See
+    # ADR-0112; the caveats travel inside the payload rather than living on the page, so a
+    # consumer reading the column through MCP gets them too.
+    state["weights_backtest_final"] = None
+    try:
+        from .weights_backtest import backtest_weights
+        signed = {
+            p["asset"]: (
+                -abs(p.get("weight", 0.0)) if p.get("direction") == "short"
+                else abs(p.get("weight", 0.0))
+            )
+            for p in picks if p.get("asset")
+        }
+        # A DEDICATED, WIDER frame — not `shared_returns`.
+        #
+        # `fetch_pick_returns(lookback_days=252)` spans 252 + 30 CALENDAR days, which is
+        # about 195 TRADING sessions. A 252-trading-day floor is therefore unreachable
+        # from that frame, and the first live run duly returned "190 sessions against the
+        # 252 a path statistic needs" — a capability that could never fire, which is the
+        # failure ADR-0099 names.
+        #
+        # The covariance does not care (it needs 60), so widening the shared frame would
+        # cost every other consumer a longer fetch for no benefit. This asks for ~500
+        # calendar days, comfortably over a trading year, and falls back to the shared
+        # frame so a failed fetch costs the backtest rather than the book.
+        from .book_metrics import fetch_pick_returns
+        try:
+            wide = fetch_pick_returns(sorted(signed.keys()), lookback_days=470)
+        except Exception:                            # pragma: no cover - network
+            wide = None
+        frame = wide if (wide is not None and not wide.empty) else shared_returns
+        state["weights_backtest_final"] = backtest_weights(
+            signed, frame, benchmark=_benchmark_series(state),
+        )
+    except Exception as exc:
+        print(f"[finalise_book_analytics] weights backtest skipped "
               f"({exc.__class__.__name__}): {exc}")
 
     state["cap_utilisation_final"] = cap_utilisation(bm, picks)
@@ -3058,11 +3238,22 @@ def _positioning_row(state: Q1State) -> dict | None:
     if book is None:
         return None
     picks, gross = book
-    try:
-        readings = fetch_readings(p.get("asset") for p in picks if p.get("asset"))
-    except Exception as exc:  # noqa: BLE001
-        print(f"[_persist_to_supabase] COT fetch failed ({exc.__class__.__name__}): {exc}")
-        readings = None
+    # Reuse the reading `size_positions` sized on, never fetch a second one. Two fetches in
+    # one run can return two different readings, and the book would then be SIZED by one and
+    # EXPLAINED by the other — the exact defect the chokepoint signal had to be restructured
+    # to avoid (ADR-0099). `state["cot_readings"]` is set once, before sizing.
+    #
+    # `_COT_NOT_FETCHED` distinguishes "we fetched and got nothing usable" (an empty dict,
+    # which is a real finding) from "the key is not on state at all" — only the latter falls
+    # through to a fetch here, and that path exists solely for callers that drive this node
+    # directly, such as a backfill.
+    readings = state.get("cot_readings", _COT_NOT_FETCHED)
+    if readings is _COT_NOT_FETCHED:
+        try:
+            readings = fetch_readings(p.get("asset") for p in picks if p.get("asset"))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[_persist_to_supabase] COT fetch failed ({exc.__class__.__name__}): {exc}")
+            readings = None
     try:
         return to_row(assess(picks, gross, readings))
     except Exception as exc:  # noqa: BLE001 — an analytic must never cost the run
@@ -3205,6 +3396,10 @@ def _persist_to_supabase(state: Q1State) -> bool:
             # merged with var_95, which is realised and parametric (ADR-0082).
             "monte_carlo_var": state.get("monte_carlo_var_final"),
             "var_forecast": state.get("var_forecast_final"),
+            # A backtest of THESE weights, not a track record (ADR-0112). Its own column
+            # so it can never be mistaken for `portfolio_returns`, and its caveats ride
+            # inside the payload so an MCP consumer gets them with the numbers.
+            "weights_backtest": state.get("weights_backtest_final"),
         }
 
         # Record WHAT this upsert is about to overwrite, before it overwrites it.

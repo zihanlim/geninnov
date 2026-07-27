@@ -19,12 +19,26 @@ flipping produces a crowding verdict that is exactly backwards — and, unlike a
 a wrong side has no symptom a reader could catch. `ContractMap.inverse` exists for this one
 case and `effective_side` is the only place direction is resolved.
 
-AGREEING WITH A CROWD IS A RISK, NOT A SIGNAL. A position that sits with an extreme
-speculator consensus is exposed to that consensus unwinding. Nothing here recommends a trade,
-reverses one, or feeds sizing; it is disclosure, in the same family as the sanctions overlay
-and the stress table.
+AGREEING WITH A CROWD IS A RISK, NOT A SIGNAL — AND SINCE ADR-0110 IT IS ALSO A CAP. A
+position sitting with an extreme speculator consensus is exposed to that consensus unwinding.
+Nothing here recommends a trade or reverses one; what it now does, via `crowding_caps`, is
+*limit how much of such a position the book may hold*. That is deliberately the weaker of the
+two things it could do. Crowding says the exit is narrow — a liquidity and positioning risk —
+so it constrains size rather than adjusting the expected return, which would assert a claim
+about future returns that nobody has measured.
 
-See ADR-0097.
+ADR-0097 said this module never feeds sizing. ADR-0110 supersedes that clause and only that
+clause: coverage-first, the inverse flip, `fetched=False` as a distinct state, and
+miners-are-not-the-metal all stand unchanged.
+
+NEUTRALITY IS ABSENCE. `crowding_caps` returns a map containing ONLY the names it tightens.
+An unobservable name is absent, so it keeps the base cap and is sized exactly as it would
+have been — bit for bit. That is the constraint bar 1 imposes, and it has a cost worth naming
+rather than hiding: penalising only what we can see gives a structural advantage to what we
+cannot, so the book drifts toward instruments with no contract unless someone watches
+`coverage_share` over time. See ADR-0110.
+
+See ADR-0097, ADR-0110.
 """
 
 from __future__ import annotations
@@ -42,6 +56,22 @@ from ..data.cot_fetcher import COT_CONTRACTS, CotReading, unmapped_reason
 # value is in the diff. Nothing downstream tunes on it.
 CROWDED_HIGH = 80.0
 CROWDED_LOW = 20.0
+
+# What fraction of its normal single-name limit a crowded position may hold.
+#
+# A JUDGEMENT, NOT A FIT — the same standing as the 80/20 threshold above, and named here for
+# the same reason: when someone does fit it, the change is visible and the old value is in the
+# diff. Half is chosen because it is decisive enough that a reader can see the effect at equal
+# conviction (which is bar 1's own test) without being so severe that a single COT print
+# reshapes the book. Nothing tunes on it.
+CROWDED_CAP_MULTIPLIER = 0.5
+
+# Why a position could not be observed, as a value rather than as prose. The `reason` string
+# is what a reader sees; this is what code branches on. They are written together so they
+# cannot disagree.
+CAUSE_NO_CONTRACT = "no_contract"
+CAUSE_NOT_RETRIEVED = "not_retrieved"
+CAUSE_INSUFFICIENT_HISTORY = "insufficient_history"
 
 
 @dataclass
@@ -148,6 +178,11 @@ def assess(
             out.unobservable.append({
                 "asset": asset, "direction": direction, "weight": w,
                 "reason": unmapped_reason(asset),
+                # Structural, beside the prose. Sizing has to distinguish "COT will never
+                # cover this" from "COT covers it and we failed to read it today" — the first
+                # is permanent and the second is a run-level fault — and parsing the sentence
+                # to find out would make the render's wording load-bearing.
+                "cause": CAUSE_NO_CONTRACT,
             })
             continue
 
@@ -156,13 +191,17 @@ def assess(
             # Mapped, but no usable percentile — either not fetched, or too short a history.
             # Reported as unobservable so it is never silently counted as uncrowded, with the
             # reason naming which of the two it was.
+            not_retrieved = not out.fetched or reading is None
             out.unobservable.append({
                 "asset": asset, "direction": direction, "weight": w,
                 "reason": (
                     f"Maps to {cm.name}, but no reading was retrieved."
-                    if not out.fetched or reading is None
+                    if not_retrieved
                     else f"Maps to {cm.name}, but fewer than the minimum weekly prints are "
                          f"available, so its percentile would not be a percentile."
+                ),
+                "cause": (
+                    CAUSE_NOT_RETRIEVED if not_retrieved else CAUSE_INSUFFICIENT_HISTORY
                 ),
             })
             continue
@@ -199,6 +238,102 @@ def assess(
     # stalest input, and reporting the newest would overstate it.
     out.as_of = min(dates) if dates else None
     return out
+
+
+def crowding_caps(
+    pc: PositioningCrowding,
+    base_cap: float,
+    multiplier: float = CROWDED_CAP_MULTIPLIER,
+) -> tuple[dict[str, float], dict]:
+    """Per-name single-name limits, tightened where the book agrees with a crowded consensus.
+
+    Returns `(caps, provenance)`.
+
+    `caps` contains **only the names it tightens**. Everything else — uncrowded, unmapped,
+    unretrieved — is absent, and an absent name keeps `base_cap`. That is what "degrade to
+    neutral" means operationally: a position COT cannot see is sized exactly as it would have
+    been with this function deleted, bit for bit, and a test pins that.
+
+    Why a cap and not a haircut on expected return. Crowding says the exit is narrow. Docking
+    `mu` would say the position will *return* less, which is a claim about future returns that
+    nothing here has measured; tightening the limit says we will *hold* less of it, which is
+    what a positioning extreme actually supports. A cap is also visible — it lands in
+    `OptimizationResult.binding_constraints` naming the position it bit — where a `mu`
+    adjustment would leave a reader looking at a smaller weight with no way to attribute it.
+
+    `provenance` is the block a caller persists and renders. It leads with coverage, because
+    the tightening is only as meaningful as the share of the book it could have applied to,
+    and it distinguishes the three reasons nothing was tightened: the fetch failed, nothing
+    maps, or everything that maps was checked and found uncrowded. Those are different facts
+    and a single "no positions tightened" would collapse them (ADR-0098).
+    """
+    tightened: dict[str, float] = {}
+    detail: list[dict] = []
+
+    for row in pc.rows:
+        if not row.get("agrees_with_crowd"):
+            continue
+        asset = row.get("asset")
+        if not asset:
+            continue
+        cap = base_cap * multiplier
+        tightened[asset] = cap
+        detail.append({
+            "asset": asset,
+            "cap": cap,
+            "base_cap": base_cap,
+            "direction": row.get("direction"),
+            # The resolved side, not the book side — long SVXY is short VIX, and a reader
+            # comparing "long" against "specs crowded short" would think this was a mistake.
+            "effective_side": row.get("effective_side"),
+            "inverse": row.get("inverse"),
+            "cot_index": row.get("cot_index"),
+            "crowded_side": row.get("crowded_side"),
+            "contract": row.get("contract"),
+        })
+
+    causes: dict[str, int] = {}
+    for record in pc.unobservable:
+        cause = record.get("cause") or CAUSE_NO_CONTRACT
+        causes[cause] = causes.get(cause, 0) + 1
+
+    if tightened:
+        reason = None
+    elif not pc.fetched:
+        reason = (
+            "external positioning was not retrieved this run, so no position was tightened — "
+            "unknown, not uncrowded"
+        )
+    elif not pc.rows:
+        reason = (
+            "no position in the book maps to a futures contract with a usable history, so "
+            "crowding could not size anything"
+        )
+    else:
+        reason = (
+            f"{len(pc.rows)} observable "
+            f"{'position was' if len(pc.rows) == 1 else 'positions were'} checked and none "
+            "sits at a speculator extreme"
+        )
+
+    provenance = {
+        "applied": bool(tightened),
+        "reason": reason,
+        "multiplier": multiplier,
+        "base_cap": base_cap,
+        # Coverage first — the tightening means nothing without the share it could reach.
+        "coverage_share": pc.coverage_share,
+        "crowded_share": pc.crowded_share,
+        "observed_positions": len(pc.rows),
+        "unobservable_positions": len(pc.unobservable),
+        "unobservable_causes": causes,
+        "fetched": pc.fetched,
+        "as_of": pc.as_of,
+        "crowded_high": CROWDED_HIGH,
+        "crowded_low": CROWDED_LOW,
+        "tightened": detail,
+    }
+    return tightened, provenance
 
 
 def describe(pc: PositioningCrowding) -> str:

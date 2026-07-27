@@ -22,10 +22,35 @@ from backend.derivations import (
 )
 
 
-# Minimum observations needed to trust each metric
+# Minimum observations needed to trust each metric.
+#
+# These are the source of truth across the language boundary: `lib/risk/sampleAdequacy.ts`
+# mirrors them and `risk-thresholds.test.ts` PARSES this file and fails if the two disagree
+# (ADR-0100). Adding an estimated metric without a minimum here does not merely skip a
+# render — it makes the figure quotable as a cited fact through `/ask` and the MCP server,
+# which is the exact failure ADR-0100 was written about.
 MIN_DAYS_FOR_VAR = 30
 MIN_DAYS_FOR_SHARPE = 60
 MIN_DAYS_FOR_BETA = 60
+
+# A HISTORICAL VaR reads an empirical quantile rather than assuming a shape, so it needs
+# materially more history than the parametric one: at 95%, a 100-session sample puts five
+# observations in the tail, and below that the "quantile" is interpolating between two
+# points. The expected shortfall is the MEAN of that same tail, so it is bound by the same
+# constraint and carries the same floor.
+MIN_DAYS_FOR_HISTORICAL_VAR = 100
+
+# Sortino is Sharpe with a downside-only denominator — the same statistic, the same floor.
+MIN_DAYS_FOR_SORTINO = 60
+
+# Max drawdown is a realised extremum rather than an estimate, but "worst peak-to-trough"
+# over a handful of sessions describes those sessions and not the book.
+MIN_DAYS_FOR_MAX_DRAWDOWN = 30
+
+# Calmar is an ANNUALISED return over the max drawdown, so on a short sample both terms are
+# unreliable and the ratio multiplies the error. Measured on the live 3-observation series it
+# returns 376.5, which is arithmetically correct and editorially meaningless. A year.
+MIN_DAYS_FOR_CALMAR = 252
 
 
 def _z_score(confidence: float) -> float:

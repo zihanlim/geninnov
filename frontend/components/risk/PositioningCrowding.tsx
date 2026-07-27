@@ -287,8 +287,15 @@ export function PositioningCrowding({
                 persisted summary above already states them, and printing the same sentence
                 twice two paragraphs apart is what the first version did. Rationale belongs
                 in this comment, not in the copy a reader sees. */}
-            unwinding — and never a reason to hold a position. Source:{" "}
-            <Ident>research_recommendations.positioning_crowding</Ident>.
+            unwinding — and never a reason to <em>hold</em> a position. Since{" "}
+            <Ident>ADR-0110</Ident> it is a reason to hold <em>less</em>: a position at a
+            speculator extreme has its single-name limit tightened, which constrains size
+            without asserting anything about its return. Positions with no futures contract —
+            four fifths of this book — are sized exactly as they would be without the check,
+            so read the coverage figure above before reading the verdict. Source:{" "}
+            <Ident>research_recommendations.positioning_crowding</Ident>, and{" "}
+            <Ident>research_recommendations.optimizer_result.crowding</Ident> for what it
+            actually sized.
           </p>
         </>
       )}

@@ -21,6 +21,9 @@ import { CorrelationMatrix } from "@/components/risk/CorrelationMatrix";
 import { CapUtilisation } from "@/components/risk/CapUtilisation";
 import { BookFactorTilt } from "@/components/risk/BookFactorTilt";
 import { RiskMetricsGrid } from "@/components/risk/RiskMetricsGrid";
+import VarMethods from "@/components/risk/VarMethods";
+import BenchmarkComparison from "@/components/risk/BenchmarkComparison";
+import WeightsBacktest from "@/components/risk/WeightsBacktest";
 import {
   DrawdownChart,
   type BenchmarkRow,
@@ -82,10 +85,10 @@ const RISK_SECTIONS = [
 const ANALYTICS_COLUMNS =
   // picks: the published book, so this page can check that the positions it computes
   // risk on are the names the book actually holds (ADR-0040).
-  "run_date, lens, scenario_results, correlation_pairs, cap_utilisation, book_metrics, picks, sanctions_exposure, positioning_crowding";
+  "run_date, lens, scenario_results, correlation_pairs, cap_utilisation, book_metrics, picks, sanctions_exposure, positioning_crowding, risk_decomposition, monte_carlo_var, var_forecast, weights_backtest";
 const BASE_COLUMNS = "run_date, lens";
 const RISK_COLUMNS =
-  "run_date, updated_at, total_capital, var_95, cvar_95, sharpe, beta, concentration_hhi, numeric_derivations";
+  "run_date, updated_at, total_capital, var_95, cvar_95, sharpe, beta, concentration_hhi, numeric_derivations, var_95_historical, es_95_historical, sortino, max_drawdown, calmar, tracking_error, information_ratio, benchmark_comparison, conditional_vol";
 const RETURN_COLUMNS = "run_date, daily_return, cumulative_return, portfolio_value";
 const POSITION_COLUMNS =
   "id, theme_id, asset, direction, notional, weight, hype_score, trade_score, edge_score, trend_signal, regime_bias, carry_signal, value_signal, sentiment_signal, conviction, vol";
@@ -710,6 +713,40 @@ function RiskPageInner() {
         prevRunDate={prevRunDate}
         sessions={data.returns.length}
       />
+
+      {/* 2b — The four VaRs, together, each with its horizon and basis.
+              The tile above publishes ONE of them. Three more sit in the database:
+              `risk_decomposition` since migration 038 with its render recorded as
+              pending in ADR-0082, and the Monte Carlo and fan since 047. Surfacing
+              one without the others is how a page ends up with two numbers called
+              VaR that differ by an order of magnitude. */}
+      <div className="mt-6">
+        <VarMethods
+          risk={data.risk}
+          decomposition={data.analyticsRow?.risk_decomposition ?? null}
+          monteCarlo={data.analyticsRow?.monte_carlo_var ?? null}
+          forecast={data.analyticsRow?.var_forecast ?? null}
+          sessions={data.returns.length}
+        />
+      </div>
+
+      {/* 2c — "Versus what?" answered with numbers rather than a second chart line.
+              ADR-0094 built the benchmark series; down-capture is the field that
+              actually tests this book's claim to be short the market. */}
+      <div className="mt-6">
+        <BenchmarkComparison
+          comparison={data.risk?.benchmark_comparison ?? null}
+          conditionalVol={data.risk?.conditional_vol ?? null}
+          sessions={data.returns.length}
+        />
+      </div>
+
+      {/* 2d — The path statistics ex-ante cannot produce and a three-session book
+              cannot either. Explicitly NOT a track record (ADR-0112); its caveats
+              render above the numbers, not below them. */}
+      <div className="mt-6">
+        <WeightsBacktest data={data.analyticsRow?.weights_backtest ?? null} />
+      </div>
 
       {/* 3 — Per-position risk attribution: "which trade to cut". */}
       </section>

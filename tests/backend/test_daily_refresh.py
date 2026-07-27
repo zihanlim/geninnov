@@ -1310,3 +1310,60 @@ def test_source_url_refuses_non_http_schemes():
     assert _source_url("brave", "data:text/html,<script>") is None
     assert _source_url("brave", "ftp://f.example/x") is None
     assert _source_url("brave", "//protocol-relative.example") is None
+
+
+# ─── Benchmark comparison: which absence is it? ──────────────────────────────
+
+
+def _daily_refresh_module():
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+    import daily_refresh
+    return daily_refresh
+
+
+def test_benchmark_comparison_says_which_absence_it_is():
+    """A NULL column means "this run predates the feature". This means "it ran and the
+    series do not overlap yet". The page must not collapse them (ADR-0098).
+
+    The live case on 2026-07-27: the book had four return observations and the benchmark
+    had two ROWS but only ONE usable return, because inception carries a null
+    `daily_return` — there is no prior close to difference against (ADR-0094). The panel
+    read "a gap in the pipeline", which is the wrong claim about a series that is simply
+    still short.
+    """
+    import pandas as pd
+
+    dr = _daily_refresh_module()
+
+    # One usable benchmark return against four book observations.
+    fake = MagicMock()
+    fake.table.return_value.select.return_value.order.return_value.limit.return_value \
+        .execute.return_value.data = [
+            {"run_date": "2026-07-23", "daily_return": None},
+            {"run_date": "2026-07-24", "daily_return": 0.00049674},
+        ]
+
+    history = pd.Series(
+        [0.0141737, -0.00216041, -0.000426, 0.00163255],
+        index=pd.to_datetime(["2026-07-23", "2026-07-24", "2026-07-25", "2026-07-27"]),
+    )
+
+    with patch.object(dr, "supabase", fake):
+        out = dr._compare_to_benchmark(history)
+
+    assert out is not None, "an absence must be stored, not left NULL"
+    assert out["computed"] is False
+    assert "1 usable daily return" in out["reason"]
+    assert "4" in out["reason"], "the book's own count belongs in the reason"
+    # And it must not look like a measurement.
+    assert "tracking_error" not in out
+
+
+def test_a_book_with_too_little_history_says_so_too():
+    import pandas as pd
+
+    dr = _daily_refresh_module()
+    out = dr._compare_to_benchmark(pd.Series([0.01]))
+    assert out["computed"] is False
+    assert "at least two" in out["reason"]

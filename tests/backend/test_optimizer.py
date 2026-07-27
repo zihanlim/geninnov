@@ -360,3 +360,55 @@ def test_frontier_dedupes_repeated_corners():
     )
     coordinates = {(round(p.expected_return, 8), round(p.volatility, 8)) for p in frontier.points}
     assert len(coordinates) == len(frontier.points)
+
+
+def test_a_binding_group_cap_does_not_round_into_a_breach():
+    """The 2026-07-27 live run, as a test.
+
+    Five US names bound the 35% geography cap. The solver returned a point satisfying it to
+    ITS tolerance (~1e-8), rounding half-up preserved the overshoot, and `/risk` reported
+    "US 35.00% — 0.00pp over its 35% cap" on a book that had breached nothing. ADR-0068
+    exists to say a cap breach is not decided by float error.
+
+    No per-name clamp could have caught this: the constraint is on the GROUP SUM, and every
+    individual weight was comfortably inside its own limit.
+    """
+    from backend.services.book_metrics import CAP_EPSILON, exceeds_cap
+
+    assets = ["A", "B", "C", "D", "E"]
+    inputs = OptimizerInputs(
+        assets=assets,
+        directions={a: "long" for a in assets},
+        # Large mu so the solve pushes hard against the group cap rather than sitting
+        # at an interior optimum where the constraint never binds.
+        mu={a: 0.40 for a in assets},
+        cov=_cov(5, seed=3),
+        sector_map={a: f"s{i}" for i, a in enumerate(assets)},   # sector never binds
+        geo_map={a: "US" for a in assets},                        # geo binds at 0.35
+    )
+    result = optimize(inputs, "mean_variance",
+                      OptimizerConstraints(max_geo=0.35, risk_aversion=0.05))
+    assert result.feasible, result.reason
+
+    total = sum(abs(w) for w in result.signed_weights.values())
+    assert total <= 0.35, (
+        f"US totals {total!r} against a 0.35 cap — the stored book must never exceed a "
+        "constraint the solve satisfied"
+    )
+    assert not exceeds_cap(total, 0.35), (
+        f"{total!r} is reported as a breach at CAP_EPSILON={CAP_EPSILON}"
+    )
+    # And the cap really did bind, or this test proves nothing.
+    assert total > 0.35 - 1e-6, f"the geo cap did not bind at all (total {total})"
+
+
+def test_stored_weights_never_exceed_the_solved_ones():
+    """The general invariant behind the test above: flooring, not rounding."""
+    directions = {"A": "long", "B": "short", "C": "long", "D": "short"}
+    result = optimize(_inputs(directions, {"A": 0.06, "B": -0.05, "C": 0.04, "D": -0.03}))
+    assert result.feasible, result.reason
+    for asset, weight in result.signed_weights.items():
+        # 8dp quantum, floored — so the magnitude is always a whole number of quanta.
+        assert abs(round(abs(weight) * 1e8) - abs(weight) * 1e8) < 1e-3, (
+            f"{asset} at {weight!r} is not on the 8dp grid"
+        )

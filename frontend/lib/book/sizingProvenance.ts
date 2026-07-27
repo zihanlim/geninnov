@@ -28,6 +28,84 @@ export interface OptimizerResult {
   warnings?: string[];
   unpriced_assets?: string[];
   ic?: { value?: number; raw?: number; shrinkage?: number; as_of?: string | null };
+  crowding?: CrowdingBlock | null;
+}
+
+/** `optimizer_result.crowding` — migration 047 payload, ADR-0110. */
+export interface CrowdingBlock {
+  applied?: boolean;
+  reason?: string | null;
+  multiplier?: number;
+  base_cap?: number;
+  coverage_share?: number | null;
+  crowded_share?: number | null;
+  observed_positions?: number;
+  unobservable_positions?: number;
+  unobservable_causes?: Record<string, number>;
+  fetched?: boolean;
+  as_of?: string | null;
+  tightened?: {
+    asset: string;
+    cap: number;
+    base_cap?: number;
+    direction?: string;
+    effective_side?: string;
+    inverse?: boolean;
+    cot_index?: number;
+    crowded_side?: string;
+    contract?: string;
+  }[];
+}
+
+export interface CrowdingSummary {
+  /** Leads with coverage, always. The verdict is subordinate to the share it could reach. */
+  coverage: string;
+  /** What the check did, or why it did nothing. */
+  verdict: string;
+  tightened: NonNullable<CrowdingBlock["tightened"]>;
+}
+
+/**
+ * Describe the crowding input at the point where it sized something.
+ *
+ * GOAL.md's constraint is that a sizing input unmeasurable on four fifths of the book must
+ * degrade to neutral **with its coverage stated at the point of use** — never silently. So
+ * coverage is returned as its own string that the caller cannot omit, and it is stated
+ * whether or not anything was tightened: "nothing was crowded" and "almost nothing could be
+ * checked" are the two readings a reader must be able to tell apart.
+ *
+ * Returns null only when the column is absent entirely — a run predating ADR-0110.
+ */
+export function describeCrowding(block: CrowdingBlock | null | undefined): CrowdingSummary | null {
+  if (!block || typeof block !== "object") return null;
+
+  const share = block.coverage_share;
+  const observed = block.observed_positions ?? 0;
+  const total = observed + (block.unobservable_positions ?? 0);
+
+  const coverage =
+    typeof share === "number" && Number.isFinite(share)
+      ? `External positioning can see ${(share * 100).toFixed(0)}% of gross — ` +
+        `${observed} of ${total} position${total === 1 ? "" : "s"} map to a futures contract` +
+        (block.as_of ? `, as of ${block.as_of}` : "") +
+        "."
+      : `External positioning covers an unmeasurable share of this book` +
+        (block.as_of ? `, as of ${block.as_of}` : "") +
+        ".";
+
+  const tightened = block.tightened ?? [];
+  const multiplier = block.multiplier;
+
+  const verdict = block.applied
+    ? `${tightened.length} position${tightened.length === 1 ? "" : "s"} sit${
+        tightened.length === 1 ? "s" : ""
+      } with a crowded consensus and ${tightened.length === 1 ? "was" : "were"} limited to ` +
+      `${typeof multiplier === "number" ? `${(multiplier * 100).toFixed(0)}% of` : "a fraction of"}` +
+      ` the normal single-name cap. Agreeing with a crowd is exposure to it unwinding, not confirmation.`
+    : `No position was limited for crowding — ${block.reason ?? "no reason was recorded"}. ` +
+      `Positions with no contract are sized exactly as they would be without this check.`;
+
+  return { coverage, verdict, tightened };
 }
 
 export interface SizingSummary {

@@ -106,6 +106,87 @@ export interface ResearchAnalyticsRow {
   /** ADR-0097. Null on any run predating migration 046, or one where CFTC did not
    *  answer — which means "not retrieved", never "not crowded". */
   positioning_crowding?: PositioningCrowdingRow | null;
+  /** ADR-0082, migration 038. Ex-ante, from the CONSTITUENTS' covariance — annualised, and
+   *  emphatically not portfolio_risk.var_95. Persisted since 038 and rendered by nothing
+   *  until now; the ADR itself recorded the render as pending. */
+  risk_decomposition?: RiskDecompositionRow | null;
+  /** ADR-0109, migration 047. Ex-ante, Student-t innovations, seeded. 21-day horizon. */
+  monte_carlo_var?: MonteCarloVarRow | null;
+  /** ADR-0109, migration 047. Square-root-of-time fan; the 21-day point matches the
+   *  horizon pick_outcomes scores against (ADR-0090). */
+  var_forecast?: VarForecastRow | null;
+  /** ADR-0112, migration 048. Path statistics for the published weights held FIXED over
+   *  252 days of constituent returns. NOT a track record — the weights were chosen
+   *  knowing this window, and there is no rebalancing or cost. The forward record is
+   *  `pick_outcomes` (ADR-0090). */
+  weights_backtest?: WeightsBacktestRow | null;
+}
+
+/** `research_recommendations.weights_backtest` (migration 048). */
+export interface WeightsBacktestRow {
+  computed?: boolean | null;
+  reason?: string | null;
+  method_id?: string | null;
+  n_observations?: number | null;
+  min_sessions?: number | null;
+  window_start?: string | null;
+  window_end?: string | null;
+  coverage_share?: number | null;
+  dropped_assets?: string[] | null;
+  cumulative_return?: number | null;
+  annualised_return?: number | null;
+  annualised_vol?: number | null;
+  sharpe?: number | null;
+  sortino?: number | null;
+  max_drawdown?: number | null;
+  calmar?: number | null;
+  var_95_historical?: number | null;
+  es_95_historical?: number | null;
+  best_day?: number | null;
+  worst_day?: number | null;
+  positive_days?: number | null;
+  selection_caveat?: string | null;
+  method_caveat?: string | null;
+  is_track_record?: boolean | null;
+  benchmark?: BenchmarkComparisonRow | null;
+}
+
+/** `research_recommendations.risk_decomposition` (migration 038). */
+export interface RiskDecompositionRow {
+  portfolio_vol?: number | null;
+  portfolio_var?: number | null;
+  confidence?: number | null;
+  diversification_ratio?: number | null;
+  n_observations?: number | null;
+  dropped_assets?: string[] | null;
+  positions?: Array<{
+    asset?: string;
+    signed_weight?: number;
+    contribution_to_vol?: number;
+    component_var?: number;
+    risk_contribution_pct?: number;
+  }> | null;
+}
+
+/** `research_recommendations.monte_carlo_var` (migration 047). */
+export interface MonteCarloVarRow {
+  horizon_days?: number | null;
+  n_sims?: number | null;
+  seed?: number | null;
+  df?: number | null;
+  prob_loss?: number | null;
+  bands?: Array<{ confidence?: number; var?: number; es?: number }> | null;
+  dropped_assets?: string[] | null;
+}
+
+/** `research_recommendations.var_forecast` (migration 047). */
+export interface VarForecastRow {
+  portfolio_volatility_daily?: number | null;
+  portfolio_volatility_annual?: number | null;
+  n_assets?: number | null;
+  bands?: Array<{ horizon_days?: number; quantiles?: Record<string, number> }> | null;
+  assumption?: string | null;
+  method?: string | null;
 }
 
 /** portfolio_risk latest row. */
@@ -119,6 +200,63 @@ export interface RiskRow {
   beta?: number | null;
   concentration_hhi?: number | null;
   numeric_derivations?: Record<string, unknown> | null;
+  /** Migration 047. Historical/downside estimators computed BESIDE the parametric ones —
+   *  never replacing them. The gap between `var_95` and `var_95_historical` measures how
+   *  badly the Gaussian assumption fits this book, which is the reason they are two
+   *  columns rather than one better value (ADR-0082, ADR-0109). Each is gated by
+   *  `MIN_SESSIONS_BY_FIELD`; the empirical pair needs 100 sessions and Calmar a year. */
+  var_95_historical?: number | null;
+  es_95_historical?: number | null;
+  sortino?: number | null;
+  max_drawdown?: number | null;
+  calmar?: number | null;
+  tracking_error?: number | null;
+  information_ratio?: number | null;
+  /** ADR-0094 gave the book a benchmark; this is the MEASUREMENT of it rather than a
+   *  second line on a chart. `down_capture` is the field that tests the book's own claim
+   *  to be short the market — a book that rises when the benchmark falls captures LESS
+   *  than none of a fall. */
+  benchmark_comparison?: BenchmarkComparisonRow | null;
+  /** EWMA + GARCH(1,1) on the book's own series. REPORTING ONLY — the conviction
+   *  denominator still uses the trailing sample vol with the ADR-0047 floor. */
+  conditional_vol?: ConditionalVolRow | null;
+}
+
+/** `portfolio_risk.benchmark_comparison` (migration 047). */
+export interface BenchmarkComparisonRow {
+  /** False when the comparison RAN and could not be made — distinct from a null
+   *  column, which means the run predates the feature (ADR-0098). */
+  computed?: boolean | null;
+  reason?: string | null;
+  n?: number | null;
+  as_of?: string | null;
+  sufficient?: boolean | null;
+  portfolio_cumulative?: number | null;
+  benchmark_cumulative?: number | null;
+  active_return?: number | null;
+  tracking_error?: number | null;
+  information_ratio?: number | null;
+  beta?: number | null;
+  correlation?: number | null;
+  up_capture?: number | null;
+  down_capture?: number | null;
+  up_days?: number | null;
+  down_days?: number | null;
+  warnings?: string[] | null;
+}
+
+/** `portfolio_risk.conditional_vol` (migration 047). */
+export interface ConditionalVolRow {
+  ewma?: { annualised_vol?: number | null; lam?: number | null; n_obs?: number | null } | null;
+  garch?: {
+    annualised_vol?: number | null;
+    longrun_annualised_vol?: number | null;
+    persistence?: number | null;
+    converged?: boolean | null;
+    warnings?: string[] | null;
+  } | null;
+  sample_annualised_vol?: number | null;
+  n_observations?: number | null;
 }
 
 /** portfolio_returns row. */
@@ -339,7 +477,9 @@ export function sortWorstFirst(rows: ScenarioResult[]): ScenarioResult[] {
 // Correlation helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-const pairKey = (a: string, b: string): string => [a, b].sort().join(" ");
+const pairKey = (a: string, b: string): string => [a, b].sort().join("\u0000");   // escaped, not a literal NUL: an actual NUL byte in
+  // the source makes grep treat this whole file as binary and skip it silently, and
+  // several guards in this repo are grep-derived. Same character at runtime.
 
 /** Sorted union of every asset named in the flagged pairs. */
 export function assetsFromPairs(pairs: CorrelationPair[]): string[] {

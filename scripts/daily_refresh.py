@@ -1353,9 +1353,13 @@ def compute_and_persist_risk(
         "sortino": scalar.get("sortino"),
         "max_drawdown": scalar.get("max_drawdown"),
         "calmar": scalar.get("calmar"),
-        "tracking_error": comparison.tracking_error if comparison else None,
-        "information_ratio": comparison.information_ratio if comparison else None,
-        "benchmark_comparison": comparison.to_dict() if comparison else None,
+        # The scalar columns stay NULL unless the comparison actually computed — they are
+        # numbers, and there is no number. The JSONB column carries the payload either
+        # way, because "we ran and the series do not overlap yet" is a finding the page
+        # needs and a NULL cannot express (ADR-0098).
+        "tracking_error": (comparison or {}).get("tracking_error"),
+        "information_ratio": (comparison or {}).get("information_ratio"),
+        "benchmark_comparison": comparison,
         "conditional_vol": conditional,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -1682,6 +1686,17 @@ def _load_historical_portfolio_returns(lookback_days: int) -> pd.Series:
     return pd.Series(df["daily_return"].values, index=df["run_date"].values)
 
 
+def _no_comparison(reason: str) -> dict:
+    """A benchmark comparison that could not be made, saying WHICH absence it is.
+
+    Stored rather than left NULL: a null column means "this run predates the feature",
+    while this means "the feature ran and the series do not overlap enough yet". Those are
+    different facts and the page must not collapse them (ADR-0098). Mirrors the shape
+    `weights_backtest` uses for the same reason.
+    """
+    return {"computed": False, "reason": reason}
+
+
 def _compare_to_benchmark(history_series: pd.Series):
     """Measure the book against the persisted benchmark series (ADR-0094).
 
@@ -1695,7 +1710,10 @@ def _compare_to_benchmark(history_series: pd.Series):
     zeroed tracking error that reads like a measurement.
     """
     if history_series is None or len(history_series) < 2:
-        return None
+        return _no_comparison(
+            f"the book has {0 if history_series is None else len(history_series)} return "
+            "observations; a comparison needs at least two"
+        )
 
     rows = (
         supabase.table("benchmark_returns")
@@ -1711,13 +1729,31 @@ def _compare_to_benchmark(history_series: pd.Series):
         if r.get("daily_return") is not None
     ]
     if len(benchmark) < 2:
-        return None
+        # NOT "not computed". On 2026-07-27 the book had four return observations and the
+        # benchmark had two ROWS but only ONE usable return — inception carries a null
+        # `daily_return` because there is no prior close to difference against (ADR-0094).
+        # A page told "not computed" reads that as a pipeline fault; the truth is that the
+        # series do not yet overlap enough, which resolves on its own as the book ages.
+        return _no_comparison(
+            f"the benchmark series has {len(benchmark)} usable daily "
+            f"{'return' if len(benchmark) == 1 else 'returns'} against the book's "
+            f"{len(history_series)}. `benchmark_returns` is compounded from the book's own "
+            "inception and derived from macro_daily_history, which trails by a session, so "
+            "the overlap grows as the book ages."
+        )
 
     portfolio = [
         (pd.Timestamp(d).strftime("%Y-%m-%d"), float(v))
         for d, v in zip(history_series.index, history_series.values)
     ]
-    return compute_comparison(portfolio, benchmark)
+    comparison = compute_comparison(portfolio, benchmark)
+    if comparison is None:
+        return _no_comparison(
+            "the book and benchmark series share no dates, so there is nothing to compare"
+        )
+    payload = comparison.to_dict()
+    payload["computed"] = True
+    return payload
 
 
 def _load_spx_returns(lookback_days: int) -> "pd.Series | None":

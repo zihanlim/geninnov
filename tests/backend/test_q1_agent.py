@@ -1222,6 +1222,7 @@ def test_finalise_book_analytics_wires_euler_decomposition(monkeypatch):
 
     def _one_frame(*a, **k):
         calls["n"] += 1
+        calls.setdefault("lookbacks", []).append(k.get("lookback_days"))
         return frame
 
     monkeypatch.setattr(_bm, "fetch_pick_returns", _one_frame)
@@ -1246,7 +1247,23 @@ def test_finalise_book_analytics_wires_euler_decomposition(monkeypatch):
     rd = out["risk_decomposition_final"]
     assert rd is not None, "decomposition should be produced from a 3-name, 120-session frame"
     assert abs(sum(p["contribution_to_vol"] for p in rd["positions"]) - rd["portfolio_vol"]) < 1e-9
-    assert calls["n"] == 1, f"frame must be hoisted once, was fetched {calls['n']}x"
+    # The invariant is that the 252-day frame is fetched ONCE and shared by every
+    # consumer of it — the correlation matrix, the covariance and the Euler decomposition
+    # (ADR-0082's acceptance criterion). It is NOT "yfinance is called once": the weights
+    # backtest asks for a deliberately wider window, because a path statistic needs a
+    # trading YEAR and 252 calendar days is only ~195 sessions. Widening the shared frame
+    # instead would change the covariance from 252 sessions to 341 and move every ex-ante
+    # figure AND the optimizer's weights, which is a sizing change, not a fetch change.
+    #
+    # So: the shared window is fetched exactly once, and no window is fetched twice.
+    lookbacks = calls.get("lookbacks", [])
+    assert lookbacks.count(252) == 1, (
+        f"the 252-day frame must be hoisted once, was fetched {lookbacks.count(252)}x "
+        f"(all lookbacks: {lookbacks})"
+    )
+    assert len(lookbacks) == len(set(lookbacks)), (
+        f"a window was fetched more than once: {lookbacks}"
+    )
 
 
 def test_make_factor_table_tolerates_null_betas():

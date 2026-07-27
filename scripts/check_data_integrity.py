@@ -828,6 +828,87 @@ def check_lens_membership_matches_asset_class(
     return failures
 
 
+# Below this, a direct override disagreeing in sign with its factor path is a channel
+# view; at or above it, a contradiction. A judgement, not a fit — but calibrated and
+# said plainly: the pre-fix SVXY entries sat at gaps of 0.57 (S1) and 0.32 (S4), while
+# the largest LEGITIMATE sign-crossing override in the live tables is 0.07 (S2's XLE,
+# rising rates alongside strong energy). 0.25 separates them with margin both ways.
+SCENARIO_OVERRIDE_CONTRADICTION_GAP = 0.25
+
+
+def check_scenario_overrides_reconcile(
+    scenarios: list[dict] | None,
+    default_betas: dict[str, dict] | None,
+    gap: float = SCENARIO_OVERRIDE_CONTRADICTION_GAP,
+) -> list[str]:
+    """Does a scenario's direct asset shock FIGHT the scenario's own factor path?
+
+    A scenario carries both `factor_shocks={"mkt": -0.18}` and per-ticker
+    `base_asset_shocks`. The override exists to express what beta cannot see, so it may
+    legitimately amplify, attenuate, or even cross the sign of the factor path — GLD
+    catching a flight-to-quality bid in a selloff is the mechanism working.
+
+    What it may not do is contradict the factor path VIOLENTLY. SVXY's S1 entry read
+    `+0.20` while its own beta times the scenario's own market shock implied `-0.37` —
+    and the repo knew: the corrected entry's comment does exactly this arithmetic
+    ("measured beta_mkt is +2.08 ... so the factor path implies about -37%"). **A
+    comment doing a test's job is how the defect survived**; this makes the comment's
+    reasoning enforced rather than narrated (ADR-0124).
+
+    Flags only when the signs disagree AND the gap is at least `gap` — a same-sign
+    override of any size is a view, and a small sign-crossing one is a channel.
+
+    **A scenario with no `mkt` factor shock is exempt** — there is no factor path to
+    reconcile against. Note S6 is NOT that case: ADR-0088's supply shock transmits
+    primarily through `SECTOR_MAP`, but it still carries a small mkt shock (-0.04), so
+    its overrides are checked against that and legitimately dwarf it — same-sign
+    amplification, which this check deliberately never flags.
+
+    Betas come from `DEFAULT_TICKER_BETAS` — the same module's own table — so this is a
+    self-consistency check between two statements `scenario_analysis` itself makes. A
+    ticker absent from that table is skipped, never assumed (ADR-0066).
+    """
+    if not scenarios or not default_betas:
+        return []
+    failures: list[str] = []
+    for scen in scenarios:
+        name = str(scen.get("name") or "?")
+        mkt = scen.get("mkt_shock")
+        if mkt is None:
+            continue
+        try:
+            mkt = float(mkt)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(mkt):
+            continue
+        for ticker, direct in sorted((scen.get("overrides") or {}).items()):
+            beta = (default_betas.get(ticker) or {}).get("mkt")
+            if beta is None or direct is None:
+                continue
+            try:
+                beta, direct = float(beta), float(direct)
+            except (TypeError, ValueError):
+                continue
+            if not (math.isfinite(beta) and math.isfinite(direct)):
+                continue
+            implied = beta * mkt
+            if implied == 0.0 or direct == 0.0 or (implied > 0) == (direct > 0):
+                continue
+            if abs(implied - direct) < gap:
+                continue
+            failures.append(
+                f"{name}: {ticker}'s direct shock {direct:+.2f} fights the scenario's "
+                f"own factor path — beta {beta:+.2f} x mkt {mkt:+.2f} = {implied:+.2f}, "
+                f"opposite signs {abs(implied - direct):.2f} apart. This is the shape of "
+                f"the SVXY +0.20 entry (ADR-0114): the override asserting the book gains "
+                f"from the event its own beta says destroys it. A deliberate channel "
+                f"view this violent needs the number defended where it is written "
+                f"(ADR-0124)."
+            )
+    return failures
+
+
 def check_published_claims_are_on_the_record(
     rec_row: dict | None,
     outcome_rows: list[dict] | None,
@@ -1172,6 +1253,38 @@ def main() -> int:
         else:
             print(f"OK   every classified asset's beta agrees with its class "
                   f"({checked} of {len(code_classes)} runtime-classified tickers checkable).")
+
+        # Do the scenarios' own overrides agree with the scenarios' own factor paths?
+        # Constants vs constants — the pytest suite is the primary enforcement (it
+        # fails at CI time, before a merge); this nightly run is the backstop for an
+        # edit that never ran the tests (ADR-0124).
+        try:
+            from backend.services.scenario_analysis import (
+                DEFAULT_TICKER_BETAS as scen_betas,
+                SCENARIOS,
+            )
+            scen_flags = check_scenario_overrides_reconcile(
+                [
+                    {
+                        "name": s.name,
+                        "mkt_shock": (s.factor_shocks or {}).get("mkt"),
+                        "overrides": dict(s.base_asset_shocks or {}),
+                    }
+                    for s in SCENARIOS
+                ],
+                dict(scen_betas),
+            )
+        except Exception as exc:                    # pragma: no cover - defensive
+            print(f"WARN could not reconcile scenario overrides ({exc}).")
+            scen_flags = []
+        if scen_flags:
+            failed = True
+            print("")
+            print("FAIL a scenario override fights its own factor path:")
+            for flag in scen_flags:
+                print(f"  - {flag}")
+        else:
+            print("OK   every scenario override reconciles with its own factor path.")
 
         outcome_rows = (
             sb.table("pick_outcomes")

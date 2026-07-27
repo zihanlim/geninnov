@@ -37,6 +37,8 @@ import SizingChainView from "@/components/book/SizingChainView";
 import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import AbstentionRoster from "@/components/book/AbstentionRoster";
 import BookTurnover from "@/components/book/BookTurnover";
+import SizingProvenance from "@/components/book/SizingProvenance";
+import type { OptimizerResult, SizingMethod } from "@/lib/book/sizingProvenance";
 import TrackRecordPanel from "@/components/book/TrackRecordPanel";
 import PoolDepth, { type IndependentIdeas } from "@/components/book/PoolDepth";
 import { WorkedExamplePanel } from "@/components/book/WorkedExamplePanel";
@@ -139,6 +141,15 @@ interface Recommendation {
   /** ADR-0048: independent-idea count per side, as the agent saw it. */
   independent_ideas?: IndependentIdeas | null;
   lens?: string | null;
+  /** Migration 047 / ADR-0107 — which sizing produced the published weights, and
+   *  what the other one would have done. Nullable throughout: a run predating the
+   *  columns renders "not recorded", never a claim about which model ran. */
+  sizing_method?: SizingMethod | null;
+  sizing_reason?: string | null;
+  optimizer_result?: OptimizerResult | null;
+  efficient_frontier?: unknown;
+  heuristic_weights?: Record<string, number> | null;
+  rebalance_cost?: { total_cost?: number; turnover?: number } | null;
 }
 
 /** picks arrives as jsonb (already an array) on most reads and as a JSON string on
@@ -210,7 +221,7 @@ function BookPageInner() {
         supabase
           .from("research_recommendations")
           .select(
-            "run_date, picks, book_view, book_risks, agent_run_id, advisory_derivation, book_metrics, scenario_results, cap_utilisation, screening_funnel, correlation_pairs, candidate_correlations, independent_ideas, lens"
+            "run_date, picks, book_view, book_risks, agent_run_id, advisory_derivation, book_metrics, scenario_results, cap_utilisation, screening_funnel, correlation_pairs, candidate_correlations, independent_ideas, lens, sizing_method, sizing_reason, optimizer_result, efficient_frontier, heuristic_weights, rebalance_cost"
           )
           .order("run_date", { ascending: false })
           // Two rows, not one: the second is the previous run_date, which is what
@@ -1010,6 +1021,26 @@ function BookPageInner() {
 
           {/* ── Same inputs, run again: agent churn as against market churn ─ */}
           <Replication />
+          </div>
+
+          {/* ── Which sizing produced these weights, and what the other one
+                 would have done (migration 047, ADR-0107). Full width rather
+                 than a card in the grid above: the comparison table needs the
+                 room, and "how was this sized" is not a footnote to the book —
+                 ADR-0053 is what happens when nobody can check it. */}
+          <div className="panel p-4 mb-6">
+            <h3 className="text-[13px] font-semibold mb-1">Sizing</h3>
+            <p className="text-[11.5px] text-text-tertiary leading-[1.55] mb-3">
+              The agent picks the names and the sides. This is what set the sizes.
+            </p>
+            <SizingProvenance
+              method={rec?.sizing_method ?? null}
+              reason={rec?.sizing_reason ?? null}
+              result={rec?.optimizer_result ?? null}
+              frontier={rec?.efficient_frontier ?? null}
+              heuristicWeights={rec?.heuristic_weights ?? null}
+              rebalanceCost={rec?.rebalance_cost ?? null}
+            />
           </div>
 
           {/* ── Abstention roster ───────────────────────────────────────── */}

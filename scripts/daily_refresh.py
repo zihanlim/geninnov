@@ -65,6 +65,8 @@ from backend.services.trade_ranker import (
 from backend.services.risk_engine import (
     compute_risk,
 )
+from backend.services.benchmark_compare import compute_comparison
+from backend.services.volatility_models import ewma_volatility, garch11
 from backend.services.portfolio import (
     compute_daily_return,
     compute_cumulative_return,
@@ -1290,6 +1292,50 @@ def compute_and_persist_risk(
     }
 
     today_str = run_date.isoformat()
+
+    # The book against its benchmark. ADR-0094 built `benchmark_returns` so /risk could
+    # answer "versus what?", and the answer so far has been a second line on a chart —
+    # the picture of relative performance, not the measurement of it. Tracking error,
+    # information ratio and up/down capture are the measurement, and down-capture is the
+    # one that actually tests this book's central claim: a book that says it is short the
+    # market should capture LESS than none of a market fall.
+    #
+    # Non-fatal. This reports on the book, it does not produce it.
+    comparison = None
+    try:
+        comparison = _compare_to_benchmark(history_series)
+    except Exception as exc:                       # noqa: BLE001 - see above
+        print(f"[{today_str}] WARN: benchmark comparison skipped "
+              f"({exc.__class__.__name__}): {exc}")
+
+    # Conditional volatility of the book's own return series. Every vol this repo
+    # reports is a trailing sample standard deviation, which weights a crash 200
+    # sessions ago exactly as heavily as yesterday — slow into a shock and slow out of
+    # one. EWMA and GARCH say what volatility is NOW.
+    #
+    # This is reporting only: it does not feed `_conviction`, whose denominator stays
+    # the sample vol with the ADR-0047 floor. Swapping the sizing denominator changes
+    # every published weight and is a separate decision with its own evidence — but a
+    # module with no caller is not implemented (ADR-0099), and the honest first caller
+    # is the one that shows the reader the two numbers side by side.
+    conditional = None
+    try:
+        if len(history_series) >= 2:
+            returns = [float(x) for x in history_series.tolist()]
+            ewma = ewma_volatility(returns)
+            garch = garch11(returns)
+            conditional = {
+                "ewma": ewma.to_dict(),
+                "garch": garch.to_dict(),
+                "sample_annualised_vol": (
+                    float(pd.Series(returns).std(ddof=1)) * (252 ** 0.5)
+                ),
+                "n_observations": len(returns),
+            }
+    except Exception as exc:                       # noqa: BLE001 - see above
+        print(f"[{today_str}] WARN: conditional vol skipped "
+              f"({exc.__class__.__name__}): {exc}")
+
     row = {
         "run_date": today_str,
         "total_capital": total_capital,
@@ -1299,6 +1345,18 @@ def compute_and_persist_risk(
         "beta": scalar["beta"],
         "concentration_hhi": scalar["hhi"],
         "numeric_derivations": derivations_payload,
+        # Historical / downside estimators added alongside the parametric ones. These
+        # are SEPARATE columns from var_95 by design: a historical VaR that overwrote
+        # the parametric one would silently change what the field means (ADR-0082).
+        "var_95_historical": scalar.get("var_95_historical"),
+        "es_95_historical": scalar.get("es_95_historical"),
+        "sortino": scalar.get("sortino"),
+        "max_drawdown": scalar.get("max_drawdown"),
+        "calmar": scalar.get("calmar"),
+        "tracking_error": comparison.tracking_error if comparison else None,
+        "information_ratio": comparison.information_ratio if comparison else None,
+        "benchmark_comparison": comparison.to_dict() if comparison else None,
+        "conditional_vol": conditional,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -1312,10 +1370,15 @@ def compute_and_persist_risk(
         # UPSERT: a plain insert violates the run_date unique key (migration 016)
         # on any same-day re-run and would abort the pipeline before L5.
         print(
-            f"[{today_str}] WARN: numeric_derivations upsert failed ({exc.__class__.__name__}): "
-            f"falling back to scalar-only upsert."
+            f"[{today_str}] WARN: extended risk upsert failed ({exc.__class__.__name__}): "
+            f"apply migration 047. Falling back to the legacy scalar-only upsert."
         )
-        row.pop("numeric_derivations", None)
+        for column in (
+            "numeric_derivations", "var_95_historical", "es_95_historical",
+            "sortino", "max_drawdown", "calmar", "tracking_error",
+            "information_ratio", "benchmark_comparison", "conditional_vol",
+        ):
+            row.pop(column, None)
         supabase.table("portfolio_risk").upsert(row, on_conflict="run_date").execute()
 
     hhi = scalar["hhi"] or 0.0
@@ -1617,6 +1680,44 @@ def _load_historical_portfolio_returns(lookback_days: int) -> pd.Series:
     df["run_date"] = pd.to_datetime(df["run_date"])
     df = df.sort_values("run_date")
     return pd.Series(df["daily_return"].values, index=df["run_date"].values)
+
+
+def _compare_to_benchmark(history_series: pd.Series):
+    """Measure the book against the persisted benchmark series (ADR-0094).
+
+    Reads `benchmark_returns` rather than re-downloading an index. That table is
+    deliberately derived from `macro_daily_history` levels precisely so the comparison
+    does not become hostage to whether a network call succeeded during tonight's run —
+    re-fetching here would hand that dependency straight back.
+
+    Returns None when either series is empty or they do not overlap, so the caller
+    stores NULL and the page can say "no overlapping sessions" rather than rendering a
+    zeroed tracking error that reads like a measurement.
+    """
+    if history_series is None or len(history_series) < 2:
+        return None
+
+    rows = (
+        supabase.table("benchmark_returns")
+        .select("run_date, daily_return")
+        .order("run_date", desc=True)
+        .limit(504)
+        .execute()
+        .data
+    ) or []
+    benchmark = [
+        (str(r["run_date"]), float(r["daily_return"]))
+        for r in rows
+        if r.get("daily_return") is not None
+    ]
+    if len(benchmark) < 2:
+        return None
+
+    portfolio = [
+        (pd.Timestamp(d).strftime("%Y-%m-%d"), float(v))
+        for d, v in zip(history_series.index, history_series.values)
+    ]
+    return compute_comparison(portfolio, benchmark)
 
 
 def _load_spx_returns(lookback_days: int) -> "pd.Series | None":

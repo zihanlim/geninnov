@@ -218,15 +218,25 @@ def test_risk_engine_returns_derivations(monkeypatch):
     assert "hhi" in out
 
 
-def test_compute_risk_returns_all_five_keys():
+def test_compute_risk_returns_all_keys():
     book = [{"weight": 0.5}, {"weight": 0.5}]
     # 200 obs so VaR/CVaR/Sharpe/Beta are all computable
     rng = np.random.default_rng(0)
     history = rng.normal(0.0005, 0.01, 200).tolist()
     spx = rng.normal(0.0005, 0.01, 200).tolist()
     out = compute_risk(book=book, history=history, spx_returns=spx)
-    assert set(out.keys()) == {"var_95", "cvar_95", "sharpe", "beta", "hhi"}
-    for key in ("var_95", "cvar_95", "sharpe", "beta"):
+    # The original five, plus the historical/downside estimators added alongside
+    # them. `var_95` stays parametric and `var_95_historical` is a SEPARATE key —
+    # the two are different methods on the same book and must never be merged.
+    assert set(out.keys()) == {
+        "var_95", "cvar_95", "sharpe", "beta", "hhi",
+        "var_95_historical", "es_95_historical", "sortino", "max_drawdown", "calmar",
+    }
+    assert out["var_95"].method_id == "risk.var.parametric.v1"
+    assert out["var_95_historical"].method_id == "risk.var.historical.v1"
+    for key in ("var_95", "cvar_95", "sharpe", "beta",
+                "var_95_historical", "es_95_historical", "sortino",
+                "max_drawdown", "calmar"):
         d = out[key]
         assert d.display_status == "estimated"
         assert d.value is not None
@@ -399,3 +409,138 @@ class TestBetaAlignsByDate:
             portfolio_value=100_000_000.0,
         )
         assert r["beta"].value == pytest.approx(2.0, abs=1e-6)
+
+
+# ─── Historical + downside estimators (read across from im-Jarvis risk_service) ──
+#
+# These sit BESIDE the parametric ones. The point of a historical VaR is that it
+# carries whatever skew and fat tail the book actually had, so the gap between it and
+# the parametric number measures how badly the Gaussian assumption fits. That only
+# works if they stay separate columns — hence the method-id assertions.
+
+
+class TestHistoricalAndDownsideEstimators:
+    def test_historical_var_reads_the_empirical_quantile(self):
+        from backend.services.risk_engine import _historical_var
+
+        # A deliberately skewed sample: one deep loss the Gaussian cannot see.
+        returns = pd.Series([-0.20] + [0.005] * 99)
+        historical = _historical_var(returns, 0.95)
+        parametric = _parametric_var(returns, 0.95)
+        assert historical != pytest.approx(parametric), (
+            "on a skewed sample the two methods must disagree — if they agree, one "
+            "of them is not doing what its name says"
+        )
+        assert math.isfinite(historical)
+
+    def test_historical_es_is_at_least_as_severe_as_historical_var(self):
+        from backend.services.risk_engine import _historical_es, _historical_var
+
+        rng = np.random.default_rng(3)
+        returns = pd.Series(rng.normal(0.0004, 0.01, 300))
+        assert _historical_es(returns, 0.95) >= _historical_var(returns, 0.95)
+
+    def test_historical_es_is_nan_when_the_tail_is_empty(self):
+        """The mean of nothing is not zero. A zero here would report a book as having
+        no tail risk on precisely the sample that cannot say."""
+        from backend.services.risk_engine import _historical_es
+
+        assert math.isnan(_historical_es(pd.Series([0.01, 0.01]), 0.95))
+
+    def test_max_drawdown_matches_a_hand_worked_path(self):
+        from backend.services.risk_engine import _max_drawdown
+
+        # +10%, then -20%, then +5%. Peak is 1.10; trough is 1.10 * 0.8 = 0.88.
+        # Deepest drawdown = 0.88/1.10 - 1 = -0.20.
+        assert _max_drawdown(pd.Series([0.10, -0.20, 0.05])) == pytest.approx(-0.20, abs=1e-9)
+
+    def test_max_drawdown_is_zero_for_a_monotonic_climb(self):
+        from backend.services.risk_engine import _max_drawdown
+
+        assert _max_drawdown(pd.Series([0.01] * 50)) == 0.0
+
+    def test_max_drawdown_survives_a_total_loss(self):
+        """log1p(-1) is -inf. Report the total loss rather than a NaN."""
+        from backend.services.risk_engine import _max_drawdown
+
+        assert _max_drawdown(pd.Series([0.01, -1.0, 0.02])) == -1.0
+
+    def test_sortino_denominator_is_untouched_by_upside_volatility(self):
+        """The defining property, isolated exactly.
+
+        Both series carry the SAME ten losses; only the upside is amplified. So the
+        downside deviation is identical by construction and Sortino must rise purely
+        with the mean — while Sharpe's denominator rises too and blunts the gain. This
+        is what "penalise only the volatility you mind" means.
+        """
+        from backend.services.risk_engine import (
+            _annualized_sharpe,
+            _annualized_sortino,
+            _downside_deviation,
+        )
+
+        base = pd.Series([0.01] * 90 + [-0.02] * 10)
+        boosted = pd.Series([0.05] * 90 + [-0.02] * 10)
+
+        assert _downside_deviation(base) == pytest.approx(_downside_deviation(boosted))
+        assert _annualized_sortino(boosted) > _annualized_sortino(base)
+        # Sortino scales exactly with the mean; Sharpe does not, because amplifying
+        # the upside also widened its denominator.
+        assert _annualized_sortino(boosted) / _annualized_sortino(base) == pytest.approx(
+            float(boosted.mean()) / float(base.mean()), rel=1e-9
+        )
+        assert _annualized_sharpe(boosted) / _annualized_sharpe(base) < (
+            float(boosted.mean()) / float(base.mean())
+        )
+
+    def test_sortino_is_nan_with_no_downside(self):
+        from backend.services.risk_engine import _annualized_sortino
+
+        assert math.isnan(_annualized_sortino(pd.Series([0.01] * 50)))
+
+    def test_calmar_is_nan_without_a_drawdown(self):
+        """A book that has never been under water has no Calmar. An infinite ratio is
+        an artefact of a short sample, not a compliment."""
+        from backend.services.risk_engine import _calmar
+
+        assert math.isnan(_calmar(pd.Series([0.01] * 50)))
+
+    def test_calmar_is_annualised_return_over_the_drawdown(self):
+        from backend.services.risk_engine import _calmar, _max_drawdown
+
+        returns = pd.Series([0.10, -0.20, 0.05, 0.01, 0.02])
+        expected = float(returns.mean()) * 252 / abs(_max_drawdown(returns))
+        assert _calmar(returns) == pytest.approx(expected, rel=1e-9)
+
+    def test_quantile_midpoint_matches_pandas(self):
+        """Pinned rather than delegated: a quantile is one of nine conventions, and a
+        VaR that silently changed convention on a pandas upgrade would be a number
+        nobody could reproduce."""
+        from backend.services.risk_engine import _quantile_midpoint
+
+        values = [0.01, -0.02, 0.03, -0.04, 0.05, 0.002]
+        for q in (0.05, 0.25, 0.5, 0.95):
+            assert _quantile_midpoint(values, q) == pytest.approx(
+                float(pd.Series(values).quantile(q, interpolation="midpoint")), rel=1e-12
+            )
+
+    def test_the_new_derivations_carry_distinct_method_ids(self):
+        rng = np.random.default_rng(7)
+        out = compute_risk(
+            book=[{"weight": 0.5}, {"weight": -0.5}],
+            history=rng.normal(0.0004, 0.01, 200).tolist(),
+            spx_returns=rng.normal(0.0004, 0.01, 200).tolist(),
+        )
+        assert out["var_95"].method_id != out["var_95_historical"].method_id
+        assert out["var_95"].unit == out["var_95_historical"].unit == "usd"
+        assert out["max_drawdown"].value <= 0.0
+        for key in ("sortino", "calmar", "max_drawdown"):
+            assert out[key].unit == "ratio"
+
+    def test_short_history_marks_the_new_metrics_unavailable_not_zero(self):
+        out = compute_risk(book=[{"weight": 1.0}], history=[0.01], spx_returns=[0.01])
+        for key in ("var_95_historical", "es_95_historical", "sortino",
+                    "max_drawdown", "calmar"):
+            assert out[key].display_status == "unavailable"
+            assert out[key].value is None
+            assert out[key].epistemic == "unknown"

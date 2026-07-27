@@ -63,6 +63,18 @@ from .scenario_analysis import (
     format_scenario_table,
     scenario_results_to_dict,
 )
+from .expected_returns import IcReading, build_mu, composite_edge_ic
+from .optimizer import (
+    OptimizerConstraints,
+    OptimizerInputs,
+    covariance_from_returns,
+    efficient_frontier,
+    optimize,
+    portfolio_point,
+)
+from .cost_model import estimate_portfolio_costs
+from .monte_carlo import monte_carlo_var
+from .var_forecast import compute_var_forecast
 
 from ..derivations.advisory import (
     AdvisoryDerivation,
@@ -491,6 +503,47 @@ def _load_recent_headlines(sb: Client, run_date: str, lookback_days: int = 7) ->
     ]
 
 
+def _load_edge_ic(sb: Client) -> tuple[IcReading | None, str | None]:
+    """The most recent measured EdgeScore component ICs, blended into one number.
+
+    `scripts/backtest_edge.py` writes one row per component per run, replacing rather
+    than upserting, so the latest `end_date` holds the current reading. We take only
+    that date's rows: blending an IC measured last month with one measured today
+    would report a composite belonging to neither.
+
+    Returns `(None, reason)` on any failure — no IC is a normal state (the panel is
+    honest that none of the components has cleared significance), and it must never
+    take down a book. The reason is persisted so `/book` can say which sizing ran.
+    """
+    try:
+        rows = (
+            sb.table("backtest_results")
+            .select("metric_name, realized_value, end_date, notes")
+            .eq("test_name", "edge_ic")
+            .order("end_date", desc=True)
+            .limit(40)
+            .execute()
+            .data
+        ) or []
+    except Exception as exc:
+        return None, f"backtest_results unavailable ({exc.__class__.__name__})"
+
+    if not rows:
+        return None, "no EdgeScore IC has been measured yet"
+
+    latest = max(str(r.get("end_date") or "") for r in rows)
+    current = [r for r in rows if str(r.get("end_date") or "") == latest]
+    reading, reason = composite_edge_ic(current)
+    if reading is None:
+        return None, reason
+    print(
+        f"[aggregate_context] EdgeScore IC {reading.raw:+.4f} raw, "
+        f"{reading.value:+.4f} after {reading.shrinkage:.0%} shrinkage "
+        f"({len(reading.components)} components, as of {reading.as_of})"
+    )
+    return reading, None
+
+
 def aggregate_context(state: Q1State) -> Q1State:
     """
     Pull L0-L4 outputs from Supabase into state.
@@ -563,6 +616,14 @@ def aggregate_context(state: Q1State) -> Q1State:
     # macro snapshot alone — the prior behaviour, now an explicit fallback.
     news_headlines = _load_recent_headlines(sb, state["run_date"])
 
+    # The measured EdgeScore IC, which `size_positions` needs to build expected
+    # returns. Fetched HERE rather than in the sizing node so the sizing stays a pure
+    # function of state — the same reason the L0-L4 snapshot is frozen at graph entry
+    # (ADR-0013). A missing or unusable IC is not an error: it means the optimizer has
+    # no return forecast to work from, and the run sizes by conviction instead. The
+    # reason travels so the book can say which of the two sized it.
+    state["edge_ic"], state["edge_ic_reason"] = _load_edge_ic(sb)
+
     state["theme_scores"] = theme_scores
     state["factor_exposures"] = factor_exposures
     state["regime"] = regime
@@ -578,6 +639,11 @@ def aggregate_context(state: Q1State) -> Q1State:
         "regime": regime,
         "risk_metrics": risk_metrics,
         "news_count": len(news_headlines),
+        # The IC is an INPUT to sizing, so it belongs in the frozen snapshot: a
+        # reviewer re-running the audit days later has to see the same number the
+        # optimizer saw, not whatever the panel reads today.
+        "edge_ic": state["edge_ic"].to_dict() if state["edge_ic"] else None,
+        "edge_ic_reason": state["edge_ic_reason"],
     }
 
     return state
@@ -2148,6 +2214,45 @@ def attach_asset_factor_tilts(
     return picks
 
 
+def _hoist_returns(state: Q1State, assets: list[str]):
+    """Fetch ONE 252-day returns frame per run and cache it on state.
+
+    Four consumers now need the same window — the optimizer's covariance, the Euler
+    decomposition, the correlation matrix, and the Monte Carlo / VaR fan. Before the
+    optimizer landed, `finalise_book_analytics` already hoisted a single frame for the
+    correlation consumers precisely so a scraper hiccup could not cost the book three
+    separate times. Adding a second fetch in the sizing node would have reintroduced
+    exactly that, and worse: two frames pulled minutes apart can disagree, leaving the
+    book sized on one covariance and reported on another.
+
+    So the fetch moves here — the first node that needs it — and `finalise_book_analytics`
+    reuses whatever this cached. The union of picks and candidates is fetched, because
+    the candidate correlations need the pool and the fallback path may promote a
+    candidate into the book.
+
+    Returns None on any miss; every caller degrades rather than failing.
+    """
+    cached = state.get("shared_returns")
+    if cached is not None:
+        return cached
+
+    from .book_metrics import fetch_pick_returns
+
+    pool = [c.get("asset") for c in (state.get("candidates") or []) if c.get("asset")]
+    wanted = sorted(set(a for a in assets if a) | set(pool))
+    if not wanted:
+        return None
+    try:
+        frame = fetch_pick_returns(wanted, lookback_days=252)
+    except Exception as exc:                          # pragma: no cover - network
+        print(f"[_hoist_returns] returns unavailable ({exc.__class__.__name__}): {exc}")
+        return None
+    if frame is None or frame.empty:
+        return None
+    state["shared_returns"] = frame
+    return frame
+
+
 def size_positions(state: Q1State) -> Q1State:
     """
     HypeScore-weighted allocation of $100M across the 10 picks, WITH the
@@ -2231,11 +2336,11 @@ def size_positions(state: Q1State) -> Q1State:
         state["error"] = "No sizable picks after taxonomy check — using fallback"
         return fallback_picks(state)
 
-    # size_by="conviction" — the documented Stage-4 model (ADR-0032), which /book,
-    # /method and SizingChainView have all been describing while this call used the
-    # default "hype". allocate_portfolio still falls back to HypeScore on its own when
-    # no candidate carries any conviction, so a run with no edge data degrades instead
-    # of dividing by nothing.
+    # ── The conviction book: always computed, for two reasons ────────────────────
+    # It is the FALLBACK when the optimizer cannot run, and it is the BASELINE the
+    # optimizer is measured against. size_by="conviction" is the documented Stage-4
+    # model (ADR-0032); allocate_portfolio degrades to HypeScore on its own when no
+    # candidate carries conviction, so a run with no edge data still sizes.
     positioned = allocate_portfolio(
         sizable,
         total_capital,
@@ -2243,17 +2348,147 @@ def size_positions(state: Q1State) -> Q1State:
         geo_map=GEO_MAP,
         size_by="conviction",
     )
-
-    for pick, (_cand, notional, weight) in zip(kept, positioned):
+    heuristic: dict[str, float] = {}
+    for pick, (_cand, _notional, weight) in zip(kept, positioned):
         sign = -1.0 if pick.get("direction") == "short" else 1.0
-        pick["weight"] = weight
-        pick["signed_weight"] = sign * weight
-        pick["notional"] = notional
+        heuristic[pick["asset"]] = sign * weight
+    state["heuristic_weights"] = dict(heuristic)
+
+    # ── The optimizer ────────────────────────────────────────────────────────────
+    # Everything below can fail, and every failure lands on the conviction book with
+    # a stated reason. The book is never left unsized: same contract as the L5 citation
+    # fallback (ADR-0013 constraint 4).
+    chosen: dict[str, float] | None = None
+    method = "conviction"
+    reason: str | None = None
+    state["optimizer_result"] = None
+    state["efficient_frontier"] = None
+    state["rebalance_cost"] = None
+
+    ic: IcReading | None = state.get("edge_ic")
+    if ic is None:
+        reason = state.get("edge_ic_reason") or "no measured EdgeScore IC"
+    else:
+        try:
+            assets = [p["asset"] for p in kept]
+            returns = _hoist_returns(state, assets)
+            cov, priced, unpriced = covariance_from_returns(returns, assets)
+            if cov is None:
+                reason = (
+                    "no covariance: fewer than two priced names or under 60 "
+                    "overlapping sessions"
+                )
+            else:
+                # mu is built over the PRICED names only — the same set the covariance
+                # spans — so the optimizer never sees a name it has a return for but no
+                # risk for, or vice versa.
+                #
+                # The edge comes from the CANDIDATE, never from the pick. `state["picks"]`
+                # are the model's own dicts — asset, direction, thesis — and have never
+                # carried `edge_score`. Reading it off them yields None -> 0.0 for every
+                # name, which makes every expected return zero, which makes the optimal
+                # book the EMPTY one: the optimizer correctly declines to deploy capital
+                # for no expected return, and the book silently comes back at 0% gross.
+                # This is ADR-0053's trap exactly — the same seam, one layer along — and
+                # `sizable` already holds the candidate-first resolution, so use it.
+                edge_by_sizable = {c.asset: c for c in sizable}
+                priced_picks = [
+                    {
+                        "asset": p["asset"],
+                        "direction": p.get("direction", "long"),
+                        "edge_score": getattr(
+                            edge_by_sizable.get(p["asset"]), "edge_score", 0.0
+                        ),
+                    }
+                    for p in kept if p["asset"] in priced
+                ]
+                mu, mu_dropped = build_mu(priced_picks, returns, ic)
+                if not mu:
+                    reason = "expected returns could not be built for any held name"
+                else:
+                    inputs = OptimizerInputs(
+                        assets=priced,
+                        directions={p["asset"]: p.get("direction", "long")
+                                    for p in priced_picks},
+                        mu=mu,
+                        cov=cov,
+                        # The conviction book is the baseline, so `weight_delta` and the
+                        # frontier's "you are here" both answer the question a reader
+                        # actually has: what did the optimizer change, and what did it buy?
+                        weights0={a: heuristic.get(a, 0.0) for a in priced},
+                    )
+                    result = optimize(inputs, "mean_variance", OptimizerConstraints())
+                    if not result.feasible:
+                        reason = result.reason or f"optimizer returned {result.status}"
+                    elif not any(result.signed_weights.values()):
+                        # A solve that funds nothing is arithmetically valid and
+                        # editorially useless: it publishes a $100M mandate holding
+                        # cash. It also has one overwhelmingly likely cause — every
+                        # expected return came back zero — so treat it as a failure of
+                        # the inputs and say so, rather than publishing the empty book.
+                        reason = (
+                            "the optimal book funded no position, which means the "
+                            "expected returns were all zero"
+                        )
+                    else:
+                        chosen = dict(result.signed_weights)
+                        method = "optimizer"
+                        payload = result.to_dict()
+                        payload["ic"] = ic.to_dict()
+                        payload["unpriced_assets"] = sorted(set(unpriced) | set(mu_dropped))
+                        payload["mu"] = mu
+                        payload["baseline"] = "conviction (ADR-0032)"
+                        state["optimizer_result"] = payload
+                        state["efficient_frontier"] = efficient_frontier(
+                            inputs, OptimizerConstraints()
+                        ).to_dict()
+                        # What the move from the conviction book to this one costs.
+                        state["rebalance_cost"] = estimate_portfolio_costs(
+                            result.weight_delta, total_capital
+                        ).to_dict()
+        except Exception as exc:                     # pragma: no cover - defensive
+            reason = f"optimizer skipped ({exc.__class__.__name__}): {exc}"
+            print(f"[size_positions] {reason}")
+
+    if chosen is None:
+        chosen = heuristic
+        state["optimizer_result"] = {
+            "feasible": False,
+            "objective": "mean_variance",
+            "status": "not_run",
+            "reason": reason,
+        }
+
+    state["sizing_method"] = method
+    state["sizing_reason"] = reason
+    print(
+        f"[size_positions] sized by {method}"
+        + (f" — {reason}" if reason else "")
+        + f" | gross {sum(abs(v) for v in chosen.values()):.1%}"
+    )
+
+    # A pick the optimizer priced out is dropped from the book, not carried at zero.
+    # A $0 position is not a position, and leaving it in would let it consume one of
+    # Q1's five-a-side slots while holding nothing (ADR-0058 owes the reason, which
+    # `optimizer_result.zeroed` carries).
+    final: list[dict] = []
+    for pick in kept:
+        weight = chosen.get(pick["asset"], 0.0)
+        if weight == 0.0:
+            continue
+        pick["weight"] = abs(weight)
+        pick["signed_weight"] = weight
+        pick["notional"] = abs(weight) * total_capital
+        final.append(pick)
+
+    if not final:
+        state["error"] = "Sizing produced no funded positions — using fallback"
+        return fallback_picks(state)
 
     # Overwrite whatever the model put in factor_tilts with the asset's measured betas.
-    attach_asset_factor_tilts(kept, state.get("factor_exposures"))
+    attach_asset_factor_tilts(final, state.get("factor_exposures"))
 
-    state["picks"] = kept
+    state["picks"] = final
     return state
 
 
@@ -2319,13 +2554,11 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
     # (docs/handoff-euler-risk-decomposition.md, step 1). MA context stays its own fetch — it
     # needs prices, not returns. fetch_pick_returns swallows its own errors to an empty frame,
     # so on any miss shared_returns is None and each consumer falls back to fetching its own.
-    from .book_metrics import fetch_pick_returns
-    _pool_assets = [c.get("asset") for c in (state.get("candidates") or []) if c.get("asset")]
-    _shared = fetch_pick_returns(
-        sorted(set(p["asset"] for p in picks if p.get("asset")) | set(_pool_assets)),
-        lookback_days=252,
-    )
-    shared_returns = _shared if (_shared is not None and not _shared.empty) else None
+    # `_hoist_returns` caches on state, so when `size_positions` already fetched this
+    # window for the optimizer's covariance this is free — and, more importantly, it is
+    # the SAME frame. The book must not be sized on one covariance and reported on
+    # another pulled minutes later.
+    shared_returns = _hoist_returns(state, [p["asset"] for p in picks if p.get("asset")])
 
     corr_pairs = compute_correlation_matrix(picks, lookback_days=252, returns=shared_returns)
     # `_with_scenarios` so the SAME objects that produced the P&L also supply the persisted
@@ -2418,6 +2651,35 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
         print(f"[finalise_book_analytics] risk decomposition skipped "
               f"({exc.__class__.__name__}): {exc}")
         state["risk_decomposition_final"] = None
+
+    # Two more ex-ante risk reads off the SAME covariance, so all three reconcile by
+    # construction at t=1 rather than by coincidence:
+    #   - the Monte Carlo, which is the only one with a fat tail, and
+    #   - the VaR fan, whose 21-day point is the horizon a published pick is actually
+    #     scored over (ADR-0090) and which nothing has carried until now.
+    # Each is labelled with its own method at render. Three unlabelled VaRs on one page
+    # is the regression PROGRESS records twice (ADR-0082).
+    state["monte_carlo_var_final"] = None
+    state["var_forecast_final"] = None
+    try:
+        signed = {
+            p["asset"]: (
+                -abs(p.get("weight", 0.0)) if p.get("direction") == "short"
+                else abs(p.get("weight", 0.0))
+            )
+            for p in picks if p.get("asset")
+        }
+        cov, priced, _unpriced = covariance_from_returns(
+            shared_returns, sorted(signed.keys())
+        )
+        if cov is not None:
+            mc = monte_carlo_var(priced, signed, cov, horizon_days=21)
+            state["monte_carlo_var_final"] = mc.to_dict() if mc else None
+            fan = compute_var_forecast(priced, signed, cov)
+            state["var_forecast_final"] = fan.to_dict() if fan else None
+    except Exception as exc:
+        print(f"[finalise_book_analytics] MC/VaR-fan skipped "
+              f"({exc.__class__.__name__}): {exc}")
 
     state["cap_utilisation_final"] = cap_utilisation(bm, picks)
 
@@ -2923,6 +3185,26 @@ def _persist_to_supabase(state: Q1State) -> bool:
             # 10 positions in the live book map at all, and a crowding verdict without that
             # denominator reads as though the whole book had been checked.
             "positioning_crowding": _positioning_row(state),
+            # ── Sizing provenance (migration 047) ───────────────────────────────
+            # WHICH sizing produced this book, and what the other one would have done.
+            # `sizing_method` is the load-bearing field: ADR-0053 records a book that
+            # every surface described as conviction-sized while it was in fact
+            # hype-sized, because nothing persisted which path ran. Persisting the
+            # method beside the weights makes that class of drift visible in the data
+            # rather than only in a code review.
+            "sizing_method": state.get("sizing_method") or "conviction",
+            "sizing_reason": state.get("sizing_reason"),
+            "optimizer_result": state.get("optimizer_result"),
+            "efficient_frontier": state.get("efficient_frontier"),
+            # The conviction book, kept whether or not it was the one published, so a
+            # reader can see what the optimizer changed rather than being told.
+            "heuristic_weights": state.get("heuristic_weights") or {},
+            "rebalance_cost": state.get("rebalance_cost"),
+            # Two further ex-ante risk reads off the same covariance as
+            # risk_decomposition. Separate columns, separate method ids — never
+            # merged with var_95, which is realised and parametric (ADR-0082).
+            "monte_carlo_var": state.get("monte_carlo_var_final"),
+            "var_forecast": state.get("var_forecast_final"),
         }
 
         # Record WHAT this upsert is about to overwrite, before it overwrites it.

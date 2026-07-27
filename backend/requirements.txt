@@ -1,7 +1,12 @@
 # Core
 pandas>=2.2.0
 numpy>=1.26.0
-scipy>=1.11.0          # scripts/backtest_{edge,hype}.py — spearmanr; sys.exit(1) without it
+scipy>=1.11.0          # backtest_{edge,hype}.py — spearmanr; volatility_models — GARCH MLE
+cvxpy>=1.9.1           # backend/services/optimizer.py — L5 position sizing.
+                       # ON THE DAILY CRITICAL PATH: without it size_positions falls back
+                       # to conviction weighting. Must also be in ci.yml AND
+                       # daily-refresh.yml, which pip-install explicit lists rather than
+                       # this file.
 
 # HTTP + config
 requests>=2.31.0       # backend/data/macro_fetcher.py (L0 critical path), polymarket_fetcher, q1_agent

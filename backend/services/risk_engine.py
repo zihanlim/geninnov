@@ -105,6 +105,127 @@ def _beta_to_spx(portfolio_returns: pd.Series, spx_returns: pd.Series) -> float:
     return cov / var
 
 
+# ── Historical and downside estimators (ported from im-Jarvis risk_service) ──
+# These sit BESIDE the parametric helpers above, never replacing them. The parametric
+# VaR assumes a normal distribution; the historical one reads the loss straight off the
+# realised sample and so carries whatever skew and fat tail the book actually had. They
+# disagree, and the disagreement is the information — a historical VaR materially worse
+# than the parametric one says the return distribution is not the one the closed form
+# assumed. Both are persisted, with distinct method ids (ADR-0082's discipline).
+
+
+def _quantile_midpoint(values: list[float], q: float) -> float:
+    """Quantile with midpoint interpolation, matching pandas' `interpolation='midpoint'`.
+
+    Spelled out rather than delegated so the estimator is pinned: a quantile is one of
+    nine conventions, and a VaR that silently changed convention with a pandas upgrade
+    would be a number nobody could reproduce.
+    """
+    ordered = sorted(values)
+    n = len(ordered)
+    if n == 0:
+        return float("nan")
+    if n == 1:
+        return ordered[0]
+    position = q * (n - 1)
+    low = int(position)
+    fraction = position - low
+    if fraction == 0:
+        return ordered[low]
+    return (ordered[low] + ordered[min(low + 1, n - 1)]) / 2.0
+
+
+def _historical_var(daily_returns: pd.Series, confidence: float) -> float:
+    """Empirical VaR as a positive loss magnitude — no distributional assumption."""
+    values = [float(x) for x in daily_returns.dropna()]
+    if len(values) < 2:
+        return float("nan")
+    return -_quantile_midpoint(values, 1.0 - confidence)
+
+
+def _historical_es(daily_returns: pd.Series, confidence: float) -> float:
+    """Empirical expected shortfall: the mean of the losses beyond the historical VaR.
+
+    NaN when the tail is empty. On a short series the tail can hold one observation or
+    none, and the mean of nothing is not zero — a zero here would report the book as
+    having no tail risk on precisely the sample that cannot say (ADR-0023).
+    """
+    values = [float(x) for x in daily_returns.dropna()]
+    if len(values) < 2:
+        return float("nan")
+    threshold = _quantile_midpoint(values, 1.0 - confidence)
+    tail = [v for v in values if v < threshold]
+    if not tail:
+        return float("nan")
+    return -(sum(tail) / len(tail))
+
+
+def _downside_deviation(daily_returns: pd.Series, target: float = 0.0) -> float:
+    """RMS of below-target returns over the FULL sample size.
+
+    Dividing by the full n rather than by the count of downside days is the standard
+    Sortino denominator: a book with three bad days out of 252 should not be penalised
+    as though every day were bad.
+    """
+    values = [float(x) for x in daily_returns.dropna()]
+    if not values:
+        return float("nan")
+    squared = sum((v - target) ** 2 for v in values if v < target)
+    return math.sqrt(squared / len(values))
+
+
+def _annualized_sortino(daily_returns: pd.Series, risk_free_annual: float = 0.0) -> float:
+    """Sharpe's downside-only sibling: annualised excess return / downside deviation."""
+    rf_daily = risk_free_annual / 252.0
+    excess = daily_returns - rf_daily
+    downside = _downside_deviation(excess) * math.sqrt(252)
+    if not math.isfinite(downside) or downside == 0:
+        return float("nan")
+    return float(excess.mean() * 252 / downside)
+
+
+def _max_drawdown(daily_returns: pd.Series) -> float:
+    """Deepest peak-to-trough decline on the compounded path, as a NEGATIVE fraction.
+
+    Worked in log space — `drawdown = exp(running - peak) - 1` — because summing logs
+    is exact where repeatedly multiplying `(1 + r)` accumulates error, and because it
+    is the same construction `portfolio_cumulative_return` uses. A return of -100% or
+    worse breaks the log and is reported as a total loss rather than as a NaN.
+    """
+    values = [float(x) for x in daily_returns.dropna()]
+    if len(values) < 2:
+        return float("nan")
+    running = 0.0
+    peak = 0.0
+    worst = 0.0
+    for r in values:
+        if r <= -1.0:
+            return -1.0
+        running += math.log1p(r)
+        if running > peak:
+            peak = running
+        elif running < peak:
+            drawdown = math.exp(running - peak) - 1.0
+            if drawdown < worst:
+                worst = drawdown
+    return worst
+
+
+def _calmar(daily_returns: pd.Series) -> float:
+    """Annualised return over the absolute max drawdown. NaN when there is no drawdown.
+
+    A book that has never been under water has no Calmar — the denominator is zero, and
+    an infinite ratio is not a compliment, it is an artefact of a short sample.
+    """
+    drawdown = _max_drawdown(daily_returns)
+    if not math.isfinite(drawdown) or drawdown == 0:
+        return float("nan")
+    values = daily_returns.dropna()
+    if len(values) < 2:
+        return float("nan")
+    return float(values.mean() * 252 / abs(drawdown))
+
+
 def _hhi(book: list[dict]) -> float:
     """HHI of book concentration on the 0-10000 scale.
 
@@ -248,6 +369,20 @@ def compute_risk(
     )
     hhi_v = _hhi(book)  # normalised by gross so cash does not dilute the index
 
+    # Historical / downside estimators. Same gate as above (>= 2 observations); each
+    # returns NaN on its own when the sample cannot support it, and `_estimated`
+    # converts a NaN into an `unavailable` derivation with a reason rather than a zero.
+    _enough = len(rets) >= 2
+    hist_var_v: Optional[float] = (
+        _historical_var(rets, 0.95) * portfolio_value if _enough else None
+    )
+    hist_es_v: Optional[float] = (
+        _historical_es(rets, 0.95) * portfolio_value if _enough else None
+    )
+    sortino_v: Optional[float] = _annualized_sortino(rets, risk_free_annual) if _enough else None
+    max_drawdown_v: Optional[float] = _max_drawdown(rets) if _enough else None
+    calmar_v: Optional[float] = _calmar(rets) if _enough else None
+
     def _estimated(field_id: str, method_id: str, value: Optional[float], unit: str,
                    confidence: float) -> NumericDerivation:
         if value is None or (isinstance(value, float) and (math.isnan(value) or math.isinf(value))):
@@ -286,6 +421,23 @@ def compute_risk(
         ),
         "hhi": _wrap(
             "risk.hhi", "risk.hhi.v1", hhi_v, "ratio", src, as_of, status="exact",
+        ),
+        # Beside var_95/cvar_95, never instead of them. Distinct method ids so a
+        # surface rendering both cannot present them as one number (ADR-0082).
+        "var_95_historical": _estimated(
+            "risk.var_95_historical", "risk.var.historical.v1", hist_var_v, "usd", 0.90,
+        ),
+        "es_95_historical": _estimated(
+            "risk.es_95_historical", "risk.es.historical.v1", hist_es_v, "usd", 0.90,
+        ),
+        "sortino": _estimated(
+            "risk.sortino", "risk.sortino.v1", sortino_v, "ratio", 0.85,
+        ),
+        "max_drawdown": _estimated(
+            "risk.max_drawdown", "risk.max_drawdown.v1", max_drawdown_v, "ratio", 0.90,
+        ),
+        "calmar": _estimated(
+            "risk.calmar", "risk.calmar.v1", calmar_v, "ratio", 0.85,
         ),
     }
 

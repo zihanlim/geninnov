@@ -50,7 +50,10 @@ jobs:
           # Runtime deps the tests import. Deliberately NOT backend/requirements.txt:
           # that pulls sentence-transformers (and torch) for theme_discovery, which
           # this job excludes. Same reasoning as the l5-eval job below.
-          pip install pandas numpy scipy supabase yfinance httpx requests python-dotenv nltk vaderSentiment praw
+          # cvxpy pulls a solver stack (clarabel/osqp/scs). It is required: the
+          # optimizer tests import backend/services/optimizer.py at collection time,
+          # so without it they error rather than skip.
+          pip install pandas numpy scipy cvxpy supabase yfinance httpx requests python-dotenv nltk vaderSentiment praw
 
       - name: Check scripts/ exists
         run: test -d scripts && echo "exists=true" || echo "exists=false" | tee /dev/stderr | exit 1

@@ -63,7 +63,12 @@ jobs:
           # daily_refresh's runtime deps. The theme-discovery ML block in
           # backend/requirements.txt (torch/hdbscan/gensim/umap) is NOT imported
           # by the daily pipeline, so it's skipped to keep runs fast.
+          # cvxpy is on the critical path: backend/services/optimizer.py sizes the
+          # book with it. Without it the run still publishes — size_positions falls
+          # back to conviction weighting and says so — but it silently stops using
+          # the optimizer, which is the kind of degradation nobody notices.
           pip install "pandas>=2.2.0" "numpy>=1.26.0" scipy requests \
+                      "cvxpy>=1.9.1" \
                       "yfinance>=0.2.0" "praw>=7.7.0" "httpx>=0.27.0" \
                       "nltk>=3.8.0" "vaderSentiment>=3.3.0" "supabase>=2.0.0" \
                       python-dotenv

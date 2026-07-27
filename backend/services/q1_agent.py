@@ -65,6 +65,7 @@ from .scenario_analysis import (
     scenario_results_to_dict,
 )
 from .expected_returns import IcReading, build_mu, composite_edge_ic
+from .position_dossier import dossier_block
 from .optimizer import (
     OptimizerConstraints,
     OptimizerInputs,
@@ -1260,6 +1261,9 @@ Concentration HHI: {hhi}
 === TRADABLE ASSETS (candidates, sorted by |EdgeScore| — most decisive first) ===
 {candidate_table}
 
+=== WHAT MOVES EACH NAME (assembled from this system's own records — do NOT add your own) ===
+{position_dossiers}
+
 === RECENT NEWS (if any) ===
 {news_summary}
 
@@ -1540,6 +1544,16 @@ def reason_picks(state: Q1State) -> Q1State:
         "beta": f"{risk.get('beta', 'N/A'):.2f}" if risk.get("beta") else "N/A",
         "hhi": f"{risk.get('concentration_hhi', 'N/A'):.0f}" if risk.get("concentration_hhi") else "N/A",
         "candidate_table": _make_candidate_table(candidates),
+        # Bar 3: the prompt carried nothing about what matters for a SPECIFIC name.
+        # This is not new knowledge — it is the per-name judgement the repo already
+        # encodes (reviewed scenario shocks, the COT no-contract rationales, measured
+        # factor loadings, sanctions channels) finally reaching the reasoner. Nothing
+        # is generated: a prompt that invited the model to supply domain knowledge
+        # would invite the fabrication the guardrail exists to catch (ADR-0114).
+        "position_dossiers": dossier_block(
+            [c.get("asset") for c in candidates if c.get("asset")],
+            state.get("factor_exposures"),
+        ),
         "independent_ideas_summary": _format_independent_ideas(
             state.get("independent_ideas") or {}
         ),

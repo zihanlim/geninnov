@@ -86,7 +86,12 @@ DEFAULT_TICKER_BETAS: dict[str, dict[str, float]] = {
     "XLE":  {"mkt":  0.80, "smb":  0.20, "hml": -0.15, "rmw":  0.40, "cma":  0.10, "umd":  0.15},
     "OIH":  {"mkt":  0.90, "smb":  0.25, "hml": -0.10, "rmw":  0.35, "cma":  0.08, "umd":  0.15},
     # Volatility
-    "SVXY": {"mkt": -0.60, "smb": -0.10, "hml":  0.00, "rmw": -0.05, "cma":  0.00, "umd": -0.20},
+    # Measured 2026-07-27: beta_mkt +2.08, R2 0.68. The prior -0.60 had the SIGN
+    # backwards as well as the magnitude: SVXY is a leveraged RISK-ON proxy — vol falls
+    # when the market rallies, so it rises with it. This table is only the fallback for
+    # a missing FF5 row, but a fallback that contradicts the measurement is worse than
+    # no fallback, because it fires exactly when nobody is checking.
+    "SVXY": {"mkt": +2.08, "smb": -0.10, "hml":  0.00, "rmw": -0.05, "cma":  0.00, "umd": -0.20},
 }
 
 
@@ -137,7 +142,14 @@ SCENARIOS: list[Scenario] = [
             "QQQ":   -0.22,    # tech gets hit hardest
             "FXI":   -0.15,    # EM sells off
             "XLE":   -0.12,    # commodities sold for liquidity
-            "SVXY":  +0.20,    # short-VIX benefit
+            # SVXY is a -0.5x INVERSE VIX product: long SVXY is SHORT volatility, so a
+            # VIX spike is the event that destroys it, not one it benefits from. It fell
+            # ~90% in Feb 2018. The prior "+0.20 # short-VIX benefit" read "we are short
+            # VIX, this is a VIX scenario, so we gain" — confusing short-VOL with short
+            # THE SCENARIO. Measured beta_mkt is +2.08 (R2 0.68), and this scenario's own
+            # description is a -15 to -25% SPX drawdown, so the factor path implies about
+            # -37%; -0.35 is that, held slightly conservative. See ADR-0114.
+            "SVXY":  -0.35,    # short-vol is CRUSHED by a vol spike
             "BABA":  -0.20,
         },
     ),
@@ -189,7 +201,10 @@ SCENARIOS: list[Scenario] = [
             "GLD":   +0.04,
             "XLF":   -0.06,    # financials exposed to credit
             "QQQ":   -0.06,
-            "SVXY":  +0.15,    # short credit benefit
+            # Same sign error as S1, with a rationale that does not survive inspection:
+            # SVXY has no credit exposure at all. Credit widening is a risk-off event,
+            # vol rises, and a short-vol position loses. mkt -0.08 x beta 2.08 ~ -0.17.
+            "SVXY":  -0.15,    # risk-off lifts vol; short-vol loses
         },
     ),
     Scenario(

@@ -743,3 +743,69 @@ def test_inverse_correlation_is_a_hedge_not_a_duplicated_bet():
 def test_no_pairs_means_no_warnings():
     from backend.services.book_metrics import correlation_warning
     assert correlation_warning([]) == []
+
+
+# ─── An inverse product's sign, across every scenario ────────────────────────
+
+
+def test_short_vol_loses_in_every_risk_off_scenario():
+    """SVXY had the sign backwards in two of six scenarios, and right in a third.
+
+    `S1_vix_spike` carried `SVXY: +0.20 # short-VIX benefit` and `S4_credit_widening`
+    carried `+0.15 # short credit benefit`, while `S6` correctly carried `-0.18` with the
+    note "filed under 'Rates' but is short-vol; VIX spikes here". Same file, same asset,
+    contradictory — and the measured beta settles it: **beta_mkt +2.08, R2 0.68**, a
+    leveraged RISK-ON proxy. A scenario whose own description is a "-15 to -25% SPX
+    drawdown" cannot pay a +20% gain on it.
+
+    This mattered more than an ordinary calibration slip: SVXY is the second-largest
+    position in the live book, and the stress table was telling a reader the book GAINS on
+    it in a vol spike. ADR-0097 said it exactly — "a wrong side has no symptom. It renders
+    cleanly, reads plausibly, and is simply false." That ADR fixed the sign in the COT
+    mapping; nobody checked the scenario table for the same error.
+    """
+    from backend.services.scenario_analysis import SCENARIOS
+
+    by_name = {s.name: s for s in SCENARIOS}
+    risk_off = ["S1_vix_spike", "S2_rate_shock", "S3_usd_strength",
+                "S4_credit_widening", "S6_supply_shock"]
+
+    for name in risk_off:
+        scenario = by_name.get(name)
+        if scenario is None:
+            continue
+        shock = (scenario.base_asset_shocks or {}).get("SVXY")
+        if shock is None:
+            continue
+        assert shock < 0, (
+            f"{name} pays SVXY {shock:+.0%}. SVXY is a -0.5x INVERSE VIX product — long "
+            "SVXY is SHORT volatility, and every risk-off shock raises volatility. A "
+            "positive number here is the Feb-2018 trade wearing a hedge's clothes."
+        )
+
+    # And the one scenario where it genuinely gains: vol collapses in a melt-up.
+    melt_up = (by_name["S5_melt_up"].base_asset_shocks or {}).get("SVXY")
+    assert melt_up is not None and melt_up > 0, (
+        "short-vol rips when VIX collapses; S5 is the scenario that should pay it"
+    )
+
+
+def test_the_fallback_beta_table_agrees_in_SIGN_with_the_measured_universe():
+    """The fallback fires exactly when live FF5 data is missing — i.e. when nobody is
+    checking. `SVXY` sat at `mkt: -0.60` against a measured `+2.08`: not merely stale,
+    the opposite direction.
+
+    Sign only, not magnitude: the table is a documented approximation and pinning its
+    values to a moving measurement would make it fail on ordinary drift.
+    """
+    from backend.services.scenario_analysis import DEFAULT_TICKER_BETAS
+
+    # Leveraged long-equity proxies: market beta must be positive.
+    for ticker in ("SVXY", "QQQ", "SPY", "ARKK", "IWM"):
+        entry = DEFAULT_TICKER_BETAS.get(ticker)
+        if entry is None or "mkt" not in entry:
+            continue
+        assert entry["mkt"] > 0, (
+            f"{ticker} has a negative fallback market beta ({entry['mkt']}), which says it "
+            "rises when the market falls"
+        )

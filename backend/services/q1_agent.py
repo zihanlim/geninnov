@@ -3162,7 +3162,16 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
             wide = fetch_pick_returns(sorted(signed.keys()), lookback_days=470)
         except Exception:                            # pragma: no cover - network
             wide = None
-        frame = wide if (wide is not None and not wide.empty) else shared_returns
+        # Say which frame was used. Without this the payload reports "190 sessions"
+        # identically whether the wide fetch was never attempted or attempted and
+        # failed — and those need different fixes. Diagnosing the 2026-07-27 book
+        # took a manual probe to tell them apart.
+        wide_ok = wide is not None and not wide.empty
+        frame = wide if wide_ok else shared_returns
+        if not wide_ok:
+            print("[finalise_book_analytics] weights backtest fell back to the shared "
+                  "252-calendar-day frame; the wide fetch returned nothing, so the "
+                  "252-session floor is unreachable this run.")
         state["weights_backtest_final"] = backtest_weights(
             signed, frame, benchmark=_benchmark_series(state),
         )

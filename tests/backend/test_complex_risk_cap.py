@@ -23,6 +23,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from backend.services.book_metrics import CAP_EPSILON as CAP_EPS, exceeds_cap
 from backend.services.expected_returns import equalise_signal_within_complexes
 from backend.services.optimizer import (
     OptimizerConstraints,
@@ -208,3 +209,91 @@ class TestSignalEqualisation:
         )
         assert out == {"A": 0.3, "B": -0.3}
         assert "sign" in prov["skipped"][0]["reason"]
+
+
+class TestGroupCapProjection:
+    """ADR-0123. `_round_weights` FLOORS each magnitude, which absorbs the ~1e-8 a solver
+    leaves on a SINGLE name. It cannot fix a GROUP: flooring three weights removes at
+    most 3e-8 while the solver satisfies a SUMMED constraint to its own feasibility
+    tolerance — measured at 3.3e-6 over a 20% complex cap, three orders above the
+    CAP_EPSILON (1e-9) that `exceeds_cap` uses to decide a breach.
+
+    So `/risk` could report a governance violation on a correctly-solved book, which
+    ADR-0068 forbids. Loosening CAP_EPSILON was rejected: that converts a
+    representation-error guard into a fitted economic tolerance.
+    """
+
+    def test_projects_the_measured_overshoot(self):
+        from backend.services.optimizer import _project_group_caps
+
+        # The real number from the ADR-0116 run: 0.20000334 against a 0.20 cap.
+        weights = {"A": 0.06666778, "B": 0.06666778, "C": 0.06666778}
+        cmap = {a: "long::0" for a in weights}
+        out, binding = _project_group_caps(weights, [(cmap, 0.20, "correlation complex")])
+        assert sum(abs(v) for v in out.values()) <= 0.20 + CAP_EPS
+        assert binding and "projected onto its 20.00% cap" in binding[0]
+
+    def test_a_compliant_group_is_bit_identical(self):
+        """Sitting under a cap must cost nothing — no rescale, no rounding drift."""
+        from backend.services.optimizer import _project_group_caps
+
+        weights = {"A": 0.05, "B": 0.04, "C": -0.03}
+        out, binding = _project_group_caps(
+            weights, [({a: "g" for a in weights}, 0.20, "sector")]
+        )
+        assert out == weights
+        assert binding == []
+
+    def test_signs_survive_projection(self):
+        from backend.services.optimizer import _project_group_caps
+
+        weights = {"A": 0.15, "B": -0.15}
+        out, _ = _project_group_caps(
+            weights, [({a: "g" for a in weights}, 0.20, "sector")]
+        )
+        assert out["A"] > 0 and out["B"] < 0
+
+    def test_a_name_takes_the_strictest_of_its_groups(self):
+        """A ticker sits in a sector AND a geography AND possibly a complex. Scaling
+        down can only reduce every other group's total, so taking the minimum factor in
+        one pass is safe and conservative — under a cap, never over."""
+        from backend.services.optimizer import _project_group_caps
+
+        weights = {"A": 0.20, "B": 0.20}
+        out, _ = _project_group_caps(
+            weights,
+            [
+                ({"A": "s1", "B": "s1"}, 0.30, "sector"),   # needs 0.75
+                ({"A": "g1", "B": "g1"}, 0.20, "geo"),      # needs 0.50 — stricter
+            ],
+        )
+        assert sum(abs(v) for v in out.values()) <= 0.20 + CAP_EPS
+
+    def test_it_only_ever_shrinks(self):
+        """Magnitudes only fall, so single-name caps and the gross budget stay satisfied
+        and nothing needs re-checking."""
+        from backend.services.optimizer import _project_group_caps
+
+        weights = {"A": 0.18, "B": 0.18, "C": 0.02}
+        out, _ = _project_group_caps(
+            weights, [({a: "g" for a in weights}, 0.20, "sector")]
+        )
+        assert all(abs(out[k]) <= abs(weights[k]) + 1e-15 for k in weights)
+
+    def test_an_ungrouped_name_is_untouched(self):
+        from backend.services.optimizer import _project_group_caps
+
+        weights = {"A": 0.15, "B": 0.15, "SOLO": 0.19}
+        out, _ = _project_group_caps(
+            weights, [({"A": "g", "B": "g"}, 0.20, "sector")]
+        )
+        assert out["SOLO"] == 0.19
+
+    def test_the_solved_book_satisfies_its_group_cap_at_cap_epsilon(self):
+        """End to end, at the precision `exceeds_cap` actually judges by — not 1e-4."""
+        cov = _cov(VOLS)
+        mu, _ = equalise_signal_within_complexes({a: 0.60 for a in ASSETS}, CMAP, VOLS)
+        result = _solve(ASSETS, mu, cov, CMAP)
+        assert result.feasible
+        total = sum(abs(v) for v in result.signed_weights.values())
+        assert not exceeds_cap(total, OptimizerConstraints().max_complex), total

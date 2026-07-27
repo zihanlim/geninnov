@@ -280,6 +280,59 @@ def covariance_from_returns(
     return cov, used, dropped
 
 
+def _project_group_caps(
+    weights: dict[str, float],
+    groupings: list[tuple[dict[str, str], float | None, str]],
+) -> tuple[dict[str, float], list[str]]:
+    """Scale any group whose total overshoots its cap back onto it.
+
+    `_round_weights` FLOORS each magnitude, which absorbs the ~1e-8 a solver leaves on a
+    SINGLE name. It cannot fix a GROUP: flooring three weights removes at most 3e-8,
+    while the solver satisfies a summed constraint to its own feasibility tolerance —
+    measured at **3.3e-6** over a 20% complex cap on the 2026-07-27 book, three hundred
+    times what flooring can reach and three orders above `CAP_EPSILON` (1e-9), which is
+    what `exceeds_cap` uses to decide a breach.
+
+    So `/risk` could report a governance violation on a book the optimizer had solved
+    correctly, and [ADR-0068](../../docs/adrs/0068-a-cap-breach-must-not-be-decided-by-float-error.md)
+    forbids exactly that. **Loosening `CAP_EPSILON` to swallow it was rejected**: that
+    turns a representation-error guard into a fitted economic tolerance, which is the
+    thing its own comment warns against. Project the weights instead, so the stored book
+    genuinely satisfies the limit rather than being declared close enough.
+
+    Each name takes the STRICTEST scale any of its groups demands. Scaling down can only
+    reduce every other group's total, so one pass is sufficient and conservative — it may
+    land a little under a cap, never over. Magnitudes only shrink, so single-name caps and
+    the gross budget stay satisfied and no sign moves.
+    """
+    scale: dict[str, float] = {}
+    binding: list[str] = []
+    for group_of, cap, label in groupings:
+        if cap is None or cap <= 0 or not group_of:
+            continue
+        totals: dict[str, float] = {}
+        for asset, weight in weights.items():
+            key = group_of.get(asset)
+            if key is not None:
+                totals[key] = totals.get(key, 0.0) + abs(weight)
+        for key, total in totals.items():
+            if total <= cap or total <= 0:
+                continue
+            factor = cap / total
+            binding.append(
+                f"{key}: {label} total {total:.8f} projected onto its {cap:.2%} cap"
+            )
+            for asset in weights:
+                if group_of.get(asset) == key:
+                    scale[asset] = min(scale.get(asset, 1.0), factor)
+    if not scale:
+        return weights, []
+    return (
+        {a: w * scale.get(a, 1.0) for a, w in weights.items()},
+        binding,
+    )
+
+
 def _round_weights(raw: np.ndarray, assets: list[str], signs: np.ndarray) -> dict[str, float]:
     """Solver output to stored weights. Signs preserved, no renormalisation.
 
@@ -517,6 +570,23 @@ def optimize(
         warnings.append("solver returned an inaccurate optimum")
 
     weights = _round_weights(np.asarray(w.value).ravel(), assets, signs)
+    # A group cap is satisfied to the SOLVER's tolerance, not to CAP_EPSILON's.
+    # Project rather than loosen the epsilon — see `_project_group_caps`.
+    weights, projected = _project_group_caps(
+        weights,
+        [
+            (sector_map, c.max_sector, "sector"),
+            (geo_map, c.max_geo, "geo"),
+            (inputs.complex_map or {}, c.max_complex, "correlation complex"),
+        ],
+    )
+    if projected:
+        # Re-floor after scaling: the multiply reintroduces digits past the 8dp
+        # the stored book is meant to carry.
+        weights = _round_weights(
+            np.array([weights[a] for a in assets]), assets, signs
+        )
+        warnings.extend(projected)
 
     vector = np.array([weights[a] for a in assets])
     gross = float(np.abs(vector).sum())

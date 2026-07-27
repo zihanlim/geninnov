@@ -726,6 +726,108 @@ def check_asset_class_maps_agree(
     return failures
 
 
+def check_default_betas_match_measured(
+    default_betas: dict[str, dict] | None,
+    measured_beta_mkt: dict[str, float] | None,
+    max_gap: float = 1.0,
+    material: float = 0.30,
+) -> list[str]:
+    """Has the stress model's FALLBACK beta table drifted away from measurement?
+
+    `scenario_analysis.DEFAULT_TICKER_BETAS` is used only when `book_metrics` reports
+    near-zero factor weights — i.e. when live FF5 data is missing. That is exactly why
+    it rots unnoticed: the degraded path is never exercised on a good day, so its
+    assumptions are only consulted on the day everything else has already failed.
+
+    It carried `SVXY {"mkt": -0.60}` against a measured **+2.08** until 2026-07-27 —
+    wrong sign and 2.7 apart, on the book's second-largest position.
+
+    **Deliberately tolerant.** A fallback's job is to be a reasonable PRIOR, not today's
+    point estimate; syncing it to the current measurement would defeat the purpose,
+    since if the measurement were available it would be used instead. So drift is fine
+    and only two things are flagged:
+
+      * the signs disagree while both values are material — a claim about DIRECTION,
+        which a prior does not get to be wrong about;
+      * the gap exceeds `max_gap` — no longer a prior, just a wrong number.
+
+    Calibrated against the live 2026-07-27 table: the largest legitimate gaps are SLV
+    (+0.25 vs +1.08) and XLE (+0.80 vs +0.04), both same-sign and under 1.0, and neither
+    fires. The pre-fix SVXY entry does.
+    """
+    if not default_betas or not measured_beta_mkt:
+        return []
+    failures: list[str] = []
+    for ticker in sorted(set(default_betas) & set(measured_beta_mkt)):
+        assumed = (default_betas.get(ticker) or {}).get("mkt")
+        actual = measured_beta_mkt.get(ticker)
+        if assumed is None or actual is None:
+            continue
+        try:
+            assumed, actual = float(assumed), float(actual)
+        except (TypeError, ValueError):
+            continue
+        if not (math.isfinite(assumed) and math.isfinite(actual)):
+            continue
+        wrong_sign = (
+            abs(assumed) >= material and abs(actual) >= material
+            and (assumed > 0) != (actual > 0)
+        )
+        too_far = abs(actual - assumed) > max_gap
+        if not (wrong_sign or too_far):
+            continue
+        why = "opposite sign" if wrong_sign else f"gap {abs(actual - assumed):.2f}"
+        failures.append(
+            f"{ticker}: scenario_analysis.DEFAULT_TICKER_BETAS assumes mkt "
+            f"{assumed:+.2f} but factor_exposures measures {actual:+.2f} ({why}). "
+            f"That table is the stress model's fallback when live FF5 data is "
+            f"missing, so a wrong value only surfaces on a day the pipeline is "
+            f"already degraded (ADR-0122)."
+        )
+    return failures
+
+
+def check_lens_membership_matches_asset_class(
+    lens_tickers: dict[str, set] | None,
+    code_class_by_ticker: dict[str, str] | None,
+) -> list[str]:
+    """Does a ticker's lens membership agree with the class `classify()` gives it?
+
+    `LENS_TICKER_FALLBACK` decides which candidates a lens admits (ADR-0015), and
+    `_ASSET_CLASS_MAP` decides what `regime_direction_bias` thinks the ticker is. They
+    are two statements about the same fact, and on 2026-07-27 they disagreed in both
+    directions: SVXY was listed under `rates` and `credit` while measuring beta +2.08,
+    and EWZ was listed under `equity` while the class map said `fx`.
+
+    **The credit lens legitimately holds rates**, by its own comment: "a credit book
+    includes duration exposure". That is the one documented widening, so it is encoded
+    here rather than treated as a violation. Everything else must match exactly.
+    """
+    if not lens_tickers or not code_class_by_ticker:
+        return []
+    allowed: dict[str, set[str]] = {
+        "credit": {"credit", "rates"},     # documented: a credit book carries duration
+        "rates": {"rates"},
+        "equity": {"equity"},
+        "fx": {"fx"},
+        "commodity": {"commodity"},
+    }
+    failures: list[str] = []
+    for lens in sorted(lens_tickers):
+        permitted = allowed.get(lens)
+        if not permitted:
+            continue
+        for ticker in sorted(lens_tickers[lens] or ()):
+            actual = code_class_by_ticker.get(ticker)
+            if actual and actual not in permitted:
+                failures.append(
+                    f"{ticker} is in the '{lens}' lens but _ASSET_CLASS_MAP calls it "
+                    f"'{actual}'. The lens decides which candidates the book may hold; "
+                    f"the class decides how the regime scores them (ADR-0122)."
+                )
+    return failures
+
+
 def check_published_claims_are_on_the_record(
     rec_row: dict | None,
     outcome_rows: list[dict] | None,
@@ -1040,6 +1142,20 @@ def main() -> int:
             )
             + check_asset_class_maps_agree(dict(code_classes), class_by_ticker)
         )
+        # The stress model's fallback table, and the lens membership. Both are
+        # statements about a ticker's identity that nothing reconciled (ADR-0122).
+        try:
+            from backend.services.scenario_analysis import DEFAULT_TICKER_BETAS
+            from backend.services.q1_agent import LENS_TICKER_FALLBACK
+            class_flags += check_default_betas_match_measured(
+                dict(DEFAULT_TICKER_BETAS), beta_by_ticker
+            )
+            class_flags += check_lens_membership_matches_asset_class(
+                {k: set(v) for k, v in LENS_TICKER_FALLBACK.items()},
+                dict(code_classes),
+            )
+        except Exception as exc:                # pragma: no cover - defensive
+            print(f"WARN could not cross-check the taxonomy tables ({exc}).")
         # Coverage first (ADR-0097): a clean result over three names is not a clean
         # taxonomy, and the reader is owed the denominator either way.
         checked = sum(

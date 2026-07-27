@@ -181,3 +181,92 @@ class TestTheTwoMapsMustAgree:
             assert asset_class == "equity", ticker
             # Risk-off must FADE a levered equity proxy, not favour it.
             assert regime_direction_bias(asset_class, "mid", "neutral", -0.8) < 0
+
+
+class TestTheFallbackBetaTable:
+    """ADR-0122. DEFAULT_TICKER_BETAS is the stress model's fallback, used only when
+    live FF5 data is missing — so it rots unnoticed: the degraded path is never
+    exercised on a good day, and its assumptions are consulted only once everything
+    else has already failed. It held SVXY at -0.60 against a measured +2.08."""
+
+    def test_would_have_caught_the_svxy_beta(self):
+        from scripts.check_data_integrity import check_default_betas_match_measured
+
+        flags = check_default_betas_match_measured(
+            {"SVXY": {"mkt": -0.60}}, {"SVXY": 2.08}
+        )
+        assert len(flags) == 1
+        assert "opposite sign" in flags[0]
+        assert "-0.60" in flags[0] and "+2.08" in flags[0]
+
+    def test_tolerates_the_drift_a_prior_is_allowed(self):
+        """A fallback's job is to be a reasonable PRIOR, not today's point estimate.
+        These are the two largest live gaps on 2026-07-27 and neither is a defect."""
+        from scripts.check_data_integrity import check_default_betas_match_measured
+
+        assert check_default_betas_match_measured(
+            {"SLV": {"mkt": 0.25}, "XLE": {"mkt": 0.80}},
+            {"SLV": 1.08, "XLE": 0.04},
+        ) == []
+
+    def test_flags_a_gross_gap_even_with_matching_signs(self):
+        from scripts.check_data_integrity import check_default_betas_match_measured
+
+        flags = check_default_betas_match_measured({"X": {"mkt": 0.20}}, {"X": 1.75})
+        assert len(flags) == 1 and "gap 1.55" in flags[0]
+
+    def test_a_near_zero_prior_is_not_a_direction_claim(self):
+        """SHY at -0.05 measuring +0.01 is not a sign error, it is noise around zero."""
+        from scripts.check_data_integrity import check_default_betas_match_measured
+
+        assert check_default_betas_match_measured(
+            {"SHY": {"mkt": -0.05}}, {"SHY": 0.01}
+        ) == []
+
+    def test_the_live_table_is_clean(self):
+        from scripts.check_data_integrity import check_default_betas_match_measured
+        from backend.services.scenario_analysis import DEFAULT_TICKER_BETAS
+
+        live = {
+            "AGG": 0.08, "BABA": 1.25, "FXE": 0.09, "FXI": 0.90, "GLD": 0.27,
+            "HYG": 0.23, "IEF": 0.06, "IWM": 1.02, "KWEB": 1.14, "LQD": 0.17,
+            "OIH": 0.87, "QQQ": 1.17, "SHY": 0.01, "SLV": 1.08, "SPY": 0.99,
+            "SVXY": 2.08, "TIPS": 0.20, "TLT": 0.11, "UUP": -0.10, "XLE": 0.04,
+        }
+        assert check_default_betas_match_measured(dict(DEFAULT_TICKER_BETAS), live) == []
+
+
+class TestLensMembership:
+    def test_would_have_caught_svxy_under_rates(self):
+        from scripts.check_data_integrity import check_lens_membership_matches_asset_class
+
+        flags = check_lens_membership_matches_asset_class(
+            {"rates": {"SVXY", "TLT"}}, {"SVXY": "equity", "TLT": "rates"}
+        )
+        assert len(flags) == 1 and "SVXY" in flags[0] and "'rates' lens" in flags[0]
+
+    def test_would_have_caught_ewz_under_equity_while_classed_fx(self):
+        from scripts.check_data_integrity import check_lens_membership_matches_asset_class
+
+        flags = check_lens_membership_matches_asset_class(
+            {"equity": {"EWZ"}}, {"EWZ": "fx"}
+        )
+        assert len(flags) == 1 and "EWZ" in flags[0]
+
+    def test_the_credit_lens_may_hold_rates_by_documented_design(self):
+        """'a credit book includes duration exposure' — the one intended widening."""
+        from scripts.check_data_integrity import check_lens_membership_matches_asset_class
+
+        assert check_lens_membership_matches_asset_class(
+            {"credit": {"HYG", "TLT", "SHY"}},
+            {"HYG": "credit", "TLT": "rates", "SHY": "rates"},
+        ) == []
+
+    def test_the_live_maps_agree(self):
+        from scripts.check_data_integrity import check_lens_membership_matches_asset_class
+        from backend.services.q1_agent import LENS_TICKER_FALLBACK
+        from backend.services.trade_ranker import _ASSET_CLASS_MAP
+
+        assert check_lens_membership_matches_asset_class(
+            {k: set(v) for k, v in LENS_TICKER_FALLBACK.items()}, dict(_ASSET_CLASS_MAP)
+        ) == []

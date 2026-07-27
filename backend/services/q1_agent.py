@@ -196,10 +196,15 @@ VALID_LENSES = {"multi_asset", "credit", "rates", "equity", "fx", "commodity"}
 # Used as a fallback when theme_assets.asset_class isn't populated yet.
 # Note: "credit" lens = credit + rates (a credit book includes duration exposure).
 LENS_TICKER_FALLBACK: dict[str, set[str]] = {
+    # SVXY is NOT rates and NOT credit — it is short volatility, which behaves as a
+    # levered long-equity risk premium (measured market beta +2.08). Listing it under
+    # the rates and credit lenses put an instrument that loses 35% in a VIX spike into
+    # the candidate pool of a duration book. See ADR-0119.
     "credit":    {"HYG", "LQD", "JNK", "BKLN", "ANGL", "EMB", "CDX", "HY",
-                  "TLT", "IEF", "SHY", "TIPS", "AGG", "BIL", "SVXY"},
-    "rates":     {"TLT", "IEF", "SHY", "TIPS", "AGG", "BIL", "SVXY"},
-    "equity":    {"QQQ", "SPY", "IWM", "FXI", "MCHI", "BABA", "KWEB", "XLE", "XLF", "XLV", "ARKK", "EWJ", "EWZ"},
+                  "TLT", "IEF", "SHY", "TIPS", "AGG", "BIL"},
+    "rates":     {"TLT", "IEF", "SHY", "TIPS", "AGG", "BIL"},
+    "equity":    {"QQQ", "SPY", "IWM", "FXI", "MCHI", "BABA", "KWEB", "XLE", "XLF",
+                  "XLV", "ARKK", "EWJ", "EWZ", "SVXY"},
     "fx":        {"UUP", "FXE"},   # DXY is an index, not an instrument (migration 031)
     "commodity": {"GLD", "SLV", "UNG", "OIH", "CL"},
 }

@@ -177,13 +177,24 @@ def test_only_the_supply_shock_transmits_through_sectors():
 
 
 def test_a_ticker_shock_overrides_its_sector():
-    """SVXY is filed under "Rates" but is short-vol: a supply shock spikes VIX, so it
-    must NOT inherit the small negative the rates bucket carries."""
+    """A per-ticker shock beats its sector's, so a name whose behaviour does not
+    resemble its bucket is still stressed correctly.
+
+    This test used to open `assert SECTOR_MAP["SVXY"] == "Rates"` and describe that as
+    a fact to work around — SVXY was short-vol filed under rates, and the override was
+    what stopped it inheriting the rates bucket's mild negative. That premise was a
+    BUG, not a fixture: `asset_class="rates"` also reached `regime_direction_bias`,
+    whose risk beta for rates is -1.0, so EdgeScore's regime term favoured SVXY in the
+    very tape that takes it to -35% (ADR-0119). SVXY is now classified as equity.
+
+    The property under test never depended on that. It is asserted here against the
+    classification SVXY actually has, so the test measures the override rather than
+    pinning a misfiling."""
     from backend.services.scenario_analysis import _resolve_shock
     from backend.services.book_metrics import SECTOR_MAP
 
-    assert SECTOR_MAP["SVXY"] == "Rates"
-    sector = _s6().sector_shocks["Rates"]
+    assert SECTOR_MAP["SVXY"] == "US Equities"
+    sector = _s6().sector_shocks["US Equities"]
     shock, origin = _resolve_shock(_s6(), "SVXY")
     assert shock == _s6().base_asset_shocks["SVXY"]
     assert shock < sector, "the override must be more severe than the bucket default"

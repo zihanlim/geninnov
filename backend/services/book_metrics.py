@@ -29,7 +29,16 @@ import yfinance as yf
 SECTOR_MAP: dict[str, str] = {
     # Fixed income
     "TLT":   "Rates",
-    "SVXY":  "Rates",
+    # NOT "Rates". SVXY is short-volatility — a levered long-equity risk premium, not a
+    # haven — and this repo already measures it as one: market beta +2.08, VIX spike
+    # -35%, melt-up +18%, and `cot_fetcher` maps it to VIX FUTURES as INVERSE. Sitting
+    # in "Rates" put it in a sector cap alongside AGG/BIL/IEF/SHY/TLT, and fed
+    # `asset_class="rates"` into `regime_direction_bias`, whose risk beta for rates is
+    # -1.0 — so EdgeScore's regime term FAVOURED it in a risk-off tape, the exact tape
+    # that takes it to -35%. Grouping it with US equities is also the conservative
+    # reading of the cap: SPY, QQQ and a short-vol position are one risk, and now share
+    # one 30% limit. See ADR-0119.
+    "SVXY":  "US Equities",
     "IEF":   "Rates",
     "SHY":   "Rates",
     "AGG":   "Rates",

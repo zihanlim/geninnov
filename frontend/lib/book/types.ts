@@ -34,6 +34,22 @@ export interface Pick {
   signed_weight?: number;
   hype_score?: number;
   trade_score?: number;
+  /**
+   * What this position is a bet ON, as distinct from the ticker holding it —
+   * ADR-0116. L5 writes it; where a correlation complex is involved every member
+   * shares one label, because they are one idea.
+   */
+  exposure?: string;
+  /** The complex (or `solo::<asset>`) this position belongs to. */
+  idea_id?: string;
+  /**
+   * False when the optimizer, not L5, chose this instrument to carry the idea.
+   * Such a row has no thesis of its own — `expresses_pick` names the position
+   * whose argument it is held under, and the book must show them together or it
+   * publishes a holding nobody argued for.
+   */
+  named_by_llm?: boolean;
+  expresses_pick?: string;
 }
 
 /** One calibrated shock and what it does to the book. */

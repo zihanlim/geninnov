@@ -326,3 +326,85 @@ def build_mu(
         for asset, edge in signed_edges.items()
     }
     return mu, sorted(set(dropped))
+
+
+def equalise_within_complexes(
+    mu: dict[str, float],
+    complex_map: dict[str, str],
+) -> tuple[dict[str, float], dict]:
+    """One idea, one expected return. Members of a correlation complex share a mu.
+
+    Kept OUT of `build_mu` on purpose: that function is Grinold-Kahn and nothing else,
+    and this is a separate assertion about what a complex means. Composing them lets
+    each be tested for what it claims.
+
+    **Why.** [ADR-0115](../../docs/adrs/0115-a-complex-is-one-idea.md) capped a complex
+    at one name's worth and said the covariance would decide the split across its
+    members. Measured, it does not: mu is `sign x |EdgeScore| x sigma` (ADR-0111), so
+    while the members carry different mu the optimizer ranks them by EdgeScore — the
+    same criterion `strongest` used — and a 5% mu difference inside a block correlated
+    at 0.99 produces a corner solution. Widening the menu makes that worse, not better,
+    because it widens the field over which one weak signal selects.
+
+    Equalise mu and the ranking changes character. With a common mu the mean-variance
+    objective's linear term depends only on the complex's TOTAL weight, so the split is
+    decided by the quadratic term alone: the optimizer holds the exposure through
+    whichever member carries it at least variance. That is a criterion built on a
+    measured quantity, and it needs no hardcoded table of which instruments are sound.
+
+    **The condition this rests on, stated plainly.** It is right while the gross
+    constraint is SLACK — the live book runs near 58% of a 100% budget. A levered
+    member delivers the same exposure per unit of gross at higher vol, so when gross
+    does not bind that leverage buys nothing and its vol is pure cost. If gross ever
+    binds, capital efficiency becomes real and a common mu would wrongly penalise the
+    levered member. Revisit this the day the budget binds, not before.
+
+    **The mean, and what else it could have been.** A complex's mu is the simple mean
+    of its members'. The members' individual mu differ only through `sigma`, so the
+    mean is implicitly a mean-sigma reference. Using the named pick's own mu was the
+    alternative and was rejected: it would reintroduce a dependence on which member L5
+    happened to name, which is the dependence this removes.
+
+    Returns `(mu, provenance)`. Assets absent from `complex_map` are untouched and
+    absent from the provenance — a name correlated with nothing is not part of an idea
+    and is sized exactly as it would have been.
+    """
+    provenance: dict = {"applied": False, "complexes": [], "skipped": []}
+    if not mu or not complex_map:
+        return dict(mu), provenance
+
+    groups: dict[str, list[str]] = {}
+    for asset, complex_id in complex_map.items():
+        if asset in mu:
+            groups.setdefault(str(complex_id), []).append(str(asset))
+
+    out = dict(mu)
+    for complex_id, members in sorted(groups.items()):
+        if len(members) < 2:
+            continue
+        members = sorted(members)
+        values = [mu[a] for a in members]
+        # Same-side by construction: `_complex_map` namespaces ids by side and
+        # `correlation_clusters` excludes inverse pairs. If that ever breaks, averaging
+        # across a hedge would invent a mu neither side holds — so refuse and say so
+        # rather than return a number nobody can defend.
+        if len({v > 0 for v in values if v != 0.0}) > 1:
+            provenance["skipped"].append({
+                "id": complex_id,
+                "members": members,
+                "reason": "members disagree in sign — not one idea, left untouched",
+            })
+            continue
+        shared = sum(values) / len(values)
+        for asset in members:
+            out[asset] = shared
+        provenance["complexes"].append({
+            "id": complex_id,
+            "members": members,
+            "mu_before": {a: mu[a] for a in members},
+            "mu_after": shared,
+            "spread_before": max(values) - min(values),
+        })
+
+    provenance["applied"] = bool(provenance["complexes"])
+    return out, provenance

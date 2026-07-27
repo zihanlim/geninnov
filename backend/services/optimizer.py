@@ -97,6 +97,10 @@ class OptimizerConstraints:
     default_single: float = MAX_SINGLE_NAME_WEIGHT
     max_sector: float = MAX_SECTOR_WEIGHT
     max_geo: float = MAX_GEO_WEIGHT
+    # A CORRELATION COMPLEX IS ONE IDEA, so it may hold at most what one name may.
+    # Named separately from `max_single` rather than aliased, so the two can diverge
+    # later with an argument rather than by accident.
+    max_complex: float = MAX_SINGLE_NAME_WEIGHT
     max_gross: float = 1.0
     # None leaves deployment to the objective (the ADR-0037 reading). A float pins
     # `gross == target_gross`, which the scenario objectives require to be well-posed.
@@ -123,6 +127,10 @@ class OptimizerInputs:
     scenarios: np.ndarray | None = None            # T x n daily returns, `assets` order
     sector_map: dict[str, str] | None = None
     geo_map: dict[str, str] | None = None
+    # {asset: complex_id} from `book_metrics.independent_ideas`. Names correlated at or
+    # above 0.70 share an id; a name correlated with nothing is absent, and is therefore
+    # governed by the single-name cap alone.
+    complex_map: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -330,6 +338,12 @@ def optimize(
     for group_of, cap, label in (
         (sector_map, c.max_sector, "sector"),
         (geo_map, c.max_geo, "geo"),
+        # A complex is one idea expressed across several tickers. Without this the
+        # single-name cap is trivially evaded: three names correlated at 0.9 can hold 60%
+        # of gross between them while each reports comfortable headroom. Same failure the
+        # SECTOR cap exists for (ADR-0037), on a grouping the correlation matrix defines
+        # rather than the taxonomy.
+        (inputs.complex_map or {}, c.max_complex, "correlation complex"),
     ):
         if cap is None or cap <= 0:
             continue
@@ -456,6 +470,7 @@ def optimize(
     for group_of, cap, label in (
         (sector_map, c.max_sector, "sector"),
         (geo_map, c.max_geo, "geo"),
+        (inputs.complex_map or {}, c.max_complex, "correlation complex"),
     ):
         totals: dict[str, float] = {}
         for asset in assets:
@@ -593,6 +608,7 @@ def efficient_frontier(
                 default_single=base.default_single,
                 max_sector=base.max_sector,
                 max_geo=base.max_geo,
+                max_complex=base.max_complex,
                 max_gross=base.max_gross,
                 target_gross=base.target_gross,
                 max_turnover=base.max_turnover,

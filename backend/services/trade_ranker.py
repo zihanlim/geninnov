@@ -415,6 +415,8 @@ def allocate_portfolio(
     max_geo: float = MAX_GEO_WEIGHT,
     size_by: str = "hype",
     default_single: float = MAX_SINGLE_NAME_WEIGHT,
+    complex_map: dict[str, str] | None = None,
+    max_complex: float = MAX_SINGLE_NAME_WEIGHT,
 ) -> list[tuple[TradeCandidate, float, float]]:
     """Size positions per spec section 7.1 with sector/geo/single-name caps.
 
@@ -527,14 +529,19 @@ def allocate_portfolio(
     # with fewer than three members outright ("the single-name cap is sufficient"),
     # which it is not: 2 x 20% = 40% > 30%. Verified live — a HYG/LQD/GLD book sat
     # at Credit 40% with the cap reported as satisfied.
-    def _apply_group_cap(group_of: dict[str, str], cap: float) -> None:
+    def _apply_group_cap(group_of: dict[str, str], cap: float, sparse: bool = False) -> None:
         if cap <= 0:
             return
         totals: dict[str, float] = {}
         members: dict[str, list[int]] = {}
         for i, c in enumerate(candidates):
-            # Unmapped tickers must raise — no silent fallback.
-            g = group_of[c.asset]
+            # Sector and geo are co-extensive with the universe and MUST raise on an
+            # unmapped ticker. A complex map is sparse on purpose — a name correlated
+            # with nothing belongs to no complex — so an absent key means 'ungrouped',
+            # not 'unclassified'.
+            g = group_of.get(c.asset) if sparse else group_of[c.asset]
+            if g is None:
+                continue
             totals[g] = totals.get(g, 0.0) + weights[i]
             members.setdefault(g, []).append(i)
 
@@ -546,6 +553,12 @@ def allocate_portfolio(
 
     _apply_group_cap(sector_map, max_sector)
     _apply_group_cap(geo_map, max_geo)
+    # A correlation complex is ONE idea expressed across several tickers, so it may hold
+    # at most what one name may. Without it the single-name cap is trivially evaded by
+    # splitting a bet across correlated names, each reporting headroom. Applied on BOTH
+    # sizing paths, or a fallback run silently drops the limit (ADR-0053).
+    if complex_map:
+        _apply_group_cap(complex_map, max_complex, sparse=True)
 
     # NO final renormalisation. If the caps bind, we deploy less than the full
     # capital and hold the remainder in cash.

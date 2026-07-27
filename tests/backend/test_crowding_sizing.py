@@ -326,3 +326,113 @@ def test_an_empty_reading_is_not_treated_as_never_fetched():
     assert row["fetched"] is True, "an empty dict is a successful fetch, not an absent one"
     assert row["rows"] == []
     assert len(row["unobservable"]) == 1
+
+
+# ─── One idea may hold what one name may (the correlation-complex cap) ───────
+
+
+def test_a_correlation_complex_cannot_exceed_the_single_name_cap():
+    """The evasion this closes.
+
+    `independent_ideas` has always COUNTED complexes and nothing ever constrained them.
+    On the live 2026-07-27 book the long side clustered {EEM, EWJ, IWM, QQQ, SVXY} into a
+    single idea — five tickers across FOUR themes that are one bet on equity beta — and
+    each could have held 20% while reporting comfortable headroom.
+
+    A complex is one idea, so it gets one name's worth of capital.
+    """
+    from backend.services.optimizer import (
+        OptimizerConstraints,
+        OptimizerInputs,
+        optimize,
+    )
+
+    assets = ["QQQ", "IWM", "EEM"]
+    rng = np.random.default_rng(4)
+    driver = rng.normal(0, 0.01, 400)
+    frame = np.column_stack([driver + rng.normal(0, 0.001, 400) for _ in assets])
+
+    inputs = OptimizerInputs(
+        assets=assets,
+        directions={a: "long" for a in assets},
+        mu={a: 0.30 for a in assets},              # large, so it pushes on the cap
+        cov=np.cov(frame, rowvar=False) * 252,
+        sector_map={a: f"s{i}" for i, a in enumerate(assets)},   # sector never binds
+        geo_map={a: f"g{i}" for i, a in enumerate(assets)},      # geo never binds
+        complex_map={a: "long::0" for a in assets},
+    )
+    result = optimize(inputs, "mean_variance", OptimizerConstraints(risk_aversion=0.02))
+    assert result.feasible, result.reason
+
+    total = sum(abs(w) for w in result.signed_weights.values())
+    assert total <= MAX_SINGLE_NAME_WEIGHT + 1e-6, (
+        f"one idea across three tickers holds {total:.4f} against a "
+        f"{MAX_SINGLE_NAME_WEIGHT} single-name cap"
+    )
+    assert any("correlation complex" in b for b in result.binding_constraints), (
+        f"the complex cap bound but did not name itself: {result.binding_constraints}"
+    )
+    # And it SPLITS rather than picking a representative — that is the point.
+    assert all(w > 0 for w in result.signed_weights.values()), (
+        "the basket should hold every member, not collapse to one"
+    )
+
+
+def test_the_fallback_sizer_applies_the_same_complex_cap():
+    """ADR-0053: a limit the optimizer respects and the fallback ignores is a limit that
+    silently disappears on the days the optimizer cannot run."""
+    from backend.services.trade_ranker import TradeCandidate, allocate_portfolio
+
+    members = ["QQQ", "IWM", "EEM"]
+    candidates = [
+        TradeCandidate(theme_id="t", asset=a, direction="long", trade_score=0.2,
+                       hype_score=50.0, avg_sentiment=0.0, conviction=10.0)
+        for a in members
+    ]
+    sized = allocate_portfolio(
+        candidates, 100_000_000.0,
+        size_by="conviction",
+        complex_map={a: "long::0" for a in members},
+    )
+    total = sum(w for _c, _n, w in sized)
+    assert total <= MAX_SINGLE_NAME_WEIGHT + 1e-9, (
+        f"the fallback let one idea hold {total:.4f}"
+    )
+    assert all(w > 0 for _c, _n, w in sized), "every member keeps a share"
+
+
+def test_a_name_in_no_complex_is_untouched_by_the_complex_cap():
+    """The map is sparse by design — a name correlated with nothing belongs to no complex
+    and is governed by the single-name cap alone. `_apply_group_cap` hard-indexes its map
+    for sector/geo (which MUST raise on an unclassified ticker), so the sparse case needed
+    an explicit branch rather than the same lookup."""
+    from backend.services.trade_ranker import TradeCandidate, allocate_portfolio
+
+    candidates = [
+        TradeCandidate(theme_id="t", asset=a, direction="long", trade_score=0.2,
+                       hype_score=50.0, avg_sentiment=0.0, conviction=10.0)
+        for a in ("GLD", "SPY")
+    ]
+    with_map = allocate_portfolio(candidates, 100_000_000.0, size_by="conviction",
+                                  complex_map={"GLD": "long::0"})   # SPY absent
+    without = allocate_portfolio(candidates, 100_000_000.0, size_by="conviction")
+    assert [w for _c, _n, w in with_map] == [w for _c, _n, w in without], (
+        "a single-member complex constrains nothing, and an unmapped name must be "
+        "sized identically with and without the map"
+    )
+
+
+def test_the_complex_map_is_namespaced_by_side():
+    """The clustering runs per side. Merging a long complex with a short one would cap a
+    bet against itself."""
+    from backend.services.q1_agent import _complex_map
+
+    ideas = {
+        "long": {"complexes": [{"members": ["QQQ", "IWM"]}]},
+        "short": {"complexes": [{"members": ["BABA", "PDD"]}]},
+    }
+    mapping = _complex_map({"independent_ideas": ideas})
+    assert mapping["QQQ"] == mapping["IWM"] == "long::0"
+    assert mapping["BABA"] == mapping["PDD"] == "short::0"
+    assert mapping["QQQ"] != mapping["BABA"]
+    assert _complex_map({}) == {}

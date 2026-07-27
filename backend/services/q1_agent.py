@@ -2346,6 +2346,31 @@ def _hoist_returns(state: Q1State, assets: list[str]):
     return frame
 
 
+def _complex_map(state: Q1State) -> dict[str, str]:
+    """{asset: complex_id} from the clustering `compute_book_metrics_node` already ran.
+
+    A "complex" is a connected component of names correlated at or above 0.70 — one idea
+    expressed across several tickers. `independent_ideas` has always COUNTED them; nothing
+    ever constrained them, so the single-name cap could be evaded by splitting a bet across
+    correlated names, each reporting comfortable headroom.
+
+    Ids are namespaced by side because the clustering is per-side: the same ticker could in
+    principle appear in a long complex and a short one, and merging them would cap a bet
+    against itself.
+
+    Sparse on purpose. A name correlated with nothing is absent, and is then governed by
+    the single-name cap alone.
+    """
+    ideas = state.get("independent_ideas") or {}
+    out: dict[str, str] = {}
+    for side in ("long", "short"):
+        for index, complex_ in enumerate((ideas.get(side) or {}).get("complexes") or []):
+            for asset in complex_.get("members") or []:
+                if asset:
+                    out[asset] = f"{side}::{index}"
+    return out
+
+
 def size_positions(state: Q1State) -> Q1State:
     """
     HypeScore-weighted allocation of $100M across the 10 picks, WITH the
@@ -2464,6 +2489,11 @@ def size_positions(state: Q1State) -> Q1State:
             + ", ".join(f"{a} -> {w:.1%}" for a, w in sorted(crowding_caps_map.items()))
         )
 
+    # One idea may hold at most what one name may — see `_complex_map`.
+    complex_map = _complex_map(state)
+    if complex_map:
+        print(f"[size_positions] {len(set(complex_map.values()))} correlation complex(es) capped")
+
     # ── The conviction book: always computed, for two reasons ────────────────────
     # It is the FALLBACK when the optimizer cannot run, and it is the BASELINE the
     # optimizer is measured against. size_by="conviction" is the documented Stage-4
@@ -2477,6 +2507,7 @@ def size_positions(state: Q1State) -> Q1State:
         size_by="conviction",
         max_single=crowding_caps_map or MAX_SINGLE_NAME_WEIGHT,
         default_single=MAX_SINGLE_NAME_WEIGHT,
+        complex_map=complex_map,
     )
     heuristic: dict[str, float] = {}
     for pick, (_cand, _notional, weight) in zip(kept, positioned):
@@ -2546,6 +2577,7 @@ def size_positions(state: Q1State) -> Q1State:
                         # frontier's "you are here" both answer the question a reader
                         # actually has: what did the optimizer change, and what did it buy?
                         weights0={a: heuristic.get(a, 0.0) for a in priced},
+                        complex_map=complex_map,
                     )
                     result = optimize(
                         inputs, "mean_variance",

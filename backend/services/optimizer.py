@@ -51,10 +51,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from typing import Any
 
 import cvxpy as cp
 import numpy as np
 import pandas as pd
+
+# `mandate` imports nothing from services, so this cannot cycle.
+from .mandate import Mandate
 
 from .book_metrics import (
     GEO_MAP,
@@ -126,6 +130,37 @@ class OptimizerConstraints:
     max_turnover: float | None = None
     risk_aversion: float = 1.0
     cvar_beta: float = 0.95
+
+    @classmethod
+    def from_mandate(
+        cls,
+        mandate: "Mandate",
+        *,
+        max_single: float | dict[str, float] | None = None,
+        **overrides: Any,
+    ) -> "OptimizerConstraints":
+        """Build the solver's constraints from a `Mandate`.
+
+        THE POINT OF THIS CONSTRUCTOR is that the mandate is a parameter, not an
+        ambient fact. The nightly run, a re-size under a different capital base and a
+        caller-supplied mandate all reach the same solver through here, so they
+        cannot disagree about what a limit is — the failure that let the risk board
+        publish a 200% gross ceiling against a sizer enforcing 100%.
+
+        `max_single` overrides only the per-name cap, for the crowding map (ADR-0110),
+        which tightens named positions and leaves every other name on the mandate's
+        `default_single`. It may only ever tighten: `_cap_vector` takes the min.
+        """
+        return cls(
+            max_single=mandate.max_single_name if max_single is None else max_single,
+            default_single=mandate.max_single_name,
+            max_sector=mandate.max_sector,
+            max_geo=mandate.max_geo,
+            max_complex=mandate.max_complex,
+            max_complex_risk_mult=mandate.max_complex,
+            max_gross=mandate.max_gross,
+            **overrides,
+        )
 
 
 @dataclass(frozen=True)

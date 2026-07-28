@@ -61,6 +61,7 @@ from backend.services.method_agreement import (
 from backend.data.yahoo_client import fetch_price_data, correlation_with_mentions
 from backend.data.macro_fetcher import MacroFetcher
 from backend.data.polymarket_fetcher import PolymarketFetcher
+from backend.services.mandate import Mandate
 from backend.services.hype_calculator import (
     hype_score,
     compute_hype_scores as services_hype_compute_hype_scores,
@@ -125,6 +126,23 @@ EDGE_TREND_WINDOW_DAYS = 180
 def load_config() -> ScoringConfig:
     rows = supabase.table("scoring_config").select("*").execute().data
     return ScoringConfig.from_db_rows(rows)
+
+
+def load_mandate() -> Mandate:
+    """The constraints this run sizes under, from the same table as the weights.
+
+    Read separately from `load_config` rather than folded into it because the two
+    answer different questions — `ScoringConfig` is how a score is COMPUTED, the
+    mandate is what the resulting book is ALLOWED to be — and because the mandate
+    has to travel to callers that have no business with scoring weights: the
+    workbench and the MCP `size_book` tool both size a book without recomputing a
+    single score.
+
+    Falls back per field, recording provenance, so an unreachable row yields the
+    documented limit rather than an absent (and therefore unbounded) one.
+    """
+    rows = supabase.table("scoring_config").select("*").execute().data
+    return Mandate.from_rows(rows)
 
 
 # ─── Step 2: Load all themes ───────────────────────────────────────────────────
@@ -2381,6 +2399,10 @@ def main():
             candidates=positioned,
             risk_metrics=risk_metrics,
             cfg=cfg,
+            # Read here rather than inside the agent so the constraints this book was
+            # sized under are visible at the call site, and so a caller sizing the
+            # same signal under a DIFFERENT mandate needs no change to the agent.
+            mandate=load_mandate(),
         )
         if agent_result:
             print(f"[{run_date}] [L5] Q1 recommendations persisted.")

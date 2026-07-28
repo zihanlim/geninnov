@@ -58,6 +58,7 @@ from .book_metrics import (
     SECTOR_MAP,
     GEO_MAP,
 )
+from .mandate import DEFAULT_MANDATE, Mandate
 from .scenario_analysis import (
     run_scenario_analysis,
     run_scenario_analysis_with_scenarios,
@@ -2549,7 +2550,12 @@ def size_positions(state: Q1State) -> Q1State:
         return fallback_picks(state)
 
     cfg = state.get("cfg")
-    total_capital = cfg.total_capital if cfg else 100_000_000.0
+    # The mandate this book is sized under. `run_q1_agent` puts it in state; a
+    # caller that did not supply one gets the documented fallback rather than a
+    # silently permissive book. Same object the frontend mirrors and the drift test
+    # pins — see backend/services/mandate.py.
+    mandate: Mandate = state.get("mandate") or DEFAULT_MANDATE
+    total_capital = mandate.total_capital
 
     # allocate_portfolio operates on TradeCandidate; build them from the picks.
     # An unmapped ticker raises KeyError inside classify()/SECTOR_MAP by design
@@ -2766,9 +2772,8 @@ def size_positions(state: Q1State) -> Q1State:
                     )
                     result = optimize(
                         inputs, "mean_variance",
-                        OptimizerConstraints(
-                            max_single=crowding_caps_map or MAX_SINGLE_NAME_WEIGHT,
-                            default_single=MAX_SINGLE_NAME_WEIGHT,
+                        OptimizerConstraints.from_mandate(
+                            mandate, max_single=crowding_caps_map or None
                         ),
                     )
                     if not result.feasible:
@@ -3706,6 +3711,7 @@ def run_q1_agent(
     risk_metrics: dict[str, Any],
     cfg: ScoringConfig,
     lens: str = "multi_asset",
+    mandate: Mandate | None = None,
 ) -> dict[str, Any] | None:
     """
     Full L5 → L6 pipeline: aggregate → screen → classify → reason → verify → size → persist.
@@ -3790,6 +3796,12 @@ def run_q1_agent(
         "candidates": candidate_dicts,
         "risk_metrics": risk_metrics,
         "cfg": cfg,
+        # The mandate this run sizes under. Explicit so that re-sizing the same
+        # signal under a DIFFERENT mandate is a parameter change rather than a code
+        # change — the property the workbench and the MCP size_book tool both need.
+        # A caller that supplies none gets the documented default, never a
+        # silently permissive book.
+        "mandate": mandate or DEFAULT_MANDATE,
         "lens": lens,
         "picks": [],
         "book_view": "",

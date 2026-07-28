@@ -27,6 +27,9 @@ export interface NewsItem {
   url: string | null;
   /** `brave` | `reddit` | `mock_*`. A `mock_` prefix must stay visible. */
   source: string;
+  /** NULL when the publisher's page_age was missing or unparseable. Until
+   *  2026-07-28 such items were stamped with the RUN's date, which sorted a
+   *  page of unknown age to the top of the ribbon as if it were today's news. */
   published_date: string | null;
   run_date: string | null;
   /** Per-item VADER compound score, written from 2026-07-27 (ADR-0089). */
@@ -100,7 +103,10 @@ export async function fetchLatestNews(limit = 40): Promise<{
       .from("theme_news")
       .select("theme_id, headline, url, source, published_date, run_date, sentiment")
       .eq("run_date", runDate)
-      .order("published_date", { ascending: false })
+      // nullsFirst matters: Postgres puts NULLs FIRST on a bare DESC, and
+      // published_date is legitimately NULL for unknown-age items — which must
+      // trail the dated ones, not open the ribbon.
+      .order("published_date", { ascending: false, nullsFirst: false })
       .limit(limit),
     supabase.from("themes").select("id, name"),
   ]);

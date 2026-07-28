@@ -123,6 +123,24 @@ most change how you should read a number:
 - ADR-0088 — a stress scenario that transmits through sector dependency, not market beta.
 - ADR-0090 — a published pick must be falsifiable; the forward track record and its spec.
 - ADR-0147 — the mandate is a parameter of sizing, not an ambient constant.
+- ADR-0148 — the signal is published separately from the book it was sized into.
+- ADR-0149 — request-time sizing calls the same optimizer the nightly run calls.
+- ADR-0150 — a recommendation has no P&L; the held book pays for its own trading.
+
+## Sizing this yourself
+
+If you run your own capital base and your own limits, do NOT use the published
+weights: they are denominated in the mandate above and are not yours.
+
+- signal — returns the research with no mandate on it: names, sides, EdgeScore and
+  conviction = |EdgeScore| / vol. Conviction is a ratio, so it is the same number at
+  $100M and at $5bn, and it is what any sizer takes as input.
+- size_book — sizes that signal under a mandate YOU supply. Pass any of
+  total_capital, max_single_name, max_sector, max_geo, max_gross; anything omitted
+  falls back to Andromeda's own value. It runs the same constrained optimizer that
+  produced the published book, stores nothing, and changes no published figure.
+
+The $100M book is one instantiation of the signal under one mandate, not the answer.
 
 ## The mandate
 

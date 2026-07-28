@@ -877,6 +877,94 @@ const sizingProvenance: ToolSpec = {
   },
 };
 
+/**
+ * The research, without this book's mandate on it.
+ *
+ * Every other tool here returns figures denominated in Andromeda's own mandate —
+ * $100M, 20/30/35 caps, gross ≤ 100%. Those constraints belong to one hypothetical
+ * fund, so a caller running their own capital base could not use any of it without
+ * reverse-engineering back to the research underneath. This is that research: names,
+ * sides, EdgeScore, and `conviction = |EdgeScore| / vol`.
+ *
+ * `conviction` is the field that makes this useful. It is a RATIO, so it is
+ * identical at $100M and at $5bn — mandate-free by construction, and the input any
+ * sizer wants. It was previously reachable only as a column inside a sizing
+ * derivation, denominated in weights that were not the caller's.
+ *
+ * Reads `book_signal`, which by construction has no weight, notional or capital
+ * column (migration 055 / ADR-0148).
+ */
+const signalTool: ToolSpec = {
+  name: "signal",
+  description:
+    "The research WITHOUT this book's mandate applied: for each name the agent chose, its side, EdgeScore, conviction (|EdgeScore| / vol) and the thesis that argued it — but no weights, notionals or capital base. Call this when you want to size these ideas under a DIFFERENT mandate than Andromeda's $100M / 20-30-35, or when you want the research view rather than the portfolio view. conviction is a ratio, so it is the same at any capital base.",
+  args: {},
+  async run(args, { db }) {
+    // Latest run only. An older vintage would return names that were never in
+    // today's book, with no visible marker that the dates differ.
+    const { rows, error } = await db.select(
+      "book_signal",
+      "run_date, asset, direction, theme, edge_score, conviction, vol, thesis, risk, counter_thesis, time_horizon",
+      { order: { column: "run_date", ascending: false }, limit: 60 },
+    );
+    if (!rows.length) {
+      return {
+        tool: "signal",
+        args,
+        facts: [],
+        absence: error
+          ? `book_signal could not be read (${error}). The mandate-free signal is unavailable, so nothing here can be sourced.`
+          : "book_signal has no rows. The signal is written by the L5 agent from migration 055 onward; runs published before it have only the sized book.",
+      };
+    }
+
+    const runDate = str(rows[0].run_date);
+    const latest = rows.filter((r) => str(r.run_date) === runDate);
+
+    const facts: Fact[] = [
+      f("signal.run_date", "Signal run date", runDate, "book_signal.run_date", "date", runDate),
+      f("signal.count", "Names with a signal", latest.length, "book_signal", "count", runDate),
+    ];
+    for (const row of latest) {
+      const asset = str(row.asset);
+      if (!asset) continue;
+      const edge = num(row.edge_score);
+      if (edge !== null) {
+        facts.push(f(`signal.${asset}.edge_score`, `${asset} EdgeScore`, edge, "book_signal.edge_score", "x", runDate));
+      }
+      const conv = num(row.conviction);
+      if (conv !== null) {
+        facts.push(f(`signal.${asset}.conviction`, `${asset} conviction`, conv, "book_signal.conviction", "x", runDate));
+      }
+      const vol = num(row.vol);
+      if (vol !== null) {
+        facts.push(f(`signal.${asset}.vol`, `${asset} daily vol`, vol, "book_signal.vol", "pct", runDate));
+      }
+    }
+
+    return {
+      tool: "signal",
+      args,
+      facts,
+      notes: {
+        // Sides and prose are words, and the guardrail adjudicates only numbers.
+        names: latest.map(
+          (r) =>
+            `${str(r.asset)} ${String(str(r.direction) ?? "").toUpperCase()}` +
+            `${str(r.theme) ? ` · theme ${str(r.theme)}` : ""}`,
+        ),
+        mandate_free:
+          "These carry no weight, notional or capital base. Size them under your own mandate; " +
+          "conviction = |EdgeScore| / vol is a ratio and does not change with capital.",
+      },
+      // Stated rather than left to inference: a caller seeing no weights might
+      // otherwise conclude the book has none.
+      absence:
+        "This tool deliberately returns no weights or notionals. For Andromeda's own sizing of the same names, call book_summary or sizing_provenance.",
+    };
+  },
+};
+
 export const TOOLS: ToolSpec[] = [
   bookSummary,
   positionDetail,
@@ -888,6 +976,7 @@ export const TOOLS: ToolSpec[] = [
   screeningFunnel,
   bookTurnover,
   sizingProvenance,
+  signalTool,
 ];
 
 export const TOOL_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));

@@ -831,7 +831,7 @@ function BookPageInner() {
              roughly a third of the gutter separating it from everything else —
              the grouping is carried by the spacing ratio, not by a border. */}
           {/* Now a single inline strip (MarketBar-style), not six cards. The
-              strip is the structural counterpart to the AnswerCards above: that
+              strip is the structural counterpart to the AnswerCards below: that
               one answers the PM questions (with consequences and drill controls),
               this one is the bare balance sheet of the book. The two read as
               DIFFERENT instruments because they answer different questions, even
@@ -840,28 +840,6 @@ function BookPageInner() {
               Six cells of a single grid carry vertical dividers on lg, horizontal
               on smaller widths; the dividers visually carry the grouping the
               standalone cards used to provide. */}
-          {/* The four questions a PM arrives with, before the detail strip.
-              Two of these facts — what changed, and what is binding — were three
-              screens down and on another route respectively; they are the two a
-              reader needs first. Every figure here is read from the same `rec`
-              the panels below render, so nothing can disagree with anything. */}
-          <AnswerCards
-            current={(rec.picks ?? []).map((p) => p.asset).filter(Boolean)}
-            previous={prevBook?.assets ?? null}
-            previousDate={prevBook?.date ?? null}
-            gross={bm?.gross_exposure ?? null}
-            net={bm?.net_exposure ?? null}
-            deployed={(rec.picks ?? []).reduce((s, p) => s + (p.notional ?? 0), 0)}
-            cash={
-              TOTAL_CAPITAL -
-              (rec.picks ?? []).reduce((s, p) => s + (p.notional ?? 0), 0)
-            }
-            worstLabel={worstScenario?.label ?? null}
-            worstReturn={worstScenario?.estimated_book_return ?? null}
-            bindingCaps={bindingGroupCaps}
-            capsKnown={Boolean(rec?.cap_utilisation)}
-          />
-
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 bg-bg-surface border border-border rounded-[8px] mb-6 overflow-hidden divide-y md:divide-y-0 md:divide-x divide-border">
             <Stat
               label="Positions"
@@ -917,6 +895,33 @@ function BookPageInner() {
               tag="EST"
             />
           </div>
+
+          {/* The four questions a PM arrives with, under the strip rather than
+              above it. Two of these facts — what changed, and what is binding —
+              were three screens down and on another route respectively; they are
+              the two a reader needs early. But the summary paragraph directly
+              above states the position count, the net and the cash in words, and
+              the strip is those same words as figures: putting an interpretive
+              card between a sentence and its own numbers made the reader hold the
+              sentence in their head across a 130px band of prose. Figures first,
+              then what they mean. Every figure here is read from the same `rec`
+              the panels below render, so nothing can disagree with anything. */}
+          <AnswerCards
+            current={(rec.picks ?? []).map((p) => p.asset).filter(Boolean)}
+            previous={prevBook?.assets ?? null}
+            previousDate={prevBook?.date ?? null}
+            gross={bm?.gross_exposure ?? null}
+            net={bm?.net_exposure ?? null}
+            deployed={(rec.picks ?? []).reduce((s, p) => s + (p.notional ?? 0), 0)}
+            cash={
+              TOTAL_CAPITAL -
+              (rec.picks ?? []).reduce((s, p) => s + (p.notional ?? 0), 0)
+            }
+            worstLabel={worstScenario?.label ?? null}
+            worstReturn={worstScenario?.estimated_book_return ?? null}
+            bindingCaps={bindingGroupCaps}
+            capsKnown={Boolean(rec?.cap_utilisation)}
+          />
 
           {/* ── Book view ──────────────────────────────────────────────── */}
           {/* The nav sits below the header banners and the summary tiles: the

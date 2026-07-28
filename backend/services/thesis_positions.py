@@ -143,6 +143,81 @@ def audit_book(picks: list[dict], universe: set[str]) -> list[dict]:
     return findings
 
 
+#: A repaired thesis must keep at least this share of its original characters.
+#: Below it, the offending clause was carrying the argument rather than
+#: decorating it, and excising it would leave a stub that misrepresents the
+#: reasoning more than the original over-claim did.
+MIN_RETAINED_SHARE = 0.55
+
+#: Clause boundaries, in the order a thesis is safest to cut on. Semicolons and
+#: sentence stops separate independent statements; commas do not, which is why
+#: they are absent — cutting on a comma reliably produces a fragment.
+_CLAUSE_SPLIT = re.compile(r"(?<=[.;])\s+")
+
+
+def repair_thesis(
+    thesis: str,
+    held: set[str],
+    universe: set[str],
+    self_asset: str | None = None,
+    min_retained: float = MIN_RETAINED_SHARE,
+) -> tuple[str, list[str]]:
+    """Remove the clauses that assert a position the book does not hold.
+
+    Returns ``(repaired_thesis, removed_clauses)``. ``removed_clauses`` is empty
+    when nothing needed removing — and when a repair would be UNSAFE, in which
+    case the thesis is returned unchanged for the caller to caveat instead.
+
+    Deterministic, and deliberately not a second LLM call. Re-prompting to fix a
+    clause costs a model call on the nightly book's shared quota, reruns a
+    stochastic step over an output whose figures are already verified, and can
+    introduce new numbers that then need re-verifying. Excision cannot: it only
+    ever removes text, so every surviving figure was already checked.
+
+    Splits on sentence and semicolon boundaries only. A comma is not a safe cut
+    point — "Vertiv, the picks-and-shovels beneficiary, is long MSFT" would leave
+    a fragment — so a claim embedded mid-clause is left for the caveat path.
+
+    The ``min_retained`` guard is the important half. On the live case the
+    offending text is a trailing clause and removing it leaves a complete,
+    correct thesis. Where the claim instead carries the whole argument, cutting
+    it produces a stub that misrepresents the reasoning worse than the original
+    over-claim, so the repair declines and the caveat stands.
+    """
+    original = (thesis or "").strip()
+    if not original:
+        return original, []
+
+    clauses = [c for c in _CLAUSE_SPLIT.split(original) if c.strip()]
+    if len(clauses) < 2:
+        # Nothing to cut without destroying the whole thesis.
+        return original, []
+
+    kept, removed = [], []
+    for clause in clauses:
+        if unheld_claims(clause, held, universe, self_asset=self_asset):
+            removed.append(clause.strip())
+        else:
+            kept.append(clause)
+
+    if not removed:
+        return original, []
+
+    # Close the seam. Cutting a trailing clause leaves the preceding one ending
+    # on its own separator — "...electrical infrastructure;" — which reads as
+    # truncated text rather than a finished sentence, and a published thesis that
+    # looks broken invites doubt about the figures in it.
+    repaired = " ".join(kept).strip()
+    repaired = re.sub(r"[;,]\s*$", ".", repaired)
+
+    if not repaired or len(repaired) < min_retained * len(original):
+        # The claim was load-bearing. Leave the text alone and let the caveat
+        # carry the correction.
+        return original, []
+
+    return repaired, removed
+
+
 def apply_caveats(picks: list[dict], universe: set[str]) -> list[dict]:
     """Annotate every pick whose thesis asserts a position the book lacks.
 
@@ -163,14 +238,37 @@ def apply_caveats(picks: list[dict], universe: set[str]) -> list[dict]:
     for f in findings:
         by_asset.setdefault(f["asset"], []).append(f["references"])
 
+    held = {str(p.get("asset")) for p in picks if p.get("asset")}
+
     for pick in picks:
-        refs = by_asset.get(str(pick.get("asset")))
+        asset = str(pick.get("asset") or "")
+        refs = by_asset.get(asset)
         if not refs:
             continue
-        pick["thesis_caveat"] = (
-            "This thesis refers to a position in "
-            + ", ".join(sorted(set(refs)))
-            + ", which this book does not hold. The reasoning describes a "
-              "structure that was not executed; the figures themselves are verified."
+        names = ", ".join(sorted(set(refs)))
+
+        # REPAIR first, caveat second. A thesis that no longer makes the false
+        # claim is better than one that makes it with a footnote — but the edit
+        # is never silent: ADR-0093's rule that a published figure cannot change
+        # without saying so applies to published prose too.
+        repaired, removed = repair_thesis(
+            str(pick.get("thesis") or ""), held, universe, self_asset=asset
         )
+        if removed:
+            pick["thesis"] = repaired
+            pick["thesis_caveat"] = (
+                f"A clause asserting a position in {names} was removed: this book "
+                f"does not hold it. Removed text: "
+                + " ".join(f'"{r}"' for r in removed)
+                + " The remaining figures are unchanged and verified."
+            )
+        else:
+            # Excision would have gutted the argument, or the claim sits
+            # mid-clause where there is no safe cut. Say so plainly instead.
+            pick["thesis_caveat"] = (
+                f"This thesis refers to a position in {names}, which this book "
+                f"does not hold. The claim could not be removed without cutting "
+                f"the argument it sits in, so the text stands as written; the "
+                f"figures themselves are verified."
+            )
     return findings

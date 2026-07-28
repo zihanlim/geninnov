@@ -134,13 +134,16 @@ class TestApplyCaveats:
         apply_caveats(picks, UNIVERSE)
         assert "thesis_caveat" not in {p["asset"]: p for p in picks}["GDX"]
 
-    def test_the_caveat_says_the_figures_are_still_verified(self):
-        """The numbers in that sentence are all correct. A caveat implying
-        otherwise would overstate the defect."""
+    def test_the_caveat_never_implies_the_numbers_are_wrong(self):
+        """Every figure in the offending sentence is correct. A caveat that
+        implied otherwise would overstate the defect -- so both the repaired and
+        the unrepairable wording must affirm the figures."""
         from backend.services.thesis_positions import apply_caveats
         picks = self._book()
         apply_caveats(picks, UNIVERSE)
-        assert "figures themselves are verified" in picks[0]["thesis_caveat"]
+        caveat = picks[0]["thesis_caveat"]
+        assert "verified" in caveat
+        assert "unchanged and verified" in caveat or "themselves are verified" in caveat
 
     def test_a_clean_book_returns_no_findings(self):
         from backend.services.thesis_positions import apply_caveats
@@ -165,3 +168,122 @@ class TestWiredIntoVerifyCitations:
         src = inspect.getsource(q1_agent.verify_citations)
         idx = src.index("apply_caveats")
         assert "try:" in src[:idx], "the advisory audit is not inside a try block"
+
+
+class TestRepairThesis:
+    """Repair rather than merely label (ADR-0136).
+
+    Diagnosis first: the LLM's raw_output for 2026-07-28 was ALREADY the final
+    nine picks. MSFT was never emitted, so no downstream stage dropped a leg --
+    the model described a companion position it did not take. The fix therefore
+    belongs at the model-output boundary, not in selection.
+    """
+
+    def test_the_live_case_repairs_cleanly(self):
+        from backend.services.thesis_positions import repair_thesis
+        repaired, removed = repair_thesis(VRT_THESIS, HELD, UNIVERSE, self_asset="VRT")
+        assert len(removed) == 1
+        assert "MSFT" in removed[0]
+        assert "MSFT" not in repaired
+        # What survives is a complete, correct thesis, not a stub.
+        assert "picks-and-shovels beneficiary" in repaired
+        assert "81.82%" in repaired
+
+    def test_repair_cannot_introduce_a_number_that_needs_rechecking(self):
+        """The property that makes excision safe without a second LLM call: it
+        only ever removes text, so every surviving figure was already verified
+        and no new one can appear. Asserted on NUMERALS, not on whitespace
+        tokens -- the punctuation seam legitimately rewrites ";" to "."."""
+        import re as _re
+        from backend.services.thesis_positions import repair_thesis
+        nums = lambda t: set(_re.findall(r"\d+(?:\.\d+)?", t))
+        repaired, removed = repair_thesis(VRT_THESIS, HELD, UNIVERSE, self_asset="VRT")
+        assert removed
+        assert nums(repaired) <= nums(VRT_THESIS), "repair invented a figure"
+        # And the surviving argument keeps its own evidence.
+        assert {"2.08", "0.30", "53.6", "81.82"} <= nums(repaired)
+
+    def test_it_declines_when_the_claim_carries_the_argument(self):
+        """Cutting a load-bearing clause leaves a stub that misrepresents the
+        reasoning worse than the original over-claim."""
+        from backend.services.thesis_positions import repair_thesis
+        thesis = "We are short MSFT on decelerating cloud growth. Risk is a beat."
+        repaired, removed = repair_thesis(thesis, HELD, UNIVERSE, self_asset="VRT")
+        assert removed == []
+        assert repaired == thesis
+
+    def test_a_single_clause_thesis_is_never_cut(self):
+        from backend.services.thesis_positions import repair_thesis
+        thesis = "The long VRT / short MSFT structure isolates the capex gap"
+        repaired, removed = repair_thesis(thesis, HELD, UNIVERSE, self_asset="VRT")
+        assert removed == []
+        assert repaired == thesis
+
+    def test_correct_prose_is_returned_untouched(self):
+        from backend.services.thesis_positions import repair_thesis
+        repaired, removed = repair_thesis(GDX_THESIS, HELD, UNIVERSE, self_asset="GDX")
+        assert removed == []
+        assert repaired == GDX_THESIS.strip()
+
+
+class TestApplyCaveatsRepairs:
+    def test_a_repaired_pick_no_longer_makes_the_false_claim(self):
+        from backend.services.thesis_positions import apply_caveats
+        picks = [{"asset": "VRT", "direction": "long", "thesis": VRT_THESIS},
+                 {"asset": "GDX", "direction": "short", "thesis": GDX_THESIS}]
+        apply_caveats(picks, UNIVERSE)
+        vrt = {p["asset"]: p for p in picks}["VRT"]
+        assert "MSFT" not in vrt["thesis"]
+
+    def test_the_edit_is_never_silent(self):
+        """ADR-0093's rule -- a published figure cannot change without saying so
+        -- applies to published prose too."""
+        from backend.services.thesis_positions import apply_caveats
+        picks = [{"asset": "VRT", "direction": "long", "thesis": VRT_THESIS}]
+        apply_caveats(picks, UNIVERSE)
+        caveat = picks[0]["thesis_caveat"]
+        assert "was removed" in caveat
+        assert "MSFT" in caveat
+        # The removed text is quoted, so the edit is auditable.
+        assert "capex-deployment" in caveat
+
+    def test_an_unrepairable_claim_says_the_text_stands(self):
+        from backend.services.thesis_positions import apply_caveats
+        picks = [{"asset": "VRT", "direction": "long",
+                  "thesis": "We are short MSFT on decelerating cloud growth."}]
+        apply_caveats(picks, UNIVERSE)
+        assert picks[0]["thesis"] == "We are short MSFT on decelerating cloud growth."
+        assert "stands as written" in picks[0]["thesis_caveat"]
+
+
+class TestThePromptStatesTheConstraint:
+    def test_the_model_is_told_it_may_not_claim_a_leg_it_did_not_take(self):
+        """Repair is the backstop; the prompt is the fix. A guard that only
+        cleans up after the model is one the model never learns from."""
+        from backend.services import q1_agent
+        src = q1_agent.__file__
+        with open(src, encoding="utf-8") as fh:
+            text = fh.read()
+        assert "may only assert a POSITION in a ticker that is one of YOUR OWN picks" in text
+        # And it must still permit comparison, or it will suppress correct prose.
+        assert "You may still COMPARE" in text
+
+
+class TestRepairedProseReadsAsFinished:
+    def test_a_trailing_separator_is_closed(self):
+        """Cutting a trailing clause leaves the previous one ending on its own
+        semicolon. A published thesis that looks truncated invites doubt about
+        the figures in it."""
+        from backend.services.thesis_positions import repair_thesis
+        repaired, removed = repair_thesis(VRT_THESIS, HELD, UNIVERSE, self_asset="VRT")
+        assert removed
+        assert not repaired.rstrip().endswith(";")
+        assert not repaired.rstrip().endswith(",")
+        assert repaired.rstrip().endswith(".")
+
+    def test_it_does_not_touch_prose_that_already_ends_cleanly(self):
+        from backend.services.thesis_positions import repair_thesis
+        thesis = "Vertiv benefits from power demand. We are short MSFT here. Risk is a beat."
+        repaired, removed = repair_thesis(thesis, HELD, UNIVERSE, self_asset="VRT")
+        assert removed
+        assert repaired == "Vertiv benefits from power demand. Risk is a beat."

@@ -1215,6 +1215,12 @@ Rules:
 - if uncertain about a number, write "N/A — [reason]" and do not cite
 - cite every number: prices, yields, spreads, betas, scores, dates, P&L figures
 - Do NOT add a pick that duplicates an existing factor exposure at >70% correlation (check the correlation warnings)
+- a thesis may only assert a POSITION in a ticker that is one of YOUR OWN picks.
+  Do not describe a pair, spread or hedge against a name you are not picking.
+  On 2026-07-28 a thesis argued "the long VRT / short MSFT structure below" while
+  the pick list contained no MSFT — every number in it was correct and the
+  structure did not exist. You may still COMPARE ("the strongest expression from
+  the {{GDX, GLD, IAU}} cluster"); you may not claim a leg you did not take
 """
 
 

@@ -198,7 +198,8 @@ flowchart TB
         subgraph L7["L7 — Provenance UI (components/)"]
             REGIME["RegimeHero + RegimeInputsPanel"]
             XCUR["MacroCrossCurrents<br/>(debasement dial + Fed posture +<br/>cycle × posture — ADR-0139/0140,<br/>mounted under RegimeHero)"]
-            THTR["ThemeTrends<br/>(anchor attention share over time,<br/>ADR-0145 — shares NarrativeTrends'<br/>TrendPlot + validated palette)"]
+            THTR["ThemeTrends<br/>(anchor attention share over time,<br/>ADR-0145 — renders NarrativeTrends'<br/>TrendPlot + validated palette)"]
+            ATTN["NarrativeTrends DetectionScatter +<br/>AttentionFunnel (ADR-0146 —<br/>share × velocity plane, unmeasurable<br/>rug, lifecycle counts strip)"]
             CONV["ConvictionCard"]
             WATCH["Watchlist + Sparkline"]
             TBL["TradeIdeasTable"]
@@ -375,7 +376,7 @@ flowchart TB
     class EVALB,EVALR,REPLT,BTH,RESO ver
     class DB,T_THEMES,T_TA,T_TS,T_TSH,T_TC,T_PP,T_PR,T_PRISK,T_SC,T_MACRO,T_FE,T_REG,T_RUNS,T_RECS,T_NEWS,T_DISC,T_PIPE,T_CUM,T_BENCH,T_BT,T_OUT,V_PFE db
     class CRON,FRED,YF,BRAVE,REDDIT,KEN,POLY,CFTC,WM ext,EXTAGENT
-    class L6,L7,PG_HOME,PG_BOOK,PG_RISK,PG_METH,PG_TR,PG_PF,PG_RS,REGIME,XCUR,THTR,CONV,WATCH,TBL,ALLOC,FEAT,DERV,CITE,LENS,FEED,SUPC,STATUS,STATBAD,FRESH,UNC,CUM,DPL,EXS,THB,FELIB,FENUM,FEADV,FEFMT,FASSETMETA fe
+    class L6,L7,PG_HOME,PG_BOOK,PG_RISK,PG_METH,PG_TR,PG_PF,PG_RS,REGIME,XCUR,THTR,ATTN,CONV,WATCH,TBL,ALLOC,FEAT,DERV,CITE,LENS,FEED,SUPC,STATUS,STATBAD,FRESH,UNC,CUM,DPL,EXS,THB,FELIB,FENUM,FEADV,FEFMT,FASSETMETA fe
     class DRV,DNV,DAV,RR,PF,PIPE,HC,TG,POLYSVC,POSCR,SANC,CHOKE drv
 ```
 

@@ -140,3 +140,28 @@ export function emergingUncovered(series: NarrativeSeries[]): NarrativeSeries[] 
 export function sharePct(share: number, digits = 1): string {
   return `${(share * 100).toFixed(digits)}%`;
 }
+
+// ── The attention funnel (ADR-0146) ─────────────────────────────────────────
+//
+// Observation narrowing into commitment: tracked phrases → watched by nothing
+// → emerging → (promotion) → anchor themes. The counts are the relationship
+// between the two boards, so they are computed HERE, once, and both the strip
+// and any test read the same function.
+
+export interface AttentionFunnelCounts {
+  tracked: number;
+  unwatched: number;
+  emerging: number;
+  /** False while no phrase has a measurable velocity — in that state
+   *  `emerging: 0` means "cannot say", not "none" (ADR-0066). */
+  velocityMeasurable: boolean;
+}
+
+export function attentionFunnel(series: NarrativeSeries[]): AttentionFunnelCounts {
+  return {
+    tracked: series.length,
+    unwatched: series.filter((s) => s.latest.covered_by === null).length,
+    emerging: series.filter((s) => s.latest.status === "emerging").length,
+    velocityMeasurable: series.some((s) => s.latest.velocity !== null),
+  };
+}

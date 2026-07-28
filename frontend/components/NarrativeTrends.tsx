@@ -33,6 +33,7 @@
 //    composition, no realtime. The machine picks the series; the reader reads it.
 
 import { useEffect, useState } from "react";
+import Sparkline from "@/components/Sparkline";
 import {
   emergingUncovered,
   fetchNarratives,
@@ -282,6 +283,204 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
   );
 }
 
+// ── The detection view (ADR-0146) ───────────────────────────────────────────
+//
+// The narrative board is a DETECTOR, not a comparison: its question is "is
+// anything accelerating that nothing watches?", which is a state question, not
+// a trajectory question. So the board's plane is share × velocity, with
+// covered phrases drawn hollow (context — an anchor is on them) and uncovered
+// phrases filled (the payload). Phrases whose velocity is not yet measurable
+// are NEVER plotted at y = 0 — absence is not zero (ADR-0066) — they sit in a
+// labelled rug below the plane, positioned by the one thing that IS measured
+// (share), and rise into the plane as their history accrues.
+
+const S_HEIGHT = 252;
+const S_PLOT_TOP = 16;
+const S_PLOT_H = 152;
+const RUG_TOP = S_PLOT_TOP + S_PLOT_H + 16;
+const RUG_H = 14;
+/** Rug marks are capped to bound the DOM; the overflow is counted, not hidden. */
+const RUG_CAP = 80;
+
+export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
+  const xMax = Math.max(...series.map((s) => s.latest.share), 0.01) * 1.08;
+  const x = (share: number) => PLOT_LEFT + clamp(share / xMax, 0, 1) * PLOT_WIDTH;
+
+  const measurable = series.filter((s) => s.latest.velocity !== null);
+  const unmeasurable = series
+    .filter((s) => s.latest.velocity === null)
+    .sort((a, b) => b.latest.share - a.latest.share);
+
+  const vs = measurable.map((s) => s.latest.velocity as number);
+  const vMin = Math.min(0, ...vs);
+  const vMax = Math.max(0, ...vs);
+  const vPad = (vMax - vMin) * 0.12 || 1;
+  const yLo = vMin - vPad;
+  const yHi = vMax + vPad;
+  const y = (v: number) =>
+    S_PLOT_TOP + S_PLOT_H - clamp((v - yLo) / (yHi - yLo), 0, 1) * S_PLOT_H;
+  const yTicks = measurable.length > 0 ? niceTicks(yLo, yHi, 4) : [];
+
+  const xTicks = niceTicks(0, xMax, 4);
+  const xStep = xTicks.length > 1 ? xTicks[1] - xTicks[0] : xMax;
+  const xDigits = xStep * 100 >= 1 ? 0 : 1;
+  const fmtX = (v: number) => `${(v * 100).toFixed(xDigits)}%`;
+
+  // Direct labels on the payload only: uncovered, loudest first, pushed apart
+  // vertically so converging marks stay named (same collision rule as the
+  // trend plot's end labels).
+  const LABEL_H = 11;
+  const labelled = measurable
+    .filter((s) => s.latest.covered_by === null)
+    .sort((a, b) => b.latest.share - a.latest.share)
+    .slice(0, 6)
+    .map((s) => ({ s, xr: x(s.latest.share), yRaw: y(s.latest.velocity as number) }))
+    .sort((a, b) => a.yRaw - b.yRaw);
+  let prevLabelY = -Infinity;
+  for (const l of labelled) {
+    const placed = Math.max(l.yRaw, prevLabelY + LABEL_H);
+    prevLabelY = placed;
+    (l as { yLabel?: number }).yLabel = clamp(placed, S_PLOT_TOP + 5, RUG_TOP - 8);
+  }
+
+  return (
+    <svg
+      viewBox={`0 0 ${WIDTH} ${S_HEIGHT}`}
+      className="w-full h-auto"
+      role="img"
+      aria-label={`Narrative detection plane: ${measurable.length} phrases with measurable velocity, ${unmeasurable.length} not yet measurable`}
+    >
+      {/* y: velocity gridlines; the zero line is the one that matters. */}
+      {yTicks.map((v) => (
+        <g key={`vy-${v}`}>
+          <line
+            x1={PLOT_LEFT}
+            x2={PLOT_LEFT + PLOT_WIDTH}
+            y1={y(v)}
+            y2={y(v)}
+            stroke="var(--border)"
+            opacity={v === 0 ? 1 : 0.5}
+          />
+          <text x={PLOT_LEFT - 5} y={y(v) + 3} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">
+            {v > 0 ? `+${v}` : `${v}`}
+          </text>
+        </g>
+      ))}
+      <text x={PLOT_LEFT - 5} y={S_PLOT_TOP - 5} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">
+        velocity
+      </text>
+
+      {/* x: share ticks along the bottom, below the rug. */}
+      {xTicks.map((v) => (
+        <g key={`vx-${v}`}>
+          <line
+            x1={x(v)}
+            x2={x(v)}
+            y1={S_PLOT_TOP}
+            y2={S_PLOT_TOP + S_PLOT_H}
+            stroke="var(--border)"
+            opacity={0.35}
+          />
+          <text x={x(v)} y={S_HEIGHT - 4} textAnchor="middle" fill="var(--text-tertiary)" fontSize="9">
+            {fmtX(v)}
+          </text>
+        </g>
+      ))}
+      <text
+        x={PLOT_LEFT + PLOT_WIDTH}
+        y={S_HEIGHT - 4}
+        textAnchor="start"
+        fill="var(--text-tertiary)"
+        fontSize="9"
+        dx="8"
+      >
+        share
+      </text>
+
+      {measurable.length === 0 && (
+        <text
+          x={PLOT_LEFT + PLOT_WIDTH / 2}
+          y={S_PLOT_TOP + S_PLOT_H / 2}
+          textAnchor="middle"
+          fill="var(--text-tertiary)"
+          fontSize="10.5"
+        >
+          No measurable velocities yet — marks rise into this plane as each phrase
+          accrues enough observed days.
+        </text>
+      )}
+
+      {/* The plane: hollow = an anchor already watches it; filled = nothing does. */}
+      {measurable.map((s) => {
+        const uncovered = s.latest.covered_by === null;
+        const cx = x(s.latest.share);
+        const cy = y(s.latest.velocity as number);
+        return (
+          <g key={s.phrase}>
+            {s.latest.status === "emerging" && (
+              <circle cx={cx} cy={cy} r={6.5} fill="none" stroke="var(--series-1)" strokeWidth={1} opacity={0.8} />
+            )}
+            <circle
+              cx={cx}
+              cy={cy}
+              r={uncovered ? 3.5 : 3}
+              fill={uncovered ? "var(--series-1)" : "transparent"}
+              stroke={uncovered ? "none" : "var(--text-tertiary)"}
+              strokeWidth={uncovered ? 0 : 1.2}
+            >
+              <title>{`${s.phrase} — ${sharePct(s.latest.share)} share, velocity ${(s.latest.velocity as number).toFixed(2)}, ${s.latest.covered_by ? `watched by ${s.latest.covered_by}` : "watched by nothing"}`}</title>
+            </circle>
+          </g>
+        );
+      })}
+      {labelled.map((l) => (
+        <text
+          key={`dl-${l.s.phrase}`}
+          x={l.xr + 7}
+          y={((l as { yLabel?: number }).yLabel ?? l.yRaw) + 3}
+          fill="var(--text-secondary)"
+          fontSize="9.5"
+        >
+          {l.s.phrase.length > 18 ? `${l.s.phrase.slice(0, 17)}…` : l.s.phrase}
+        </text>
+      ))}
+
+      {/* The rug: measured in x (share), honest about y (nothing to plot).
+          Label sits ABOVE the strip, start-anchored — end-anchored in the
+          44px left gutter it clipped through the viewBox edge. */}
+      <text x={PLOT_LEFT} y={RUG_TOP - 4} textAnchor="start" fill="var(--text-tertiary)" fontSize="9">
+        velocity not yet measurable · {unmeasurable.length}
+      </text>
+      {unmeasurable.slice(0, RUG_CAP).map((s) => (
+        <line
+          key={`rug-${s.phrase}`}
+          x1={x(s.latest.share)}
+          x2={x(s.latest.share)}
+          y1={RUG_TOP}
+          y2={RUG_TOP + RUG_H}
+          stroke={s.latest.covered_by === null ? "var(--series-1)" : "var(--text-tertiary)"}
+          strokeWidth={1.5}
+          opacity={0.65}
+        >
+          <title>{`${s.phrase} — ${sharePct(s.latest.share)} share, velocity not yet measurable, ${s.latest.covered_by ? `watched by ${s.latest.covered_by}` : "watched by nothing"}`}</title>
+        </line>
+      ))}
+      {unmeasurable.length > RUG_CAP && (
+        <text
+          x={PLOT_LEFT + PLOT_WIDTH}
+          y={RUG_TOP + RUG_H - 3}
+          textAnchor="start"
+          dx="8"
+          fill="var(--text-tertiary)"
+          fontSize="9"
+        >
+          +{unmeasurable.length - RUG_CAP} more
+        </text>
+      )}
+    </svg>
+  );
+}
+
 /** The table view. ADR-0126: a tooltip is never the only copy of a number, and
  *  the two low-contrast palette slots require exactly this relief. Exported so a
  *  test can assert the relief exists, rather than trusting this comment. */
@@ -292,6 +491,7 @@ export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
         <thead>
           <tr className="text-text-tertiary text-left">
             <th className="font-normal py-1 pr-3">Narrative</th>
+            <th className="font-normal py-1 pr-3">Trend</th>
             <th className="font-normal py-1 pr-3 text-right">Share</th>
             <th className="font-normal py-1 pr-3 text-right">Velocity</th>
             <th className="font-normal py-1 pr-3">Status</th>
@@ -300,17 +500,24 @@ export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
           </tr>
         </thead>
         <tbody>
-          {series.map((s, i) => (
+          {series.map((s) => (
             <tr key={s.phrase} className="border-t border-border align-top">
               <td className="py-1 pr-3">
-                <span className="inline-flex items-center gap-1.5">
-                  <span
-                    aria-hidden="true"
-                    className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ background: SERIES_COLORS[i % SERIES_COLORS.length] }}
+                <span className="text-text-primary">{s.phrase}</span>
+              </td>
+              {/* Own-scale mini-trend (ADR-0146): trajectory context moved here
+                  from the retired top-5 line chart. Identity is the row itself,
+                  so no colour slot is spent on it. */}
+              <td className="py-1 pr-3 w-[84px]">
+                {s.points.length > 1 ? (
+                  <Sparkline
+                    points={s.points.map((p) => p.share)}
+                    color="var(--text-tertiary)"
+                    height={16}
                   />
-                  <span className="text-text-primary">{s.phrase}</span>
-                </span>
+                ) : (
+                  <span className="text-text-tertiary">—</span>
+                )}
               </td>
               <td className="py-1 pr-3 text-right num">{sharePct(s.latest.share)}</td>
               <td className="py-1 pr-3 text-right num">
@@ -377,9 +584,9 @@ export default function NarrativeTrends() {
     <div className="card">
       <div className="card-header flex-wrap gap-2">
         <div>
-          <span className="card-title">Narrative trends</span>
+          <span className="card-title">Narrative detection</span>
           <span className="text-text-tertiary text-[11px] ml-2">
-            share of voice over time &middot; phrases nobody named in advance
+            loudness &times; breakout &middot; phrases nobody named in advance
           </span>
         </div>
         {latestRun && (
@@ -410,23 +617,26 @@ export default function NarrativeTrends() {
         ) : (
           <div className="flex flex-col gap-4">
             <p className="m-0 text-[11px] text-text-tertiary leading-[1.55]">
-              Share of the day&rsquo;s headlines mentioning each phrase. Not mention
-              counts: the corpus size swings with how many articles the fetch
-              returned, so a raw count rises on a day the fetcher simply worked
-              better.
+              A detector, not a comparison (ADR-0146): each phrase is placed by how
+              loud it is (share of the day&rsquo;s headlines — not mention counts,
+              which rise on a day the fetcher simply worked better) and whether it is
+              breaking out against its own history (velocity). Hollow marks are
+              phrases an anchor theme already watches — context. Filled marks are
+              watched by nothing — the payload. The alarm sits top-right. Phrases
+              whose velocity cannot be measured yet wait in the strip below the
+              plane; they rise into it as history accrues.
             </p>
 
-            <TrendPlot series={top} />
+            <DetectionScatter series={series} />
 
             <SeriesTable series={top} />
 
             {dropped > 0 && (
               <p className="m-0 text-[11px] text-text-tertiary leading-[1.55]">
-                Showing the {top.length} loudest of{" "}
-                <span className="num">{series.length}</span> tracked narratives.
-                The other <span className="num">{dropped}</span> are recorded in{" "}
-                <code className="num">narrative_signals</code> and are not drawn
-                here.
+                The table details the {top.length} loudest of{" "}
+                <span className="num">{series.length}</span> tracked narratives —
+                every one of the {series.length} is a mark in the plane or the strip
+                above.
               </p>
             )}
 

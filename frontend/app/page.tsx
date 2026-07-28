@@ -10,6 +10,7 @@ import ThemeDerivationDrawer from "@/components/ThemeDerivationDrawer";
 import ThemeHeatmap from "@/components/ThemeHeatmap";
 import TerminalPane from "@/components/home/TerminalPane";
 import DiscoveredThemes from "@/components/DiscoveredThemes";
+import AttentionFunnel from "@/components/AttentionFunnel";
 import NarrativeTrends from "@/components/NarrativeTrends";
 import ThemeTrends from "@/components/ThemeTrends";
 import PredictionMarkets from "@/components/PredictionMarkets";
@@ -901,6 +902,9 @@ function ConvictionPageInner() {
           >
             <div className="flex flex-col gap-4">
               <NarrativeTrends />
+              {/* The lifecycle, as counts: what the detector tracks narrowing
+                  into what the theme board trades (ADR-0146). */}
+              <AttentionFunnel />
               <ThemeTrends />
             </div>
           </TerminalPane>

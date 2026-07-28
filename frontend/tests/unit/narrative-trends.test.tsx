@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import {
+  attentionFunnel,
   emergingUncovered,
   sharePct,
   topSeries,
@@ -12,6 +13,7 @@ import {
   type NarrativeSeries,
 } from "@/lib/narratives";
 import NarrativeTrends, {
+  DetectionScatter,
   SeriesTable,
   TrendPlot,
 } from "@/components/NarrativeTrends";
@@ -336,5 +338,121 @@ describe("the emerging shortlist's two empties stay distinct", () => {
 
   it("says nine anchors, not the stale eight", () => {
     expect(src).not.toMatch(/eight anchor/i);
+  });
+});
+
+describe("DetectionScatter — the detector's honesty (ADR-0146)", () => {
+  const detRow = (over: Partial<NarrativeRowShape>) => series2(over);
+
+  // Local builders: the file's `series()` helper builds trend-plot fixtures;
+  // the scatter cares about latest.{share,velocity,covered_by,status}.
+  type NarrativeRowShape = {
+    phrase: string;
+    share: number;
+    velocity: number | null;
+    covered_by: string | null;
+    status: "new" | "emerging" | "established" | "fading";
+  };
+  function series2(over: Partial<NarrativeRowShape>) {
+    const r: NarrativeRowShape = {
+      phrase: "p",
+      share: 0.1,
+      velocity: null,
+      covered_by: null,
+      status: "new",
+      ...over,
+    };
+    return {
+      phrase: r.phrase,
+      points: [{ run_date: "2026-07-28", share: r.share }],
+      latest: {
+        run_date: "2026-07-28",
+        phrase: r.phrase,
+        doc_count: 10,
+        corpus_size: 100,
+        share: r.share,
+        velocity: r.velocity,
+        days_observed: r.velocity === null ? 1 : 9,
+        first_seen: "2026-07-20",
+        status: r.status,
+        covered_by: r.covered_by,
+        methods: ["frequency"],
+      },
+    };
+  }
+
+  it("an unmeasurable phrase is NEVER a point in the plane — it is a rug mark", () => {
+    const out = renderToStaticMarkup(
+      <DetectionScatter series={[detRow({ phrase: "quiet", velocity: null })]} />,
+    );
+    expect(out).not.toContain("<circle"); // absence is not a y=0 dot
+    expect(out).toContain("not yet measurable · 1");
+    expect(out).toContain("No measurable velocities yet");
+  });
+
+  it("covered is hollow context; uncovered is the filled payload", () => {
+    const out = renderToStaticMarkup(
+      <DetectionScatter
+        series={[
+          detRow({ phrase: "fomc", velocity: 0.4, covered_by: "Fed Policy" }),
+          detRow({ phrase: "ai datacenter", velocity: 1.9, covered_by: null }),
+        ]}
+      />,
+    );
+    expect(out).toContain('fill="transparent"'); // covered: hollow
+    expect(out).toContain('fill="var(--series-1)"'); // uncovered: filled
+    // The payload gets the direct label; the covered context does not.
+    expect(out).toContain(">ai datacenter</text>");
+    expect(out).not.toContain(">fomc</text>");
+  });
+
+  it("an emerging mark gets the ring — status from the backend, no threshold copied", () => {
+    const out = renderToStaticMarkup(
+      <DetectionScatter
+        series={[detRow({ phrase: "breakout", velocity: 2.1, status: "emerging" })]}
+      />,
+    );
+    const circles = out.match(/<circle/g) ?? [];
+    expect(circles.length).toBe(2); // point + ring
+  });
+
+  it("rug overflow is counted, not hidden", () => {
+    const many = Array.from({ length: 90 }, (_, i) =>
+      detRow({ phrase: `phrase ${i}`, share: 0.01 + i / 1000, velocity: null }),
+    );
+    const out = renderToStaticMarkup(<DetectionScatter series={many} />);
+    expect(out).toContain("not yet measurable · 90");
+    expect(out).toContain("+10 more");
+  });
+
+  it("the default board renders the scatter, not the retired top-5 lines", () => {
+    const src = readFileSync(
+      path.resolve(__dirname, "../../components/NarrativeTrends.tsx"),
+      "utf8",
+    );
+    expect(src).toContain("<DetectionScatter series={series}");
+    expect(src).not.toMatch(/<TrendPlot series=\{top\}/);
+  });
+});
+
+describe("attentionFunnel — the lifecycle counts", () => {
+  it("counts tracked, unwatched, emerging, and knows when emerging is unknowable", () => {
+    const mk = (velocity: number | null, covered: string | null, status: string) => ({
+      phrase: `${velocity}-${covered}-${status}`,
+      points: [],
+      latest: {
+        run_date: "2026-07-28", phrase: "x", doc_count: 1, corpus_size: 10,
+        share: 0.1, velocity, days_observed: 1, first_seen: "2026-07-20",
+        status, covered_by: covered, methods: null,
+      },
+    });
+    const dark = attentionFunnel([mk(null, null, "new"), mk(null, "Fed Policy", "new")] as never);
+    expect(dark).toEqual({ tracked: 2, unwatched: 1, emerging: 0, velocityMeasurable: false });
+
+    const lit = attentionFunnel(
+      [mk(2.0, null, "emerging"), mk(0.1, null, "established"), mk(1.8, "Fed Policy", "emerging")] as never,
+    );
+    expect(lit.emerging).toBe(2);
+    expect(lit.velocityMeasurable).toBe(true);
   });
 });

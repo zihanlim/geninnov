@@ -42,6 +42,18 @@ export interface WorkbenchSeed {
   geo: string | null;
 }
 
+/**
+ * Outcome of a re-size. `unavailable` and `refused` are kept apart on purpose: the
+ * first means the service could not be reached, the second means it ran and said no.
+ * A reader can act on the second and only wait on the first.
+ */
+type SolveState =
+  | null
+  | { state: "running" }
+  | { state: "unavailable"; message: string }
+  | { state: "refused"; message: string }
+  | { state: "done"; noView: string[]; warnings: string[] };
+
 const TIER_LABEL: Record<Tier, string> = {
   held: "in the book",
   candidate: "cleared, not taken",
@@ -60,6 +72,7 @@ export default function Workbench({
   const [positions, setPositions] = useState<ScratchPosition[]>(seed);
   const [restored, setRestored] = useState(false);
   const [ticker, setTicker] = useState("");
+  const [solve, setSolve] = useState<SolveState>(null);
 
   // localStorage only. No account, no user_id, no server write — the reason this
   // whole surface clears design goal 5 without an argument.
@@ -144,7 +157,99 @@ export default function Workbench({
   const reset = useCallback(() => {
     setPositions(seed);
     setRestored(false);
+    setSolve(null);
   }, [seed]);
+
+  // ── Re-size, using the real optimizer ────────────────────────────────────
+  //
+  // Everything above this line is arithmetic the browser can do. This is not:
+  // sizing is a constrained quadratic program, and the ONLY acceptable way to run
+  // it is to call the same `optimizer.py` that produced the published book.
+  // ADR-0107 records what a second sizer costs — the implementation it was read
+  // across from clips every weight at zero and deletes every short on a long-short
+  // book — so there is deliberately no JavaScript fallback here. If the compute
+  // function is unreachable, this feature is unavailable and says so.
+  const optimise = useCallback(async () => {
+    setSolve({ state: "running" });
+    try {
+      const res = await fetch("/api/compute/size", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          signals: positions.map((p) => ({
+            asset: p.asset,
+            direction: p.direction,
+            // A name with no conviction goes without one. compute_api then enters
+            // it at mu = 0 and NAMES it, which is "no view" rather than a measured
+            // zero — the distinction is preserved by omitting the field, not by
+            // sending a 0 that the solver cannot tell apart from a measurement.
+            ...(p.conviction !== null && p.vol !== null
+              ? { conviction: p.conviction, vol: p.vol }
+              : {}),
+          })),
+          sector_map: Object.fromEntries(
+            positions.filter((p) => p.sector).map((p) => [p.asset, p.sector as string]),
+          ),
+          geo_map: Object.fromEntries(
+            positions.filter((p) => p.geo).map((p) => [p.asset, p.geo as string]),
+          ),
+        }),
+      });
+
+      // Next.js answers an undeployed route with an HTML 404. Diagnosing that as
+      // "not deployed" is actionable; surfacing the JSON parser's complaint about
+      // "<!DOCTYPE" reads like a bug in the sizer.
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!contentType.includes("application/json")) {
+        setSolve({
+          state: "unavailable",
+          message:
+            "The sizing service is not running at this origin. It is a Python " +
+            "function and is not served by the dev server; everything else on this " +
+            "page works without it.",
+        });
+        return;
+      }
+
+      const payload = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        signed_weights?: Record<string, number>;
+        gross?: number;
+        cash?: number;
+        no_expected_return?: { assets?: string[] };
+        warnings?: string[];
+      };
+
+      if (!res.ok || payload.ok === false || !payload.signed_weights) {
+        setSolve({ state: "refused", message: payload.error ?? `HTTP ${res.status}` });
+        return;
+      }
+
+      const weights = payload.signed_weights;
+      setPositions((prev) =>
+        prev.map((p) => {
+          const w = weights[p.asset];
+          if (typeof w !== "number") return p;
+          return {
+            ...p,
+            weight: Math.abs(w),
+            direction: w < 0 ? "short" : w > 0 ? "long" : p.direction,
+          };
+        }),
+      );
+      setSolve({
+        state: "done",
+        noView: payload.no_expected_return?.assets ?? [],
+        warnings: payload.warnings ?? [],
+      });
+    } catch (e) {
+      setSolve({
+        state: "unavailable",
+        message: e instanceof Error ? e.message : "unknown error",
+      });
+    }
+  }, [positions]);
 
   const notInBook = candidates.filter((c) => !positions.some((p) => p.asset === c.asset));
 
@@ -249,13 +354,72 @@ export default function Workbench({
       <div className="card">
         <div className="card-header">
           <span className="card-title">Your positions</span>
-          <button
-            onClick={reset}
-            className="text-[11px] text-text-tertiary hover:text-text-secondary underline"
-          >
-            Reset to the published book
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={optimise}
+              disabled={solve?.state === "running" || positions.length === 0}
+              className="text-[11.5px] px-2.5 py-1 rounded border border-border font-medium hover:bg-bg-elevated disabled:opacity-50"
+              title="Re-size these names with the same constrained optimizer that produced the published book"
+            >
+              {solve?.state === "running" ? "Sizing…" : "Re-size with the optimizer"}
+            </button>
+            <button
+              onClick={reset}
+              className="text-[11px] text-text-tertiary hover:text-text-secondary underline"
+            >
+              Reset to the published book
+            </button>
+          </div>
         </div>
+
+        {solve && solve.state !== "running" && (
+          <div
+            role={solve.state === "done" ? "status" : "alert"}
+            className="px-4 py-3 border-b border-border text-[12px] leading-[1.6]"
+            style={
+              solve.state === "done"
+                ? undefined
+                : { background: "rgba(168, 50, 9, 0.06)" }
+            }
+          >
+            {solve.state === "done" ? (
+              <>
+                <span className="font-semibold text-text-primary">Re-sized.</span>{" "}
+                <span className="text-text-secondary">
+                  Weights came from the same optimizer that sized the published book,
+                  under the mandate on{" "}
+                  <Link href="/risk#mandate" className="text-accent hover:underline">
+                    /risk
+                  </Link>
+                  . Nothing was stored.
+                  {solve.noView.length > 0 && (
+                    <>
+                      {" "}
+                      <span className="num">{solve.noView.join(", ")}</span> carried no
+                      EdgeScore, so {solve.noView.length === 1 ? "it" : "they"} entered
+                      at <span className="num">μ = 0</span> — held for variance
+                      reduction only, never for expected return.
+                    </>
+                  )}
+                  {solve.warnings.map((w) => (
+                    <span key={w}> {w}.</span>
+                  ))}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="font-semibold" style={{ color: "var(--warning)" }}>
+                  {solve.state === "refused" ? "The sizer refused: " : "Sizing unavailable — "}
+                </span>
+                <span className="text-text-secondary">
+                  {solve.message}{" "}
+                  {solve.state === "unavailable" &&
+                    "Every other figure on this page is computed in your browser and is unaffected."}
+                </span>
+              </>
+            )}
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-[13px]">
             <caption className="sr-only">

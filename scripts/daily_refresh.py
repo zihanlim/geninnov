@@ -258,9 +258,13 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
 
         avg_sentiment = float(pd.Series(scores).mean()) if scores else 0.0
 
-        # Mention count: total today (only today's texts)
-        todays_news = [n for n in news if n.get("date", "")[:10] == today_str]
-        todays_posts = [p for p in posts if p.get("date", "")[:10] == today_str]
+        # Mention count: total today (only today's texts). `date` can be None
+        # since call_brave_mcp.js stopped stamping unparseable page_age with
+        # today's date — an unknown-age item belongs in NO daily bucket, which
+        # is what `or ""` gives us (matches nothing), where `.get("date", "")`
+        # returned the stored None and crashed the slice.
+        todays_news = [n for n in news if (n.get("date") or "")[:10] == today_str]
+        todays_posts = [p for p in posts if (p.get("date") or "")[:10] == today_str]
         mention_count_1d = len(todays_news) + len(todays_posts)
 
         # Per-day mention counts over the full correlation window. Momentum reads
@@ -269,8 +273,8 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
         daily_counts_full = []
         for i in range(CORR_WINDOW_DAYS):
             d = (run_date - timedelta(days=i)).isoformat()[:10]
-            cnt = sum(1 for n in news if n.get("date", "")[:10] == d)
-            cnt += sum(1 for p in posts if p.get("date", "")[:10] == d)
+            cnt = sum(1 for n in news if (n.get("date") or "")[:10] == d)
+            cnt += sum(1 for p in posts if (p.get("date") or "")[:10] == d)
             daily_counts_full.append(cnt)
         daily_counts = daily_counts_full[:7]   # trailing 7 → momentum
 

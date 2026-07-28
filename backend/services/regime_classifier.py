@@ -401,6 +401,64 @@ def _fetch_prior_posture(supabase: Client, run_date: date) -> str | None:
     return rows[0].get("fed_posture")
 
 
+def build_posture_evidence(posture: PostureReading, prior_posture: str | None) -> dict:
+    """The `fed_posture_evidence` blob, in migration 053's documented schema.
+
+    ONE builder, used by the live `classify()` and by the backfill alike, so
+    the two cannot drift (ADR-0064's one-formula-one-place, applied to a
+    payload). Input LEVELS are percent (`dff_pct`, not `dff_bps`) — levels are
+    quoted in percent, spreads in bps (ADR-0137).
+    """
+    return {
+        "inputs": {
+            "dff_pct": posture.dff_pct,
+            "dgs2_pct": posture.dgs2_pct,
+            "dgs10_pct": posture.dgs10_pct,
+        },
+        "components": {
+            "rate_change_13w_bps": posture.rate_change_13w_bps,
+            "curve_change_13w_bps": posture.curve_change_13w_bps,
+            "curve_steepness_bps": posture.curve_steepness_bps,
+        },
+        "prior_posture": prior_posture,
+        "thresholds": {
+            "rate_threshold_bps": POSTURE_RATE_THRESHOLD_BPS,
+            "curve_threshold_bps": POSTURE_CURVE_THRESHOLD_BPS,
+            "window_weeks": POSTURE_WINDOW_WEEKS,
+        },
+    }
+
+
+def crosscurrents_columns(
+    debasement: DebasementReading,
+    posture: PostureReading,
+    fed_pivot_delta: int | None,
+    posture_evidence: dict,
+) -> dict:
+    """The twelve ADR-0139/0140 columns, keyed by column name.
+
+    ONE mapping shared by `classify()`'s upsert and the backfill's fill-only
+    UPDATE. Its key set must equal `q1_agent.REGIME_SHADOW_KEYS` and the
+    columns migrations 052/053 add — tests assert both, because a column that
+    exists in one list and not another either never gets written or leaks to
+    the LLM mid-shadow.
+    """
+    return {
+        "debasement_pressure": debasement.pressure,
+        "debasement_real_yield_comp": debasement.real_yield_comp,
+        "debasement_dxy_decline_comp": debasement.dxy_decline_comp,
+        "debasement_gold_rise_comp": debasement.gold_rise_comp,
+        "debasement_comovement_comp": debasement.comovement_comp,
+        "debasement_lookback_weeks": debasement.lookback_weeks,
+        "fed_posture": posture.posture,
+        "fed_pivot_delta": fed_pivot_delta,
+        "fed_rate_change_13w_bps": posture.rate_change_13w_bps,
+        "fed_curve_change_13w_bps": posture.curve_change_13w_bps,
+        "fed_curve_steepness_bps": posture.curve_steepness_bps,
+        "fed_posture_evidence": posture_evidence,
+    }
+
+
 # The universe breadth is measured ACROSS. The eleven GICS sector SPDRs cover
 # the whole S&P 500 by construction and partition it without overlap, so "how
 # many of these are above their own 200-day average" is a real breadth reading
@@ -706,24 +764,7 @@ class RegimeClassifier:
         if posture.posture is not None and prior_posture in POSTURE_SIGN:
             fed_pivot_delta = POSTURE_SIGN[posture.posture] - POSTURE_SIGN[prior_posture]
 
-        posture_evidence = {
-            "inputs": {
-                "dff_pct": posture.dff_pct,
-                "dgs2_pct": posture.dgs2_pct,
-                "dgs10_pct": posture.dgs10_pct,
-            },
-            "components": {
-                "rate_change_13w_bps": posture.rate_change_13w_bps,
-                "curve_change_13w_bps": posture.curve_change_13w_bps,
-                "curve_steepness_bps": posture.curve_steepness_bps,
-            },
-            "prior_posture": prior_posture,
-            "thresholds": {
-                "rate_threshold_bps": POSTURE_RATE_THRESHOLD_BPS,
-                "curve_threshold_bps": POSTURE_CURVE_THRESHOLD_BPS,
-                "window_weeks": POSTURE_WINDOW_WEEKS,
-            },
-        }
+        posture_evidence = build_posture_evidence(posture, prior_posture)
 
         output = RegimeOutput(
             cycle=cycle,
@@ -761,20 +802,8 @@ class RegimeClassifier:
             "real_rate": real_rate,
             "spx_breadth": spx_breadth,
         }
-        adr_row = {
-            "debasement_pressure": debasement.pressure,
-            "debasement_real_yield_comp": debasement.real_yield_comp,
-            "debasement_dxy_decline_comp": debasement.dxy_decline_comp,
-            "debasement_gold_rise_comp": debasement.gold_rise_comp,
-            "debasement_comovement_comp": debasement.comovement_comp,
-            "debasement_lookback_weeks": debasement.lookback_weeks,
-            "fed_posture": posture.posture,
-            "fed_pivot_delta": fed_pivot_delta,
-            "fed_rate_change_13w_bps": posture.rate_change_13w_bps,
-            "fed_curve_change_13w_bps": posture.curve_change_13w_bps,
-            "fed_curve_steepness_bps": posture.curve_steepness_bps,
-            "fed_posture_evidence": posture_evidence,
-        }
+        adr_row = crosscurrents_columns(
+            debasement, posture, fed_pivot_delta, posture_evidence)
         try:
             self.supabase.table("regime_classifications").upsert(
                 {**base_row, **adr_row}, on_conflict="run_date",

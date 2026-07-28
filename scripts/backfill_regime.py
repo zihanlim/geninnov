@@ -29,11 +29,26 @@ converts percent to basis points before applying its thresholds (a bug that once
 made two of its three cycle rules unreachable), and a backfill with its own copy
 of the arithmetic would reintroduce exactly that class of divergence.
 
+THE FILL MODE (`--fill-crosscurrents`) is different in kind from the default
+mode, and the difference is the point. Migrations 052/053 added the ADR-0139
+debasement and ADR-0140 posture columns to rows the live runs had already
+PUBLISHED. Re-running `classify()` over those dates would recompute — and
+potentially restate — the published `cycle`/`sentiment` too, which is exactly
+what the `--overwrite` guard exists to prevent. The fill mode instead UPDATEs
+only the twelve new columns, on existing rows only (it cannot invent a date),
+in CHRONOLOGICAL order — non-negotiably, because `fed_pivot_delta` reads the
+posture ~13 weeks prior, so later rows depend on earlier writes (migration
+053's ordering note). A row is "already filled" when `fed_posture_evidence` is
+non-NULL: the live path writes that blob unconditionally, so its NULLness
+marks a row the new code has never touched.
+
 Usage:
     python -m scripts.backfill_regime                     # dry run, whole range
     python -m scripts.backfill_regime --from 2025-08-01 --to 2026-07-01
     python -m scripts.backfill_regime --apply             # actually write
     python -m scripts.backfill_regime --apply --overwrite # re-do existing rows
+    python -m scripts.backfill_regime --fill-crosscurrents          # dry run
+    python -m scripts.backfill_regime --fill-crosscurrents --apply  # write
 """
 from __future__ import annotations
 
@@ -46,11 +61,20 @@ from typing import Optional
 from supabase import Client, create_client
 
 from backend.services.regime_classifier import (
+    DEBASEMENT_LOOKBACK_WEEKS,
+    POSTURE_SIGN,
+    POSTURE_WINDOW_WEEKS,
     RegimeClassifier,
     _classify_cycle,
     _classify_sentiment,
     _compute_spx_breadth,
     _fetch_latest_series,
+    _fetch_prior_posture,
+    _fetch_series_window,
+    build_posture_evidence,
+    classify_debasement,
+    classify_fed_posture,
+    crosscurrents_columns,
 )
 
 # The series L3 reads. A date with none of these has no macro observation at all
@@ -140,6 +164,106 @@ def classify_row(inputs: dict) -> tuple[str, str]:
     return cycle, sentiment
 
 
+#: The six series the crosscurrents readings consume (ADR-0139 / ADR-0140).
+CROSSCURRENT_SERIES = ("DFII10", "DX-Y.NYB", "GC=F", "DFF", "DGS2", "DGS10")
+
+#: PostgREST's silent page cap (see PAGE above). A series history that comes
+#: back exactly this long has probably been truncated at the OLD end — the
+#: fill warns instead of quietly computing on a shortened window.
+SERIES_PAGE_CAP = 1000
+
+
+def crosscurrent_rows(sb: Client, lo: Optional[date], hi: Optional[date]) -> list[tuple[date, bool]]:
+    """Existing regime rows in range, ascending, with whether the new columns
+    were ever computed (`fed_posture_evidence` non-NULL — see module docstring)."""
+    rows = (
+        sb.table("regime_classifications")
+        .select("run_date, fed_posture_evidence")
+        .order("run_date")
+        .limit(10000)
+        .execute()
+        .data
+        or []
+    )
+    out: list[tuple[date, bool]] = []
+    for r in rows:
+        d = date.fromisoformat(r["run_date"])
+        if lo and d < lo:
+            continue
+        if hi and d > hi:
+            continue
+        out.append((d, r["fed_posture_evidence"] is not None))
+    return out
+
+
+def fill_crosscurrents(sb: Client, lo: Optional[date], hi: Optional[date],
+                       apply_: bool, overwrite: bool) -> int:
+    """Fill the ADR-0139/0140 columns on existing rows. UPDATE, never upsert:
+    this mode must be unable to invent a date the live runs never published."""
+    rows = crosscurrent_rows(sb, lo, hi)
+    todo = sorted(d for d, computed in rows if overwrite or not computed)
+    print(f"[backfill_regime] fill-crosscurrents: {len(rows)} regime rows, {len(todo)} to fill.")
+    if not todo:
+        return 0
+
+    # One fetch per series for the whole span, sliced per date by the pure
+    # functions' own as_of bounds (`_value_at_or_before` and the window
+    # filters never read past as_of, so passing the full history is
+    # look-ahead-safe by construction). ~6 reads instead of ~6 per date.
+    span_days = (todo[-1] - todo[0]).days + DEBASEMENT_LOOKBACK_WEEKS * 7
+    hists: dict[str, list[tuple[date, float]]] = {}
+    for sid in CROSSCURRENT_SERIES:
+        h = _fetch_series_window(sb, sid, todo[-1], days=span_days, max_rows=SERIES_PAGE_CAP)
+        if len(h) >= SERIES_PAGE_CAP:
+            print(f"[backfill_regime] WARNING: {sid} history hit the {SERIES_PAGE_CAP}-row page cap; "
+                  f"the OLDEST dates may be missing and their readings will be NULL, not wrong.")
+        hists[sid] = h
+
+    posture_counts: Counter = Counter()
+    pressures: list[float] = []
+    pivots_nonzero = 0
+    written = 0
+
+    # Chronological, so a later row's prior-posture read (t−13w, from the DB)
+    # can see this run's earlier writes. In a dry run those writes never
+    # happen, so pivot deltas printed here may be NULL that an --apply run
+    # would resolve — reported below rather than silently understated.
+    for d in todo:
+        deb = classify_debasement(
+            hists["DFII10"], hists["DX-Y.NYB"], hists["GC=F"], as_of=d)
+        post = classify_fed_posture(
+            hists["DFF"], hists["DGS2"], hists["DGS10"], as_of=d)
+        prior = _fetch_prior_posture(sb, d)
+        pivot = None
+        if post.posture is not None and prior in POSTURE_SIGN:
+            pivot = POSTURE_SIGN[post.posture] - POSTURE_SIGN[prior]
+
+        cols = crosscurrents_columns(deb, post, pivot, build_posture_evidence(post, prior))
+        posture_counts[post.posture or "(null)"] += 1
+        if deb.pressure is not None:
+            pressures.append(deb.pressure)
+        if pivot:
+            pivots_nonzero += 1
+
+        if apply_:
+            sb.table("regime_classifications").update(cols).eq(
+                "run_date", d.isoformat()).execute()
+            written += 1
+
+    print(f"[backfill_regime] postures: {dict(posture_counts)}; non-zero pivots: {pivots_nonzero}")
+    if pressures:
+        print(f"[backfill_regime] debasement_pressure computed on {len(pressures)}/{len(todo)} rows "
+              f"(min {min(pressures)}, max {max(pressures)}); the rest are NULL — insufficient window, not zero.")
+    else:
+        print(f"[backfill_regime] debasement_pressure NULL on all {len(todo)} rows — insufficient window, not zero.")
+    if apply_:
+        print(f"[backfill_regime] wrote {written} row(s), new columns only.")
+    else:
+        print("[backfill_regime] DRY RUN — nothing written; pivot deltas may resolve differently on --apply "
+              "(earlier writes feed later reads).")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Backfill regime_classifications from macro_daily_history.")
     ap.add_argument("--from", dest="lo", type=date.fromisoformat, default=None)
@@ -149,7 +273,14 @@ def main() -> int:
         "--overwrite",
         action="store_true",
         help="Also rewrite dates that already have a row. Off by default: the existing rows are the "
-             "PUBLISHED record, produced by live runs, and a backfill should not quietly restate them.",
+             "PUBLISHED record, produced by live runs, and a backfill should not quietly restate them. "
+             "In --fill-crosscurrents mode: also re-fill rows whose readings were already computed.",
+    )
+    ap.add_argument(
+        "--fill-crosscurrents",
+        action="store_true",
+        help="Fill ONLY the ADR-0139/0140 debasement/posture columns on existing rows (chronological, "
+             "update-only, published cycle/sentiment untouched). See module docstring.",
     )
     args = ap.parse_args()
 
@@ -160,6 +291,10 @@ def main() -> int:
         return 1
 
     sb: Client = create_client(url, key)
+
+    if args.fill_crosscurrents:
+        return fill_crosscurrents(sb, args.lo, args.hi, args.apply, args.overwrite)
+
     clf = RegimeClassifier(url, key)
 
     dates = trading_dates(sb, args.lo, args.hi)

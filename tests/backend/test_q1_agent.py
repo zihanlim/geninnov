@@ -2074,3 +2074,21 @@ class TestRegimeShadowStrip:
             sql += Path("supabase", "migrations", name).read_text(encoding="utf-8")
         added = set(re.findall(r"ADD COLUMN IF NOT EXISTS (\w+)", sql))
         assert added == set(q1_agent.REGIME_SHADOW_KEYS)
+
+    def test_column_mapping_matches_shadow_keys(self):
+        """crosscurrents_columns is the ONE write-side mapping (classify() and
+        the backfill both use it); its key set must equal the strip list, or a
+        column gets written that the shadow does not strip."""
+        from backend.services.regime_classifier import (
+            DebasementReading,
+            PostureReading,
+            crosscurrents_columns,
+        )
+
+        cols = crosscurrents_columns(
+            DebasementReading(None, None, None, None, None),
+            PostureReading(None, None, None, None, None, None, None),
+            None,
+            {},
+        )
+        assert set(cols) == set(q1_agent.REGIME_SHADOW_KEYS)

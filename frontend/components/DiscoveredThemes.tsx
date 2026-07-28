@@ -68,6 +68,27 @@ export default function DiscoveredThemes() {
   const runDate = rows?.[0]?.run_date ?? null;
   const corpus = rows?.[0]?.corpus_size ?? null;
 
+  // The subtitle read "LDA ∩ embedding agreement · shadow candidates, not yet
+  // promoted". Half of that was wrong and half was right, so both halves are now
+  // DERIVED from the rows rather than asserted:
+  //
+  //  * "agreement" described the whole list, but the card renders Tier 3 as well,
+  //    which is single-method by definition. On the 2026-07-24 run that is 5 of
+  //    11 candidates the header claimed agreement over.
+  //  * "not yet promoted" was true, and stays true only for as long as it is —
+  //    derived from `status`, so promoting a candidate corrects the copy instead
+  //    of leaving a stale claim on the page.
+  const promoted = (rows ?? []).filter((r) => r.status === "promoted").length;
+  const shadowCount = (rows ?? []).filter((r) => r.status === "shadow").length;
+
+  // Candidates produced before the shared tokenizer landed can contain publisher
+  // names as terms — the 2026-07-24 run has `fxstreet` and `pravda`, two of them
+  // in TIER 2, where a reader would reasonably read a byline as two independent
+  // methods agreeing. The fix is upstream and takes effect on the next monthly
+  // run, so until then the page has to say which it is showing (ADR-0133).
+  const TOKENIZER_FIX_DATE = "2026-07-28";
+  const predatesTokenizerFix = runDate !== null && runDate < TOKENIZER_FIX_DATE;
+
   return (
     // `lg:h-full` for the same reason PredictionMarkets carries it: on `/` this is
     // one half of the bottom row, and its pane is stretched to the row so the two
@@ -78,7 +99,17 @@ export default function DiscoveredThemes() {
         <div>
           <span className="card-title">Discovered themes</span>
           <span className="text-text-tertiary text-[11px] ml-2">
-            LDA ∩ embedding agreement · shadow candidates, not yet promoted
+            {rows && rows.length > 0 ? (
+              <>
+                LDA + embedding · {tier2.length} two-method,{" "}
+                {tier3.length} single-method ·{" "}
+                {promoted > 0
+                  ? `${promoted} promoted, ${shadowCount} shadow`
+                  : "shadow, none promoted"}
+              </>
+            ) : (
+              "LDA + embedding · shadow candidates, not yet promoted"
+            )}
           </span>
         </div>
         {runDate && (
@@ -106,6 +137,22 @@ export default function DiscoveredThemes() {
           </div>
         ) : (
           <div className="flex flex-col gap-4">
+            {predatesTokenizerFix && (
+              // Not a general disclaimer: it names the specific way these rows
+              // are wrong, so a reader can discount the affected labels rather
+              // than distrusting the whole card.
+              <div className="text-[11.5px] text-text-secondary leading-[1.6] border-l-2 border-warning pl-2.5">
+                This run predates the shared tokenizer, so some terms are{" "}
+                <strong>publisher names rather than narratives</strong> —{" "}
+                <code className="num">fxstreet</code> and{" "}
+                <code className="num">pravda</code> appear below, two of them in a
+                two-method candidate, where a byline reads as though both methods
+                agreed on a theme. The daily tracker strips these; discovery now
+                shares that tokenizer, and the next monthly run is the first that
+                will show it. Not backfilled — re-deriving a past run&rsquo;s
+                clusters without its corpus would be fabrication.
+              </div>
+            )}
             {/* Tier 2 — both methods agree. The confident candidates. */}
             <div>
               <div className="flex items-center gap-2 mb-2">

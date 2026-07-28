@@ -1214,6 +1214,11 @@ Rules:
 - scenario analysis: reference the specific scenario results in book_risks (e.g. "S2 rate shock hits -6%")
 - if uncertain about a number, write "N/A — [reason]" and do not cite
 - cite every number: prices, yields, spreads, betas, scores, dates, P&L figures
+- UNITS: the FRED series are served in PERCENTAGE POINTS (BAMLH0A0HYM2 = 2.79 means
+  a 279bp high-yield spread; DGS10 = 4.69 means a 4.69% ten-year yield). For
+  SPREADS you may cite either form — "279" or "2.79" both reconcile against
+  BAMLH0A0HYM2, because bps is the market convention for a spread. For yield
+  LEVELS cite the percent figure: 4.69, never 469
 - Do NOT add a pick that duplicates an existing factor exposure at >70% correlation (check the correlation warnings)
 - a thesis may only assert a POSITION in a ticker that is one of YOUR OWN picks.
   Do not describe a pair, spread or hedge against a name you are not picking.
@@ -2028,16 +2033,72 @@ def _citation_claimed_value(cit: dict) -> float | None:
     return None
 
 
-def _citation_value_matches(claimed: float, actual) -> bool:
-    """True when ``claimed`` is within tolerance of the numeric ``actual``."""
+# Sources where BASIS POINTS are the market's quote convention, so a citation in
+# bps is correct domain usage rather than a hundredfold error (ADR-0137).
+#
+# The rule is SPREADS, not levels. A spread is a difference between two yields and
+# is universally quoted in bps ("HY at 279 over"); a yield level is quoted in
+# percent ("the 10-year at 4.69%"), and nobody says "469bps" for it. So DGS10,
+# DGS2, DFII10, T10YIE and VIXCLS are deliberately absent — for those, a claimed
+# value 100x the source IS an error and must still fail.
+#
+# This is a per-source declaration of a domain fact, NOT a loosened tolerance. A
+# blanket "try x100" would accept a genuine order-of-magnitude mistake on every
+# series in the snapshot, which is precisely what the guardrail exists to catch.
+BPS_QUOTED_SOURCES: dict[str, str] = {
+    "BAMLH0A0HYM2": "high-yield OAS — a credit spread, quoted in bps",
+    "BAMLC0A0CM": "investment-grade OAS — same convention",
+    "T10Y2Y": "10y-2y curve slope — a spread between two yields, quoted in bps",
+    "yield_curve_slope": "the computed 10y-2y slope, the same quantity as T10Y2Y",
+    "hy_oas": "the regime classifier's label for BAMLH0A0HYM2",
+}
+
+#: Percentage points per basis point. FRED serves these series in percent.
+_BPS_PER_PP = 100.0
+
+
+def _within_tolerance(claimed: float, actual_f: float) -> bool:
+    tol = max(CITATION_ABS_TOL, CITATION_REL_TOL * abs(actual_f))
+    return abs(claimed - actual_f) <= tol
+
+
+def _citation_value_matches(claimed: float, actual, source: str | None = None) -> bool:
+    """True when ``claimed`` is within tolerance of the numeric ``actual``.
+
+    When ``source`` is a spread quoted in basis points, a claim of ``279`` also
+    matches a stored ``2.79``. That is not leniency — it is the same number in the
+    unit the market states it in, and the guardrail's own prompt example asks for
+    exactly this form:
+
+        {"text": "HY OAS at 380bps", "source": "BAMLH0A0HYM2", "value": 380.0}
+
+    while the series stores 2.79 percentage points. The instruction and the check
+    contradicted each other, so a model following the example precisely produced
+    an ungrounded citation — observed live on 2026-07-28, *"Cited value 279.0 does
+    not match source 'BAMLH0A0HYM2'=2.79"*, tolerated only because it fell under
+    the 20% ungrounded allowance. The frontend has reconciled this since
+    `formatSlopeBps`; the backend never did.
+    """
     if actual is None:
         return False
     try:
         actual_f = float(actual)
     except (TypeError, ValueError):
         return False
-    tol = max(CITATION_ABS_TOL, CITATION_REL_TOL * abs(actual_f))
-    return abs(claimed - actual_f) <= tol
+    if _within_tolerance(claimed, actual_f):
+        return True
+    return bps_reconciles(claimed, actual_f, source)
+
+
+def bps_reconciles(claimed: float, actual_f: float, source: str | None) -> bool:
+    """True when ``claimed`` is ``actual_f`` expressed in basis points.
+
+    Only for sources declared in ``BPS_QUOTED_SOURCES``. Returns False for every
+    other series, so a hundredfold error on a yield level still fails.
+    """
+    if not source or source not in BPS_QUOTED_SOURCES:
+        return False
+    return _within_tolerance(claimed / _BPS_PER_PP, actual_f)
 
 
 def _collect_known_values(state: Q1State) -> list[float]:
@@ -2175,6 +2236,11 @@ def verify_citations(state: Q1State) -> Q1State:
 
     checked = 0
     failures: list[str] = []
+    # Citations accepted only after a basis-point conversion (ADR-0137). Collected
+    # rather than silently passed: a guardrail that reconciles a unit should say
+    # it did, or the next reader cannot tell an accepted conversion from an exact
+    # match, and a wrong entry in BPS_QUOTED_SOURCES would be invisible.
+    bps_reconciled: list[str] = []
     for cit in state.get("citations", []):
         src = cit.get("source", "")
         text = cit.get("text", "")
@@ -2185,8 +2251,16 @@ def verify_citations(state: Q1State) -> Q1State:
             continue
 
         checked += 1
-        # (1) exact source-key value match (ADR-0019)
-        if claimed is not None and src in source_map and _citation_value_matches(claimed, source_map[src]):
+        # (1) exact source-key value match (ADR-0019), plus the basis-point
+        # reconciliation for spread series (ADR-0137). `src` is passed so the
+        # conversion is scoped to sources where bps is the market convention —
+        # without it a hundredfold error on any series would pass.
+        if claimed is not None and src in source_map and _citation_value_matches(claimed, source_map[src], src):
+            try:
+                if not _within_tolerance(claimed, float(source_map[src])):
+                    bps_reconciled.append(f"{src}: cited {claimed:g}bps = {float(source_map[src]):g}pp")
+            except (TypeError, ValueError):
+                pass
             continue
         # (2) value-grounding: any number in the citation is a real input value
         if any(_value_is_grounded(n, known_values) for n in nums):
@@ -2238,6 +2312,9 @@ def verify_citations(state: Q1State) -> Q1State:
         state["error"] = "Citation verification failed: " + "; ".join(failures[:8])
         return state
 
+    if bps_reconciled:
+        print(f"[verify_citations] {len(bps_reconciled)} citation(s) reconciled by unit "
+              f"(basis points vs percentage points): {'; '.join(bps_reconciled[:4])}")
     if failures:
         print(f"[verify_citations] tolerated {len(failures)}/{checked} ungrounded "
               f"citations ({grounded_ratio:.0%} grounded, e.g. {failures[0][:100]})")

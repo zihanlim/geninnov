@@ -635,34 +635,45 @@ function BookPageInner() {
   // tables scroll inside their own overflow-x-auto wrappers.
   return (
     <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-7 pb-20">
-      <div className="flex justify-between items-end mb-7 gap-6 flex-wrap">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
-            The $100M Book
-          </h1>
-          <p className="m-0 text-text-primary text-[14.5px] leading-[1.55] max-w-[62ch]">
-            {plainSummary}
-          </p>
-          <p className="m-0 mt-2 text-text-tertiary text-[12px] leading-[1.5] max-w-[62ch]">
-            Each side is the sign of its <span className="num">EdgeScore</span>; each
-            size is conviction (<span className="num">|Edge| / vol</span>) capped by
-            position, sector and geography limits. Expand any position for the full
-            derivation.
-          </p>
-        </div>
-        <div className="text-right text-text-secondary text-[12px] shrink-0">
-          <div>
-            <span className="text-text-tertiary mr-1.5">RUN DATE</span>
-            <span
-              className="num"
+      {/* Run date and lens are metadata ABOUT the page, not a seventh figure on it.
+          Boxing them in a card put a bordered tile directly above the 6-stat strip,
+          where it read as one more stat to compare; a rule separates them without
+          promoting them. The rule spans the summary block only, so the title clears
+          it, and the paragraphs drop their 62ch cap to fill the width — at 1400px a
+          62ch column left the summary wrapping early against empty space. */}
+      <div className="mb-7">
+        <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
+          The $100M Book
+        </h1>
+        <div className="flex items-start gap-6 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="m-0 text-text-primary text-[14.5px] leading-[1.55]">
+              {plainSummary}
+            </p>
+            <p className="m-0 mt-2 text-text-tertiary text-[12px] leading-[1.5]">
+              Each side is the sign of its <span className="num">EdgeScore</span>; each
+              size is conviction (<span className="num">|Edge| / vol</span>) capped by
+              position, sector and geography limits. Expand any position for the full
+              derivation.
+            </p>
+          </div>
+          {/* self-stretch is what makes the rule span the paragraph block rather than
+              hug the two lines of text. Below sm: the block wraps under the summary
+              and the border would be a stray vertical line, so it starts at sm:. */}
+          <div className="shrink-0 self-stretch text-right text-text-secondary text-[12px] sm:border-l sm:border-border sm:pl-5">
+            <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-medium leading-none">
+              RUN DATE
+            </div>
+            <div
+              className="num mt-1"
               style={staleness.stale ? { color: "var(--warning)" } : undefined}
             >
               {rec?.run_date ?? "—"}
-            </span>
-          </div>
-          <div className="mt-1">
-            <span className="text-text-tertiary mr-1.5">LENS</span>
-            <span className="num">{rec?.lens ?? "—"}</span>
+            </div>
+            <div className="mt-2.5 text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-medium leading-none">
+              LENS
+            </div>
+            <div className="num mt-1 capitalize">{rec?.lens ?? "—"}</div>
           </div>
         </div>
       </div>

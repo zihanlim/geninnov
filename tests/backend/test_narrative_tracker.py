@@ -464,7 +464,7 @@ class TestSingleTokenAliasesClaimOnlyThemselves:
 
 
 class TestTheDenominatorIsUnbiased:
-    """Share of voice is scored on the UN-THEMED corpus only (ADR-0140).
+    """Share of voice is scored on the UN-THEMED corpus only (ADR-0141).
 
     Measured 2026-07-28: AI was 34% of the un-themed corpus and 5.5% of the
     anchor-fetched one. Blending them -- 100 un-themed against 1688 themed --

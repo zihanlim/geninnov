@@ -165,7 +165,7 @@ MARKET_SEED_QUERIES: list[str] = [
     '"investors" OR "traders" OR "fund managers"',
     '"global markets" OR "world economy" OR "central banks"',
     '"commodities" OR "currencies" OR "credit markets"',
-    # "capital spending" was removed on 2026-07-28 (ADR-0140). It is a synonym for
+    # "capital spending" was removed on 2026-07-28 (ADR-0141). It is a synonym for
     # capex, so it does not ask what the market is talking about — it asks about
     # one narrative, and right now capex stories ARE AI stories. Measured: this
     # query returned 52 of the corpus's 100 documents and **33 of its 34
@@ -175,7 +175,7 @@ MARKET_SEED_QUERIES: list[str] = [
     # "earnings" and "guidance" stay: an earnings season is a calendar event every
     # listed company participates in, not a narrative anyone is pushing.
     '"earnings" OR "guidance" OR "results season"',
-    # Added 2026-07-28 (ADR-0140). Brave caps at 50 results per query and the five
+    # Added 2026-07-28 (ADR-0141). Brave caps at 50 results per query and the five
     # above overlap heavily, deduping to ~100 documents — too thin a denominator
     # for a share-of-voice measure, and thin enough that MIN_DOC_COUNT=3 imposes a
     # 3% floor on anything visible at all. These retrieve DIFFERENT slices of

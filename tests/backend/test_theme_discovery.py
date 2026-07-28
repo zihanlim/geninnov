@@ -356,7 +356,7 @@ class TestDiscoveryUsesTheSharedTokenizer:
 
 
 class TestTheDiscoveryCorpusIsNotCircular:
-    """`corpus_from_theme_news` must read the UN-THEMED corpus too (ADR-0139).
+    """`corpus_from_theme_news` must read the UN-THEMED corpus too (ADR-0141).
 
     ADR-0128 built `market_news` to break the circularity this function's own
     docstring described, and wired it into the daily tracker -- but not into this

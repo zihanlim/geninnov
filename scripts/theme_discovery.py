@@ -203,7 +203,7 @@ def corpus_from_theme_news(sb, lookback_days: int) -> list[dict]:
     unit-testable. Real (non-mock) rows only; deduped by headline text so a story
     that appeared under several themes / on several run dates counts once.
 
-    **Reads BOTH `market_news` and `theme_news`** (ADR-0139). The docstring here
+    **Reads BOTH `market_news` and `theme_news`** (ADR-0141). The docstring here
     used to carry this caveat:
 
         "today's theme_news is news collected *for the Tier-1 anchor themes*, so

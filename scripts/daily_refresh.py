@@ -960,7 +960,7 @@ def persist_market_news(run_date: date, items: list[dict]) -> int:
 def load_market_corpus(run_date: date, lookback_days: int = 7) -> list[str]:
     """The documents narrative tracking scores: the UN-THEMED corpus only.
 
-    THIS CHANGED ON 2026-07-28 (ADR-0140), and the previous docstring argued the
+    THIS CHANGED ON 2026-07-28 (ADR-0141), and the previous docstring argued the
     opposite:
 
         "BOTH, deliberately... excluding [themed news] would throw away most of
@@ -1022,7 +1022,7 @@ def load_market_corpus(run_date: date, lookback_days: int = 7) -> list[str]:
 
     if unthemed:
         print(f"[narrative_tracker] scoring {len(unthemed)} un-themed documents "
-              f"(themed news excluded from the denominator — ADR-0140).")
+              f"(themed news excluded from the denominator — ADR-0141).")
         return unthemed
 
     try:

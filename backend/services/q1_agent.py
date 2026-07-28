@@ -59,6 +59,7 @@ from .book_metrics import (
     GEO_MAP,
 )
 from .mandate import DEFAULT_MANDATE, Mandate
+from .signal import signal_payload
 from .scenario_analysis import (
     run_scenario_analysis,
     run_scenario_analysis_with_scenarios,
@@ -3691,10 +3692,64 @@ def _persist_to_supabase(state: Q1State) -> bool:
                 base_row, on_conflict="run_date"
             ).execute()
 
+        # The mandate-free signal, as its own rows (migration 055 / ADR-0148).
+        #
+        # Written AFTER the book and non-fatally, in that order and for that reason:
+        # the book is the deliverable and the signal is a second view of the same
+        # decision, so a signal write that fails must not cost a run that already
+        # produced a publishable book. The reverse ordering would let a missing
+        # migration 055 take down the whole pipeline.
+        try:
+            _persist_signal(sb, state)
+        except Exception as exc:  # noqa: BLE001 — see above
+            print(
+                f"[_persist_to_supabase] signal rows skipped "
+                f"({exc.__class__.__name__}): {exc}. Apply migration 055."
+            )
+
         return True
     except Exception as exc:
         print(f"[_persist_to_supabase] Failed to persist: {exc}")
         return False
+
+
+def _persist_signal(sb: Client, state: Q1State) -> None:
+    """Write one `book_signal` row per name.
+
+    Upserts on `(run_date, asset, direction)` so a rerun of the same date replaces
+    its own rows rather than accumulating duplicates — the same discipline
+    `research_recommendations` applies on `run_date`.
+    """
+    payload = state.get("signal") or {}
+    rows = payload.get("signals") or []
+    if not rows:
+        return
+
+    run_date = state["run_date"]
+    sb.table("book_signal").upsert(
+        [
+            {
+                "run_date": run_date,
+                "asset": row["asset"],
+                "direction": row["direction"],
+                "theme": row.get("theme"),
+                "theme_id": row.get("theme_id"),
+                "edge_score": row.get("edge_score"),
+                "conviction": row.get("conviction"),
+                "vol": row.get("vol"),
+                "hype_score": row.get("hype_score"),
+                "thesis": row.get("thesis"),
+                "catalysts": row.get("catalysts"),
+                "risk": row.get("risk"),
+                "counter_thesis": row.get("counter_thesis"),
+                "time_horizon": row.get("time_horizon"),
+                "citations": row.get("citations"),
+            }
+            for row in rows
+        ],
+        on_conflict="run_date,asset,direction",
+    ).execute()
+    print(f"[_persist_to_supabase] wrote {len(rows)} signal rows for {run_date}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3836,6 +3891,21 @@ def run_q1_agent(
         state = reason_picks(state)
         state = verify_citations(state)
         retry_count += 1
+
+    # THE SIGNAL, captured here and nowhere else: the picks are final (the retry
+    # loop is done) and nothing has sized them yet. Taking it at this exact point is
+    # what makes the mandate-free claim structural rather than a promise — there are
+    # no weights in scope to leak, because they do not exist until the next line.
+    #
+    # This is the artefact a consumer with their OWN capital base and their own caps
+    # can actually use; the sized book below is one instantiation of it under one
+    # mandate. See ADR-0148.
+    state["signal"] = signal_payload(
+        run_date=state["run_date"],
+        picks=state.get("picks", []),
+        candidates=state.get("candidates", []),
+        lens=state.get("lens"),
+    )
 
     # Size once, after the picks are final. Sizing before the retry loop meant a
     # retry re-picked without re-sizing, leaving weights that belonged to the

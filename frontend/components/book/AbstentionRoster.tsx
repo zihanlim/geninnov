@@ -15,6 +15,7 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { abstainedThemes, type ThemeEdge } from "@/lib/themeSignals";
 import { ScrollArea } from "@/components/ScrollArea";
+import { DivergingBar } from "@/components/book/MiniPlot";
 
 const fmtSigned = (v: number | null, dp = 2): string =>
   v === null || v === undefined || Number.isNaN(v)
@@ -93,6 +94,18 @@ export default function AbstentionRoster({
   const clearedBar = Object.values(edgeByTheme).filter(
     (e) => e.edge_score !== null && Math.abs(e.edge_score) >= abstainThreshold,
   ).length;
+  const scoredThemes = Object.entries(edgeByTheme)
+    .flatMap(([themeId, edge]) =>
+      edge.edge_score === null
+        ? []
+        : [{ themeId, name: themeNames[themeId] ?? themeId, score: edge.edge_score }]
+    )
+    .sort((left, right) => Math.abs(right.score) - Math.abs(left.score));
+  const edgeScale = Math.max(
+    abstainThreshold,
+    ...scoredThemes.map((theme) => Math.abs(theme.score)),
+    0.01
+  );
 
   // Scroll the focused (held-out) theme's row into view once it renders.
   const focusRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -127,6 +140,34 @@ export default function AbstentionRoster({
           )}
         </span>
       </div>
+
+      {scoredThemes.length > 0 && (
+        <div className="border-b border-border px-[18px] py-3">
+          <div className="mb-2 flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
+            <span>Theme edge map</span>
+            <span className="normal-case tracking-normal">short &larr; 0 &rarr; long</span>
+          </div>
+          <div className="grid gap-x-5 gap-y-2 sm:grid-cols-2 wide:grid-cols-3">
+            {scoredThemes.map((theme) => (
+              <div
+                key={theme.themeId}
+                className="grid grid-cols-[minmax(0,1fr)_88px_auto] items-center gap-2 text-[10.5px]"
+              >
+                <span className="truncate text-text-secondary" title={theme.name}>
+                  {theme.name}
+                </span>
+                <DivergingBar
+                  value={theme.score}
+                  maximum={edgeScale}
+                  color={theme.score >= 0 ? "var(--long)" : "var(--short)"}
+                  label={`${theme.name} EdgeScore ${fmtSigned(theme.score)}`}
+                />
+                <span className="num text-text-secondary">{fmtSigned(theme.score)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {scored === 0 ? (
         <div className="p-[18px] text-[12.5px] text-text-tertiary leading-[1.6]">

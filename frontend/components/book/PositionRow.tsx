@@ -20,6 +20,7 @@ import EdgeBars from "@/components/book/EdgeBars";
 import SizingChainView from "@/components/book/SizingChainView";
 import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import { type IndependentIdeas } from "@/components/book/PoolDepth";
+import type { CandidateRow } from "@/components/book/ClearedNotTaken";
 import {
   AdvisoryDerivation,
   canRenderAdvisoryBody,
@@ -65,8 +66,27 @@ function SubHead({
 }) {
   return (
     <div
-      className={`text-[11px] uppercase tracking-[0.12em] text-text-secondary font-semibold mb-2 ${className}`}
+      className={`text-[11.5px] uppercase tracking-[0.12em] text-text-primary font-bold mb-2.5 ${className}`}
     >
+      {children}
+    </div>
+  );
+}
+
+function SubCard({
+  title,
+  children,
+  className = "",
+}: {
+  title?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`rounded-md border border-border bg-bg-surface p-3.5 ${className}`}
+    >
+      {title && <SubHead>{title}</SubHead>}
       {children}
     </div>
   );
@@ -90,6 +110,7 @@ export function PositionRow({
   scenarios,
   repl,
   bookRunDate,
+  clearedAlternatives,
 }: {
   pick: Pick;
   rank: number;
@@ -108,6 +129,15 @@ export function PositionRow({
   scenarios: ScenarioResult[];
   repl?: ReplicationNames | null;
   bookRunDate?: string | null;
+  /**
+   * Candidates that shared this held position's theme AND direction and
+   * were considered by L5 but not picked. Anchored on
+   * `#cleared-${asset}-${direction}` in ClearedNotTaken so the reader can
+   * jump from "why this name" to "what we passed on instead" without a
+   * second fetch or a route hop. Empty array when none — the panel
+   * renders nothing.
+   */
+  clearedAlternatives?: CandidateRow[];
 }) {
   const isLong = pick.direction === "long";
   const dirColor = isLong ? "var(--long)" : "var(--short)";
@@ -352,22 +382,34 @@ export function PositionRow({
 
       {open && (
         <div className="px-[18px] pb-5 pt-1 bg-bg-elevated/40">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div>
-              <SubHead>Thesis</SubHead>
-              {showProse && pick.thesis ? (
-                <CitationList text={pick.thesis} citations={citations} />
-              ) : (
-                <p className="m-0 text-[12.5px] text-text-tertiary leading-[1.6]">
-                  {pick.thesis
-                    ? "Withheld — this run's thesis did not pass citation verification, so it is not shown."
-                    : "No thesis persisted for this position."}
-                </p>
-              )}
+          {/*
+            Expanded-panel layout: a flat grid where each SubCard is placed on
+            an explicit `lg:row-start-N` / `lg:col-start-N` cell. Adjacent pairs
+            (Thesis | Edge decomposition, Counter-thesis | Sizing, etc.) share
+            a row, and `items-stretch` makes that row as tall as its taller
+            cell -- so paired cards have aligned tops AND aligned bottoms. The
+            five-row layout is the same pairs the eye already read as one
+            "review stack" but no longer drifts vertically between columns.
+
+            On mobile (grid-cols-1) the `lg:` row/col classes are inert and the
+            SubCards flow in source order, which is preserved as "left column
+            first, then right column" so the mobile narrative is unchanged.
+          */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 items-stretch gap-3">
+            <SubCard className="lg:row-start-1 lg:col-start-1" title="Thesis">
+                {showProse && pick.thesis ? (
+                  <CitationList text={pick.thesis} citations={citations} />
+                ) : (
+                  <p className="m-0 text-[12.5px] text-text-tertiary leading-[1.6]">
+                    {pick.thesis
+                      ? "Withheld — this run's thesis did not pass citation verification, so it is not shown."
+                      : "No thesis persisted for this position."}
+                  </p>
+                )}
+              </SubCard>
 
               {showProse && pick.counter_thesis && (
-                <>
-                  <SubHead className="mt-4">Counter-thesis</SubHead>
+                <SubCard className="lg:row-start-2 lg:col-start-1" title="Counter-thesis">
                   <div
                     className="rounded-md px-3 py-2.5 text-[12.5px] leading-[1.6] border"
                     style={{
@@ -404,39 +446,39 @@ export function PositionRow({
                         : "away from it."}
                     </p>
                   )}
-                </>
+                </SubCard>
               )}
 
-              {showProse && pick.catalysts && pick.catalysts.length > 0 && (
-                <>
-                  <SubHead className="mt-4">Catalysts</SubHead>
+              {pick.catalysts && pick.catalysts.length > 0 && (
+                <SubCard className="lg:row-start-3 lg:col-start-1" title="Catalysts">
                   <ul className="m-0 pl-[18px] leading-[1.7] text-[12.5px]">
                     {pick.catalysts.map((c, i) => (
                       <li key={i}>{c}</li>
                     ))}
                   </ul>
-                </>
-              )}
-              {pick.time_horizon && (
-                <div className="text-[11px] text-text-tertiary mt-3">
-                  Horizon:{" "}
-                  <span className="num text-text-secondary">
-                    {pick.time_horizon}
-                  </span>
-                </div>
+                  {pick.time_horizon && (
+                    <div className="text-[11px] text-text-tertiary mt-3">
+                      Horizon:{" "}
+                      <span className="num text-text-secondary">
+                        {pick.time_horizon}
+                      </span>
+                    </div>
+                  )}
+                </SubCard>
               )}
 
-              {/* P1 — marginal contribution to the whole book. */}
-              <SubHead className="mt-4">Contribution to book</SubHead>
-              <PositionMarginalRisk marginal={marginal} sibling={sibling} />
-            </div>
+              <SubCard className="lg:row-start-4 lg:col-start-1" title="Contribution to book">
+                <PositionMarginalRisk marginal={marginal} sibling={sibling} />
+              </SubCard>
 
-            <div>
-              <SubHead>
-                Why {isLong ? "long" : "short"} — EdgeScore decomposition
-              </SubHead>
-              {hasEdge && edge ? (
-                <div className="mb-4">
+            <SubCard
+                className="lg:row-start-1 lg:col-start-2"
+                title={
+                  <>Why {isLong ? "long" : "short"} — EdgeScore decomposition</>
+                }
+              >
+                {hasEdge && edge ? (
+                  <div>
                   <EdgeBars
                     edge={edge}
                     weights={edgeWeights}
@@ -451,8 +493,8 @@ export function PositionRow({
                     </p>
                   )}
                 </div>
-              ) : (
-                <p className="m-0 mb-4 text-[12px] text-text-tertiary leading-[1.6]">
+                ) : (
+                  <p className="m-0 text-[12px] text-text-tertiary leading-[1.6]">
                   Direction is <code className="num">sign(EdgeScore)</code>, where{" "}
                   <code className="num">
                     EdgeScore = 0.35·Trend + 0.25·Regime + 0.20·Carry +
@@ -466,21 +508,22 @@ export function PositionRow({
                   .
                 </p>
               )}
+              </SubCard>
 
-              <SubHead>Sizing — conviction × inverse-vol</SubHead>
-              <div className="mb-1">
+              <SubCard title={"Sizing — conviction × inverse-vol"}>
                 <SizingChainView chain={sizingChain} />
-              </div>
+              </SubCard>
 
               {pick.factor_tilts && Object.keys(pick.factor_tilts).length > 0 && (
-                <>
+                <SubCard
+                  title={
+                    <>Factor exposure — {pick.asset}&rsquo;s own betas</>
+                  }
+                >
                   {/* These are THIS ASSET's own betas, joined from the L2
                       factor_exposures table — not the book's. Until ADR-0075 the model
                       was asked to fill this field and copied one aggregate row into all
                       ten positions, so SHY and ARKK printed the same market beta. */}
-                  <SubHead className="mt-4">
-                    Factor exposure — {pick.asset}&rsquo;s own betas
-                  </SubHead>
                   <div className="flex flex-wrap gap-1.5">
                     {Object.entries(pick.factor_tilts).map(([k, v]) => (
                       <span
@@ -504,10 +547,10 @@ export function PositionRow({
                       <>Fit quality not recorded.</>
                     )}
                   </p>
-                </>
+                </SubCard>
               )}
 
-              <SubHead className="mt-4">Under stress</SubHead>
+              <SubCard className="lg:row-start-4 lg:col-start-2" title="Under stress">
               {perScenario.length > 0 ? (
                 <ul className="m-0 pl-0 list-none space-y-1">
                   {perScenario.map((s) => (
@@ -541,14 +584,53 @@ export function PositionRow({
                   ; see <Link href="/risk" className="text-accent">Risk</Link>.
                 </p>
               )}
+              </SubCard>
 
               {showProse && pick.risk && (
-                <>
-                  <SubHead className="mt-4">Risk</SubHead>
+                <SubCard className="lg:row-start-5 lg:col-start-1" title="Risk">
                   <p className="m-0 text-[12.5px] leading-[1.7]">{pick.risk}</p>
-                </>
+                </SubCard>
               )}
-            </div>
+
+              {clearedAlternatives && clearedAlternatives.length > 0 && (
+                <SubCard className="lg:row-start-5 lg:col-start-2" title="Also cleared, not taken">
+                  {/* Cleared alternatives for THIS position: same theme AND same
+                      direction. Renders up to four tickers as deep links into the
+                      passed-on panel, plus a fallback to the section anchor when
+                      the list overflows. Built in book/page.tsx via
+                      clearedByHeldAsset so the matching logic lives in one place
+                      (theme_id null-handling + held-asset exclusion, see the
+                      useMemo above). Anchors live on ClearedNotTaken row — keep
+                      the format in sync. */}
+                  <p className="m-0 text-[12px] text-text-secondary leading-[1.6]">
+                    L5 passed over
+                    {clearedAlternatives.slice(0, 4).map((c, i) => (
+                      <span key={`${c.asset}-${c.direction}`}>
+                        {i > 0 ? "," : ""}{" "}
+                        <a
+                          href={`#cleared-${c.asset}-${c.direction}`}
+                          className="text-accent hover:underline num"
+                          title={`${c.asset} (${c.direction})${
+                            c.edge_score !== null
+                              ? ` — EdgeScore ${fmtSigned(c.edge_score)}`
+                              : ""
+                          } — passed over by L5`}
+                        >
+                          {c.asset}
+                        </a>
+                      </span>
+                    ))}
+                    {clearedAlternatives.length > 4 && (
+                      <> and {clearedAlternatives.length - 4} more</>
+                    )}
+                    {" in the same theme and direction — "}
+                    <a href="#not-taken" className="text-accent hover:underline">
+                      see the passed-on panel
+                    </a>
+                    .
+                  </p>
+                </SubCard>
+              )}
           </div>
         </div>
       )}

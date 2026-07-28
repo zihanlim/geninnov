@@ -1,17 +1,9 @@
 ﻿// frontend/components/book/WorkedExamplePanel.tsx
 //
-// ADR-0081 \u2014 a `<details>`-collapsed panel on `/book` that renders the
-// lineage trail for ONE position per page load. The chosen position is the
-// highest-|EdgeScore| pick (first long on tie), per `pickWorkedExamplePosition`.
-// The panel is collapsed by default so it does not bloat the page; a reader
-// who came for a different fact is not forced past it.
-//
-// This component is additive: it does not replace the always-visible
-// rationale, EdgeBars, SizingChainView, factor_tilts, scenarios, citations or
-// any other primitive on the row. It surfaces the same data in a different
-// order \u2014 the order the pipeline performed it in.
-
-"use client";
+// ADR-0081 - an open-by-default lineage panel on `/book` that renders the
+// complete five-step path from raw signal to scenario contribution. It remains
+// a native `<details>` so a reader can collapse it after scanning the evidence.
+// The steps use a responsive grid to keep the open state compact.
 
 import { useMemo } from "react";
 import { DisclosureChevron } from "@/components/DisclosureChevron";
@@ -86,6 +78,7 @@ export function WorkedExamplePanel({
       className="card mb-6 group"
       data-testid="worked-example-panel"
       aria-label={`Worked example lineage for ${position.asset}`}
+      open
     >
       <summary className="card-header cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
         <span className="card-title flex items-baseline gap-2 min-w-0">
@@ -109,9 +102,12 @@ export function WorkedExamplePanel({
           a step whose column is not yet persisted renders{" "}
           <span className="num">{"\u2014"}</span> with the reason.
         </p>
-        <ol className="m-0 p-0 list-none space-y-4">
+        <ol className="m-0 p-0 list-none grid md:grid-cols-2 wide:grid-cols-3 gap-3">
           {steps.map((step) => (
-            <li key={step.number}>
+            <li
+              key={step.number}
+              className="min-w-0 rounded-md border border-border bg-bg-primary p-3"
+            >
               <StepNumbered step={step} />
             </li>
           ))}

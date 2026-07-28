@@ -130,7 +130,7 @@ export default function ClearedNotTaken({
 
   const shorts = notTaken.filter((c) => c.direction === "short").length;
 
-  // The panel collapses, so the summary has to carry the FINDING, not a count.
+  // The panel opens by default, but its collapsed summary still carries the finding.
   //
   // This is the answer to the sharpest question a reviewer asks — "what did you
   // look at and decline?" — and its own docstring says so. Hiding it behind
@@ -172,6 +172,7 @@ export default function ClearedNotTaken({
       title="Cleared the screen — not taken"
       summary={summary}
       className="mb-6"
+      defaultOpen
     >
 
       <p className="m-0 px-[18px] py-3 text-[12.5px] text-text-secondary leading-[1.6] max-w-[92ch]">
@@ -229,6 +230,11 @@ export default function ClearedNotTaken({
                 <tr
                   key={`${c.asset}-${c.direction}`}
                   className="border-b border-border last:border-b-0"
+                  // Stable anchor so a PositionRow on the same page can deep-link
+                  // to THIS specific cleared candidate, not just to the section.
+                  // Format documented where it is consumed: PositionRow.tsx
+                  // (clearedAlternatives) renders `#cleared-${asset}-${direction}`.
+                  id={`cleared-${c.asset}-${c.direction}`}
                 >
                   <td className="px-[18px] py-[7px] num font-medium">{c.asset}</td>
                   {/* Hollow, not filled — these are sides the book DECLINED, and a

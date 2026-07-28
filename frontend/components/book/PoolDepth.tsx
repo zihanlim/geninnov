@@ -1,5 +1,7 @@
 "use client";
 
+import { ProgressBar } from "@/components/book/MiniPlot";
+
 /**
  * Why isn't this book five long and five short?
  *
@@ -107,6 +109,31 @@ function Side({
           <span className="font-semibold">{count}</span> independent idea
           {count === 1 ? "" : "s"} → <span className="font-semibold">{held}</span> held
         </span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 mb-2.5">
+        {[
+          { label: "Candidates", value: names, color: "var(--border-strong)" },
+          { label: "Independent", value: count, color: "var(--accent)" },
+          {
+            label: "Held",
+            value: held,
+            color: label === "Longs" ? "var(--long)" : "var(--short)",
+          },
+        ].map((stage) => (
+          <div key={stage.label} className="min-w-0">
+            <div className="mb-1 flex items-center justify-between gap-1 text-[10px] text-text-tertiary">
+              <span className="truncate">{stage.label}</span>
+              <span className="num text-text-secondary">{stage.value}</span>
+            </div>
+            <ProgressBar
+              value={stage.value}
+              maximum={names}
+              color={stage.color}
+              label={`${label} ${stage.label.toLowerCase()} ${stage.value} of ${names}`}
+            />
+          </div>
+        ))}
       </div>
 
       <p className="m-0 mb-2 text-[12px] leading-[1.6] max-w-[92ch]">

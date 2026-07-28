@@ -1,18 +1,11 @@
-// The collapsed summary must carry the FINDING, not a count.
+// The panel opens by default, but its summary must still carry the FINDING.
 //
-// ClearedNotTaken is ~29% of /book and collapses by default, so whatever the
-// <summary> says is all most readers will ever see of it. Its own docstring
-// argues the panel answers the sharpest question a reviewer asks, and a summary
-// reading "27 held back" would hide exactly the part that makes it worth
-// answering — the name that was genuinely INDEPENDENT of everything held and
-// was passed over anyway.
+// A reader can collapse ClearedNotTaken after scanning the candidate table, so
+// the summary cannot degrade to bookkeeping. It names the most independent
+// candidate that cleared every screen and was passed over.
 //
 // Safari and Firefox do not auto-expand a closed <details> for find-in-page, so
-// the ticker must appear in the summary or it is unsearchable.
-//
-// Asserted against the source rather than a render: the summary is assembled
-// from live Supabase rows, so there is no fixture that would exercise the real
-// string without inventing data.
+// the ticker must remain in the summary even though the initial state is open.
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -23,10 +16,11 @@ const SRC = readFileSync(
   "utf8",
 );
 
-describe("ClearedNotTaken collapsed summary", () => {
-  it("collapses behind CollapsibleSection rather than rendering a bare card", () => {
+describe("ClearedNotTaken disclosure summary", () => {
+  it("opens inside CollapsibleSection rather than rendering a bare card", () => {
     expect(SRC).toContain("<CollapsibleSection");
     expect(SRC).toMatch(/summary=\{summary\}/);
+    expect(SRC).toContain("defaultOpen");
   });
 
   it("names the most independent candidate, not just a count", () => {

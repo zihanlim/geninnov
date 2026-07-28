@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { SegmentedBar } from "@/components/book/MiniPlot";
 import {
   THIN_RECORD_THRESHOLD,
   buildTrackRecord,
@@ -148,8 +149,27 @@ export default function TrackRecordPanel() {
         <div className="num text-[19px] font-semibold leading-[1.15]">
           {claim.headline}
         </div>
-        <div className="text-[11px] text-text-tertiary leading-[1.4] mb-3">
+        <div className="text-[11px] text-text-tertiary leading-[1.4] mb-2">
           {claim.label}
+        </div>
+
+        <div className="mb-3">
+          <SegmentedBar
+            total={tr.total}
+            label={`${tr.hits} hits, ${tr.misses} misses, ${tr.flats} flat, ${tr.void} void, ${tr.pending} pending`}
+            segments={[
+              { label: "Hits", value: tr.hits, color: "var(--long)" },
+              { label: "Misses", value: tr.misses, color: "var(--short)" },
+              { label: "Flat", value: tr.flats, color: "var(--text-tertiary)" },
+              { label: "Void", value: tr.void, color: "var(--warning)" },
+              { label: "Pending", value: tr.pending, color: "var(--border-strong)" },
+            ]}
+          />
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10.5px] text-text-tertiary">
+            <span>Hit <span className="num text-text-secondary">{tr.hits}</span></span>
+            <span>Miss <span className="num text-text-secondary">{tr.misses}</span></span>
+            <span>Pending <span className="num text-text-secondary">{tr.pending}</span></span>
+          </div>
         </div>
 
         <p className="m-0 text-[12px] text-text-secondary leading-[1.6]">{claim.note}</p>

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { ProgressBar } from "@/components/book/MiniPlot";
 
 /**
  * Would you get the same book twice?
@@ -109,7 +110,7 @@ export default function Replication() {
     value: number | null;
     ideas: number | null;
   }) => (
-    <div>
+    <div className="min-w-0">
       <div className="num text-[19px] font-semibold leading-[1.15]">
         {fmtPct(value)}
       </div>
@@ -123,6 +124,14 @@ export default function Replication() {
           </>
         )}
       </div>
+      {value !== null && (
+        <ProgressBar
+          value={value}
+          color="var(--warning)"
+          label={`${label} turnover ${fmtPct(value)}`}
+          className="mt-2"
+        />
+      )}
     </div>
   );
 
@@ -138,7 +147,7 @@ export default function Replication() {
       </div>
 
       <div className="px-[18px] py-3.5">
-        <div className="flex flex-wrap gap-x-8 gap-y-3 mb-3">
+        <div className="grid grid-cols-1 gap-3 mb-3 sm:grid-cols-3">
           <Side label="whole book" value={overall} ideas={null} />
           <Side label="long side" value={long} ideas={meta.longIdeas} />
           <Side label="short side" value={short} ideas={meta.shortIdeas} />

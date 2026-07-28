@@ -1,4 +1,4 @@
-// frontend/components/book/AnswerCards.tsx
+﻿// frontend/components/book/AnswerCards.tsx
 //
 // The four questions a PM arrives with, answered above the fold.
 //

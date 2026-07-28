@@ -1,6 +1,7 @@
 "use client";
 
 import { comparabilityCaveat, turnover } from "@/lib/turnover";
+import { SegmentedBar } from "@/components/book/MiniPlot";
 
 /**
  * How much of the book changed since the last run?
@@ -60,6 +61,17 @@ export default function BookTurnover({
             <span className="num">{opened.length}</span> opened,{" "}
             <span className="num">{closed.length}</span> closed
           </span>
+        </div>
+        <div className="mb-3">
+          <SegmentedBar
+            total={kept.length + opened.length + closed.length}
+            label={`${kept.length} held through, ${opened.length} opened, ${closed.length} closed`}
+            segments={[
+              { label: "Held through", value: kept.length, color: "var(--text-tertiary)" },
+              { label: "Opened", value: opened.length, color: "var(--long)" },
+              { label: "Closed", value: closed.length, color: "var(--short)" },
+            ]}
+          />
         </div>
         <div className="text-[12px] text-text-secondary leading-[1.6] space-y-0.5">
           {kept.length > 0 && (

@@ -16,6 +16,28 @@ def _mock_allowed() -> bool:
     return os.environ.get("ANDROMEDA_ALLOW_MOCK", "1").strip().lower() not in ("0", "false", "no")
 
 
+def _within_lookback(item: dict, date_from: str) -> bool:
+    """False only when the item carries a PARSEABLE date before the window.
+
+    Defense in depth behind the API-side ``freshness`` range that
+    call_brave_mcp.js sends since 2026-07-28. For a year before that the script
+    sent ``from=``, a parameter Brave does not have and ignores without
+    erroring, so the lookback existed only in this codebase's intentions and
+    2001–2025 evergreen explainers landed in theme_news. If the API-side filter
+    ever regresses that silently again, this drop is what contains it.
+
+    An unparseable or missing date is KEPT: with ``freshness`` applied the feed
+    cannot return anything older than ``date_from``, and "date unknown" must
+    not be treated as "old" — the same rule (ADR-0066) that stops the JS side
+    stamping it as "today"."""
+    raw = (item.get("date") or "")[:10]
+    try:
+        published = date.fromisoformat(raw)
+    except ValueError:
+        return True
+    return published >= date.fromisoformat(date_from)
+
+
 THEME_KEYWORDS = {
     "Fed Policy":       ["Federal Reserve", "FOMC", "interest rates", "monetary policy"],
     "Inflation":        ["CPI", "PPI", "PCE", "inflation", "price pressure", "hot CPI"],
@@ -103,11 +125,15 @@ def fetch_news_for_theme(theme: str, lookback_days: int = 7) -> list[dict]:
         )
         if result.returncode == 0:
             items = json.loads(result.stdout)
-            # Tag provenance so mock data can never masquerade as real (R0b).
+            kept = []
             for it in items:
                 if isinstance(it, dict):
+                    # Tag provenance so mock data can never masquerade as real (R0b).
                     it.setdefault("source", "brave")
-            return items
+                    if not _within_lookback(it, date_from):
+                        continue
+                kept.append(it)
+            return kept
     except Exception:
         pass
 
@@ -182,6 +208,8 @@ def fetch_market_news(lookback_days: int = 7) -> list[dict]:
                 continue
             headline = (it.get("headline") or "").strip()
             if not headline:
+                continue
+            if not _within_lookback(it, date_from):
                 continue
             key = headline.lower()
             if key in seen:

@@ -1,10 +1,16 @@
 """
 Tests for brave_client.py
 """
+import json
 import pytest
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import patch
-from backend.data.brave_client import fetch_news_for_theme, _mock_news, THEME_KEYWORDS
+from backend.data.brave_client import (
+    fetch_news_for_theme,
+    fetch_market_news,
+    _mock_news,
+    THEME_KEYWORDS,
+)
 
 
 class TestMockNews:
@@ -98,9 +104,63 @@ class TestFetchNewsForTheme:
     def test_mcp_returns_zero_code_returns_data(self, mock_run):
         """When MCP returns returncode 0, its data is used and tagged 'brave'."""
         mock_run.return_value.returncode = 0
-        mock_run.return_value.stdout = '[{"headline": "Test", "date": "2026-07-21", "url": "https://test.com"}]'
+        mock_run.return_value.stdout = json.dumps(
+            [{"headline": "Test", "date": date.today().isoformat(), "url": "https://test.com"}]
+        )
         result = fetch_news_for_theme("Fed Policy")
         assert len(result) == 1
         assert result[0]["headline"] == "Test"
         # Real MCP data is source-tagged so it is distinguishable from mock.
         assert result[0]["source"] == "brave"
+
+
+class TestLookbackFilter:
+    """Defense in depth behind the API-side `freshness` range that
+    scripts/call_brave_mcp.js sends since 2026-07-28. For a year before that
+    the script sent `from=`, a parameter Brave does not have and ignores
+    without erroring, so the lookback existed only in this codebase's
+    intentions — 43 of the 2026-07-28 run's 386 headlines predated 2026. If
+    the API-side filter ever regresses that silently again, the drop tested
+    here is what keeps evergreen explainers out of theme_news."""
+
+    @staticmethod
+    def _stdout(mock_run, items):
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = json.dumps(items)
+
+    @patch("backend.data.brave_client.subprocess.run")
+    def test_drops_items_published_before_the_window(self, mock_run):
+        self._stdout(mock_run, [
+            {"headline": "Junk Bonds - Econlib", "date": "2018-02-05", "url": "https://old"},
+            {"headline": "Fresh story", "date": date.today().isoformat(), "url": "https://new"},
+        ])
+        result = fetch_news_for_theme("Fed Policy", lookback_days=7)
+        assert [i["headline"] for i in result] == ["Fresh story"]
+
+    @patch("backend.data.brave_client.subprocess.run")
+    def test_window_start_is_inclusive(self, mock_run):
+        edge = (date.today() - timedelta(days=7)).isoformat()
+        self._stdout(mock_run, [{"headline": "Edge", "date": edge, "url": "https://e"}])
+        result = fetch_news_for_theme("Fed Policy", lookback_days=7)
+        assert [i["headline"] for i in result] == ["Edge"]
+
+    @patch("backend.data.brave_client.subprocess.run")
+    def test_keeps_undated_items(self, mock_run):
+        """date: null means 'unknown', not 'old'. The API-side freshness range
+        already bounds what can come back, and a missing page_age must not
+        silently delete a fresh story (nor, upstream, be stamped 'today')."""
+        self._stdout(mock_run, [
+            {"headline": "No page_age", "date": None, "url": "https://x"},
+            {"headline": "Garbage age", "date": "2 weeks ago", "url": "https://y"},
+        ])
+        result = fetch_news_for_theme("Fed Policy", lookback_days=7)
+        assert [i["headline"] for i in result] == ["No page_age", "Garbage age"]
+
+    @patch("backend.data.brave_client.subprocess.run")
+    def test_market_news_applies_the_same_window(self, mock_run):
+        self._stdout(mock_run, [
+            {"headline": "What is OPEC+ - EIA", "date": "2023-12-18", "url": "https://old"},
+            {"headline": "Markets today", "date": date.today().isoformat(), "url": "https://new"},
+        ])
+        result = fetch_market_news(lookback_days=7)
+        assert [i["headline"] for i in result] == ["Markets today"]

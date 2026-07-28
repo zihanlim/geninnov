@@ -465,7 +465,7 @@ L7: frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs}.tsx
 
 | Table | Description | Key Columns |
 |-------|-------------|-------------|
-| `themes` | Master theme registry | id, name, keywords, run_date |
+| `themes` | Master theme registry | id, name, keywords, run_date | **`promotion_basis` / `promoted_on` / `promotion_evidence`** (m051, [ADR-0134](docs/adrs/0134-a-prior-and-a-discovery-are-different-claims.md)) record whether a MEASUREMENT preceded the theme — distinct from `source`, which records which method named it. `operator_directed` vs `measured_discovery` is the load-bearing distinction; a `practitioner_prior` with NULL evidence is correct, not missing.
 | `theme_assets` | Ticker assignments per theme/run_date | theme_id, ticker, run_date |
 | `theme_signals` | Per-theme signals (daily) | theme_id, run_date, mention_count_1d, avg_sentiment, price_corr, momentum_raw, hype_score |
 | `theme_signals_history` | Historical hype scores for momentum calc; signal provenance | theme_id, run_date, hype_score, momentum_raw (robust median/MAD z-score, ADR-0021), **`signed_corr`** + **`crowding`** (migration 019, ADR-0021), **`data_source`** (real/mock/mixed/none — migration 020, ADR-0023) |

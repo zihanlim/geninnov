@@ -5,6 +5,7 @@ import { toDisplayScore, edgeRationale, plainRationale, type ThemeEdge } from "@
 import { EdgeDirectionChip, ProvenanceDot, PositionsLink, isThemeAbstained } from "./ThemeEdgeChips";
 import { isSynthetic, provenanceLabel, type ThemeProvenance } from "@/lib/themeProvenance";
 import type { NewsItem } from "@/lib/news";
+import { BASIS_COPY, type PromotionBasis } from "@/lib/themeOrigin";
 
 export interface ConvictionTheme {
   id: string;
@@ -21,6 +22,10 @@ export interface ConvictionTheme {
   mention_count_1d?: number | null;
   /** Trailing 7-day average daily mentions — the headline attention volume. */
   mention_count_7d_avg?: number | null;
+  /** Why this theme exists — ADR-0134. `tier` says what kind of theme it is;
+   *  this says whether a measurement preceded its creation. */
+  promotion_basis?: PromotionBasis | null;
+  promoted_on?: string | null;
   /**
    * Percentile band of the current HypeScore within this theme's own history.
    * "high" = crowded consensus, "low" = fading attention. Undefined when there
@@ -62,6 +67,25 @@ interface Props {
 // from position in the list — a conviction claim the system never computed.
 function rankLabel(rank: number): string {
   return `#${rank} by HypeScore`;
+}
+
+/** Provenance chip. Deliberately NOT a colour-coded quality ranking: a
+ *  practitioner prior is not a worse theme than a measured discovery, it is a
+ *  different kind of claim (ADR-0134). Only `measured_discovery` — the one basis
+ *  that asserts the system found the theme — is given emphasis; everything else
+ *  is neutral, because a stated prior deserves a label, not a demerit. */
+function originBadge(basis: PromotionBasis | null | undefined, promotedOn?: string | null) {
+  const b: PromotionBasis = basis ?? "unrecorded";
+  const copy = BASIS_COPY[b] ?? BASIS_COPY.unrecorded;
+  const title = promotedOn ? `${copy.detail} Promoted ${promotedOn}.` : copy.detail;
+  return (
+    <span
+      className={copy.claimsDiscovery ? "badge badge-tier-discovered" : "badge badge-neutral"}
+      title={title}
+    >
+      {copy.label.toUpperCase()}
+    </span>
+  );
 }
 
 function tierBadge(tier: string) {
@@ -143,6 +167,7 @@ export default function ConvictionCard({
           {rankLabel(rank)}
         </span>
         {tierBadge(theme.tier)}
+        {originBadge(theme.promotion_basis, theme.promoted_on)}
       </div>
 
       <div className="flex items-center gap-2 mb-1.5">

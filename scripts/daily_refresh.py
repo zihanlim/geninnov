@@ -37,9 +37,16 @@ from backend.tools.sentiment import batch_sentiment
 from backend.data.brave_client import (
     fetch_news_for_theme,
     fetch_market_news,
+    MARKET_SEED_QUERIES,
     THEME_KEYWORDS,
     coverage_keywords,
 )
+from backend.data.gdelt_client import fetch_market_news_gdelt
+
+#: How far back GDELT is asked to reach. 45 days is ~31 trading sessions, which
+#: clears ADR-0143's 20-session belief floor with margin, and GDELT's flat
+#: distribution means those days are genuinely populated rather than nominal.
+GDELT_LOOKBACK_DAYS = 45
 from backend.data.reddit_client import fetch_posts_for_theme
 from backend.services.narrative_tracker import (
     track_narratives,
@@ -1051,7 +1058,24 @@ def run_narrative_tracking(run_date: date) -> int:
     Returns the number of narrative signals built.
     """
     try:
+        # TWO providers (ADR-0144). Brave supplies density on recent days; GDELT
+        # supplies HISTORY — measured on the same 45-day window, Brave puts 48% of
+        # its documents in the last 7 days against GDELT's 18%, which is the
+        # difference between a recency ranking and an archive. Together they also
+        # end the single-source finding ADR-0094 had to disclose rather than gate.
         items = fetch_market_news(lookback_days=7)
+        try:
+            gdelt_items = fetch_market_news_gdelt(
+                MARKET_SEED_QUERIES, lookback_days=GDELT_LOOKBACK_DAYS
+            )
+            if gdelt_items:
+                print(f"[{run_date}] GDELT returned {len(gdelt_items)} headlines "
+                      f"over {GDELT_LOOKBACK_DAYS} days.")
+                items = items + gdelt_items
+        except Exception as exc:
+            print(f"[{run_date}] GDELT fetch failed ({exc.__class__.__name__}); "
+                  f"continuing on Brave alone — the corpus loses its history, "
+                  f"not its present.")
         if items:
             persist_market_news(run_date, items)
         else:

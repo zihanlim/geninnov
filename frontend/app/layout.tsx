@@ -18,7 +18,7 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Andromeda — Quantitative Macro Research",
+  title: "Andromeda Analytics — Quantitative Macro Research",
   description: "Systematic theme identification and trade generation · macro research at conviction scale.",
 };
 

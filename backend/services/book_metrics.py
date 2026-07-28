@@ -19,6 +19,14 @@ from typing import Optional
 import pandas as pd
 import yfinance as yf
 
+# Re-exported, not declared. The cap values live in `mandate.py` — see the note
+# beside HIGH_CORR_THRESHOLD below for why they moved.
+from .mandate import (  # noqa: F401  (re-exported for existing importers)
+    MAX_GEO_WEIGHT,
+    MAX_SECTOR_WEIGHT,
+    MAX_SINGLE_NAME_WEIGHT,
+)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Asset metadata
@@ -150,10 +158,20 @@ ASSETS: dict[str, AssetRecord] = {
 SECTOR_MAP: dict[str, str] = {t: r.sector for t, r in ASSETS.items()}
 GEO_MAP: dict[str, str] = {t: r.geo for t, r in ASSETS.items()}
 
-# Risk caps
-MAX_SINGLE_NAME_WEIGHT = 0.20      # no single position > 20% of book
-MAX_SECTOR_WEIGHT = 0.30           # no single sector > 30%
-MAX_GEO_WEIGHT = 0.35             # no single geography > 35%
+# Risk caps: MAX_SINGLE_NAME_WEIGHT / MAX_SECTOR_WEIGHT / MAX_GEO_WEIGHT are
+# imported at the top of this module and RE-EXPORTED, not declared.
+#
+# The values live in `mandate.py`, which is the one place they are written down and
+# the file `frontend/tests/unit/mandate-drift.test.ts` parses. They stay importable
+# from here because a dozen modules already do, and because a cap and the
+# SECTOR_MAP / GEO_MAP it is applied over belong to the same vocabulary.
+#
+# The comment this replaces asked the next person to keep the frontend's copy in
+# step by hand. That copy had already drifted twice: the single-name and geo caps
+# shipped TRANSPOSED (0.35 / 0.20), judging every position against the wrong ceiling
+# in both directions, and the gross limit still reads 200% against a sizer that has
+# enforced 100% since ADR-0037. A comment is not a mechanism; the drift test is.
+
 HIGH_CORR_THRESHOLD = 0.70         # flag pairs with correlation > this
 
 # A cap breach must not be decided by floating-point representation error.

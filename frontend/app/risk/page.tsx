@@ -874,18 +874,30 @@ function RiskPageInner() {
         <SourceCaveat source="portfolio_cumulative_return.daily_returns_count">
           {data.inception ? (
             <>
-              Realised, not simulated — but only{" "}
-              {data.inception.daily_returns_count} daily observation
+              Priced from actual closes, but{" "}
+              <strong>gross of transaction costs</strong>:{" "}
+              <span className="num">compute_daily_return</span> sums
+              weight × price return and subtracts nothing. The published book
+              reconstitutes itself every run and has turned over 50–77% of its
+              names between consecutive runs, so this curve is what a book would
+              have earned if each day&rsquo;s rebalance were instant and free. It
+              was neither, and the gap is not small at that turnover.
+              {" "}Only {data.inception.daily_returns_count} daily observation
               {data.inception.daily_returns_count === 1 ? "" : "s"} since{" "}
-              {data.inception.inception_date}, weekdays only.{" "}
-              <strong>Not yet a track record</strong> — no Sharpe, drawdown or
-              win rate from this sample is stable.
+              {data.inception.inception_date}, weekdays only —{" "}
+              <strong>not yet a track record</strong> on sample size either. The
+              forward record that does account for this is{" "}
+              <a href="/method/evidence#track-record" className="text-accent hover:underline">
+                pick outcomes
+              </a>
+              , which scores each published call at a fixed horizon.
             </>
           ) : (
             <>
               No since-inception row was returned, so the length of this series is
               unstated — read the shape below as the observations that exist, not
-              as a track record.
+              as a track record. It is also gross of transaction costs on a book
+              that reconstitutes itself every run.
             </>
           )}
         </SourceCaveat>

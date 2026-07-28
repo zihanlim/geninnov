@@ -36,6 +36,7 @@ import { useEffect, useState } from "react";
 import {
   emergingUncovered,
   fetchNarratives,
+  isCorroborated,
   sharePct,
   topSeries,
   toSeries,
@@ -283,7 +284,8 @@ export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
             <th className="font-normal py-1 pr-3 text-right">Share</th>
             <th className="font-normal py-1 pr-3 text-right">Velocity</th>
             <th className="font-normal py-1 pr-3">Status</th>
-            <th className="font-normal py-1">Already watched by</th>
+            <th className="font-normal py-1 pr-3">Already watched by</th>
+            <th className="font-normal py-1">Found by</th>
           </tr>
         </thead>
         <tbody>
@@ -308,9 +310,22 @@ export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
                 )}
               </td>
               <td className="py-1 pr-3 text-text-secondary">{s.latest.status}</td>
-              <td className="py-1 text-text-secondary">
+              <td className="py-1 pr-3 text-text-secondary">
                 {s.latest.covered_by ?? (
                   <span className="text-text-tertiary">nothing</span>
+                )}
+              </td>
+              {/* Two methods that fail differently agreeing is the strongest
+                  claim this board makes, so it is a column and not a tooltip.
+                  "frequency" alone is the norm, so it stays muted -- only
+                  corroboration is worth the reader's eye. */}
+              <td className="py-1 text-text-secondary">
+                {isCorroborated(s.latest) ? (
+                  <span title="Also proposed by the monthly LDA-intersect-embedding discovery job">
+                    {(s.latest.methods ?? []).join(" + ")}
+                  </span>
+                ) : (
+                  <span className="text-text-tertiary">frequency</span>
                 )}
               </td>
             </tr>

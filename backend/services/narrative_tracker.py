@@ -550,6 +550,7 @@ def persist_narrative_signals(
     sb,
     signals: list[NarrativeSignal],
     top_n: int = TOP_N_PERSISTED,
+    note: str = "",
 ) -> int:
     """Upsert the day's narrative signals. Best-effort: logs and returns 0 if the
     table isn't deployed, exactly as `persist_discovered_themes` does."""
@@ -580,7 +581,10 @@ def persist_narrative_signals(
         return 0
 
     emerging = [s for s in kept if s.status == "emerging" and s.covered_by is None]
-    print(f"[narrative_tracker] Persisted {len(rows)} phrases"
+    # `note` distinguishes the second write of a run. Corroboration re-persists to
+    # widen `methods`, and two byte-identical "Persisted 150 phrases" lines read
+    # as an accidental double-write rather than a deliberate update.
+    print(f"[narrative_tracker] Persisted {len(rows)} phrases{note}"
           f"{f' (dropped {dropped} below the top {top_n} by share)' if dropped else ''}. "
           f"{len(emerging)} emerging and not covered by an anchor theme.")
     for s in emerging[:10]:

@@ -41,7 +41,16 @@ from backend.data.brave_client import (
     coverage_keywords,
 )
 from backend.data.reddit_client import fetch_posts_for_theme
-from backend.services.narrative_tracker import track_narratives
+from backend.services.narrative_tracker import (
+    track_narratives,
+    persist_narrative_signals,
+)
+from backend.services.method_agreement import (
+    MIN_TERM_OVERLAP,
+    apply_corroboration,
+    corroborate,
+    load_discovered,
+)
 from backend.data.yahoo_client import fetch_price_data, correlation_with_mentions
 from backend.data.macro_fetcher import MacroFetcher
 from backend.data.polymarket_fetcher import PolymarketFetcher
@@ -1029,6 +1038,34 @@ def run_narrative_tracking(run_date: date) -> int:
         signals = track_narratives(
             supabase, run_date, docs, anchor_keywords=coverage_keywords()
         )
+
+        # Two-method agreement (ADR-0133). Frequency found these; the monthly
+        # LDA-intersect-embedding job proposed its own candidates. Where the two
+        # name the same narrative, that is two methods which FAIL DIFFERENTLY
+        # agreeing — frequency is fooled by repeated boilerplate, clustering by a
+        # topic that is coherent but tiny — so neither failure explains both.
+        #
+        # Runs AFTER track_narratives has persisted: corroboration only widens
+        # `methods` on rows that are already durable, so a failure here costs the
+        # badge and never the day's signals.
+        candidates = load_discovered(supabase, run_date)
+        if candidates:
+            matches = corroborate([sig.phrase for sig in signals], candidates, run_date)
+            if matches:
+                signals = apply_corroboration(signals, matches)
+                persist_narrative_signals(supabase, signals,
+                                          note=" (methods widened by corroboration)")
+                stale = max(m.days_stale for m in matches.values())
+                print(f"[method_agreement] {len(matches)} of {len(signals)} narratives "
+                      f"corroborated by the discovery run ({stale}d old at most).")
+                for m in sorted(matches.values(), key=lambda x: (x.tier, -len(x.shared)))[:6]:
+                    print(f"[method_agreement]   {m.phrase!r} ~ {m.label!r} "
+                          f"tier {m.tier} via {'+'.join(m.methods)} "
+                          f"on {', '.join(m.shared)}")
+            else:
+                print(f"[method_agreement] {len(candidates)} discovery candidates, none "
+                      f"sharing {MIN_TERM_OVERLAP}+ tokens with today's narratives. "
+                      f"No corroboration — that is a reading, not a failure.")
         return len(signals)
     except Exception as exc:
         print(f"[{run_date}] WARN: narrative tracking failed "

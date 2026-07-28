@@ -31,6 +31,19 @@ export interface NarrativeRow {
   status: NarrativeStatus;
   /** Anchor theme already covering this phrase, or null if nothing watches it. */
   covered_by: string | null;
+  /**
+   * Which methods found this narrative (ADR-0133). Always contains "frequency";
+   * gains "lda" / "embedding" when the monthly discovery job named the same
+   * narrative. Two methods that FAIL DIFFERENTLY agreeing is a stronger claim
+   * than either alone -- frequency is fooled by repeated boilerplate, clustering
+   * by a topic that is coherent but tiny.
+   */
+  methods: string[] | null;
+}
+
+/** True when a second, independent method corroborated this narrative. */
+export function isCorroborated(row: NarrativeRow): boolean {
+  return (row.methods ?? []).some((m) => m !== "frequency");
 }
 
 export interface NarrativeSeries {
@@ -47,7 +60,7 @@ export async function fetchNarratives(
   const { data, error } = await supabase
     .from("narrative_signals")
     .select(
-      "run_date, phrase, doc_count, corpus_size, share, velocity, days_observed, first_seen, status, covered_by",
+      "run_date, phrase, doc_count, corpus_size, share, velocity, days_observed, first_seen, status, covered_by, methods",
     )
     .order("run_date", { ascending: false })
     .limit(days * 150);

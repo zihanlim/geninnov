@@ -263,12 +263,22 @@ class TestImportsWithoutTheModels:
 
             import scripts.theme_discovery as td
 
-            # The pure surface must be reachable and callable.
-            assert callable(td.agree_themes)
-            assert callable(td.cluster_term_sets)
-            assert callable(td.corpus_from_theme_news)
-            assert callable(td.persist_discovered_themes)
+            # The pure surface must RUN, not merely be importable.
+            #
+            # This block asserted `callable(...)` and called only agree_themes,
+            # which let a real hole through: preprocess() still did
+            # `from gensim.parsing.preprocessing import STOPWORDS` INSIDE the
+            # function, so cluster_term_sets -- which calls it -- failed without
+            # the ML stack while the test reported the module clean. `callable`
+            # is true of any function that has been defined; it says nothing
+            # about whether it works (ADR-0133).
             assert td.agree_themes([{"a", "b", "c"}], [{"a", "b", "d"}])["tier2"]
+            assert td.preprocess("Fed holds rates steady") == ["fed", "rates", "steady"]
+            sets = td.cluster_term_sets(
+                ["Fed holds rates steady", "Fed holds rates again"], [0, 0]
+            )
+            assert sets and "fed" in sets[0]
+            assert td.lda_topic_sets.__name__ == "lda_topic_sets"
             print("OK")
             """
         )
@@ -304,3 +314,42 @@ class TestImportsWithoutTheModels:
         assert offenders == [], (
             "heavy ML imported at module scope — move it inside run_discovery: " f"{offenders}"
         )
+
+
+class TestDiscoveryUsesTheSharedTokenizer:
+    """`preprocess` delegates to `narrative_tracker.tokenize` (ADR-0133).
+
+    Measured on the live 2026-07-24 discovery run: three of eleven candidates
+    were built on publisher names, and two of those were **Tier 2** -- the tier
+    that means two independent methods agreed. They agreed on a byline.
+    """
+
+    def test_publishers_do_not_become_discovery_terms(self):
+        import scripts.theme_discovery as td
+        # The exact live case: "nato / pravda / ukraine", Tier 2.
+        assert "pravda" not in td.preprocess("Ukraine hits NATO summit | Pravda")
+        assert "fxstreet" not in td.preprocess("Dollar index forecast | FXStreet")
+
+    def test_trailing_attribution_is_stripped(self):
+        import scripts.theme_discovery as td
+        assert td.preprocess("Gold hits record high | OilPrice.com") == [
+            "gold", "hits", "record", "high",
+        ]
+
+    def test_two_letter_tokens_survive_here_too(self):
+        """`len(t) > 2` meant the discovery job could not have found the AI capex
+        narrative even with a perfect corpus."""
+        import scripts.theme_discovery as td
+        assert "ai" in td.preprocess("AI capex cycle accelerates")
+
+    def test_it_is_the_same_function_not_a_copy(self):
+        """One tokenizer, one stoplist, one place to argue with it. A copy would
+        drift, which is how the two implementations diverged in the first place."""
+        import scripts.theme_discovery as td
+        from backend.services.narrative_tracker import tokenize
+        for text in [
+            "Fed holds rates steady | Reuters",
+            "AI capex cycle and the US dollar",
+            "OPEC+ raises output amid Hormuz tensions",
+        ]:
+            assert td.preprocess(text) == tokenize(text)

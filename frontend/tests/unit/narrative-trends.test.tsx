@@ -13,6 +13,7 @@ import NarrativeTrends, {
   SeriesTable,
   TrendPlot,
 } from "@/components/NarrativeTrends";
+import { isCorroborated } from "@/lib/narratives";
 
 function row(over: Partial<NarrativeRow> = {}): NarrativeRow {
   return {
@@ -26,6 +27,7 @@ function row(over: Partial<NarrativeRow> = {}): NarrativeRow {
     first_seen: "2026-07-20",
     status: "emerging",
     covered_by: null,
+    methods: ["frequency"],
     ...over,
   };
 }
@@ -277,5 +279,34 @@ describe("series never exceed the validated palette", () => {
     // A 6th series would need a generated hue, which the palette rules forbid.
     expect(topSeries(all, 5)).toHaveLength(5);
     expect(all.length).toBeGreaterThan(5); // the rest are reported, not drawn
+  });
+});
+
+
+describe("two-method agreement is visible (ADR-0133)", () => {
+  it("shows only 'frequency' for an uncorroborated narrative", () => {
+    const out = renderToStaticMarkup(
+      <SeriesTable series={[series("novel narrative", [0.02, 0.05])]} />,
+    );
+    expect(out).toContain("frequency");
+    expect(out).not.toContain("lda");
+  });
+
+  it("names both methods when the discovery job found it too", () => {
+    const both: NarrativeSeries = {
+      ...series("credit spreads", [0.01, 0.025]),
+      latest: row({
+        phrase: "credit spreads",
+        methods: ["frequency", "lda", "embedding"],
+      }),
+    };
+    const out = renderToStaticMarkup(<SeriesTable series={[both]} />);
+    expect(out).toContain("frequency + lda + embedding");
+  });
+
+  it("treats frequency alone, and a pre-ADR-0133 null, as uncorroborated", () => {
+    expect(isCorroborated(row({ methods: ["frequency"] }))).toBe(false);
+    expect(isCorroborated(row({ methods: ["frequency", "lda"] }))).toBe(true);
+    expect(isCorroborated(row({ methods: null }))).toBe(false);
   });
 });

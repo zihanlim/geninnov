@@ -46,10 +46,30 @@ _EXTRA_STOP = {"amid", "eyes", "eye", "says", "new", "market", "markets", "week"
 # ─────────────────────────────────────────────────────────────────────────────
 
 def preprocess(text: str) -> list[str]:
-    """Lowercase, strip punctuation, drop stopwords + short tokens."""
-    from gensim.parsing.preprocessing import STOPWORDS
-    tokens = re.sub(r"[^\w\s]", "", (text or "").lower()).split()
-    return [t for t in tokens if t not in STOPWORDS and t not in _EXTRA_STOP and len(t) > 2]
+    """Lowercase content tokens — the SAME tokenizer the daily tracker uses.
+
+    Delegates to ``narrative_tracker.tokenize`` rather than keeping its own rules
+    (ADR-0133). The local version had all three defects that were fixed in the
+    tracker on 2026-07-28, and the consequences were visible in live data:
+
+    * **No attribution stripping and no publisher stoplist.** Three of the eleven
+      candidates in the 2026-07-24 discovery run are built on publisher names —
+      ``dollar / forecast / fxstreet`` and ``nato / pravda / ukraine`` are both
+      **Tier 2**, the tier that means two independent methods agreed. They agreed
+      on a newswire byline.
+    * **``len(t) > 2``**, which deletes "ai" — so the discovery job could not have
+      found the AI capex narrative even with a perfect corpus.
+    * **It imported gensim**, inside a function this module's docstring calls
+      pure. ADR-0130 moved the module-scope ML imports and missed this one, so
+      ``cluster_term_sets`` still failed without the stack and CI — which does not
+      install gensim — would have gone red on the next push.
+
+    One tokenizer, one stoplist, one place to argue with it: the ADR-0064
+    principle applied to a wordlist. `narrative_tracker` has no heavy dependency,
+    so this also makes the claim in the module docstring above finally true.
+    """
+    from backend.services.narrative_tracker import tokenize
+    return tokenize(text)
 
 
 def cluster_term_sets(texts: list[str], clusters: list[int], topn: int = 6) -> list[set[str]]:

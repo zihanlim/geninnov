@@ -24,6 +24,46 @@ This project has **four living documents** that must stay in lockstep with the c
 
 **When in doubt, update the diagram first.** Everything else can be derived from it; the diagram cannot be derived from anything else.
 
+## 🔀 Two sessions share this worktree — commit as you finish, not at the end
+
+Two Claude sessions routinely run against **one working tree, one index, one
+stash, one branch**. That is a deliberate choice (it keeps both continuously
+integrated), and it has one failure mode you must design around:
+
+**Uncommitted work is not stored anywhere. It is a shared mutable buffer.**
+
+Observed on 2026-07-28: one session ran `git stash` to test something clean. It
+swept *both* sessions' uncommitted work — several hours of edits across 11 shared
+files reverted to HEAD with **no error, no conflict, and nothing in either
+session's output**. `git status` simply showed a clean tree. Earlier the same day
+a `git commit` with no pathspec consumed the other session's staged files, and
+both sessions allocated the same ADR number twice.
+
+**The rules, in order of how much they save you:**
+
+1. **Commit each edit as you finish it**, not when the feature is done. The window
+   between editing a shared file and committing it is your entire exposure.
+2. **Stage and commit in ONE Bash call**, with explicit paths:
+   `git add -- $NEW && git commit --only -F - -- $NEW $MOD`.
+   `--only` builds the commit from HEAD plus exactly those paths and leaves the
+   other session's staged files alone. Note `git commit -- <paths>` **errors on
+   untracked files** (`pathspec did not match any file(s) known to git`) — new
+   files must be `git add`ed first, in the same call.
+3. **Never `git stash`.** It is a silent revert of everything uncommitted,
+   including work you did not write. If you must, `git stash push -- <your paths>`
+   only. To recover from one: `git stash list`, then **`git stash apply`** (never
+   `pop` — apply keeps the stash as a backup if the result is wrong).
+4. **Before claiming an ADR number**, check `ls docs/adrs/` *and*
+   `docs/adrs/README.md` at the moment of writing. The indexed one wins a
+   collision; expect to renumber.
+5. **After committing, verify content and not just the log** —
+   `git show HEAD:<file> | grep <your text>`. A whole-file write by the other
+   session overwrites committed content as silently as uncommitted content.
+6. **When resolving a conflict in a shared append-only doc** (`PROGRESS.md`,
+   `ARCHITECTURE.md`, `docs/adrs/README.md`), keep **every** entry from both
+   sides. "Take mine" / "take theirs" drops the other session's row silently,
+   which is the same class of loss the rest of this section is about.
+
 ## What this is
 
 Andromeda ingests news and social media daily, scores themes by "hype" (attention × sentiment × market correlation × momentum), generates ranked long/short trade ideas, and sizes them into a $100M portfolio with risk metrics.

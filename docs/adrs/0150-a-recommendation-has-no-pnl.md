@@ -23,14 +23,22 @@ half-spread — that is not a rounding difference:
 
 | | |
 |---|---|
-| published series, gross of costs | **+1.129%** |
+| published series, gross of costs | **+0.758%** (`as_of` 2026-07-27) |
 | held book, net of costs | **−0.724%** |
-| overstatement | **1.854pp in six sessions** |
+| overstatement | **1.48pp** |
 | total cost paid | **$855,975** on $100M |
 
 **The sign flips.** At the measured 51% turnover between the last two runs the drag is
 roughly 19%/yr; at the 77% upper end of the observed range, roughly 29%/yr. That
 plausibly exceeds any alpha the book could carry.
+
+> **Note on the figures.** An earlier draft of this ADR quoted the published series as
+> +1.129% and the gap as 1.854pp. Those came from `MAX(cumulative_value)` over
+> `portfolio_cumulative_return`, which returns the series' **historical peak**
+> (2026-07-25) rather than its latest value. The correct comparison uses the latest
+> row, which is what `/risk` renders. The conclusion is unchanged and the direction of
+> the error was conservative — the real overstatement is smaller than first stated, and
+> the sign still flips.
 
 `rebalance_cost` already existed and looked like it covered this. It does not:
 `frontend/lib/chat/tools.ts` defines it as *"the cost of moving from the conviction

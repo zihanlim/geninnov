@@ -33,6 +33,8 @@ import { SourceCaveat } from "@/components/status/SourceCaveat";
 import { DailyPLHistory } from "@/components/portfolio/DailyPLHistory";
 import { RiskLimitBoard } from "@/components/risk/RiskLimitBoard";
 import { MandatePanel } from "@/components/risk/MandatePanel";
+import { CostDrag, type HoldingsPerformanceRow } from "@/components/risk/CostDrag";
+import { ENFORCED } from "@/lib/mandate";
 import { PositionRiskAttribution } from "@/components/risk/PositionRiskAttribution";
 import { AttentionCrowding } from "@/components/risk/AttentionCrowding";
 import {
@@ -142,6 +144,8 @@ interface PageData {
   returnsFailure: QueryFailure | null;
   /** Latest persisted since-inception row (portfolio_cumulative_return). */
   inception: InceptionRow | null;
+  /** The held book's cost-netted series (m056 / ADR-0150), for the comparison. */
+  holdings: HoldingsPerformanceRow[];
   /** Reference series for the realised curve (ADR-0094). */
   benchmark: BenchmarkRow[];
   // ── Actionable-risk inputs ──────────────────────────────────────────────
@@ -170,6 +174,7 @@ const INITIAL: PageData = {
   returns: [],
   returnsFailure: null,
   inception: null,
+  holdings: [],
   benchmark: [],
   positions: [],
   positionsFailure: null,
@@ -213,6 +218,7 @@ function RiskPageInner() {
         themesRes,
         inceptionRes,
         benchmarkRes,
+        holdingsRes,
       ] = await Promise.all([
         supabase
           .from("research_recommendations")
@@ -262,6 +268,15 @@ function RiskPageInner() {
         supabase
           .from("benchmark_returns")
           .select("run_date, ticker, daily_return, cumulative_return, inception_date")
+          .order("run_date")
+          .limit(2000),
+        // The held book's cost-netted series (m056 / ADR-0150). Read beside the
+        // published one rather than instead of it: the two are compared and the
+        // difference is the finding, so replacing one with the other would be the
+        // quiet correction ADR-0093 exists to prevent.
+        supabase
+          .from("book_holdings_performance")
+          .select("run_date, turnover, cost_pct, cost_usd, gross_return, net_return, nav, tracking_error")
           .order("run_date")
           .limit(2000),
       ]);
@@ -351,6 +366,9 @@ function RiskPageInner() {
         // gate already explains an absent comparison, and an empty array walks
         // straight into it.
         benchmark: (benchmarkRes.data as BenchmarkRow[] | null) ?? [],
+        // Absent until migration 056 is applied and the held book has run; the
+        // panel renders nothing rather than an empty frame in that case.
+        holdings: (holdingsRes.data as HoldingsPerformanceRow[] | null) ?? [],
         returnsFailure: toFailure(
           "portfolio_returns",
           RETURN_COLUMNS,
@@ -902,6 +920,21 @@ function RiskPageInner() {
           )}
         </SourceCaveat>
       )}
+      {/* Above the curve it corrects, not below it. A reader who scrolls past the
+          chart has already formed a view of the performance, and the correction
+          arriving afterwards is a footnote to a conclusion they have made. */}
+      {!data.loading && data.holdings.length > 0 && (
+        <CostDrag
+          rows={data.holdings}
+          publishedCumulative={
+            data.inception?.cumulative_value != null
+              ? data.inception.cumulative_value - 1
+              : null
+          }
+          capital={data.risk?.total_capital ?? ENFORCED.total_capital.value}
+        />
+      )}
+
       <div className="grid xl:grid-cols-2 gap-6 mb-6 items-start [&>*]:mb-0">
         <DrawdownChart
           loading={data.loading}

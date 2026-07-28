@@ -37,7 +37,11 @@ flowchart TB
         end
 
         subgraph L1["L1 — Theme Detection<br/>scripts/build_theme_signals()"]
-            TS["Brave + Reddit → VADER<br/>+ price corr + momentum<br/>→ HypeScore, TradeScore"]
+            TS["Brave + Reddit → VADER<br/>+ <b>cross-asset</b> price corr<br/>(every mapped ticker, per asset<br/>class — ADR-0127) + momentum<br/>→ HypeScore, TradeScore"]
+        end
+
+        subgraph L1B["L1b — Narrative Tracking (ADR-0128)<br/>backend/services/narrative_tracker.py"]
+            NT["market seed queries (un-themed)<br/>→ 1-3-gram doc frequency<br/>→ share of voice + robust velocity<br/>→ emerging / established / fading<br/><i>SHADOW — sizes nothing.</i><br/><b>Promotion is MANUAL</b> (ADR-0129):<br/>the tracker proposes, a human maps<br/>instruments, the engine sizes"]
         end
 
         subgraph L2["L2 — Factor Exposure<br/>backend/data/factor_fetcher.py"]
@@ -143,7 +147,9 @@ flowchart TB
         T_RECS["research_recommendations<br/>(picks, book_view,<br/>+ book_metrics, scenario_results,<br/>correlation_pairs, cap_utilisation,<br/>screening_funnel, lens — m022,<br/>risk_decomposition — m038,<br/>sizing_method, optimizer_result,<br/>efficient_frontier, heuristic_weights,<br/>rebalance_cost, monte_carlo_var,<br/>var_forecast — m047,<br/>weights_backtest — m048)"]
         V_PFE[["portfolio_factor_exposure<br/><i>VIEW</i> — book-weighted FF5+UMD<br/>over factor_exposures × positions"]]
         T_NEWS["theme_news<br/>(collected headlines → L5)"]
+        T_MNEWS["market_news — m049<br/>(UN-THEMED corpus: market seed<br/>queries, not the anchor keywords —<br/>what makes discovery non-circular)"]
         T_DISC["discovered_themes<br/>(LDA∩embedding shadow tiers)"]
+        T_NARR["narrative_signals — m049<br/>(phrase, share, velocity,<br/>first_seen, status, covered_by)<br/><i>shadow — the trends board reads this</i>"]
         T_PIPE["pipeline_runs<br/>(run_id, stage, status,<br/>duration_s, source_freshness)"]
         T_CUM["portfolio_cumulative_return<br/>(as_of, inception_date,<br/>compounded value)"]
         T_BENCH["benchmark_returns — m045<br/>(run_date, ticker, daily_return,<br/>cumulative_return)<br/><i>^SPX differenced from levels ALREADY<br/>in macro_daily_history — no new feed;<br/>compounded from BOOK inception (ADR-0094)</i>"]
@@ -260,7 +266,9 @@ flowchart TB
 
     %% ───────── Deterministic layer edges ─────────
     MF -->|macro_indicators| DB
-    TS -->|theme_signals,<br/>theme_signals_history<br/>(+signed_corr, crowding,<br/>data_source), theme_news| DB
+    TS -->|theme_signals,<br/>theme_signals_history<br/>(+signed_corr, crowding,<br/>data_source, corr_by_class,<br/>corr_classes_* — m049), theme_news| DB
+    NT -->|market_news,<br/>narrative_signals| DB
+    DB -.->|theme_news + market_news<br/>= the tracked corpus| NT
     FF -->|factor_exposures| DB
     RC -->|regime_classifications| DB
     RE -->|portfolio_risk<br/>+ numeric_derivations| DB
@@ -377,7 +385,8 @@ The diagram is a single source of truth. If you add a node, table, page, compone
 | Layer | Name | Source | Output |
 |-------|------|--------|--------|
 | L0 | Macro Ingestion | `backend/data/macro_fetcher.py` | `macro_snapshot` dict (FRED series + yfinance) |
-| L1 | Theme Detection | `scripts/daily_refresh.py` → `build_theme_signals` | `theme_signals` table (mention count, sentiment, price corr, momentum). Uses `abs(price_corr)` normalization (T22) |
+| L1 | Theme Detection | `scripts/daily_refresh.py` → `build_theme_signals` | `theme_signals` table (mention count, sentiment, cross-asset price corr, momentum). The correlation term is measured over **every mapped instrument and collapsed per asset class** ([ADR-0127](docs/adrs/0127-the-cross-asset-term-measured-one-asset.md)) — it previously read whichever ticker Postgres returned first, because the loop's `if not pd.isna(corr)` guard could never fail against a 0.0 sentinel. `correlation_with_mentions` now returns **None** for not-measurable, and `hype_score` renormalises over the remaining components rather than scoring a data gap as zero |
+| **L1b** | **Narrative Tracking** | `backend/services/narrative_tracker.py` (orchestrated by `daily_refresh.run_narrative_tracking`) | `market_news` + `narrative_signals` tables. Tracks the **share of voice** of every 1–3-gram in an un-themed corpus, with a robust (median/MAD, floored) velocity against each phrase's own history, and labels each with the anchor theme already covering it ([ADR-0128](docs/adrs/0128-a-theme-we-did-not-name-in-advance.md)). Dependency-free and deterministic, so unlike `theme_discovery.py` it runs daily and in CI. **SHADOW**: nothing here sizes a position or reaches L5 |
 | L2 | Factor Exposure | `backend/data/factor_exposures` table | `factor_exposures` dict (FF5 + UMD betas per ticker) |
 | L3 | Regime Classifier | `backend/services/regime_classifier.py` | `regime` dict (cycle + sentiment). Pure function of L0, so it is the one layer that can be rebuilt for past dates — `scripts/backfill_regime.py`. Every input read is bounded by `as_of`, including `_compute_spx_breadth`, which was NOT bounded until the backfill exposed it: it would have stamped today's breadth on every historical row. That same function was also a **boolean wearing a percentage** — SPY above its own MA → 65.0, else 35.0 — which, against sentiment rules of `<40` / `>60`, fired on every resolving day and made `neutral` unreachable ([ADR-0091](docs/adrs/0091-breadth-must-be-a-share-of-something-named.md)). It is now the share of the 11 GICS sector SPDRs above their own 200d MA |
 | L4 | Risk Engine | `scripts/daily_refresh.py` → `compute_and_persist_risk` (derive-aware `compute_risk` returns `NumericDerivation`, T9) | `portfolio_risk` table + `numeric_derivations` JSONB column (T15). Parametric VaR/CVaR/Sharpe/beta/HHI, **plus** historical VaR/ES, Sortino, Calmar, max drawdown and the benchmark comparison (TE / IR / up-down capture vs `benchmark_returns`) — migration 047, [ADR-0109](docs/adrs/0109-what-was-read-across-from-im-jarvis-and-what-was-not.md). Every added metric is a SEPARATE column with its own method id; none overwrites `var_95` |
@@ -468,6 +477,8 @@ L7: frontend/components/{ThemeDerivationDrawer,CitationList,RegimeInputs}.tsx
 | `portfolio_risk` | Daily risk metrics; L4 provenance (T15) | run_date, var_95, cvar_95, sharpe, beta, concentration_hhi, **`numeric_derivations` JSONB** (full L4 NumericDerivation bundle — T9 derive-aware) |
 | `theme_news` | Collected headlines/posts per theme per run — feeds the L5 agent (migration 018, ADR-0020) and, on `/`, the evidence list behind a HypeScore | theme_id, run_date, source (`brave`/`reddit`/`mock_*`), headline, published_date, **url** (migration 042, ADR-0089 — NULL on pre-042 rows, unbackfillable, and on mock rows), **sentiment** (per-item score; declared in 018, first written 2026-07-26) |
 | `discovered_themes` | Shadow-mode theme-discovery candidates (LDA∩embedding agreement; migration 021, ADR-0007) | run_date, label, terms JSONB, tier (2/3), methods, status (`shadow`/`promoted`/`rejected`) |
+| `market_news` | **The un-themed corpus** (migration 049, [ADR-0128](docs/adrs/0128-a-theme-we-did-not-name-in-advance.md)) — headlines collected by market-wide seed queries rather than the eight anchors' keyword lists. This is what makes narrative discovery non-circular: `theme_news` can only ever contain what the anchors asked for. Deliberately NOT `theme_news` with a sentinel theme, which would put un-themed headlines into the L5 agent's per-theme reasoning context. `fetch_market_news` has **no mock fallback** — a frequency tracker reading template headlines would report the template's own vocabulary as an emerging narrative | run_date, source (`brave_market`), headline, published_date, url, query |
+| `narrative_signals` | **Daily share of voice per narrative phrase** (migration 049, [ADR-0128](docs/adrs/0128-a-theme-we-did-not-name-in-advance.md)) — the series the trends board plots. `share` (not `doc_count`) is the comparable figure: corpus size swings with how many articles the fetch returned. `velocity` is NULL when history is too thin, never 0.0. `covered_by` names the anchor already asking for the phrase, which is what separates "Fed Policy is working" from "nothing is watching this". **Shadow** | run_date, phrase, doc_count, corpus_size, share, velocity, days_observed, first_seen, status (`new`/`emerging`/`established`/`fading`), covered_by, methods |
 | `backtest_results` | Every measured property of the system, keyed by `test_name`: HypeScore IC (ADR-0022), EdgeScore IC (ADR-0044), frozen-input book replication (ADR-0050), and the L5 acceptance battery (ADR-0055). Anon-readable (migration 028), surfaced on `/method` via `SignalValidation` ("Does HypeScore actually predict returns?") — currently reports NOT-YET-VALIDATED (0 usable obs; history accruing). **No unique constraint on (test_name, metric_name, end_date)** — writers delete the day's rows then insert, because `upsert(on_conflict=...)` raises 42P10 | test_name (`hype_ic`, `edge_ic`, `book_replication`, `l5_eval_battery`), metric_name, realized_value, pass, notes JSONB |
 | `research_recommendations.sanctions_exposure` | **Sanctions exposure and its SIDE** (migration 045, [ADR-0096](docs/adrs/0096-the-book-is-net-short-sanctions-risk-and-never-said-so.md)) — written by `q1_agent._sanctions_row`; source `sanctions_exposure.assess()`. Nullable: a run predating the column renders **"not judged"**, never "no exposure". Rendered on `/risk`; the jurisdiction map is a documented judgement and lives only in Python so it cannot drift against a second copy |
 | `research_recommendations.positioning_crowding` | **External speculator positioning vs the book** (migration 046, [ADR-0097](docs/adrs/0097-external-positioning-can-see-a-fifth-of-the-book.md)) — written by `q1_agent._positioning_row`; source `positioning_crowding.assess()` over `cot_fetcher.fetch_readings()` (CFTC Socrata, no credential). **Coverage is the headline**: only 2 of 10 positions in the 2026-07-25 book map to a futures contract (22% of gross), and the other 8 are stored in `unobservable` **with a reason** rather than omitted. `as_of` is the CFTC **observation** Tuesday (stalest across contracts), not the retrieval date. SVXY is inverse-mapped — long SVXY is short VIX. NULL means **not retrieved**, which is not "not crowded" |
@@ -574,6 +585,9 @@ pytest tests/backend/ -v
 
 - [x] L0: FRED + yfinance macro snapshot
 - [x] L1: Brave Search news + Reddit social + VADER sentiment + price corr + momentum (T22: `abs(price_corr)` for theme strength)
+- [x] **Theme discovery's pure logic is gated by CI** ([ADR-0130](docs/adrs/0130-fourteen-tests-were-ungated-by-where-an-import-sat.md)) — the ML imports moved inside `run_discovery` past the corpus-size gate, so `pytest tests/backend/` runs the whole file with no torch. The ML path itself is still covered by the monthly job executing, not by assertion
+- [x] **L1b: narrative tracking over an un-themed corpus** ([ADR-0128](docs/adrs/0128-a-theme-we-did-not-name-in-advance.md)) — share of voice per phrase, robust velocity, `covered_by` attribution against the anchors. Shadow; the trends board on `/` reads it
+- [x] **AI Capex promoted to an anchor theme** ([ADR-0129](docs/adrs/0129-ai-capex-is-a-theme-and-the-tracker-found-it-sideways.md), m050) — the theme universe is **nine**. Found by L1b, which measured AI in 2 of 455 documents, both arriving via the *Corporate Credit* query. 13 instruments across equity / credit / rates / commodity; new sectors Semiconductors, Utilities, Electrical Equipment; Taiwan as its own geo
 - [x] L2: Ken French FF5 + UMD factor betas — **now an instrumented stage of `daily_refresh.main()`** (`refresh_factor_exposures`, recorded in `pipeline_runs`); previously computed only by ad-hoc invocation and never orchestrated
 - [x] L3: Regime classifier (cycle × sentiment)
 - [x] L4: Historical VaR, CVaR, Sharpe, beta, HHI (T9: derive-aware `compute_risk` returns `NumericDerivation`)

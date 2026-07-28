@@ -588,6 +588,34 @@ def _load_edge_ic(sb: Client) -> tuple[IcReading | None, str | None]:
     return reading, None
 
 
+# ADR-0139/0140 shadow gate. regime_classifications now carries the debasement
+# and Fed-posture columns, written during a 14-day shadow before the
+# MacroCrossCurrents panel mounts. The regime row is fetched below with
+# select("*") and frozen into the snapshot the LLM cites from, so WITHOUT this
+# exclusion a published thesis could cite a reading the shadow harness has not
+# yet passed — ADR-0100: a guard that lives in one component guards one
+# consumer. Lifting these keys is the same change that mounts the panel.
+REGIME_SHADOW_KEYS = frozenset({
+    "debasement_pressure",
+    "debasement_real_yield_comp",
+    "debasement_dxy_decline_comp",
+    "debasement_gold_rise_comp",
+    "debasement_comovement_comp",
+    "debasement_lookback_weeks",
+    "fed_posture",
+    "fed_pivot_delta",
+    "fed_rate_change_13w_bps",
+    "fed_curve_change_13w_bps",
+    "fed_curve_steepness_bps",
+    "fed_posture_evidence",
+})
+
+
+def _strip_regime_shadow_keys(row: dict) -> dict:
+    """The L5 gate of the ADR-0139/0140 shadow period (see REGIME_SHADOW_KEYS)."""
+    return {k: v for k, v in row.items() if k not in REGIME_SHADOW_KEYS}
+
+
 def aggregate_context(state: Q1State) -> Q1State:
     """
     Pull L0-L4 outputs from Supabase into state.
@@ -648,7 +676,7 @@ def aggregate_context(state: Q1State) -> Q1State:
         .execute()
         .data
     )
-    regime = dict(reg_rows[0]) if reg_rows else {}
+    regime = _strip_regime_shadow_keys(dict(reg_rows[0])) if reg_rows else {}
 
     # L4: risk metrics
     risk_rows = sb.table("portfolio_risk").select("*").limit(1).execute().data

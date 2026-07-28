@@ -2045,3 +2045,32 @@ def test_a_percent_spread_is_rendered_in_bps():
 
     assert _describe_bps(2.77) == "277 bps"
     assert _describe_bps(None) == "N/A"
+
+
+class TestRegimeShadowStrip:
+    """ADR-0139/0140: the regime row reaches the L5 snapshot via select("*"),
+    so the shadow's L5 gate is this exclusion — without it a published thesis
+    could cite a reading the shadow harness has not yet passed (ADR-0100: a
+    guard that lives in one component guards one consumer)."""
+
+    def test_strips_every_shadow_column_and_keeps_the_rest(self):
+        row = {"run_date": "2026-07-28", "cycle": "late", "sentiment": "neutral"}
+        row.update({k: 1 for k in q1_agent.REGIME_SHADOW_KEYS})
+        out = q1_agent._strip_regime_shadow_keys(row)
+        assert set(out) == {"run_date", "cycle", "sentiment"}
+
+    def test_migration_columns_are_all_covered(self):
+        """The exclusion list must cover exactly the columns migrations 052/053
+        add — a column added there but not here leaks to the LLM mid-shadow,
+        and a key here that no migration adds is a stale exclusion."""
+        import re
+        from pathlib import Path
+
+        sql = ""
+        for name in (
+            "052_dollar_debasement_indicator.sql",
+            "053_hawkish_dovish_pivot_indicator.sql",
+        ):
+            sql += Path("supabase", "migrations", name).read_text(encoding="utf-8")
+        added = set(re.findall(r"ADD COLUMN IF NOT EXISTS (\w+)", sql))
+        assert added == set(q1_agent.REGIME_SHADOW_KEYS)

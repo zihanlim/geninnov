@@ -253,3 +253,211 @@ class TestClassifyConvertsUnits:
         assert out.cycle == "recession"          # unreachable if fed percent
         assert out.yield_curve_slope == pytest.approx(-0.60)  # persisted in percent
         assert out.hy_oas == 5.50                # persisted in percent, for the UI
+
+
+# ── ADR-0139 / ADR-0140: debasement pressure and Fed posture ──────────────────
+from datetime import timedelta  # noqa: E402
+
+from regime_classifier import (  # noqa: E402
+    DEBASEMENT_MIN_COMOVEMENT_PAIRS,
+    POSTURE_SIGN,
+    classify_debasement,
+    classify_fed_posture,
+    _fetch_series_window,
+    _value_at_or_before,
+)
+
+AS_OF = date(2026, 7, 24)
+WINDOW_START = AS_OF - timedelta(weeks=26)
+
+
+def _daily(start, values):
+    """Consecutive daily observations from `start`."""
+    return [(start + timedelta(days=i), v) for i, v in enumerate(values)]
+
+
+class TestFetchSeriesWindow:
+    ROWS = [
+        {"value": 101.0, "trading_date": "2026-07-24"},
+        {"value": 100.0, "trading_date": "2026-07-23"},
+        {"value": 99.0, "trading_date": "2026-07-25"},   # newer than as_of
+        {"value": None, "trading_date": "2026-07-22"},   # null dropped
+        {"value": 90.0, "trading_date": "2025-01-01"},   # before window start
+    ]
+
+    def test_bounds_filters_and_sorts_ascending(self):
+        sb = _FakeSupabase(self.ROWS)
+        hist = _fetch_series_window(sb, "DX-Y.NYB", as_of=date(2026, 7, 24), days=182)
+        assert hist == [(date(2026, 7, 23), 100.0), (date(2026, 7, 24), 101.0)]
+
+    def test_value_at_or_before_takes_latest_not_newer(self):
+        hist = [(date(2026, 7, 20), 1.0), (date(2026, 7, 23), 2.0), (date(2026, 7, 24), 3.0)]
+        assert _value_at_or_before(hist, date(2026, 7, 23)) == 2.0
+        assert _value_at_or_before(hist, date(2026, 7, 19)) is None
+
+
+class TestDebasementComponents:
+    def test_real_yield_anchor_is_minus_two_percent(self):
+        # Stored FRED value is PERCENT: −2% arrives as −2.0 and maps to 1.0.
+        # (An earlier ADR draft's formula put 1.0 at −4%; the ADR pins −2%.)
+        for stored, expected in [(-2.0, 1.0), (0.0, 0.0), (-1.0, 0.5), (1.5, 0.0), (-3.5, 1.0)]:
+            r = classify_debasement([(AS_OF, stored)], [], [], as_of=AS_OF)
+            assert r.real_yield_comp == pytest.approx(expected)
+
+    def test_real_yield_percent_units_do_not_saturate(self):
+        # −1.85 IN PERCENT must land mid-range. Fed into a decimal anchor it
+        # would pin at 1.0 forever — in bounds, invisible to a bounds test
+        # (ADR-0137's unit lesson, the reason the shadow can't catch this).
+        r = classify_debasement([(AS_OF, -1.85)], [], [], as_of=AS_OF)
+        assert 0.0 < r.real_yield_comp < 1.0
+        assert r.real_yield_comp == pytest.approx(0.925)
+
+    def test_dxy_is_drawdown_from_peak_not_change(self):
+        # Rises mid-window then returns to its start: change-vs-t−26w is 0,
+        # but the drawdown from the 110 peak is ~9.1% → component pins at 1.0.
+        vals = [100.0] * 30 + [110.0] * 30 + [100.0] * 30
+        r = classify_debasement([], _daily(WINDOW_START, vals), [], as_of=AS_OF)
+        assert r.dxy_decline_comp == pytest.approx(1.0)
+
+    def test_dxy_at_peak_scores_zero(self):
+        vals = [100.0 + i * 0.01 for i in range(60)]  # grinding higher
+        r = classify_debasement([], _daily(WINDOW_START, vals), [], as_of=AS_OF)
+        assert r.dxy_decline_comp == pytest.approx(0.0)
+
+    def test_gold_return_needs_window_start_value(self):
+        # History begins mid-window: no value at or before t−26w → None, and
+        # the composite is None with it — absent is not zero (ADR-0091).
+        late_start = WINDOW_START + timedelta(days=40)
+        r = classify_debasement([], [], _daily(late_start, [3000.0] * 30), as_of=AS_OF)
+        assert r.gold_rise_comp is None
+        assert r.pressure is None
+
+    def test_gold_twenty_percent_saturates(self):
+        gold = [(WINDOW_START, 3000.0), (AS_OF, 3600.0)]
+        r = classify_debasement([], [], gold, as_of=AS_OF)
+        assert r.gold_rise_comp == pytest.approx(1.0)
+
+    def test_comovement_needs_sixty_pairs(self):
+        # n dates → n−1 pairs: build exactly one pair short of the floor.
+        n = DEBASEMENT_MIN_COMOVEMENT_PAIRS
+        ry_vals, gold_vals = [], []
+        ry, gold = 0.0, 3000.0
+        for i in range(n):
+            ry_vals.append(ry)
+            gold_vals.append(gold)
+            step = 0.01 if i % 2 == 0 else 0.002
+            ry -= step
+            gold += step * 500
+        r = classify_debasement(
+            _daily(WINDOW_START, ry_vals), [], _daily(WINDOW_START, gold_vals), as_of=AS_OF)
+        assert r.comovement_comp is None
+        assert r.pressure is None
+
+    def test_comovement_antiphase_saturates(self):
+        # d_gold = −500 × d_ry exactly → corr −1 → clip(−(−1)/0.5) = 1.0.
+        ry_vals, gold_vals = [], []
+        ry, gold = 0.0, 3000.0
+        for i in range(DEBASEMENT_MIN_COMOVEMENT_PAIRS + 1):
+            ry_vals.append(ry)
+            gold_vals.append(gold)
+            step = 0.01 if i % 2 == 0 else 0.002
+            ry -= step
+            gold += step * 500
+        r = classify_debasement(
+            _daily(WINDOW_START, ry_vals), [], _daily(WINDOW_START, gold_vals), as_of=AS_OF)
+        assert r.comovement_comp == pytest.approx(1.0)
+
+    def test_composite_is_the_weighted_sum(self):
+        n_days = (AS_OF - WINDOW_START).days + 1  # 183 daily observations
+        ry_vals, gold_vals = [], []
+        ry, gold = -0.2, 3000.0
+        for i in range(n_days):
+            ry_vals.append(ry)
+            gold_vals.append(gold)
+            step = 0.008 if i % 2 == 0 else 0.002
+            ry -= step
+            gold += step * 400
+        dxy_vals = [100.0 - 2.0 * i / n_days for i in range(n_days)]
+
+        r = classify_debasement(
+            _daily(WINDOW_START, ry_vals),
+            _daily(WINDOW_START, dxy_vals),
+            _daily(WINDOW_START, gold_vals),
+            as_of=AS_OF,
+        )
+        comps = (r.real_yield_comp, r.dxy_decline_comp, r.gold_rise_comp, r.comovement_comp)
+        assert None not in comps
+        expected = 30 * comps[0] + 25 * comps[1] + 25 * comps[2] + 20 * comps[3]
+        assert r.pressure == pytest.approx(expected, abs=0.02)
+        assert 0.0 <= r.pressure <= 100.0
+
+    def test_missing_dxy_nulls_composite_but_not_other_comps(self):
+        r = classify_debasement(
+            [(AS_OF, -1.0)], [], [(WINDOW_START, 3000.0), (AS_OF, 3300.0)], as_of=AS_OF)
+        assert r.real_yield_comp == pytest.approx(0.5)
+        assert r.gold_rise_comp == pytest.approx(0.5)
+        assert r.dxy_decline_comp is None
+        assert r.pressure is None
+
+
+POSTURE_THEN = AS_OF - timedelta(weeks=13)
+
+
+def _ends(v_then, v_now):
+    """A series observed at exactly the window's two ends."""
+    return [(POSTURE_THEN, v_then), (AS_OF, v_now)]
+
+
+class TestFedPosture:
+    def test_active_hiking_is_hawkish_regardless_of_curve(self):
+        # +50bp of DFF decides alone — even against a massively steepened
+        # (dovish-leg) curve.
+        r = classify_fed_posture(
+            _ends(4.33, 4.83), _ends(4.0, 3.5), _ends(4.2, 4.4), as_of=AS_OF)
+        assert r.posture == "hawkish"
+        assert r.rate_change_13w_bps == pytest.approx(50.0)
+
+    def test_active_cutting_is_dovish(self):
+        r = classify_fed_posture(
+            _ends(4.75, 4.25), _ends(4.0, 4.0), _ends(4.2, 4.2), as_of=AS_OF)
+        assert r.posture == "dovish"
+
+    def test_single_25bp_step_falls_through_to_curve(self):
+        # 4.50 − 4.25 = exactly +25bp: strict > keeps the rate leg silent, and
+        # the flat curve reads neutral — one step can be a mid-cycle adjustment.
+        r = classify_fed_posture(
+            _ends(4.25, 4.50), _ends(4.0, 4.0), _ends(4.2, 4.2), as_of=AS_OF)
+        assert r.rate_change_13w_bps == pytest.approx(25.0)
+        assert r.posture == "neutral"
+
+    def test_steepening_reads_dovish(self):
+        # THE sign fix (ADR-0140): DFF on hold, 2s10s steepened 38bp — the
+        # market pricing cuts. The inverted draft mapping called this hawkish,
+        # and with DFF inside the ±25bp band most days the curve leg decides
+        # most days.
+        r = classify_fed_posture(
+            _ends(4.33, 4.33), _ends(4.00, 3.70), _ends(4.10, 4.18), as_of=AS_OF)
+        assert r.curve_change_13w_bps == pytest.approx(38.0)
+        assert r.posture == "dovish"
+
+    def test_flattening_reads_hawkish(self):
+        r = classify_fed_posture(
+            _ends(4.33, 4.33), _ends(3.70, 4.00), _ends(4.18, 4.10), as_of=AS_OF)
+        assert r.posture == "hawkish"
+
+    def test_missing_any_input_nulls_posture_not_neutral(self):
+        # DGS10 absent → no curve → posture None (never a default of neutral,
+        # ADR-0091), while the provenance that IS computable survives.
+        r = classify_fed_posture(
+            _ends(4.33, 4.33), _ends(4.0, 4.0), [], as_of=AS_OF)
+        assert r.posture is None
+        assert r.rate_change_13w_bps is not None
+        assert r.curve_steepness_bps is None
+
+    def test_pivot_sign_convention(self):
+        # Dovish is +1 (agrees with the page's directional ink), so the
+        # textbook landing hawkish → dovish is +2 — written down because it is
+        # the opposite of what a hawkish=+1 reader assumes.
+        assert POSTURE_SIGN["dovish"] - POSTURE_SIGN["hawkish"] == 2
+        assert POSTURE_SIGN["hawkish"] - POSTURE_SIGN["dovish"] == -2
+        assert POSTURE_SIGN["neutral"] == 0

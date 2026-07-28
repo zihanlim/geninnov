@@ -2237,6 +2237,11 @@ def main():
     try:
         regime = regime_clf.classify(run_date)
         print(f"[{run_date}] [L3] Regime: cycle={regime.cycle}, sentiment={regime.sentiment}")
+        # ADR-0139/0140 shadow observability: these are written to the DB but
+        # stripped from the L5 snapshot and unmounted on /book until the
+        # 14-day shadow passes — the run log is where they are watched.
+        print(f"[{run_date}] [L3] Shadow: debasement={regime.debasement_pressure}, "
+              f"fed_posture={regime.fed_posture}, pivot_delta={regime.fed_pivot_delta}")
         try:
             record_pipeline_run(supabase, l3_id, "success", run_date=run_date, stage="L3", duration_s=(datetime.now(timezone.utc)-l3_started).total_seconds())
         except Exception as exc:

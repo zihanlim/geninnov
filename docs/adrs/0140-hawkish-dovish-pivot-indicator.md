@@ -77,7 +77,7 @@ The pivot is a SIGNED integer, not a boolean. "Did posture change?" is half the 
 
 ### 3. The classifier change
 
-`regime_classifier.RegimeOutput` gains five fields mirroring the columns. `classify()` reads `DFF`, `DGS2`, `DGS10` from `macro_daily_history` with the `as_of` bound every other reading in the file already uses. The 13-week window is computed only from observations dated on or before `run_date`. The comparison posture — needed for `fed_pivot_delta` — is read from the most recent `regime_classifications` row dated on or before `run_date − 13 weeks`; if no such row exists, or its `fed_posture` is NULL, the delta is NULL.
+`regime_classifier.RegimeOutput` gains six fields mirroring the columns (the evidence JSONB included). `classify()` reads `DFF`, `DGS2`, `DGS10` from `macro_daily_history` with the `as_of` bound every other reading in the file already uses. The 13-week window is computed only from observations dated on or before `run_date`. The comparison posture — needed for `fed_pivot_delta` — is read from the most recent `regime_classifications` row dated on or before `run_date − 13 weeks`; if no such row exists, or its `fed_posture` is NULL, the delta is NULL.
 
 NULL semantics follow ADR-0091 and ADR-0139: a missing DFF, DGS2, or DGS10 → NULL on the entire posture row, NOT a default of `neutral`. A reader of `/book` should never see "neutral" when the truth is "we could not say".
 

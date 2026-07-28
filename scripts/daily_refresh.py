@@ -1965,6 +1965,153 @@ def persist_benchmark_returns(run_date: date) -> int:
     return len(rows)
 
 
+# ─── Step 12b: extend the HELD book by one day (ADR-0150) ───────────────────
+def extend_held_book(run_date: date) -> None:
+    """Carry the held book forward one run: earn, then pay to rebalance.
+
+    Everything in `portfolio_returns` is gross of transaction costs, on a book whose
+    measured mean one-way turnover is 95.1% per run. This is the same positions
+    having paid to reach them.
+
+    It reuses `held_book.step` — the identical pure function
+    `scripts/rebuild_held_book.py` backfills with — so the nightly series and the
+    reconstructed one cannot diverge in method. A second implementation here would
+    make the history and its continuation two different measurements wearing one
+    name.
+    """
+    # Imported locally, matching this module's existing convention: `json` is not a
+    # module-level import here, and `held_book` should not be a hard dependency of
+    # loading the pipeline when migration 056 may not be applied.
+    import json
+
+    from backend.services.held_book import step
+
+    run_str = run_date.isoformat()
+
+    prev = (
+        supabase.table("book_holdings_performance")
+        .select("run_date, nav")
+        .lt("run_date", run_str)
+        .order("run_date", desc=True)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    prev_date = prev[0]["run_date"] if prev else None
+    prev_nav = float(prev[0]["nav"]) if prev and prev[0].get("nav") is not None else None
+
+    previous_held: dict[str, float] = {}
+    if prev_date:
+        for row in (
+            supabase.table("book_holdings")
+            .select("asset, signed_weight")
+            .eq("run_date", prev_date)
+            .execute()
+            .data
+            or []
+        ):
+            previous_held[row["asset"]] = float(row["signed_weight"])
+
+    book = (
+        supabase.table("research_recommendations")
+        .select("picks")
+        .eq("run_date", run_str)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not book:
+        print(f"[{run_date}] [held-book] no published book for this date; nothing to hold.")
+        return
+
+    picks = book[0].get("picks") or []
+    if isinstance(picks, str):
+        picks = json.loads(picks)
+
+    target: dict[str, float] = {}
+    for pick in picks:
+        asset = pick.get("asset")
+        if not asset:
+            continue
+        weight = pick.get("signed_weight")
+        if weight is None:
+            raw = pick.get("weight")
+            if raw is None:
+                continue
+            weight = -abs(float(raw)) if pick.get("direction") == "short" else abs(float(raw))
+        target[asset] = float(weight)
+
+    # Price only what is actually needed: the names held THROUGH the period. The
+    # return belongs to yesterday's book, not today's.
+    price_returns: dict[str, float] = {}
+    if previous_held:
+        import yfinance as yf
+
+        frame = yf.download(
+            sorted(previous_held),
+            start=(run_date - timedelta(days=7)).isoformat(),
+            # yfinance's `end` is EXCLUSIVE; asking for run_date returns the day before.
+            end=(run_date + timedelta(days=1)).isoformat(),
+            auto_adjust=True,
+            progress=False,
+        )["Close"]
+        pct = frame.pct_change()
+        if run_str in pct.index.astype(str):
+            row = pct.loc[pct.index.astype(str) == run_str].iloc[0].to_dict()
+            price_returns = {k: v for k, v in row.items() if v == v}
+
+    out = step(
+        previous_held=previous_held,
+        target=target,
+        price_returns=price_returns,
+        total_capital=cfg_total_capital(),
+        previous_nav=prev_nav,
+    )
+
+    supabase.table("book_holdings_performance").upsert(
+        {
+            "run_date": run_str,
+            "turnover": out["turnover"],
+            "cost_pct": out["cost_pct"],
+            "cost_usd": out["cost_usd"],
+            "gross_return": out["gross_return"],
+            "net_return": out["net_return"],
+            "nav": out["nav"],
+            "tracking_error": out["tracking_error"],
+        },
+        on_conflict="run_date",
+    ).execute()
+
+    if out["held"]:
+        supabase.table("book_holdings").upsert(
+            [
+                {
+                    "run_date": run_str,
+                    "asset": asset,
+                    "signed_weight": weight,
+                    "target_weight": target.get(asset),
+                }
+                for asset, weight in out["held"].items()
+            ],
+            on_conflict="run_date,asset",
+        ).execute()
+
+    net = out["net_return"]
+    print(
+        f"[{run_date}] [held-book] turnover {out['turnover']:.1%}, "
+        f"cost ${out['cost_usd']:,.0f}, "
+        f"net {'—' if net is None else format(net, '+.3%')}, "
+        f"NAV ${out['nav']/1e6:,.2f}M"
+    )
+
+
+def cfg_total_capital() -> float:
+    """The mandate's capital base, for the held book's NAV."""
+    return load_mandate().total_capital
+
+
 # ─── Step 12 (Phase 3): Compute + persist cumulative return ─────────────────
 def compute_and_persist_cumulative_return(run_date: date) -> None:
     """Upsert a single `portfolio_cumulative_return` row for `as_of=run_date`.
@@ -2424,6 +2571,22 @@ def main():
             compute_and_persist_risk(final_book, run_date, cfg)
             compute_and_persist_cumulative_return(run_date)
             persist_benchmark_returns(run_date)
+            # The HELD book, extended by one day (ADR-0150). Everything above is
+            # gross of transaction costs on a book whose measured mean one-way
+            # turnover is 95.1% per run; this is the same positions having paid to
+            # reach them, and it is a different series in its own tables rather than
+            # a correction applied in place (ADR-0093/0112).
+            #
+            # Non-fatal by design and LAST in this block: the published book is the
+            # deliverable, and a cost accounting that fails must not cost a run that
+            # already produced one.
+            try:
+                extend_held_book(run_date)
+            except Exception as exc:  # noqa: BLE001 — see above
+                print(
+                    f"[{run_date}] [held-book] skipped "
+                    f"({exc.__class__.__name__}): {exc}. Apply migration 056."
+                )
         try:
             record_pipeline_run(supabase, l5_id, "success", run_date=run_date, stage="L5", duration_s=(datetime.now(timezone.utc)-l5_started).total_seconds())
         except Exception as exc:

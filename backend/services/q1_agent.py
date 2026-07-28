@@ -588,34 +588,6 @@ def _load_edge_ic(sb: Client) -> tuple[IcReading | None, str | None]:
     return reading, None
 
 
-# ADR-0139/0140 shadow gate. regime_classifications now carries the debasement
-# and Fed-posture columns, written during a 14-day shadow before the
-# MacroCrossCurrents panel mounts. The regime row is fetched below with
-# select("*") and frozen into the snapshot the LLM cites from, so WITHOUT this
-# exclusion a published thesis could cite a reading the shadow harness has not
-# yet passed — ADR-0100: a guard that lives in one component guards one
-# consumer. Lifting these keys is the same change that mounts the panel.
-REGIME_SHADOW_KEYS = frozenset({
-    "debasement_pressure",
-    "debasement_real_yield_comp",
-    "debasement_dxy_decline_comp",
-    "debasement_gold_rise_comp",
-    "debasement_comovement_comp",
-    "debasement_lookback_weeks",
-    "fed_posture",
-    "fed_pivot_delta",
-    "fed_rate_change_13w_bps",
-    "fed_curve_change_13w_bps",
-    "fed_curve_steepness_bps",
-    "fed_posture_evidence",
-})
-
-
-def _strip_regime_shadow_keys(row: dict) -> dict:
-    """The L5 gate of the ADR-0139/0140 shadow period (see REGIME_SHADOW_KEYS)."""
-    return {k: v for k, v in row.items() if k not in REGIME_SHADOW_KEYS}
-
-
 def aggregate_context(state: Q1State) -> Q1State:
     """
     Pull L0-L4 outputs from Supabase into state.
@@ -676,7 +648,11 @@ def aggregate_context(state: Q1State) -> Q1State:
         .execute()
         .data
     )
-    regime = _strip_regime_shadow_keys(dict(reg_rows[0])) if reg_rows else {}
+    # ADR-0139/0140: the debasement/posture columns flow into the snapshot.
+    # Their shadow was lifted by operator instruction on 2026-07-28 — the
+    # chronological backfill had already validated shape and NULL semantics
+    # over 270 real rows, which is what the 14-day accrual existed to do.
+    regime = dict(reg_rows[0]) if reg_rows else {}
 
     # L4: risk metrics
     risk_rows = sb.table("portfolio_risk").select("*").limit(1).execute().data
@@ -1273,6 +1249,13 @@ Sentiment: {sentiment}
   VIX term structure: {vix_term}
   Real rate: {real_rate}%
   SPX breadth: {breadth}%
+  Fed posture (13w DFF trajectory x 2s10s repricing): {fed_posture}
+  Fed pivot delta vs 13w ago (+2 = hawkish->dovish, sign(dovish)=+1): {fed_pivot_delta}
+  Dollar-debasement pressure (0-100 composite): {debasement_pressure}
+If you claim the Fed is pivoting or characterise its posture, cite
+regime:fed_posture and regime:fed_pivot_delta; if either reads N/A above, you
+may not make a pivot claim. If you claim dollar debasement, cite
+regime:debasement_pressure; N/A means you may not make a debasement claim.
 
 === THEME SCORES (L1, sorted by HypeScore) ===
 {theme_table}
@@ -1589,6 +1572,14 @@ def reason_picks(state: Q1State) -> Q1State:
         "vix_term": _describe_vix_term(regime.get("vix_term_diff")),
         "real_rate": regime.get("real_rate", "N/A"),
         "breadth": regime.get("spx_breadth", "N/A"),
+        # ADR-0139/0140: NULL renders as N/A, and the template's rule forbids
+        # posture/debasement claims over an N/A — absence blocks the claim
+        # rather than defaulting it (ADR-0091, applied to a prompt).
+        "fed_posture": regime.get("fed_posture") or "N/A",
+        "fed_pivot_delta": regime["fed_pivot_delta"]
+        if regime.get("fed_pivot_delta") is not None else "N/A",
+        "debasement_pressure": regime["debasement_pressure"]
+        if regime.get("debasement_pressure") is not None else "N/A",
         "theme_table": _make_theme_table(themes),
         "factor_table": _make_factor_table(factor_exp),
         "book_metrics_summary": state.get("book_metrics_summary") or "(book metrics unavailable — no factor data)",
@@ -2151,7 +2142,9 @@ def _collect_known_values(state: Q1State) -> list[float]:
     for k in ("var_95", "cvar_95", "sharpe", "beta", "concentration_hhi"):
         add(risk.get(k))
     regime = state.get("regime") or {}
-    for k in ("vix_level", "hy_oas", "yield_curve_slope", "real_rate", "spx_breadth", "vix_term_diff"):
+    for k in ("vix_level", "hy_oas", "yield_curve_slope", "real_rate", "spx_breadth", "vix_term_diff",
+              "debasement_pressure", "fed_pivot_delta", "fed_rate_change_13w_bps",
+              "fed_curve_change_13w_bps", "fed_curve_steepness_bps"):
         add(regime.get(k))
 
     # Standard derived macro metrics a PM routinely cites — deterministic
@@ -2256,7 +2249,9 @@ def verify_citations(state: Q1State) -> Q1State:
         source_map[f"theme:{t['theme_id']}:sentiment"] = t["avg_sentiment"]
     for key in ["var_95", "cvar_95", "sharpe", "beta", "concentration_hhi"]:
         source_map[key] = risk.get(key)
-    for k in ("vix_level", "hy_oas", "yield_curve_slope", "real_rate", "spx_breadth", "vix_term_diff"):
+    for k in ("vix_level", "hy_oas", "yield_curve_slope", "real_rate", "spx_breadth", "vix_term_diff",
+              "fed_posture", "fed_pivot_delta", "debasement_pressure",
+              "fed_rate_change_13w_bps", "fed_curve_change_13w_bps", "fed_curve_steepness_bps"):
         if regime.get(k) is not None:
             source_map[f"regime:{k}"] = regime[k]
 
@@ -3754,6 +3749,12 @@ def run_q1_agent(
             "vix_term_diff": regime.vix_term_diff,
             "real_rate": regime.real_rate,
             "spx_breadth": regime.spx_breadth,
+            "debasement_pressure": regime.debasement_pressure,
+            "fed_posture": regime.fed_posture,
+            "fed_pivot_delta": regime.fed_pivot_delta,
+            "fed_rate_change_13w_bps": regime.fed_rate_change_13w_bps,
+            "fed_curve_change_13w_bps": regime.fed_curve_change_13w_bps,
+            "fed_curve_steepness_bps": regime.fed_curve_steepness_bps,
         }
 
     # Flatten candidates (they come in as (TradeCandidate, notional, weight) tuples)

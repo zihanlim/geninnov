@@ -3,6 +3,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import RegimeHero from "@/components/RegimeHero";
+import MacroCrossCurrents, { type CrossCurrents } from "@/components/MacroCrossCurrents";
 import ConvictionCard, { type ConvictionTheme } from "@/components/ConvictionCard";
 import Watchlist from "@/components/Watchlist";
 import ThemeDerivationDrawer from "@/components/ThemeDerivationDrawer";
@@ -45,6 +46,19 @@ interface Regime {
   vix_term_diff?: number | null;
   real_rate?: number | null;
   spx_breadth?: number | null;
+  // ADR-0139/0140 cross-current readings (nullable — absence is "cannot say")
+  debasement_pressure?: number | null;
+  debasement_real_yield_comp?: number | null;
+  debasement_dxy_decline_comp?: number | null;
+  debasement_gold_rise_comp?: number | null;
+  debasement_comovement_comp?: number | null;
+  debasement_lookback_weeks?: number | null;
+  fed_posture?: string | null;
+  fed_pivot_delta?: number | null;
+  fed_rate_change_13w_bps?: number | null;
+  fed_curve_change_13w_bps?: number | null;
+  fed_curve_steepness_bps?: number | null;
+  fed_posture_evidence?: CrossCurrents["fed_posture_evidence"];
 }
 
 interface Factor {
@@ -190,7 +204,7 @@ function ConvictionPageInner() {
           supabase
             .from("regime_classifications")
             .select(
-              "cycle, sentiment, run_date, yield_curve_slope, hy_oas, vix_level, vix_term_diff, real_rate, spx_breadth"
+              "cycle, sentiment, run_date, yield_curve_slope, hy_oas, vix_level, vix_term_diff, real_rate, spx_breadth, debasement_pressure, debasement_real_yield_comp, debasement_dxy_decline_comp, debasement_gold_rise_comp, debasement_comovement_comp, debasement_lookback_weeks, fed_posture, fed_pivot_delta, fed_rate_change_13w_bps, fed_curve_change_13w_bps, fed_curve_steepness_bps, fed_posture_evidence"
             )
             .order("run_date", { ascending: false })
             .limit(1)
@@ -554,6 +568,17 @@ function ConvictionPageInner() {
               }
               runDate={regime?.run_date}
             />
+          </div>
+
+          {/* ── Macro cross-currents: the ADR-0139/0140 readings ────────────
+              Immediately under the hero, because these answer the question
+              cycle × sentiment cannot: is the dollar being structurally
+              eroded, and which way is the Fed leaning? Shadow lifted early
+              at the operator's direction (2026-07-28) — the chronological
+              backfill had already validated shape and NULL semantics over
+              270 real rows, which is what the 14-day accrual existed to do. */}
+          <div className="mb-4">
+            <MacroCrossCurrents cycle={regime?.cycle ?? null} cc={regime ?? null} />
           </div>
 
           {/* ── Screening: four aggregates, as a strip rather than a pane ────

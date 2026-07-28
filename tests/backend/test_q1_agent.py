@@ -2047,24 +2047,24 @@ def test_a_percent_spread_is_rendered_in_bps():
     assert _describe_bps(None) == "N/A"
 
 
-class TestRegimeShadowStrip:
-    """ADR-0139/0140: the regime row reaches the L5 snapshot via select("*"),
-    so the shadow's L5 gate is this exclusion — without it a published thesis
-    could cite a reading the shadow harness has not yet passed (ADR-0100: a
-    guard that lives in one component guards one consumer)."""
+class TestCrosscurrentsReachL5:
+    """ADR-0139/0140, shadow LIFTED 2026-07-28 by operator instruction (the
+    backfill had already validated shape/NULL semantics over 270 real rows).
+    The readings now flow to the LLM and must be citable — a reading the
+    prompt shows but the verifier cannot resolve would fail every citation."""
 
-    def test_strips_every_shadow_column_and_keeps_the_rest(self):
-        row = {"run_date": "2026-07-28", "cycle": "late", "sentiment": "neutral"}
-        row.update({k: 1 for k in q1_agent.REGIME_SHADOW_KEYS})
-        out = q1_agent._strip_regime_shadow_keys(row)
-        assert set(out) == {"run_date", "cycle", "sentiment"}
-
-    def test_migration_columns_are_all_covered(self):
-        """The exclusion list must cover exactly the columns migrations 052/053
-        add — a column added there but not here leaks to the LLM mid-shadow,
-        and a key here that no migration adds is a stale exclusion."""
+    def test_column_mapping_matches_migrations(self):
+        """crosscurrents_columns is the ONE write-side mapping (classify() and
+        the backfill both use it); its key set must equal the columns
+        migrations 052/053 add, or a column exists that nothing writes."""
         import re
         from pathlib import Path
+
+        from backend.services.regime_classifier import (
+            DebasementReading,
+            PostureReading,
+            crosscurrents_columns,
+        )
 
         sql = ""
         for name in (
@@ -2073,22 +2073,56 @@ class TestRegimeShadowStrip:
         ):
             sql += Path("supabase", "migrations", name).read_text(encoding="utf-8")
         added = set(re.findall(r"ADD COLUMN IF NOT EXISTS (\w+)", sql))
-        assert added == set(q1_agent.REGIME_SHADOW_KEYS)
-
-    def test_column_mapping_matches_shadow_keys(self):
-        """crosscurrents_columns is the ONE write-side mapping (classify() and
-        the backfill both use it); its key set must equal the strip list, or a
-        column gets written that the shadow does not strip."""
-        from backend.services.regime_classifier import (
-            DebasementReading,
-            PostureReading,
-            crosscurrents_columns,
-        )
-
         cols = crosscurrents_columns(
             DebasementReading(None, None, None, None, None),
             PostureReading(None, None, None, None, None, None, None),
             None,
             {},
         )
-        assert set(cols) == set(q1_agent.REGIME_SHADOW_KEYS)
+        assert added == set(cols)
+
+    def test_prompt_renders_and_guards_the_new_readings(self):
+        """The template must show posture/pivot/debasement AND carry the rule
+        that an N/A blocks the claim (ADR-0140 §6 / ADR-0139 §6)."""
+        t = q1_agent.REASON_PICKS_PROMPT_TEMPLATE
+        for key in ("{fed_posture}", "{fed_pivot_delta}", "{debasement_pressure}"):
+            assert key in t
+        assert "regime:fed_posture" in t and "regime:debasement_pressure" in t
+        assert "may not make a pivot claim" in t
+
+    def test_new_readings_are_citable_when_present(self):
+        """A citation of regime:debasement_pressure at the snapshot's own value
+        must verify — the reading is an L0–L4 key now, not narration."""
+        state = {
+            "citations": [{"source": "regime:debasement_pressure", "value": 7.7}],
+            "macro_snapshot": {},
+            "theme_scores": [],
+            "risk_metrics": {},
+            "regime": {
+                "cycle": "late", "sentiment": "risk-on",
+                "fed_posture": "hawkish", "fed_pivot_delta": None,
+                "debasement_pressure": 7.7,
+            },
+            "run_date": "2026-07-28",
+        }
+        out = q1_agent.verify_citations(dict(state))
+        assert out.get("verified") is True
+
+    def test_a_null_reading_is_not_citable(self):
+        """fed_pivot_delta is NULL in the snapshot; a model citing a number
+        for it anyway must be rejected — an absent reading is not a citable
+        zero (ADR-0091), and the prompt's rule has teeth only if this fails."""
+        state = {
+            "citations": [{"source": "regime:fed_pivot_delta", "value": -2}],
+            "macro_snapshot": {},
+            "theme_scores": [],
+            "risk_metrics": {},
+            "regime": {
+                "cycle": "late", "sentiment": "risk-on",
+                "fed_posture": "hawkish", "fed_pivot_delta": None,
+                "debasement_pressure": 7.7,
+            },
+            "run_date": "2026-07-28",
+        }
+        out = q1_agent.verify_citations(dict(state))
+        assert out.get("verified") is False

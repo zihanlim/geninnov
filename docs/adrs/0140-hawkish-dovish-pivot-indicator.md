@@ -1,6 +1,6 @@
 ﻿# ADR-0140: A hawkish/dovish-pivot reading on the regime row
 
-**Status:** Proposed
+**Status:** Accepted (shadow lifted early — see §5 postscript)
 **Date:** 2026-07-28
 **Related:** [ADR-0031](0031-edge-score-direction-signal.md), [ADR-0041](0041-regime-as-a-dial-not-a-cliff.md), [ADR-0091](0091-breadth-must-be-a-share-of-something-named.md), [ADR-0128](0128-a-theme-we-did-not-name-in-advance.md), [ADR-0139](0139-dollar-debasement-indicator.md)
 
@@ -96,6 +96,8 @@ If `fed_posture` is NULL, the card says so and names the missing input — same 
 Identical structure to [ADR-0139](0139-dollar-debasement-indicator.md): columns are written for 14 days, the panel is NOT mounted. The shadow test suite asserts that (a) `fed_posture` is one of the three valid values when all three inputs are present, (b) NULL when any input is missing, (c) `fed_pivot_delta` is consistent with the posture on the comparison row at t−13w, (d) `fed_rate_change_13w_bps` equals `100 × (DFF_t − DFF_{t−13w})` within a tolerance for missing intermediate observations. Only after those tests pass does the panel mount.
 
 Identical scope, too: the shadow must cover every consumer (ADR-0100). `q1_agent` freezes the whole regime row into the L5 snapshot via `select("*")`, so during the shadow these columns join ADR-0139's on the snapshot exclusion list — otherwise a published thesis could cite a posture the harness has not yet passed. And the shadow validates **shape, not correctness** — valid labels, NULL semantics, delta consistency, bps arithmetic — not whether the posture is *right*: no two-week window can validate a 13-week reading's signal quality.
+
+**Postscript (2026-07-28): lifted on day one with ADR-0139's shadow, at the operator's explicit direction** — see ADR-0139 §5 for the shared justification (the 270-row chronological backfill performed the shape/NULL/consistency validation the accrual existed to gather). The lift is one coordinated change, as designed: the snapshot exclusion removed, the posture/pivot/debasement lines and the citation rule added to the L5 prompt (§6), the readings grounded and resolvable in `verify_citations`, and the `MacroCrossCurrents` panel mounted under `RegimeHero`.
 
 ### 6. L5 thesis guardrail update
 

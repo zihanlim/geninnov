@@ -306,12 +306,15 @@ const positionDetail: ToolSpec = {
 const regimeTool: ToolSpec = {
   name: "regime",
   description:
-    "The L3 macro regime: cycle × sentiment, and the four inputs that classified it (yield-curve slope, HY OAS, VIX level, real rate, SPX breadth). Call this for any question about the macro backdrop or why the book is tilted the way it is.",
+    "The L3 macro regime: cycle × sentiment with its classifier inputs (yield-curve slope, HY OAS, VIX level, real rate, SPX breadth), plus the ADR-0139/0140 cross-current readings — dollar-debasement pressure (0–100 composite with four components) and Fed posture (hawkish/neutral/dovish with the 13-week pivot delta). Call this for any question about the macro backdrop, Fed policy stance, dollar debasement, or why the book is tilted the way it is.",
   args: {},
   async run(args, { db }) {
     const { rows, error } = await db.select(
       "regime_classifications",
-      "run_date, cycle, sentiment, yield_curve_slope, hy_oas, vix_level, vix_term_diff, real_rate, spx_breadth",
+      "run_date, cycle, sentiment, yield_curve_slope, hy_oas, vix_level, vix_term_diff, real_rate, spx_breadth, " +
+        "debasement_pressure, debasement_real_yield_comp, debasement_dxy_decline_comp, debasement_gold_rise_comp, " +
+        "debasement_comovement_comp, debasement_lookback_weeks, fed_posture, fed_pivot_delta, " +
+        "fed_rate_change_13w_bps, fed_curve_change_13w_bps, fed_curve_steepness_bps",
       { order: { column: "run_date", ascending: false }, limit: 1 },
     );
     const row = rows[0];
@@ -338,6 +341,19 @@ const regimeTool: ToolSpec = {
       // 65 means 65% of SPX constituents above their 200d MA — the unit
       // RegimeInputsPanel renders. Tagged `pct` here, it read as 6500%.
       ["spx_breadth", "S&P breadth (% of SPX above 200d MA)", "pct_whole"],
+      // ADR-0139: composite is a 0–100 dial; components are 0–1 shares of
+      // their own fixed anchors. NULL rows simply emit no fact — an absent
+      // reading is "we cannot say", never zero (ADR-0091).
+      ["debasement_pressure", "Dollar-debasement pressure (0–100)", "score"],
+      ["debasement_real_yield_comp", "Debasement component: real yield vs −2% anchor (0–1)", "score"],
+      ["debasement_dxy_decline_comp", "Debasement component: DXY drawdown from 26w peak vs 5% (0–1)", "score"],
+      ["debasement_gold_rise_comp", "Debasement component: gold 26w return vs +20% (0–1)", "score"],
+      ["debasement_comovement_comp", "Debasement component: real-yield↔gold daily co-movement (0–1)", "score"],
+      // ADR-0140: pivot is signed, sign(dovish)=+1 so +2 = hawkish → dovish.
+      ["fed_pivot_delta", "Fed pivot delta vs 13 weeks ago (sign(dovish)=+1)", "score"],
+      ["fed_rate_change_13w_bps", "DFF change over 13 weeks", "bp"],
+      ["fed_curve_change_13w_bps", "2s10s change over 13 weeks (steepening = market pricing cuts)", "bp"],
+      ["fed_curve_steepness_bps", "Current 2s10s steepness", "bp"],
     ] as const) {
       const v = num(row[k]);
       if (v !== null) facts.push(f(`regime.${k}`, label, v, `regime_classifications.${k}`, unit, runDate));
@@ -350,6 +366,10 @@ const regimeTool: ToolSpec = {
         cycle: str(row.cycle) ?? "—",
         sentiment: str(row.sentiment) ?? "—",
         classification: `${str(row.cycle) ?? "—"} × ${str(row.sentiment) ?? "—"}`,
+        // ADR-0140: a label, not a number, so it travels as a note. NULL is
+        // rendered as absence — the model may not call the posture "neutral"
+        // when the truth is "not computable".
+        fed_posture: str(row.fed_posture) ?? "not computable (an input was missing)",
       },
     };
   },

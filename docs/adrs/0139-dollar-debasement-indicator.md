@@ -1,6 +1,6 @@
 ﻿# ADR-0139: A dollar-debasement pressure reading on the regime row
 
-**Status:** Proposed
+**Status:** Accepted (shadow lifted early — see §5 postscript)
 **Date:** 2026-07-28
 **Related:** [ADR-0041](0041-regime-as-a-dial-not-a-cliff.md), [ADR-0091](0091-breadth-must-be-a-share-of-something-named.md), [ADR-0127](0127-the-cross-asset-term-measured-one-asset.md), [ADR-0128](0128-a-theme-we-did-not-name-in-advance.md), [ADR-0137](0137-basis-points-are-not-a-hundredfold-error.md), [ADR-0140](0140-hawkish-dovish-pivot-indicator.md)
 
@@ -78,7 +78,7 @@ NULL semantics follow ADR-0091: a missing input → NULL on the composite AND NU
 
 A `MacroCrossCurrents` component on `/book`, immediately under `RegimeHero`. Three cards:
 
-- **Debasement pressure** — the 0–100 number, the four components as a stacked bar (each in its own band, no legend required), and the 26-week lookback as a caption. An **Inputs** line carries the raw readings — DFII10, DXY against its 26-week peak, the 26-week gold return — so a reader who rejects the weighting can re-derive a view from the same card. Same provenance rule as `RegimeHero`: if the composite is NULL, the card shows "—" and names the missing input.
+- **Debasement pressure** — the 0–100 number, the four components as a stacked bar (each in its own band, no legend required), and the 26-week lookback as a caption. Each component row carries its **anchor** ("Real yield vs −2%", "DXY off 26w peak vs 5%") so a reader who rejects the weighting can still read the evidence. The raw series values are deliberately NOT re-derived on the card: they are not persisted on the regime row, and recomputing them client-side would be a second implementation of the classifier's formula — the drift ADR-0064 exists to prevent. A reader who wants the raw series has `macro_daily_history`. Same provenance rule as `RegimeHero`: if the composite is NULL, the card shows "—" and names the missing input.
 - **Fed posture** — the indicator from [ADR-0140](0140-hawkish-dovish-pivot-indicator.md), its week-over-week delta, and the rolling window.
 - **Cycle × posture matrix** — a 2×4 readout making the (cycle, posture) pair explicit, since these are now THREE independent readings (cycle, posture, debasement) and conflating them is how the current page implies "late-cycle" when the question on the reader's mind is "is the dollar being eroded."
 
@@ -91,6 +91,8 @@ First 14 days after rollout: the columns are written but `MacroCrossCurrents` is
 The shadow period is for the existing test harness to assert that (a) `debasement_pressure` is between 0 and 100, (b) it is NULL when an input is missing, (c) the weighted sum of components matches the composite within a documented tolerance for floating-point ordering, and (d) the co-movement correlation was computed against enough paired daily observations (≥ 60; the regime classifier's breadth refuses a moved denominator for the same reason — `MIN_UNIVERSE = 8` of 11). Only after those tests pass does the panel mount.
 
 The 14-day window is ~10 pipeline runs — enough real rows to exercise the NULL paths and the bounds, short enough that the shadow is visible on the next release. What it validates is **shape, not correctness**: bounds, NULL semantics, arithmetic consistency. No two-week window can validate a 26-week reading's signal quality, and this ADR does not claim one does.
+
+**Postscript (2026-07-28): the shadow was lifted on day one, at the operator's explicit direction.** The deviation is recorded rather than hidden, with its actual justification: the chronological backfill (`backfill_regime.py --fill-crosscurrents`) computed the readings over **270 real historical rows** the same day — bounds held on every write (the schema CHECKs enforced them), NULL semantics were exercised on 130 pressure-NULL and 67 posture-NULL rows, and pivot consistency resolved 93 non-zero deltas in chronological order. That is the validation the 14-day accrual was designed to gather one row per day, obtained in one pass. What the early lift genuinely forgoes is two weeks of *forward* daily writes under live conditions; the nightly run's shadow log line remains, so a malformed write would still be visible in the Actions output.
 
 ### 6. L5 prompt line
 

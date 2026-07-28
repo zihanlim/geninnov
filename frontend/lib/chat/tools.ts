@@ -965,6 +965,150 @@ const signalTool: ToolSpec = {
   },
 };
 
+/**
+ * Size today's signal under the CALLER's mandate.
+ *
+ * The counterpart to `signal`: that tool hands over the research with no mandate on
+ * it, this one turns it into weights under whichever mandate the caller supplies.
+ * Together they are what makes Andromeda usable by a portfolio app that runs its own
+ * capital base — previously impossible, because every tool emitted a book already
+ * denominated in Andromeda's $100M and 20/30/35.
+ *
+ * It PROXIES to `/api/compute/size` rather than sizing here. That is the whole
+ * design: `optimizer.py` is cvxpy, and a TypeScript reimplementation is the failure
+ * ADR-0107 records — the source it was read across from clipped every weight at zero
+ * and deleted every short on a long-short book. One sizer, three callers.
+ */
+const sizeBook: ToolSpec = {
+  name: "size_book",
+  description:
+    "Size today's signal under YOUR mandate rather than Andromeda's. Optionally pass any of total_capital, max_single_name, max_sector, max_geo, max_gross as a JSON object; anything you omit falls back to Andromeda's own value ($100M, 20%, 30%, 35%, 100%). Returns signed weights and notionals from the same constrained optimizer that produced the published book. Call this when the question is 'what would this look like at my size' or 'under my limits'. Read-only: nothing is stored and no published book changes.",
+  args: {
+    mandate:
+      'Optional JSON object of mandate overrides, e.g. {"total_capital": 500000000, "max_single_name": 0.10}. Omit for Andromeda\'s own mandate.',
+  },
+  async run(args, { db }) {
+    const { rows, error } = await db.select(
+      "book_signal",
+      "run_date, asset, direction, conviction, vol",
+      { order: { column: "run_date", ascending: false }, limit: 60 },
+    );
+    if (!rows.length) {
+      return {
+        tool: "size_book",
+        args,
+        facts: [],
+        absence: error
+          ? `book_signal could not be read (${error}), so there is no signal to size.`
+          : "book_signal has no rows, so there is no signal to size. Runs published before migration 055 have only the sized book.",
+      };
+    }
+
+    const runDate = str(rows[0].run_date);
+    const signals = rows
+      .filter((r) => str(r.run_date) === runDate)
+      .map((r) => ({
+        asset: str(r.asset),
+        direction: str(r.direction),
+        conviction: num(r.conviction),
+        vol: num(r.vol),
+      }));
+
+    // Same-origin: in production the Python function is a sibling route of this one.
+    const base =
+      process.env.COMPUTE_BASE_URL ??
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3010");
+
+    const unreachable = (why: string): ToolResult => ({
+      tool: "size_book",
+      args,
+      facts: [],
+      absence:
+        `The sizing service is unavailable (${why}). This does not affect the published ` +
+        `book — call book_summary for Andromeda's own weights, or signal for the ` +
+        `mandate-free research to size yourself.`,
+    });
+
+    let payload: Record<string, unknown>;
+    try {
+      const res = await fetch(`${base}/api/compute/size`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ signals, mandate: args.mandate ?? {} }),
+      });
+
+      // A non-JSON body means the Python function is not serving this origin — in
+      // dev, Next.js answers with its HTML 404. Diagnosing that as "not deployed"
+      // is actionable; surfacing the JSON parser's complaint about "<!DOCTYPE" is
+      // not, and it reads like a bug in the sizer rather than a missing deployment.
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!contentType.includes("application/json")) {
+        return unreachable(
+          `no Python function is serving ${base}/api/compute/size — it returned ${res.status} as ${contentType || "an unknown type"}`,
+        );
+      }
+
+      payload = (await res.json()) as Record<string, unknown>;
+      if (!res.ok || payload.ok === false) {
+        return {
+          tool: "size_book",
+          args,
+          facts: [],
+          // The solver's refusal reaches the caller verbatim. A rejected mandate is
+          // information they can act on; a generic failure is not.
+          absence: `The sizer refused this request: ${String(payload.error ?? res.status)}`,
+        };
+      }
+    } catch (e) {
+      return unreachable(e instanceof Error ? e.message : "unknown error");
+    }
+
+    const weights = (payload.signed_weights ?? {}) as Record<string, number>;
+    const notional = (payload.notional ?? {}) as Record<string, number>;
+    const mandate = (payload.mandate ?? {}) as { values?: Record<string, unknown> };
+    const capital = num(mandate.values?.total_capital);
+
+    const facts: Fact[] = [
+      f("size_book.run_date", "Signal run date", runDate, "book_signal.run_date", "date", runDate),
+      f("size_book.gross", "Gross exposure", num(payload.gross), "api/compute/size", "pct", runDate),
+      f("size_book.cash", "Cash", num(payload.cash), "api/compute/size", "pct", runDate),
+    ];
+    if (capital !== null) {
+      facts.push(f("size_book.total_capital", "Capital base used", capital, "caller-supplied mandate", "usd", runDate));
+    }
+    for (const [asset, w] of Object.entries(weights)) {
+      const n = num(w);
+      if (n !== null) {
+        facts.push(f(`size_book.${asset}.weight`, `${asset} weight`, n, "api/compute/size", "pct", runDate));
+      }
+      const dollars = num(notional[asset]);
+      if (dollars !== null) {
+        facts.push(f(`size_book.${asset}.notional`, `${asset} notional`, dollars, "api/compute/size", "usd", runDate));
+      }
+    }
+
+    const noView = (payload.no_expected_return ?? null) as { assets?: string[] } | null;
+    return {
+      tool: "size_book",
+      args,
+      facts,
+      notes: {
+        basis:
+          "These weights are NOT the published book. They are today's signal re-sized " +
+          "under the supplied mandate by the same optimizer; nothing was stored.",
+        ...(Array.isArray(payload.warnings) && payload.warnings.length
+          ? { warnings: payload.warnings as string[] }
+          : {}),
+      },
+      // A name held only for variance reduction is a materially different claim from
+      // a name held for return, and the caller cannot see the difference in a weight.
+      absence: noView?.assets?.length
+        ? `${noView.assets.join(", ")} carry no EdgeScore, so they entered at mu = 0 — held for variance reduction only, never for expected return.`
+        : undefined,
+    };
+  },
+};
+
 export const TOOLS: ToolSpec[] = [
   bookSummary,
   positionDetail,
@@ -977,6 +1121,7 @@ export const TOOLS: ToolSpec[] = [
   bookTurnover,
   sizingProvenance,
   signalTool,
+  sizeBook,
 ];
 
 export const TOOL_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));

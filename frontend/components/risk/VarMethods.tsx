@@ -17,6 +17,10 @@ import type {
   VarForecastRow,
 } from "@/lib/risk/analytics";
 import { fanRows, reconcileExAnte, varMethods } from "@/lib/risk/varMethods";
+import {
+  MonteCarloDistributionChart,
+  VarHorizonChart,
+} from "@/components/risk/RiskCharts";
 
 function Pct({ value }: { value: number | null }) {
   if (value === null) return <span className="num text-text-tertiary">—</span>;
@@ -131,6 +135,11 @@ export default function VarMethods({
           </p>
         </div>
       )}
+
+      <div className="grid lg:grid-cols-2 gap-x-6">
+        <MonteCarloDistributionChart data={monteCarlo} />
+        <VarHorizonChart data={forecast} />
+      </div>
 
       {!anyValue && (
         <p className="text-[11px] text-text-tertiary leading-[1.55] mt-2.5">

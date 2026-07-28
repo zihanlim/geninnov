@@ -34,6 +34,10 @@ import { DailyPLHistory } from "@/components/portfolio/DailyPLHistory";
 import { RiskLimitBoard } from "@/components/risk/RiskLimitBoard";
 import { PositionRiskAttribution } from "@/components/risk/PositionRiskAttribution";
 import { AttentionCrowding } from "@/components/risk/AttentionCrowding";
+import {
+  PositionRiskScatter,
+  RiskContributionWaterfall,
+} from "@/components/risk/RiskCharts";
 import { reconcileToBook } from "@/lib/risk/bookOfRecord";
 import { WhatIfScenario } from "@/components/risk/WhatIfScenario";
 import { Ident } from "@/components/risk/SectionGap";
@@ -730,21 +734,29 @@ function RiskPageInner() {
         />
       </div>
 
-      {/* 2c — "Versus what?" answered with numbers rather than a second chart line.
-              ADR-0094 built the benchmark series; down-capture is the field that
-              actually tests this book's claim to be short the market. */}
-      <div className="mt-6">
+      {/* 2c ‖ 2d — the two backward-looking readings, side by side.
+              2c is "versus what?" answered with numbers rather than a second chart
+              line (ADR-0094 built the benchmark series; down-capture is the field
+              that actually tests this book's claim to be short the market). 2d is
+              the path statistics ex-ante cannot produce and a three-session book
+              cannot either — explicitly NOT a track record (ADR-0112), with its
+              caveats above the numbers rather than below them.
+
+              THESE TWO PAIR AND THE FOUR INSTRUMENTS ABOVE CANNOT, and the reason
+              is measured rather than aesthetic. `main` is `max-w-[1400px]`, so at a
+              1440 viewport a two-column row gives each side (1344-24)/2 = 660px.
+              The limit board needs 820px before its table opens a horizontal
+              scroller, per-position attribution 860, stress scenarios and external
+              positioning 720 each — so halving any of them trades vertical space
+              for an inner scrollbar, which is goal 7's failure, not a fix for it.
+              These two need 676 and fit. Pairing is gated on the measurement, name
+              by name; it is not a rule the page applies to whatever is adjacent. */}
+      <div className="mt-6 grid lg:grid-cols-2 gap-6 items-start [&>*]:min-w-0">
         <BenchmarkComparison
           comparison={data.risk?.benchmark_comparison ?? null}
           conditionalVol={data.risk?.conditional_vol ?? null}
           sessions={data.returns.length}
         />
-      </div>
-
-      {/* 2d — The path statistics ex-ante cannot produce and a three-session book
-              cannot either. Explicitly NOT a track record (ADR-0112); its caveats
-              render above the numbers, not below them. */}
-      <div className="mt-6">
         <WeightsBacktest data={data.analyticsRow?.weights_backtest ?? null} />
       </div>
 
@@ -752,6 +764,15 @@ function RiskPageInner() {
       </section>
 
       <section id="attribution" aria-label="Per-position and per-theme attribution">
+      <div className="grid xl:grid-cols-2 gap-6 items-start [&>*]:min-w-0">
+        <PositionRiskScatter
+          positions={data.positions}
+          decomposition={data.analyticsRow?.risk_decomposition ?? null}
+        />
+        <RiskContributionWaterfall
+          decomposition={data.analyticsRow?.risk_decomposition ?? null}
+        />
+      </div>
       <PositionRiskAttribution
         loading={data.loading}
         rows={attribution}
@@ -815,7 +836,11 @@ function RiskPageInner() {
           min-w-[560px] table, which needs a ~600px column to avoid landing in
           its own horizontal scroller on arrival. */}
       <div className="grid xl:grid-cols-2 gap-6 mb-6 items-start [&>*]:mb-0">
-        <CorrelationMatrix state={correlationState} />
+        <CorrelationMatrix
+          state={correlationState}
+          summary={bookMetrics?.correlation_summary ?? null}
+          matrix={bookMetrics?.correlation_matrix ?? null}
+        />
         <CapUtilisation state={capState} />
       </div>
 

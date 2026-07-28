@@ -19,6 +19,7 @@ import {
   type ScenarioResult,
 } from "@/lib/risk/analytics";
 import { Ident, SectionGap, SectionSkeleton } from "./SectionGap";
+import { StressScenarioChart } from "@/components/risk/RiskCharts";
 
 // A scenario states its shocks in one or both of two vocabularies: factor betas
 // (S1-S5) and sector dependency (S6, ADR-0088). Rendering only the first left the
@@ -225,6 +226,7 @@ export function StressScenarios({
             <Ident>research_recommendations.scenario_results</Ident> persists a
             severity label and an estimated return, and no likelihood.
           </p>
+          <StressScenarioChart scenarios={rows} />
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[13px] min-w-[720px]">
               <caption className="sr-only">

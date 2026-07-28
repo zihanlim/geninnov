@@ -17,9 +17,11 @@ import path from "node:path";
 import {
   CHAPTER_NAV,
   CHAPTER_ROUTE,
+  CHAPTER_STEPS,
   METHOD_ANCHORS,
   chapterOwns,
   routeForAnchor,
+  stepNumber,
 } from "@/lib/method/anchors";
 
 const BODY = path.resolve(__dirname, "../../components/method/MethodBody.tsx");
@@ -110,6 +112,70 @@ describe("MethodBody agrees with the map", () => {
           `${chapter} nav links to #${item.id}, which ${chapter} does not render`,
         ).toBe(true);
       }
+    }
+  });
+});
+
+// The step numbers beside the headings. These were hardcoded 01–07 across a body
+// that renders BOTH chapters, so each chapter showed a subsequence of them: /method
+// opened on "02 HypeScore" with no 01 anywhere on the page, and /method/evidence ran
+// 01 and then jumped to 06. A step number is a promise about what precedes it, and
+// both chapters were breaking it.
+describe("chapter step numbers", () => {
+  it("writes no step number by hand in MethodBody", () => {
+    // The regression that caused this: a literal survives the chapter split and
+    // silently disagrees with its own position.
+    expect(src, "MethodBody has a hardcoded index= literal").not.toMatch(
+      /index="\d+"/,
+    );
+  });
+
+  for (const chapter of ["build", "evidence"] as const) {
+    it(`numbers ${chapter} from 01 with no gaps`, () => {
+      const steps = CHAPTER_STEPS[chapter];
+      expect(steps.length, `${chapter} has no numbered steps`).toBeGreaterThan(0);
+
+      const numbers = steps.map((id) => stepNumber(chapter, id));
+      expect(numbers[0], `${chapter} does not start at 01`).toBe("01");
+      expect(numbers).toEqual(
+        steps.map((_, i) => String(i + 1).padStart(2, "0")),
+      );
+    });
+
+    it(`only numbers sections ${chapter} actually renders`, () => {
+      for (const id of CHAPTER_STEPS[chapter]) {
+        expect(
+          chapterOwns(chapter, id),
+          `${chapter} numbers #${id}, which it does not render`,
+        ).toBe(true);
+      }
+    });
+
+    it(`numbers ${chapter}'s steps in the order they appear in the document`, () => {
+      // The number a reader sees has to match the order they scroll past, or it is
+      // worse than no number. Positions are read from the source itself.
+      const positions = CHAPTER_STEPS[chapter].map((id) => ({
+        id,
+        at: src.indexOf(`id="${id}"`),
+      }));
+      for (const p of positions) {
+        expect(p.at, `#${p.id} is numbered but not found in MethodBody`).toBeGreaterThan(-1);
+      }
+      const sorted = [...positions].sort((a, b) => a.at - b.at).map((p) => p.id);
+      expect(sorted).toEqual([...CHAPTER_STEPS[chapter]]);
+    });
+  }
+
+  it("gives a non-step section no number rather than an empty one", () => {
+    // signal-validation, track-record and corrections render their own headers and
+    // carry no step number; asking for one must return null, not "" or "00".
+    for (const [chapter, id] of [
+      ["build", "signal-validation"],
+      ["evidence", "track-record"],
+      ["evidence", "corrections"],
+    ] as const) {
+      expect(chapterOwns(chapter, id)).toBe(true);
+      expect(stepNumber(chapter, id)).toBeNull();
     }
   });
 });

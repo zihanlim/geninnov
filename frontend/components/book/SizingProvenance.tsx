@@ -73,6 +73,24 @@ export default function SizingProvenance({
   const path = frontierPath(frontier);
   const crowding = describeCrowding(result?.crowding);
 
+  // TWO COLUMNS, CONDITIONALLY. This panel is full-width on /book, and as a single
+  // stack it used almost none of that width: measured at 1440, the frontier is
+  // capped at 440px (deliberately — see the note above the svg) inside a 1310px
+  // panel, so ~870px of the row beside it was empty, and the panel ran 908px tall.
+  //
+  // The split is by SUBJECT, not by size. Left is per position — what each name was
+  // given, and which names crowding tightened. Right is the book as a whole — its
+  // aggregates, and where it lands on the frontier. A reader following one name and
+  // a reader sizing up the book are asking different questions and no longer have
+  // to scroll through each other's answer.
+  //
+  // Gated on both sides having content. With one side empty a 2-col grid does not
+  // fill the width, it halves whatever survived — which is the same orphaned-cell
+  // failure the split exists to remove.
+  const perPosition = rows.length > 0 || Boolean(crowding);
+  const wholeBook = Boolean(result?.feasible) || Boolean(path);
+  const split = perPosition && wholeBook;
+
   return (
     <div data-testid="sizing-provenance">
       {/* The method, stated before any number. A reader who reads nothing else
@@ -99,6 +117,10 @@ export default function SizingProvenance({
         <strong>{summary.headline}</strong> {summary.detail}
       </div>
 
+      <div className={split ? "grid lg:grid-cols-2 gap-x-5 items-start" : undefined}>
+
+      {/* ── Per position: what each name was given, and what tightened it ── */}
+      <div className="min-w-0">
       {rows.length > 0 && (
         <div className="border border-border rounded-md overflow-hidden mb-3">
           <div
@@ -151,6 +173,48 @@ export default function SizingProvenance({
         </div>
       )}
 
+      {/* ── Crowding, the third sizing input (ADR-0110) ─────────────────────
+             Coverage is rendered whether or not anything was tightened, and it is
+             rendered FIRST. "Nothing was crowded" and "almost nothing could be
+             checked" are the two readings a reader has to be able to tell apart,
+             and a verdict without its denominator lets the second read as the
+             first — GOAL.md's constraint, stated at the point of use. */}
+      {crowding && (
+        <div
+          className="rounded-md border border-border px-3 py-2.5 mb-3 text-[11.5px] leading-[1.55]"
+          data-testid="crowding-sizing"
+        >
+          <div className="text-text-secondary mb-1">
+            <strong>Crowding.</strong> {crowding.coverage}
+          </div>
+          <div className="text-text-tertiary">{crowding.verdict}</div>
+          {crowding.tightened.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5 list-none p-0 m-0">
+              {crowding.tightened.map((t) => (
+                <li key={t.asset} className="text-text-secondary">
+                  <span className="num">{t.asset}</span> — book{" "}
+                  {t.direction ?? "?"}
+                  {t.inverse ? (
+                    <>
+                      , which is <span className="num">{t.effective_side}</span> the
+                      contract (inverse product)
+                    </>
+                  ) : null}
+                  ; specs crowded {t.crowded_side} at{" "}
+                  <span className="num">
+                    {typeof t.cot_index === "number" ? t.cot_index.toFixed(0) : "—"}
+                  </span>
+                  . Capped at <span className="num">{(t.cap * 100).toFixed(1)}%</span>.
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      </div>
+
+      {/* ── The book as a whole: its aggregates, and where it lands ──────── */}
+      <div className="min-w-0">
       {result?.feasible && (
         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11.5px] mb-3">
           <span className="text-text-secondary">Gross deployed</span>
@@ -187,45 +251,6 @@ export default function SizingProvenance({
                   : "n/a"}
               </span>
             </>
-          )}
-        </div>
-      )}
-
-      {/* ── Crowding, the third sizing input (ADR-0110) ─────────────────────
-             Coverage is rendered whether or not anything was tightened, and it is
-             rendered FIRST. "Nothing was crowded" and "almost nothing could be
-             checked" are the two readings a reader has to be able to tell apart,
-             and a verdict without its denominator lets the second read as the
-             first — GOAL.md's constraint, stated at the point of use. */}
-      {crowding && (
-        <div
-          className="rounded-md border border-border px-3 py-2.5 mb-3 text-[11.5px] leading-[1.55]"
-          data-testid="crowding-sizing"
-        >
-          <div className="text-text-secondary mb-1">
-            <strong>Crowding.</strong> {crowding.coverage}
-          </div>
-          <div className="text-text-tertiary">{crowding.verdict}</div>
-          {crowding.tightened.length > 0 && (
-            <ul className="mt-1.5 space-y-0.5 list-none p-0 m-0">
-              {crowding.tightened.map((t) => (
-                <li key={t.asset} className="text-text-secondary">
-                  <span className="num">{t.asset}</span> — book{" "}
-                  {t.direction ?? "?"}
-                  {t.inverse ? (
-                    <>
-                      , which is <span className="num">{t.effective_side}</span> the
-                      contract (inverse product)
-                    </>
-                  ) : null}
-                  ; specs crowded {t.crowded_side} at{" "}
-                  <span className="num">
-                    {typeof t.cot_index === "number" ? t.cot_index.toFixed(0) : "—"}
-                  </span>
-                  . Capped at <span className="num">{(t.cap * 100).toFixed(1)}%</span>.
-                </li>
-              ))}
-            </ul>
           )}
         </div>
       )}
@@ -284,6 +309,9 @@ export default function SizingProvenance({
           </figcaption>
         </figure>
       )}
+      </div>
+
+      </div>
     </div>
   );
 }

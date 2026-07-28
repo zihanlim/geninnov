@@ -93,6 +93,16 @@ compiles colours to literal RGB and does not read the `:root` variables.
 This supersedes ADR-0009's "dark mode retained" clause; the rest of ADR-0009
 (research-first, auditable, narrative over density) still holds.
 
+**One navy exists, and it is fenced to the logo.** The supplied mark is a white
+figure on `#161b38`, so adopting it put a dark ground in a light product
+([ADR-0113](adrs/0113-the-mark-is-the-artwork-and-the-plate-is-fenced.md)). That
+is a real widening of this goal and is recorded rather than absorbed. `--logo-plate`
+is a token *only* so the palette test can see it — it is not a surface, not a chip,
+not an ink, and **no Tailwind utility compiles from it**, so `bg-logo-plate` gets
+you nothing and there is no accidental path from the mark to a navy panel. A
+proposal that reaches for it for anything but the mark is reaching for the dark
+dashboard by increments, which is what this goal is about.
+
 ### 5. Affordances match capability
 
 No control may imply it can change the book. The frontend shows no `COMMIT`, no
@@ -197,12 +207,25 @@ Stated so nobody re-litigates them by accident:
   for an audience that reads a daily publication in daylight.
 - **Real-time / tick-level anything** *in the book's own data*. The pipeline runs
   once a day after the US close. A live-ticking UI would misrepresent the cadence
-  of the data. **One declared exception:** the live news panel on `/` embeds
+  of the data. **One declared exception:** the live news panel embeds
   third-party broadcast streams
   ([ADR-0104](adrs/0104-a-live-news-panel-that-cannot-be-cited-and-says-so.md)).
   It is scoped by three things — it carries no derived data, it prints the book's
   `run_date` beside the stream so a moving picture cannot imply a moving book, and
-  it declares in the panel that nothing there is citable. The non-goal still binds
+  it declares in the panel that nothing there is citable. **It opens from a TopBar
+  control beside `Ask`, on every page, as a persistent draggable window that
+  survives navigation** (2026-07-27, owner's direction); ADR-0104 described it as a
+  panel on `/`, which is where it started. Its `run_date` now reads from
+  `pipeline_runs`, not from the `themes.updated_at` TopBar already had, which lags
+  the run it belongs to.
+
+  **State the widening plainly:** the exception used to end when you left `/`, and
+  now a live picture can follow a reader across every page. What bounds it is
+  unchanged and still enforced — it carries no derived data, no figure traces to it,
+  `/ask` cannot quote it, and the cadence caveat travels inside the window. And the
+  privacy half of ADR-0104 is *stronger*, not weaker: the player is mounted only
+  while the window is EXPANDED, so a collapsed tab makes no request to Google at
+  all, and on phones the window opens collapsed by default. The non-goal still binds
   everything the pipeline produces: **no figure on this site ticks.**
 - **Mobile-first.** Mobile must *work* — and is verified — but comparison tables
   and factor charts are designed for desktop and degrade gracefully, not the
@@ -262,6 +285,7 @@ refusals — is recorded in `PROGRESS.md` under 2026-07-25.
 | Concern | File |
 |---|---|
 | Colour tokens, `.card` / `.badge` / `.num` primitives | `frontend/app/globals.css` |
+| **The brand mark** (one path, three renderers, drift-tested) | `frontend/lib/brand.ts` → `components/BrandMark.tsx`, `app/icon.svg`, `app/apple-icon.png` |
 | Tailwind colour + font scale (compiled — keep in sync with above) | `frontend/tailwind.config.ts` |
 | **AA floor + no-hex + palette-drift enforcement** | `frontend/tests/unit/chip-contrast.test.ts` |
 | Empty / error / freshness primitives | `frontend/components/status/` |

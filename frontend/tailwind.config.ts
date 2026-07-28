@@ -73,8 +73,14 @@ const config: Config = {
         // 4.58:1 over its own 10% tint (badge-tier-anchor); was #d40e43 at 4.08:1.
         accent: "#c50c3e",          // interactive / active (crimson-pink)
         "accent-dim": "rgba(197,12,62,0.10)",
-        brand: "#9f172a",           // LOGO MARK ONLY — identical to --short; see globals.css
-        "brand-dim": "rgba(159,23,42,0.09)",
+        // LOGO PLATE ONLY — the ground of the supplied mark artwork. Not a
+        // surface, not a chip, not an ink; see globals.css for why it is fenced
+        // and for what it replaced (--brand/--brand-dim, the last survivors of
+        // ADR-0085 §3, which lived in the masthead tile the real mark replaced).
+        // No utility class consumes it — BrandMark reads var(--logo-plate)
+        // directly — but it is declared here so the palette-drift test in
+        // chip-contrast.test.ts compares it against globals.css.
+        "logo-plate": "#161b38",
         // Direction (ledger ink: green long / crimson short)
         // 4.81:1 over its own 11% tint (badge-long / dir-pill-long); was #147a5c
         // at 4.14:1. --short needs no change at 6.07:1 tinted.

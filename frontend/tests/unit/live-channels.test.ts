@@ -21,8 +21,11 @@ import {
 } from "@/lib/live/channels";
 
 describe("the catalogue", () => {
-  it("carries the nine verified channels", () => {
-    expect(CHANNELS).toHaveLength(9);
+  it("carries the fifteen verified channels", () => {
+    // Nine -> eight -> fifteen on 2026-07-27: `skynews` and `alarabiya` removed for
+    // being off air, then `cna` and seven more added, each probed LIVE first. See the
+    // note above CHANNELS for what that evidence does and does not prove.
+    expect(CHANNELS).toHaveLength(15);
   });
 
   it("uses well-formed YouTube channel IDs", () => {
@@ -41,11 +44,64 @@ describe("the catalogue", () => {
 
   it("does not contain the wrong Al Arabiya id that the first draft had", () => {
     // Pinned by value: this exact string returns a 200 with a blank title, so it looks
-    // fine everywhere except on screen.
+    // fine everywhere except on screen. Al Arabiya itself is gone (off air), but the
+    // known-bad id stays pinned — a dead id is exactly the sort of thing that gets
+    // pasted back in from an old diff.
     expect(CHANNELS.map((c) => c.channelId)).not.toContain("UCrIsKS1WCsPGTOd4NlnXwXQ");
-    expect(CHANNELS.find((c) => c.key === "alarabiya")!.channelId).toBe(
-      "UCIZJ9a6P_nxCFJTmL0gh_IQ",
-    );
+  });
+
+  it("pins every id added on 2026-07-27, by value", () => {
+    // Each was resolved from its @handle, then reverse-checked by fetching
+    // youtube.com/channel/<id> and confirming the title, then probed LIVE. A
+    // mistyped id does not error - it renders a blank player - so the only defence
+    // is pinning the exact string that was verified.
+    const byKey = Object.fromEntries(CHANNELS.map((c) => [c.key, c.channelId]));
+    expect(byKey.cna).toBe("UC83jt4dlz1Gjl58fzQrrKZg");
+    expect(byKey.yahoofinance).toBe("UCEAZeUIeJs0IjQiqTCdVSIg");
+    expect(byKey.nhk).toBe("UCSPEjw8F2nQDtmUKPFNF7_A");
+    expect(byKey.abcau).toBe("UCVgO39Bk5sMo66-6o6Spn6Q");
+    expect(byKey.abcnews).toBe("UCBi2mrWuNuyYy4gbM6fU18Q");
+    expect(byKey.nbcnews).toBe("UCeY0bbntWzzVIaj2z3QigXg");
+    expect(byKey.trtworld).toBe("UC7fWeaHhqgM4Ry-RMpM2YYw");
+    expect(byKey.africanews).toBe("UC1_E8NeF5QHY2dtdLRBCCLA");
+  });
+
+  it("does not carry the candidates that failed their probe", () => {
+    // Rejected on 2026-07-27 for not playing when asked: Schwab Network, CBS News,
+    // LiveNOW from FOX, WION, CGTN, Global News, Firstpost, Associated Press. Pinned
+    // so none is added later from a list of "obvious" outlets without a fresh probe.
+    const ids = CHANNELS.map((c) => c.channelId);
+    for (const rejected of [
+      "UCqoSrYgusd8ZddtMoWhjHYA", // Schwab Network
+      "UC8p1vwvWtl6T73JiExfWs1g", // CBS News
+      "UCJg9wBPyKMNA5sRDnvzmkdg", // LiveNOW from FOX
+      "UC_gUM8rL-Lrg6O3adPW9K1g", // WION
+      "UCgrNz-aDmcr2uuto8_DL2jg", // CGTN
+      "UChLtXXpo4Ge1ReTEboVvTDg", // Global News
+      "UCz8QaiQxApLq8sLNcszYyJw", // Firstpost
+      "UC52X5wxOL_s5yw0dQk7NtgA", // Associated Press
+    ]) {
+      expect(ids).not.toContain(rejected);
+    }
+  });
+
+  it("does not carry the stations that were removed for being off air", () => {
+    // `live_stream` renders "This video is unavailable" for a channel with no active
+    // broadcast, which a reader cannot tell apart from a broken site. Both of these
+    // had CORRECT ids and still failed, so the failure is off-air, not a typo — and
+    // re-adding either needs a fresh probe, not an argument about reputation.
+    const keys = CHANNELS.map((c) => c.key);
+    expect(keys).not.toContain("skynews");
+    expect(keys).not.toContain("alarabiya");
+  });
+
+  it("does not carry Reuters, which is not a 24/7 stream", () => {
+    // Asked for on 2026-07-27 and rejected on evidence: both @Reuters and @ReutersNow
+    // return "This video is unavailable". Pinned so the request does not get actioned
+    // later without re-probing.
+    const ids = CHANNELS.map((c) => c.channelId);
+    expect(ids).not.toContain("UChqUTb7kYRX8-EiaN3XFrSQ");
+    expect(ids).not.toContain("UC9M3cEqYCKDZ7BABf-LC6sw");
   });
 
   it("says what each channel is for, so the picker is not nine anonymous names", () => {
@@ -85,6 +141,15 @@ describe("embedUrl", () => {
   it("autoplays muted, never with sound", () => {
     expect(url).toContain("autoplay=1");
     expect(url).toContain("mute=1");
+  });
+
+  it("enables the JS API, so sound can be asked for from OUR chrome", () => {
+    // Without this the only way to unmute is a click inside a third-party
+    // cross-origin iframe — a gesture we can neither observe nor guarantee, and the
+    // one a reader reported making with no effect. Dropping the param does not break
+    // the picture, it silently breaks the Unmute button, which is exactly the kind of
+    // regression that survives a screenshot.
+    expect(url).toContain("enablejsapi=1");
   });
 
   it("plays inline so iOS does not seize the whole screen", () => {

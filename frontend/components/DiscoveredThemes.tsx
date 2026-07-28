@@ -69,7 +69,11 @@ export default function DiscoveredThemes() {
   const corpus = rows?.[0]?.corpus_size ?? null;
 
   return (
-    <div className="card">
+    // `lg:h-full` for the same reason PredictionMarkets carries it: on `/` this is
+    // one half of the bottom row, and its pane is stretched to the row so the two
+    // cards share a bottom edge. Without it the pane stretches and the card inside
+    // does not, which moves the ragged edge inward instead of removing it.
+    <div className="card lg:h-full">
       <div className="card-header flex-wrap gap-2">
         <div>
           <span className="card-title">Discovered themes</span>

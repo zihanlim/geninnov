@@ -89,7 +89,7 @@ export default function MarketBar() {
     // skeleton must obey the same containment as what it stands in for.
     return (
       <div
-        className="flex flex-wrap gap-3 px-4 py-2.5 bg-bg-surface border border-border rounded-[8px] mb-6"
+        className="flex flex-wrap gap-3 px-4 py-2.5 bg-bg-surface border border-border rounded-[8px] mb-4"
         data-testid="market-bar-skeleton"
       >
         {Array.from({ length: 5 }).map((_, i) => (
@@ -109,7 +109,7 @@ export default function MarketBar() {
       "market_assets table unavailable — run migration 010");
     return (
       <div
-        className="flex items-center justify-between gap-3 px-4 py-2.5 bg-bg-surface border border-border rounded-[8px] mb-6"
+        className="flex items-center justify-between gap-3 px-4 py-2.5 bg-bg-surface border border-border rounded-[8px] mb-4"
         data-testid="market-bar-unavailable"
       >
         <div className="flex items-center gap-2.5">
@@ -135,7 +135,7 @@ export default function MarketBar() {
 
   return (
     <div
-      className="flex flex-wrap gap-0 bg-bg-surface border border-border rounded-[8px] mb-6 overflow-hidden"
+      className="flex flex-wrap gap-0 bg-bg-surface border border-border rounded-[8px] mb-4 overflow-hidden"
       data-testid="market-bar"
     >
       {assets.map((a, i) => {

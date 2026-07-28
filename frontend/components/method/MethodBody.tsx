@@ -29,6 +29,7 @@ import {
   CHAPTER_NAV,
   CHAPTER_ROUTE,
   chapterOwns,
+  stepNumber,
   type MethodChapter,
 } from "@/lib/method/anchors";
 import { supabase } from "@/lib/supabase";
@@ -817,7 +818,7 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
       {chapterOwns(chapter, "pipeline") && (
       <Section
         id="pipeline"
-        index="01"
+        index={stepNumber(chapter, "pipeline")}
         title="The daily process, as live status"
         lede={
           <>
@@ -995,7 +996,7 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
       {chapterOwns(chapter, "hypescore") && (
       <Section
         id="hypescore"
-        index="02"
+        index={stepNumber(chapter, "hypescore")}
         title="HypeScore — quantifying attention"
         lede={
           <>
@@ -1435,7 +1436,7 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
       {chapterOwns(chapter, "tradescore") && (
       <Section
         id="tradescore"
-        index="03"
+        index={stepNumber(chapter, "tradescore")}
         title="TradeScore — conviction, and ranking within a side"
         lede={
           <>
@@ -1641,7 +1642,7 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
       {chapterOwns(chapter, "edgescore") && (
       <Section
         id="edgescore"
-        index="04"
+        index={stepNumber(chapter, "edgescore")}
         title="EdgeScore — which side, how hard, and why"
         lede={
           <>
@@ -1972,7 +1973,7 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
       {chapterOwns(chapter, "factors") && (
       <Section
         id="factors"
-        index="05"
+        index={stepNumber(chapter, "factors")}
         title="Factor exposures — and do they reconcile?"
         lede={
           <>
@@ -1993,7 +1994,7 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
       {chapterOwns(chapter, "sources") && (
       <Section
         id="sources"
-        index="06"
+        index={stepNumber(chapter, "sources")}
         title="Data sources and provenance"
         lede={
           <>
@@ -2239,7 +2240,7 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
       {chapterOwns(chapter, "guardrails") && (
       <Section
         id="guardrails"
-        index="07"
+        index={stepNumber(chapter, "guardrails")}
         title="Guardrails on the reasoning layer"
         lede={
           <>

@@ -121,7 +121,10 @@ export function RiskLimitBoard({
                   {["Limit", "Value", "Limit", "Utilisation", "Headroom", "Status"].map(
                     (h, i) => (
                       <th
-                        key={h}
+                        // Keyed by index, not by label: column 1 is the limit's NAME
+                        // and column 3 is its THRESHOLD, and both are headed "Limit",
+                        // so `key={h}` collided and React warned on every render.
+                        key={`${h}-${i}`}
                         scope="col"
                         className={`px-[16px] py-[7px] text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-y border-border-strong bg-bg-elevated ${
                           i === 0 ? "text-left" : i === 3 ? "text-left" : "text-right"

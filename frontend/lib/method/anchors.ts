@@ -70,6 +70,41 @@ export function routeForAnchor(id: string): string | null {
   return chapter ? CHAPTER_ROUTE[chapter] : null;
 }
 
+/**
+ * The NUMBERED steps of each chapter, in render order.
+ *
+ * The step number beside a heading is derived from this, never written at the call
+ * site. It used to be hardcoded — `index="01"` … `index="07"` — assigned when
+ * /method was one 13,057px document. ADR-0084 split that document into two chapters
+ * rendered from ONE `MethodBody` filtered by `chapterOwns`, and the hardcoded numbers
+ * went with their sections: `build` opened on **02 HypeScore** with no 01 on the page,
+ * and `evidence` ran 01, then jumped to 06. Both were reported as confusing, because
+ * a step number is a promise about what precedes it.
+ *
+ * So the number is a function of position within its own chapter. Two consequences
+ * worth stating: moving a section between chapters renumbers both automatically, and
+ * a section that is not a numbered step simply is not listed here.
+ *
+ * Not every chapter-owned anchor is a step. `signal-validation` (build) and
+ * `track-record` / `corrections` (evidence) are rendered by their own components with
+ * their own headers, carry no step number today, and are deliberately absent — listing
+ * them here would number a heading that has nowhere to show it.
+ */
+export const CHAPTER_STEPS: Record<MethodChapter, readonly MethodAnchor[]> = {
+  build: ["hypescore", "tradescore", "edgescore", "factors"],
+  evidence: ["pipeline", "sources", "guardrails"],
+};
+
+/**
+ * The step number rendered beside a section heading: 1-based within its chapter,
+ * zero-padded to two digits. Returns null for a section that is not a numbered step,
+ * so the caller renders no number rather than an empty slot.
+ */
+export function stepNumber(chapter: MethodChapter, id: string): string | null {
+  const i = CHAPTER_STEPS[chapter].indexOf(id as MethodAnchor);
+  return i < 0 ? null : String(i + 1).padStart(2, "0");
+}
+
 /** Section nav items per chapter. Labels are nouns, never figures — see
  *  SectionNav, which is tested for the absence of digits. */
 export const CHAPTER_NAV: Record<MethodChapter, Array<{ id: string; label: string }>> = {

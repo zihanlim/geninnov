@@ -88,7 +88,13 @@ export default function RegimeHero({
       // 263px of an 814px shell -- a third of the viewport for orientation. The lg:
       // overrides tighten padding, gap and headline ONLY inside the lock; below the
       // breakpoint the page still scrolls and the original spacing is correct there.
-      className="rounded-[12px] p-7 lg:p-4 mb-6 lg:mb-0 grid gap-8 lg:gap-5 border border-border grid-cols-1 md:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]"
+      //
+      // NO BOTTOM MARGIN OF ITS OWN. It used to carry `mb-6 lg:mb-0`, which is the
+      // spacing of a page that no longer exists: the caller wraps this in `mb-4`, so
+      // at lg the two resolved to 16px but below it the child's 24px collapsed
+      // through the wrapper and won, making mobile the only breakpoint where this
+      // block sat 8px lower than every other. The caller owns the gap.
+      className="rounded-[12px] p-7 lg:p-4 grid gap-8 lg:gap-5 border border-border grid-cols-1 md:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]"
       style={{
         // Ledger light theme: a pale crimson wash into paper gives the hero
         // presence without a dark slab (which left every token-coloured ink

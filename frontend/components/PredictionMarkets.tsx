@@ -91,7 +91,12 @@ export default function PredictionMarkets() {
   }
 
   return (
-    <div className="card p-6">
+    // `lg:h-full` + a flex column so the card fills the pane rather than sitting
+    // short inside it: on `/` this is the bottom of a rail whose height is set by
+    // the columns beside it, and a card that stops early there reopens the gap the
+    // rail exists to close. Below lg the pane has no imposed height and this is an
+    // ordinary block.
+    <div className="card p-6 lg:h-full lg:flex lg:flex-col">
       <div className="flex items-baseline justify-between mb-3">
         <div>
           <div className="text-[11px] uppercase tracking-[0.12em] text-text-tertiary font-semibold">
@@ -127,7 +132,11 @@ export default function PredictionMarkets() {
           Source: Polymarket ↗
         </a>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+      {/* `lg:auto-rows-fr` spreads the pane's spare height across the tile ROWS
+          instead of pooling it into one dead band under the last tile — and it
+          squares off rows whose tiles differ only because one question wraps to two
+          lines. `lg:flex-1` is what hands it that height in the first place. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 lg:flex-1 lg:auto-rows-fr">
         {markets.map((m) => {
           const catColor = CATEGORY_COLORS[m.category] ?? CATEGORY_COLORS.Other;
           const isBinary = m.outcomes.length === 2;

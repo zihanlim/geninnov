@@ -19,7 +19,10 @@ export function Section({
   children,
 }: {
   id: string;
-  index: string;
+  /** Step number from `stepNumber(chapter, id)` — never a literal. Null for a
+   *  section that is not a numbered step, which renders no number at all rather
+   *  than an empty slot beside the heading. */
+  index: string | null;
   title: string;
   lede: ReactNode;
   children: ReactNode;
@@ -27,7 +30,9 @@ export function Section({
   return (
     <section id={id} aria-labelledby={`${id}-h`} className="mb-7">
       <div className="flex items-baseline gap-3 mb-1.5">
-        <span className="num text-[11px] text-text-tertiary tracking-[0.14em]">{index}</span>
+        {index ? (
+          <span className="num text-[11px] text-text-tertiary tracking-[0.14em]">{index}</span>
+        ) : null}
         <h2 id={`${id}-h`} className="text-[16px] font-semibold tracking-[-0.01em] m-0">
           {title}
         </h2>

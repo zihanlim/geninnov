@@ -774,9 +774,19 @@ function BookPageInner() {
 
           {/* ── Book header stats ───────────────────────────────────────── */}
           {/* gap-2 (8px), against the 24px page gutter. A metric strip reads as
-              ONE instrument rather than six loose cards when its internal gap is
-              roughly a third of the gutter separating it from everything else —
-              the grouping is carried by the spacing ratio, not by a border. */}
+             ONE instrument rather than six loose cards when its internal gap is
+             roughly a third of the gutter separating it from everything else —
+             the grouping is carried by the spacing ratio, not by a border. */}
+          {/* Now a single inline strip (MarketBar-style), not six cards. The
+              strip is the structural counterpart to the AnswerCards above: that
+              one answers the PM questions (with consequences and drill controls),
+              this one is the bare balance sheet of the book. The two read as
+              DIFFERENT instruments because they answer different questions, even
+              though some figures appear in both: the AnswerCards line says what
+              the figure MEANS for the book, this strip says what the figure IS.
+              Six cells of a single grid carry vertical dividers on lg, horizontal
+              on smaller widths; the dividers visually carry the grouping the
+              standalone cards used to provide. */}
           {/* The four questions a PM arrives with, before the detail strip.
               Two of these facts — what changed, and what is binding — were three
               screens down and on another route respectively; they are the two a
@@ -799,7 +809,7 @@ function BookPageInner() {
             capsKnown={Boolean(rec?.cap_utilisation)}
           />
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 bg-bg-surface border border-border rounded-[8px] mb-6 overflow-hidden divide-y md:divide-y-0 md:divide-x divide-border">
             <Stat
               label="Positions"
               value={String(rec.picks.length)}
@@ -986,37 +996,58 @@ function BookPageInner() {
 
 
           {/* ── How solid is this book? ──────────────────────────────────── */}
-          {/* Four independent readings of one question, which were stacked
-              full-width across ~975px and read as a sequence. Side by side they
-              read as what they are: corroboration. lg:2-up then wide:3-up, since
-              none of them carries a table with a large min-width.
+          {/* Four independent readings of one question, side by side so they read
+              as what they are: corroboration.
 
-              The OUTCOME leads. The other three ask whether the machinery is
-              sound — was there a real choice, does it churn, does it reproduce —
-              and those are process questions. Whether the published books were
-              actually right is the question a reader has first, so it is not the
-              one left orphaned at the end of a three-column row. */}
+              TWO COLUMNS, NOT THREE. Four equal-weight panels cannot fill three
+              columns — one is always orphaned on a row of its own, and this is
+              what that cost: measured at 1440, `Replication` sat alone on row 2
+              with columns 2-3 empty, a 890x503 hole, and `items-start` left a
+              further 308px void under `TrackRecordPanel` beside the taller
+              `PoolDepth`. 47% of the grid's area was empty — worse than the ~30%
+              ADR-0106 rewrote the `/` grid to remove. 2x2 divides four panels
+              exactly, at any width where they fit side by side.
+
+              ROW ORDER IS THE PAIRING, and it is semantic before it is visual.
+              Row 1 is what HAPPENED — did the books we published turn out right,
+              and how much of the book changed since the last one. Row 2 is
+              whether the machinery is SOUND — was there a real choice in the
+              pool, and does the same input reproduce. That grouping also happens
+              to pair the two summary panels (a figure and a sentence) against the
+              two that enumerate (candidates, samples), so the rows are close to
+              level on their own rather than by arithmetic. The OUTCOME still
+              leads: it is the question a reader has first.
+
+              NO `items-start` HERE, deliberately, against the default `/` uses.
+              That default exists so a pane never stretches to match a taller
+              neighbour it has nothing to do with. These four are the exception it
+              names: they are deliberately paired, and a row of corroborating
+              readings that ends on two different lines reads as two unrelated
+              cards. Each panel roots as a bare `card`, so the grid's default
+              `stretch` gives them a shared bottom edge with no per-child class —
+              and stretching a `card` only extends its border box, so nothing is
+              clipped and goal 7 is untouched. */}
           </section>
 
           <section id="solidity" aria-label="How solid this book is">
-          <div className="grid lg:grid-cols-2 wide:grid-cols-3 gap-6 items-start [&>*]:mb-0 mb-6">
+          <div className="grid lg:grid-cols-2 gap-6 [&>*]:mb-0 mb-6">
           {/* ── Did the books we already published turn out right? (ADR-0090) ─
               The instrument lived only on /method, two clicks from the claims it
               grades. This is the summary at the point of the claim. */}
           <TrackRecordPanel />
-
-          {/* ── Pool depth: the answer to "why not five and five?" ───────── */}
-          <PoolDepth
-            ideas={rec?.independent_ideas ?? null}
-            heldLongs={(rec?.picks ?? []).filter((p) => p.direction === "long").length}
-            heldShorts={(rec?.picks ?? []).filter((p) => p.direction === "short").length}
-          />
 
           {/* ── Turnover vs the previous run ─────────────────────────────── */}
           <BookTurnover
             current={(rec?.picks ?? []).map((p) => p.asset).filter(Boolean)}
             previous={prevBook?.assets ?? null}
             previousDate={prevBook?.date ?? null}
+          />
+
+          {/* ── Pool depth: the answer to "why not five and five?" ───────── */}
+          <PoolDepth
+            ideas={rec?.independent_ideas ?? null}
+            heldLongs={(rec?.picks ?? []).filter((p) => p.direction === "long").length}
+            heldShorts={(rec?.picks ?? []).filter((p) => p.direction === "short").length}
           />
 
           {/* ── Same inputs, run again: agent churn as against market churn ─ */}
@@ -1047,39 +1078,53 @@ function BookPageInner() {
           </section>
 
           <section id="not-taken" aria-label="Cleared the screen but not taken">
-          <ClearedNotTaken
-            candidates={candidates}
-            heldAssets={new Set((rec?.picks ?? []).map((p) => p.asset))}
-            heldDirections={Object.fromEntries(
-              (rec?.picks ?? []).map((p) => [p.asset, p.direction])
-            )}
-            themeNames={themeNames}
-            correlations={rec?.candidate_correlations ?? {}}
-          />
-
-          <AbstentionRoster
-            edgeByTheme={allEdgeByTheme}
-            themeNames={themeNames}
-            abstainThreshold={edgeWeights.abstainThreshold}
-            thresholdIsLive={weightsResolved.abstainThreshold}
-            // Themes that traded, taken from the PUBLISHED BOOK — the same source
-            // the positions table above renders (ADR-0040). It used to come from
-            // portfolio_positions, which disagrees with the book for the several
-            // minutes L5 takes: L1 writes its full candidate set there first and it
-            // is only reconciled down after the agent picks. During that window
-            // every theme looked traded, so this panel printed "Every scored theme
-            // cleared the |Edge| >= 0.15 conviction bar" while /method showed
-            // Inflation at +0.117 — a confidently wrong sentence, on a page whose
-            // own positions table listed seven names from four themes.
-            tradedThemeIds={
-              new Set(
-                (rec?.picks ?? [])
-                  .map((p) => p.theme_id || posEdgeByAsset[p.asset]?.theme_id)
-                  .filter((t): t is string => Boolean(t))
-              )
-            }
-            focusThemeId={focusHeldOut ? focusThemeId : null}
-          />
+          {/* Two-column grid: one panel answers "what passed every screen still
+              isn''t in the book", the other "what themes scored but didn''t trade".
+              They are different cuts of the same exclusion set, and the side-by-side
+              makes the relationship visible. The ClearedNotTaken collapses to a header
+              when no candidate is worth surfacing; the AbstentionRoster is always
+              full because the theme roster is finite. The grid stretches the collapsible
+              shell, but the chevron + summary line still drive the eye to the
+              actionable content. `gap-6` matches the rhythm of the 2x2 solidity grid
+              above, so the two pairings read as the same template. */}
+          <div className="grid lg:grid-cols-2 gap-6 mb-6">
+            <div className="min-w-0 [&_details]:!mb-0">
+              <ClearedNotTaken
+                candidates={candidates}
+                heldAssets={new Set((rec?.picks ?? []).map((p) => p.asset))}
+                heldDirections={Object.fromEntries(
+                  (rec?.picks ?? []).map((p) => [p.asset, p.direction])
+                )}
+                themeNames={themeNames}
+                correlations={rec?.candidate_correlations ?? {}}
+              />
+            </div>
+            <div className="min-w-0 [&>section]:!mb-0">
+              <AbstentionRoster
+                edgeByTheme={allEdgeByTheme}
+                themeNames={themeNames}
+                abstainThreshold={edgeWeights.abstainThreshold}
+                thresholdIsLive={weightsResolved.abstainThreshold}
+                // Themes that traded, taken from the PUBLISHED BOOK — the same source
+                // the positions table above renders (ADR-0040). It used to come from
+                // portfolio_positions, which disagrees with the book for the several
+                // minutes L5 takes: L1 writes its full candidate set there first and it
+                // is only reconciled down after the agent picks. During that window
+                // every theme looked traded, so this panel printed "Every scored theme
+                // cleared the |Edge| >= 0.15 conviction bar" while /method showed
+                // Inflation at +0.117 — a confidently wrong sentence, on a page whose
+                // own positions table listed seven names from four themes.
+                tradedThemeIds={
+                  new Set(
+                    (rec?.picks ?? [])
+                      .map((p) => p.theme_id || posEdgeByAsset[p.asset]?.theme_id)
+                      .filter((t): t is string => Boolean(t))
+                  )
+                }
+                focusThemeId={focusHeldOut ? focusThemeId : null}
+              />
+            </div>
+          </div>
 
           {/* ── Screening funnel (collapsed — audit detail) ────────────── */}
           </section>
@@ -1202,18 +1247,18 @@ function Stat({
   warnHint?: string;
 }) {
   return (
-    <div className="card p-4">
-      <div className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-1.5">
+    <div className="px-4 py-3">
+      <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-semibold leading-none mb-1">
         {label}
       </div>
       <div
-        className="num text-[20px] font-semibold leading-[1.1]"
+        className="num text-[16px] font-semibold leading-[1.1]"
         style={{ color: warn ? "var(--warning)" : color }}
       >
         {value}
       </div>
       {(hint || (warn && warnHint)) && (
-        <div className="text-[11px] text-text-secondary mt-1 leading-[1.4]">
+        <div className="text-[10.5px] text-text-secondary mt-1 leading-[1.35]">
           {warn && warnHint ? warnHint : hint}
         </div>
       )}

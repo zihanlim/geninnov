@@ -81,6 +81,8 @@ export interface FactorTilts {
 /** research_recommendations.book_metrics — book_metrics.book_metrics_to_dict */
 export interface BookMetrics {
   computed?: boolean | null;
+  correlation_summary?: CorrelationSummary | null;
+  correlation_matrix?: CorrelationPair[] | null;
   factor_tilts?: FactorTilts | null;
   gross_exposure?: number | null;
   net_exposure?: number | null;
@@ -88,6 +90,17 @@ export interface BookMetrics {
   short_weight?: number | null;
   sector_weights?: Record<string, number> | null;
   geo_weights?: Record<string, number> | null;
+}
+
+export interface CorrelationSummary {
+  pair_count?: number | null;
+  max_abs_pair?: {
+    asset_a?: string | null;
+    asset_b?: string | null;
+    corr?: number | null;
+  } | null;
+  mean_abs_corr?: number | null;
+  flag_threshold?: number | null;
 }
 
 export interface ResearchAnalyticsRow {
@@ -176,6 +189,7 @@ export interface MonteCarloVarRow {
   df?: number | null;
   prob_loss?: number | null;
   bands?: Array<{ confidence?: number; var?: number; es?: number }> | null;
+  histogram?: Array<{ mid?: number; density?: number }> | null;
   dropped_assets?: string[] | null;
 }
 

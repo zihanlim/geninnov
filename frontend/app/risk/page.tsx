@@ -32,6 +32,7 @@ import {
 import { SourceCaveat } from "@/components/status/SourceCaveat";
 import { DailyPLHistory } from "@/components/portfolio/DailyPLHistory";
 import { RiskLimitBoard } from "@/components/risk/RiskLimitBoard";
+import { MandatePanel } from "@/components/risk/MandatePanel";
 import { PositionRiskAttribution } from "@/components/risk/PositionRiskAttribution";
 import { AttentionCrowding } from "@/components/risk/AttentionCrowding";
 import {
@@ -701,6 +702,11 @@ function RiskPageInner() {
       <SectionNav items={RISK_SECTIONS} />
 
       <section id="limits" aria-label="Limits and headline risk">
+      {/* The mandate comes FIRST, because the board below measures against it.
+          Until this panel the caps existed only as per-name utilisation bars: a
+          reader saw "US 35% — at limit" with no way to learn who chose 35%. */}
+      <MandatePanel config={data.config} lens={data.lens} />
+
       <RiskLimitBoard
         loading={data.loading}
         rows={limitBoard}

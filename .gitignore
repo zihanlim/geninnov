@@ -1,8 +1,10 @@
 # Dependencies
 node_modules/
 
-# Build output
+# Build output — .next-* covers the alternate-distDir builds the audit/verify
+# scripts produce (.next-audit, .next-verify*, .next-dev-clean, and any future one)
 frontend/.next/
+frontend/.next-*/
 .next/
 
 # Environment variables

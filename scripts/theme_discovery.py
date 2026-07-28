@@ -13,21 +13,19 @@ was persisted. It now:
 Persistence is shadow-mode only: candidates are NOT auto-promoted into the live
 `themes` table (RESIDUAL R5) — an operator reviews and promotes them.
 
-The heavy ML (SBERT / UMAP / HDBSCAN / LDA) lives in run_discovery; the
-agreement + labelling logic is factored into pure functions that are unit-tested
-without the models.
+The heavy ML (SBERT / UMAP / HDBSCAN / LDA) is imported INSIDE ``run_discovery``,
+not at module scope, so the agreement + labelling logic below is genuinely
+importable and unit-testable without the models. See ADR-0130 — that sentence
+used to be here as a claim while the imports sat at module scope, which made it
+false: importing this module for its pure functions pulled in torch, so CI
+excluded the entire test file and 14 tests that touch no model at all went
+ungated.
 """
 import re
 import sys
 from collections import Counter
 from datetime import date
 from pathlib import Path
-
-from gensim import corpora
-from gensim import models
-from sentence_transformers import SentenceTransformer
-import umap
-import hdbscan
 
 # Root at the repo, not backend/, so `backend.*` resolves the same way it does
 # everywhere else in the codebase. See the note in scripts/daily_refresh.py.
@@ -242,6 +240,23 @@ def run_discovery(sb=None, run_date: date | None = None,
     3. LDA: topics with word distributions
     4. Embedding clustering: SBERT + UMAP + HDBSCAN
     5. Agreement: both methods → Tier 2; one method → Tier 3 → persist (shadow)
+
+    The ML stack is imported HERE rather than at module scope (ADR-0130). It is a
+    multi-hundred-megabyte tree — gensim, sentence-transformers and therefore
+    torch, umap, hdbscan — and this is the only function that touches it. At
+    module scope it was a tax on every consumer of the pure functions above,
+    including CI, which responded by excluding the whole test file.
+
+    The import sits after the corpus-size gate below, not at the top of the
+    function: steps 1 and 5 need no model, and loading torch only to discover the
+    corpus holds 12 documents is pure cost. It also keeps the "corpus too small"
+    path testable without the ML.
+
+    ImportError is deliberately NOT caught. Past the gate this function cannot do
+    its job without the models, and a discovery run that silently returns None
+    because a dependency is missing is the failure mode ADR-0023 exists to
+    prevent — the monthly workflow must fail loudly so the absence is visible,
+    not degrade into "no candidates found".
     """
     run_date = run_date or date.today()
     sb = sb or _make_supabase()
@@ -272,6 +287,13 @@ def run_discovery(sb=None, run_date: date | None = None,
     if len(corpus) < MIN_DOCS_PER_THEME:
         print(f"Warning: corpus has only {len(corpus)} docs, expected >= {MIN_DOCS_PER_THEME}")
         return None
+
+    # Past the gate: everything below needs the models (ADR-0130).
+    from gensim import corpora
+    from gensim import models
+    from sentence_transformers import SentenceTransformer
+    import umap
+    import hdbscan
 
     texts = [doc["text"] for doc in corpus]
 

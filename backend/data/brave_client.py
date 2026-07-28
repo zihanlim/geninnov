@@ -25,7 +25,56 @@ THEME_KEYWORDS = {
     "Corporate Credit":  ["credit spreads", "high yield", "junk bonds", "corporate bonds", "IG credit"],
     "Energy Prices":    ["crude oil", "OPEC", "natural gas", "energy prices", "WTI", "Brent"],
     "US Election":     ["election", "Democratic", "Republican", "campaign", "policy uncertainty"],
+    # ADR-0129. Only the first THREE are used to build the Brave query, so the
+    # order is load-bearing: "AI capex" and "data center" are the phrases that
+    # return the buildout story rather than consumer-AI coverage.
+    "AI Capex":        ["AI capex", "data center", "AI infrastructure",
+                        "hyperscaler", "GPU demand", "AI spending"],
 }
+
+# Short forms a headline actually uses, kept OUT of THEME_KEYWORDS because they
+# are poor search queries — "fed", "oil" and "war" would each drag in a corpus far
+# wider than the theme — but which unambiguously identify the theme when they turn
+# up as a tracked phrase.
+#
+# Without these, `narrative_tracker.anchor_for_phrase` reported Fed Policy's own
+# vocabulary as unwatched: measured on the live corpus, "fed" (9.3% share) and
+# "rates" (7.7%) both came back `covered_by = None`, because "Federal Reserve"
+# tokenises to {federal, reserve} and never matches the token "fed". Those are the
+# two loudest false "nothing is watching this" claims the shortlist could make.
+#
+# This list only affects ATTRIBUTION of a phrase already discovered. It cannot
+# make a narrative visible or invisible — that is MARKET_SEED_QUERIES' job — so
+# adding to it narrows what the shortlist claims is unwatched, never what the
+# tracker can see.
+THEME_COVERAGE_ALIASES: dict[str, list[str]] = {
+    "Fed Policy":        ["fed", "federal", "rates", "interest", "rate cut", "rate hike",
+                         "powell", "hawkish", "dovish", "fomc meeting"],
+    "Inflation":         ["prices", "disinflation", "deflation"],
+    "China Growth":      ["china", "chinese", "beijing", "yuan", "renminbi"],
+    "US Dollar":         ["dollar", "usd", "dollar index", "greenback", "euro", "yen", "forex"],
+    "Geopolitical Risk": ["ukraine", "russia", "israel", "iran", "gaza", "tariffs", "tariff"],
+    "Corporate Credit":  ["credit", "bonds", "junk", "spreads", "default", "leveraged loans"],
+    "Energy Prices":     ["oil", "gas", "energy", "barrel", "crude", "opec"],
+    "US Election":       ["trump", "biden", "harris", "congress", "senate",
+                         "democrats", "republicans"],
+    "AI Capex":          ["ai", "artificial intelligence", "nvidia", "chips",
+                          "semiconductor", "gpu", "datacenter", "data centre",
+                          "hyperscalers", "openai", "compute", "capex"],
+}
+
+
+def coverage_keywords() -> dict[str, list[str]]:
+    """THEME_KEYWORDS plus the short forms, for narrative attribution only.
+
+    Never use this to build a search query: the aliases are deliberately generic
+    and would widen every fetch.
+    """
+    return {
+        theme: [*keywords, *THEME_COVERAGE_ALIASES.get(theme, [])]
+        for theme, keywords in THEME_KEYWORDS.items()
+    }
+
 
 def fetch_news_for_theme(theme: str, lookback_days: int = 7) -> list[dict]:
     """
@@ -67,6 +116,83 @@ def fetch_news_for_theme(theme: str, lookback_days: int = 7) -> list[dict]:
     if not _mock_allowed():
         return []
     return _mock_news(theme, lookback_days)
+
+# ─── The un-themed corpus (ADR-0128) ─────────────────────────────────────────
+#
+# THEME_KEYWORDS above is a list of eight things to look for. Everything the
+# pipeline could see was in it, which made theme discovery circular: the corpus
+# was collected by asking for the eight themes, so clustering it could only ever
+# return sub-themes of those eight. A narrative nothing had named — the AI capex
+# cycle is the standing example — produced no headline, no mention count and no
+# score, and was invisible rather than merely quiet.
+#
+# These queries are deliberately about the MARKET, not about a theme. They ask
+# "what is financial news about today" and accept whatever comes back. That is the
+# only kind of query whose results can contain a narrative we did not think of.
+#
+# They are still queries, and a query is still an editorial act — this widens the
+# aperture, it does not remove it. What it buys is that the aperture is no longer
+# the same eight labels the scoring layer already knows, so `narrative_tracker`
+# reading this corpus is measuring something the anchors did not pre-select.
+MARKET_SEED_QUERIES: list[str] = [
+    '"stock market" OR "equities" OR "bond market"',
+    '"investors" OR "traders" OR "fund managers"',
+    '"global markets" OR "world economy" OR "central banks"',
+    '"commodities" OR "currencies" OR "credit markets"',
+    '"earnings" OR "guidance" OR "capital spending"',
+]
+
+
+def fetch_market_news(lookback_days: int = 7) -> list[dict]:
+    """Fetch general market news — NOT scoped to any theme.
+
+    Returns the same ``{headline, date, url, source}`` shape as
+    ``fetch_news_for_theme``, deduplicated by headline across the seed queries
+    (the queries overlap by design, so the same story arrives several times and
+    would otherwise inflate its own document frequency).
+
+    Returns ``[]`` — never mock data — when the feed is unavailable. This is the
+    one fetcher where a fallback would be actively harmful: mock headlines are
+    generated from a fixed template, so a narrative tracker reading them would
+    "discover" the template's own vocabulary and report it as an emerging market
+    narrative. An empty corpus produces no signal, which is the truth.
+    """
+    date_from = (date.today() - timedelta(days=lookback_days)).isoformat()
+    seen: set[str] = set()
+    out: list[dict] = []
+
+    for query in MARKET_SEED_QUERIES:
+        try:
+            result = subprocess.run(
+                ["node", "scripts/call_brave_mcp.js", query, date_from],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+            )
+            if result.returncode != 0:
+                continue
+            items = json.loads(result.stdout)
+        except Exception:
+            continue
+
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            headline = (it.get("headline") or "").strip()
+            if not headline:
+                continue
+            key = headline.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            it.setdefault("source", "brave_market")
+            it["query"] = query
+            out.append(it)
+
+    return out
+
 
 def _mock_news(theme: str, lookback_days: int) -> list[dict]:
     """Return realistic mock news for testing without MCP credentials.

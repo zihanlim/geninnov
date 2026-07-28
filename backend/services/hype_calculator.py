@@ -84,6 +84,13 @@ def volume_subscore(mentions_7d_avg: float) -> float:
     return math.tanh(max(0.0, mentions_7d_avg) / VOLUME_BUSY_MENTIONS)
 
 
+# The |corr| at which an asset class counts as MATERIALLY moving with the theme's
+# attention, for the breadth count. Half of CORR_FULL: a class at this level earns
+# half the magnitude credit, which is the natural boundary for "this class is
+# participating" without demanding saturation.
+CORR_MATERIAL = 0.25
+
+
 def corr_subscore(price_corr: float) -> float:
     """|corr| against a fixed anchor, [0, 1].
 
@@ -107,6 +114,101 @@ def momentum_subscore(momentum_raw: float) -> float:
     return (math.tanh(momentum_raw / MOMENTUM_SCALE) + 1.0) / 2.0
 
 
+# ─── Cross-asset correlation (ADR-0127) ──────────────────────────────────────
+# A "market theme" is a narrative driving CROSS-ASSET moves. Until ADR-0127 the
+# correlation term measured one instrument: daily_refresh looped over a theme's
+# mapped tickers and broke on the first, guarded by a test that could never fail
+# (`correlation_with_mentions` returned the 0.0 sentinel, never NaN). So Fed
+# Policy — mapped across rates, commodities and equity — was scored on whichever
+# ticker the theme_assets query happened to return first, and a theme that moved
+# four asset classes together scored identically to one tracking a single ETF.
+#
+# These three functions replace that with a reading over every mapped instrument,
+# collapsed per ASSET CLASS so a theme carrying five rates ETFs cannot outvote one
+# carrying a single FX position. Magnitude and breadth are both scored, because
+# each answers a different question: "how hard does attention move prices" and
+# "how much of the cross-asset complex does it move".
+
+
+def per_class_corr(
+    measured: dict[str, float | None],
+    asset_class_of: dict[str, str],
+) -> dict[str, float]:
+    """Collapse per-ticker correlations to one SIGNED reading per asset class.
+
+    ``measured`` maps ticker -> correlation, where **None means not measurable**
+    (see ``correlation_with_mentions``) and is dropped rather than counted as 0.
+    A ticker missing from ``asset_class_of`` is also dropped — an unclassified
+    instrument cannot contribute to a cross-asset breadth claim.
+
+    Within a class the STRONGEST |corr| wins, with its sign preserved. Not the
+    mean: two rates ETFs that both track the theme are one reading of the rates
+    complex, and averaging them against a third that happens to be cash-like
+    would understate the class rather than describe it.
+    """
+    best: dict[str, float] = {}
+    for ticker, corr in measured.items():
+        if corr is None:
+            continue
+        cls = asset_class_of.get(ticker)
+        if cls is None:
+            continue
+        if cls not in best or abs(corr) > abs(best[cls]):
+            best[cls] = float(corr)
+    return best
+
+
+def cross_asset_corr_subscore(per_class: dict[str, float]) -> float | None:
+    """The correlation sub-score, [0, 1] — magnitude AND breadth. None if nothing
+    was measurable.
+
+    Mean over the MEASURED asset classes of ``min(1, |c| / CORR_FULL)``. Two
+    properties follow, and both are the point:
+
+    * A theme correlating strongly in four of its four classes scores near 1.0; a
+      theme correlating just as strongly in one of four scores near 0.25. Under
+      the old single-ticker reading these were indistinguishable.
+    * The denominator counts only classes we could MEASURE, never classes we
+      mapped. A missing price history must not be scored as an absence of
+      correlation — the same renormalise-over-what-is-present rule ADR-0036
+      applies to EdgeScore.
+
+    Absolute on its own scale, so ADR-0042 still holds: the number means the same
+    thing tomorrow, and does not move when another theme's correlations move.
+    """
+    if not per_class:
+        return None
+    return sum(min(1.0, abs(c) / CORR_FULL) for c in per_class.values()) / len(per_class)
+
+
+def corr_breadth(per_class: dict[str, float], threshold: float = CORR_MATERIAL) -> tuple[int, int]:
+    """``(classes moving materially, classes measured)``.
+
+    The literal cross-asset claim, carried alongside the score so a reader can see
+    *"3 of 4 asset classes"* rather than inferring it from a decimal. Reported, not
+    scored — ``cross_asset_corr_subscore`` already prices breadth continuously, and
+    counting it twice would double-weight it.
+    """
+    if not per_class:
+        return (0, 0)
+    material = sum(1 for c in per_class.values() if abs(c) >= threshold)
+    return (material, len(per_class))
+
+
+def representative_corr(per_class: dict[str, float]) -> float | None:
+    """The single SIGNED number that best represents the theme's price link — the
+    strongest per-class correlation.
+
+    This is what ``price_corr`` persists and what ``crowding_label`` reads, because
+    crowding is a directional claim (co-moving with the market = consensus;
+    inverse = natural hedge) and needs a sign that a breadth average would destroy.
+    None when nothing was measurable.
+    """
+    if not per_class:
+        return None
+    return max(per_class.values(), key=abs)
+
+
 def minmax_norm(value: float, values: list[float]) -> float:
     """Min-max normalize a value across a list. Returns 0.5 if all values identical."""
     mn, mx = min(values), max(values)
@@ -122,30 +224,52 @@ def rescale_vader(compound: float) -> float:
 def hype_score(
     volume: float,
     sentiment: float,
-    corr: float,
+    corr: float | None,
     momentum: float,
     cfg: ScoringConfig,
 ) -> float:
     """
     Compute HypeScore for a single theme.
 
-    `volume`, `momentum` and `corr` are the three magnitude signals and are
-    expected to be min-max normalized to [0, 1] across the theme universe by the
-    caller (ADR-0006 / ADR-0028); `corr` is folded via abs() before normalizing
-    so direction doesn't matter. `sentiment` is VADER compound in [-1, +1] and is
-    rescaled here (NOT cross-theme normalized) because its SIGN carries meaning —
-    ranking would corrupt bullish/bearish direction. The abs() below is a
-    harmless defensive fold (a no-op on an already-normalized [0, 1] value).
+    `volume`, `momentum` and `corr` are the three magnitude signals, each an
+    absolute [0, 1] sub-score on its own documented scale (ADR-0042). `sentiment`
+    is VADER compound in [-1, +1] and is rescaled here (NOT cross-theme
+    normalized) because its SIGN carries meaning — ranking would corrupt
+    bullish/bearish direction. The abs() below is a harmless defensive fold (a
+    no-op on an already-normalized [0, 1] value).
+
+    `corr` may be **None**: no mapped instrument had enough overlapping history to
+    measure a correlation at all. That component is then dropped and the remaining
+    weights RENORMALISED over what is present, exactly as
+    ``edge_signals.compute_edge_score`` does for a missing EdgeScore component
+    (ADR-0036). Scoring an unmeasurable correlation as 0 is not neutral: with
+    ``hype_corr_weight = 0.30`` it silently deducts up to 30 points of HypeScore
+    for a gap in our data, and the theme reads as quiet when it was never measured.
     """
     sent = rescale_vader(sentiment)  # [-1, +1] -> [0, 1]
-    corr_abs = abs(corr)              # [-1, +1] -> [0, 1]
 
-    return 100 * (
-        cfg.hype_volume_weight * volume +
-        cfg.hype_sentiment_weight * sent +
-        cfg.hype_corr_weight * corr_abs +
-        cfg.hype_momentum_weight * momentum
-    )
+    present = [
+        (cfg.hype_volume_weight, volume),
+        (cfg.hype_sentiment_weight, sent),
+        (cfg.hype_momentum_weight, momentum),
+    ]
+    if corr is not None:
+        # All four present: the arithmetic is UNCHANGED — a plain weighted sum,
+        # not a renormalised one. /method reproduces this line as
+        # `100 x Σ(w_i · s_i)` from the persisted sub-scores and must keep
+        # reconciling byte-for-byte, which it would not if this divided by a
+        # weight total the page does not divide by.
+        return 100 * (
+            cfg.hype_volume_weight * volume +
+            cfg.hype_sentiment_weight * sent +
+            cfg.hype_corr_weight * abs(corr) +
+            cfg.hype_momentum_weight * momentum
+        )
+
+    weight_present = sum(w for w, _ in present)
+    if weight_present <= 0:
+        return 0.0
+    return 100 * sum(w * v for w, v in present) / weight_present
 
 
 def robust_momentum(current: float, history: list[float]) -> tuple[float, bool]:
@@ -248,10 +372,35 @@ def volume_base(r: dict) -> float:
     return float(avg)
 
 
+def theme_corr_subscore(r: dict) -> float | None:
+    """The correlation sub-score for one theme's raw signal row.
+
+    Prefers the CROSS-ASSET reading (``corr_by_class``, written by
+    ``build_theme_signals``): the per-asset-class correlations measured over every
+    instrument the theme maps to. Falls back to the legacy single ``price_corr``
+    only for rows that predate ADR-0127 — a backfill or a replay of an old row —
+    so the two paths never disagree about which number is authoritative.
+
+    Returns None when the correlation was not measurable at all; ``hype_score``
+    renormalises over the remaining components rather than scoring it 0.
+
+    Both the score computation and the persisted ``corr_score`` display call this,
+    so the four persisted sub-scores always reproduce the persisted HypeScore.
+    """
+    by_class = r.get("corr_by_class")
+    if by_class:
+        return cross_asset_corr_subscore(by_class)
+    if by_class is not None:
+        # Present but empty: measured nothing. Explicitly unmeasurable, not 0.
+        return None
+    legacy = r.get("price_corr")
+    return None if legacy is None else corr_subscore(legacy)
+
+
 def compute_hype_scores(raw_signals: list[dict], cfg: ScoringConfig) -> list[dict]:
     """
-    Cross-theme helper: min-max normalize each sub-score across all themes,
-    then call hype_score for each theme. Returns scored rows with 'hype_score'.
+    Per-theme scoring: build each absolute sub-score, then call hype_score.
+    Returns scored rows with 'hype_score'.
 
     Empty input returns an empty list — min()/max() on empty sequences raises
     ValueError, which would otherwise crash daily_refresh on bootstrap.
@@ -266,7 +415,7 @@ def compute_hype_scores(raw_signals: list[dict], cfg: ScoringConfig) -> list[dic
         # "support risk monitoring" requires and cross-sectional min-max cannot do.
         volume = volume_subscore(volume_base(r))
         momentum = momentum_subscore(r["momentum_raw"])
-        corr = corr_subscore(r["price_corr"])
+        corr = theme_corr_subscore(r)
         score = hype_score(
             volume=volume,
             sentiment=r["avg_sentiment"],

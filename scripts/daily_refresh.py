@@ -34,8 +34,14 @@ except Exception:
     pass
 
 from backend.tools.sentiment import batch_sentiment
-from backend.data.brave_client import fetch_news_for_theme
+from backend.data.brave_client import (
+    fetch_news_for_theme,
+    fetch_market_news,
+    THEME_KEYWORDS,
+    coverage_keywords,
+)
 from backend.data.reddit_client import fetch_posts_for_theme
+from backend.services.narrative_tracker import track_narratives
 from backend.data.yahoo_client import fetch_price_data, correlation_with_mentions
 from backend.data.macro_fetcher import MacroFetcher
 from backend.data.polymarket_fetcher import PolymarketFetcher
@@ -51,6 +57,10 @@ from backend.services.hype_calculator import (
     crowding_label,
     robust_momentum,
     volume_base,
+    per_class_corr,
+    corr_breadth,
+    representative_corr,
+    theme_corr_subscore,
 )
 from backend.services.trade_generator import trade_score
 from backend.services.trade_ranker import (
@@ -61,6 +71,7 @@ from backend.services.trade_ranker import (
     is_classified,
     SECTOR_MAP,
     GEO_MAP,
+    ASSET_CLASS_MAP,
 )
 from backend.services.risk_engine import (
     compute_risk,
@@ -278,13 +289,34 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
             for i in range(CORR_WINDOW_DAYS)
         })
 
-        price_corr = 0.0
+        # Correlation across EVERY mapped instrument, collapsed per asset class
+        # (ADR-0127). This loop used to `break` on the first ticker, guarded by
+        # `if not pd.isna(corr)` — a test the old 0.0-sentinel return could never
+        # fail — so a theme mapped across rates, commodities and equity was scored
+        # on whichever ticker Postgres returned first, and could carry a hard 0.0
+        # from a ticker with no overlapping sessions while seven others had data.
+        # `correlation_with_mentions` now returns None for "not measurable", which
+        # `per_class_corr` drops instead of averaging in as a zero.
+        measured: dict[str, float | None] = {}
         if not price_df.empty and not mention_series.empty:
             for ticker in tickers:
-                corr = correlation_with_mentions(price_df, mention_series, ticker)
-                if not pd.isna(corr):
-                    price_corr = corr
-                    break
+                measured[ticker] = correlation_with_mentions(price_df, mention_series, ticker)
+
+        corr_by_class = per_class_corr(measured, ASSET_CLASS_MAP)
+        material_classes, measured_classes = corr_breadth(corr_by_class)
+        # SIGNED, for crowding — a theme co-moving positively with its complex is a
+        # crowded consensus, an inverse mover is a natural hedge (crowding_label).
+        price_corr = representative_corr(corr_by_class)
+
+        unmeasured = [t for t, c in measured.items() if c is None]
+        if unmeasured:
+            print(f"[build_theme_signals] {theme_name}: {len(unmeasured)}/{len(measured)} "
+                  f"mapped tickers not measurable ({', '.join(sorted(unmeasured)[:6])}"
+                  f"{'…' if len(unmeasured) > 6 else ''}); scored on the rest.")
+        if not corr_by_class:
+            print(f"[build_theme_signals] {theme_name}: no mapped instrument had "
+                  f"enough overlapping history; correlation is UNMEASURED (not 0) "
+                  f"and HypeScore renormalises over the other three components.")
 
         results.append({
             "theme_id": theme["id"],
@@ -294,6 +326,13 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
             "mention_count_7d_std": mention_count_7d_std,
             "avg_sentiment": avg_sentiment,
             "price_corr": price_corr,
+            # The cross-asset reading itself: {asset_class: signed corr}. This is
+            # what theme_corr_subscore scores; `price_corr` above is the one-number
+            # summary of it, kept for crowding and for every existing consumer.
+            "corr_by_class": corr_by_class,
+            "corr_per_ticker": {t: c for t, c in measured.items() if c is not None},
+            "corr_classes_material": material_classes,
+            "corr_classes_measured": measured_classes,
             "momentum_raw": momentum_raw,
             "headlines": headlines,
             "data_source": _classify_data_source(headlines),
@@ -691,7 +730,12 @@ def persist(run_date: date, scored: list[dict]):
         # Update themes table. The SIGN of correlation is preserved on the
         # history row below as signed_corr + crowding for the trade/risk layer.
         #
-        corr_score = corr_subscore(r["price_corr"])
+        # theme_corr_subscore reads the CROSS-ASSET reading (`corr_by_class`), the
+        # same call compute_hype_scores made, so the persisted corr_score always
+        # reproduces the persisted hype_score. It is None — written as SQL NULL —
+        # when no mapped instrument was measurable; /method already renders a null
+        # sub-score as "cannot be reproduced" rather than as a zero (ADR-0127).
+        corr_score = theme_corr_subscore(r)
         supabase.table("themes").update({
             "hype_score": r["hype_score"],
             "volume_score": vol_norm,
@@ -739,6 +783,12 @@ def persist(run_date: date, scored: list[dict]):
             "sentiment_signal": r.get("sentiment_signal"),
             "conviction": r.get("conviction"),
             "vol": r.get("vol"),
+            # Cross-asset correlation detail (migration 049 / ADR-0127). The
+            # per-class map is what makes "this narrative moves 3 of 4 asset
+            # classes" a readable claim rather than an inference from one decimal.
+            "corr_by_class": r.get("corr_by_class"),
+            "corr_classes_material": r.get("corr_classes_material"),
+            "corr_classes_measured": r.get("corr_classes_measured"),
         }
         try:
             supabase.table("theme_signals_history").upsert(
@@ -839,6 +889,151 @@ def persist_theme_news(run_date: date, scored: list[dict]) -> int:
 
     print(f"[{today_str}] {len(rows)} headlines persisted to theme_news.")
     return len(rows)
+
+
+# ─── Step 5b (L1b): The un-themed corpus + narrative tracking (ADR-0128) ─────
+def persist_market_news(run_date: date, items: list[dict]) -> int:
+    """Upsert the general market-news corpus into `market_news`.
+
+    Separate from `theme_news` on purpose, and not merely because the FK would not
+    allow it. `theme_news` answers "what was said about Fed Policy", and the L5
+    agent reads it per theme; this answers "what was the news about", and belongs
+    to no theme by construction. Merging them under a sentinel theme row would put
+    un-themed headlines into the agent's per-theme reasoning context, where they
+    would read as evidence about a theme that did not collect them.
+    """
+    today_str = run_date.isoformat()
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for it in items or []:
+        headline = (it.get("headline") or "").strip()
+        if not headline:
+            continue
+        # Mock never reaches here: fetch_market_news has no mock fallback, because
+        # a tracker reading template headlines would "discover" the template's own
+        # vocabulary and report it as an emerging market narrative.
+        if str(it.get("source", "")).startswith("mock_"):
+            continue
+        key = headline.lower()[:1000]
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append({
+            "run_date": today_str,
+            "source": it.get("source", "brave_market"),
+            "headline": headline[:1000],
+            "published_date": _safe_iso_date(it.get("date")),
+            "url": it.get("url"),
+            "query": it.get("query"),
+        })
+
+    if not rows:
+        return 0
+
+    try:
+        supabase.table("market_news").upsert(
+            rows, on_conflict="run_date,headline"
+        ).execute()
+    except Exception as exc:
+        print(f"[{today_str}] WARN: market_news upsert failed ({exc.__class__.__name__}); "
+              f"apply migration 049. Narrative tracking will run on this run's "
+              f"corpus but keep no history.")
+        return 0
+
+    print(f"[{today_str}] {len(rows)} un-themed headlines persisted to market_news.")
+    return len(rows)
+
+
+def load_market_corpus(run_date: date, lookback_days: int = 7) -> list[str]:
+    """The documents narrative tracking reads: today's un-themed market news, plus
+    the anchor themes' headlines for the same window.
+
+    BOTH, deliberately. The un-themed corpus is what makes discovery non-circular;
+    the themed corpus is real market news that was already paid for, and excluding
+    it would throw away most of the day's documents and leave share-of-voice
+    computed on too small a denominator. What keeps the result honest is not
+    excluding themed news but `covered_by` — every phrase is labelled with the
+    anchor that already asks for it, so a surge in "fomc" is visibly Fed Policy
+    doing its job rather than a discovery.
+    """
+    cutoff = (run_date - timedelta(days=lookback_days)).isoformat()
+    docs: list[str] = []
+
+    try:
+        rows = (
+            supabase.table("market_news")
+            .select("headline")
+            .gte("run_date", cutoff)
+            .limit(5000)
+            .execute()
+            .data
+        )
+        docs.extend((r.get("headline") or "") for r in rows or [])
+    except Exception as exc:
+        print(f"[narrative_tracker] market_news read failed ({exc.__class__.__name__}); "
+              f"falling back to themed headlines only — discovery is CIRCULAR on "
+              f"this run and can only surface sub-themes of the eight anchors.")
+
+    try:
+        rows = (
+            supabase.table("theme_news")
+            .select("headline, source")
+            .gte("run_date", cutoff)
+            .limit(5000)
+            .execute()
+            .data
+        )
+        docs.extend(
+            (r.get("headline") or "") for r in rows or []
+            if not str(r.get("source") or "").startswith("mock_")
+        )
+    except Exception as exc:
+        print(f"[narrative_tracker] theme_news read failed ({exc.__class__.__name__}).")
+
+    # Dedupe: the same story is routinely returned by both a themed query and a
+    # market seed query, and counting it twice inflates its own share of voice.
+    seen: set[str] = set()
+    out: list[str] = []
+    for d in docs:
+        d = (d or "").strip()
+        if not d:
+            continue
+        k = d.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(d)
+    return out
+
+
+def run_narrative_tracking(run_date: date) -> int:
+    """Fetch the un-themed corpus, persist it, and track narratives over it.
+
+    Best-effort throughout: this is a SHADOW signal (nothing here sizes a position
+    or reaches the L5 agent), so a failure here must never take down the book.
+    Returns the number of narrative signals built.
+    """
+    try:
+        items = fetch_market_news(lookback_days=7)
+        if items:
+            persist_market_news(run_date, items)
+        else:
+            print(f"[{run_date}] fetch_market_news returned nothing — no BRAVE key, "
+                  f"or the feed failed. No mock fallback exists for this corpus by "
+                  f"design; narrative tracking runs on stored history only.")
+
+        docs = load_market_corpus(run_date)
+        # coverage_keywords(), not THEME_KEYWORDS: attribution needs the short
+        # forms a headline actually uses ("fed", "oil"), which are deliberately
+        # absent from the SEARCH keywords because they would widen every fetch.
+        signals = track_narratives(
+            supabase, run_date, docs, anchor_keywords=coverage_keywords()
+        )
+        return len(signals)
+    except Exception as exc:
+        print(f"[{run_date}] WARN: narrative tracking failed "
+              f"({exc.__class__.__name__}): {exc}. The book is unaffected.")
+        return 0
 
 
 # ─── Step 6b (L2): Refresh factor exposures for the tradable universe ────────
@@ -1488,13 +1683,26 @@ def reconcile_positions_to_published_book(
         if cand is None:
             unmatched.append(f"{direction} {asset}")
             continue
-        weight = p.get("signed_weight")
-        if weight is None:
-            w = float(p.get("weight") or 0.0)
+        # `_is_num`/`_num`, not bare `float(... or 0.0)`. The `or` guards only FALSY
+        # values; a truthy non-numeric string reaches float() and raises. That defect
+        # class killed the 2026-07-27 run once in size_positions (fixed there with
+        # _num for all six score fields) and RECURRED the same day at 22:33 UTC from
+        # another site — so this seam, the one that writes the BOOK OF RECORD, gets
+        # the same guard rather than trusting every upstream producer forever.
+        # Normal-path picks carry floats size_positions itself wrote; this is for the
+        # pick that arrives any other way (ADR-0124's defect class, at the persist seam).
+        from backend.services.q1_agent import _is_num, _num
+        raw_signed = p.get("signed_weight")
+        if _is_num(raw_signed):
+            weight = float(raw_signed)
+        else:
+            w = _num(p.get("weight"))
             weight = -w if direction == "short" else w
-        notional = p.get("notional")
-        if notional is None:
-            notional = abs(float(weight)) * cfg.total_capital
+        raw_notional = p.get("notional")
+        notional = (
+            float(raw_notional) if _is_num(raw_notional)
+            else abs(weight) * cfg.total_capital
+        )
         final.append((cand, float(notional), float(weight)))
 
     if unmatched:
@@ -1989,6 +2197,17 @@ def main():
                                  asset_edges=asset_edges)
     persist(run_date, scored)
     persist_theme_news(run_date, scored)
+
+    # ── L1b: narrative tracking over the UN-THEMED corpus (ADR-0128) ─────────
+    # Everything above this line measured the eight themes we named in advance.
+    # This measures what the news is about, whether or not we named it — which is
+    # the only way a narrative like the AI capex cycle can be seen at all.
+    #
+    # Deliberately after persist(): the anchor themes are the deliverable and must
+    # not be held up by a discovery signal, and `run_narrative_tracking` swallows
+    # its own failures for the same reason.
+    run_narrative_tracking(run_date)
+
     try:
         record_pipeline_run(
             supabase, l1_id, "success", run_date=run_date, stage="L1",

@@ -87,17 +87,28 @@ export default function ConvictionCard({
   provenance,
   topHeadline,
 }: Props) {
-  const score = Math.round(theme.hype_score ?? 0);
+  // `?? 0` printed a confident 0 for a theme no pipeline run has scored yet —
+  // a theme created between runs (ADR-0129) has NULL, and NULL is the absence of
+  // a score, not a low one. null flows through to the render, which shows the
+  // em dash the rest of the card already uses for unavailable figures.
+  const score =
+    typeof theme.hype_score === "number" && Number.isFinite(theme.hype_score)
+      ? Math.round(theme.hype_score)
+      : null;
   const delta = theme.delta_1d ?? 0;
   // Read the tokens rather than copying their hexes. This held "#e11048", the
   // PRE-AA accent — so it kept the old 4.34:1 crimson after the token moved to
   // #d40e43, and would drift again on any future palette change.
+  // An unscored theme takes the muted token, not the "below 50" red. Red is a
+  // reading; absence is not.
   const color =
-    score >= 70
-      ? "var(--accent)"
-      : score >= 50
-        ? "var(--long)"
-        : "var(--short)";
+    score === null
+      ? "var(--text-tertiary)"
+      : score >= 70
+        ? "var(--accent)"
+        : score >= 50
+          ? "var(--long)"
+          : "var(--short)";
   const synthetic = isSynthetic(provenance?.data_source ?? null);
   const pct = theme.crowding_pct;
   const hasPct = typeof pct === "number";
@@ -156,7 +167,12 @@ export default function ConvictionCard({
 
       <div className="text-[11px] text-text-tertiary mb-2 flex items-center gap-1.5">
         <span>HypeScore</span>
-        <span className="num font-semibold text-text-primary">{score}</span>
+        <span
+          className="num font-semibold text-text-primary"
+          title={score === null ? "No pipeline run has scored this theme yet" : undefined}
+        >
+          {score === null ? "—" : score}
+        </span>
         {synthetic && (
           <span
             className="text-warning font-semibold"

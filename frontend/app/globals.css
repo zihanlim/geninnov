@@ -55,18 +55,24 @@
        "interactive" distinct from "short" is the lightness gap, and every further
        shade spent on contrast margin narrows it. */
     --accent: #c50c3e;       /* interactive / links / active nav (crimson-pink) */
-    /* THE LOGO GRADIENT'S SECOND STOP, AND NOTHING ELSE.
-       --brand is byte-identical to --short (#9f172a), so anything painted with
-       it renders in exactly the colour of a short position. That was a live
-       defect: AbstentionRoster's focus highlight used bg-brand-dim/ring-brand,
-       so the "you came from here" marker on a page full of shorts WAS the short
-       colour, and ConvictionCard's emphasis gradient had the same problem. Both
-       moved to --accent, which is what interactive emphasis is for.
-       It survives only in the 22px masthead mark, where the gradient runs
-       accent → brand and no direction can be read into it. Do not reach for it
-       for emphasis; use --accent. (brand-dim is 0.09 alpha against short-dim's
-       0.10, so this is not a pure alias and cannot simply be deleted.) */
-    --brand: #9f172a;        /* logo mark only — identical to --short */
+    /* THE GROUND OF THE LOGO ARTWORK, AND NOTHING ELSE.
+       Measured off the supplied mark (andromeda-analytics.png): 717,750 of its
+       799,232 pixels are exactly #161b38, and the figure on it is exactly #fff.
+       It is here as a token so the one navy in this project is a thing the
+       palette test can see — not so it becomes available. It is NOT a surface,
+       NOT a chip, NOT an ink: goal 4 is cool paper, and a second dark ground
+       borrowed for a panel is how a light product acquires a dark dashboard by
+       increments. Its only call sites are components/BrandMark.tsx and the two
+       generated icons, all three asserted by tests/unit/brand-mark.test.ts.
+
+       It REPLACES --brand/--brand-dim, which ADR-0085 §3 deleted and which then
+       survived in one place: the masthead's gradient `A` tile, running
+       accent → brand. That tile is now the real mark, so the last call site is
+       gone and the token with it. Nothing else referenced either name — the
+       usages that made --brand a live defect (AbstentionRoster's focus ring and
+       ConvictionCard's emphasis gradient, both painting "emphasis" in exactly
+       the colour of a short position) had already moved to --accent. */
+    --logo-plate: #161b38;   /* logo plate only — the supplied artwork's ground */
     /* Was #f97316 at 2.53:1 — the worst offender on the site, and it labels the
        things a reader most needs to read ("Not yet validated", near-limit
        chips, HypeScore caveats). Darkened to #c2410c on 2026-07-24, then to
@@ -114,6 +120,28 @@
        why only three of the five tokens moved. */
     --long: #126e53;         /* forest-emerald — up / long */
     --short: #9f172a;        /* crimson — down / short */
+
+    /* ── Categorical series palette (ADR-0128) ────────────────────────────────
+       Five slots for charts whose series are IDENTITIES with no direction — one
+       line per narrative on the trends board. Assigned in fixed order and never
+       cycled: a sixth series is not a generated hue, it is left out and counted.
+
+       VALIDATED, not chosen (dataviz `validate_palette.js`, against --bg-surface
+       #ffffff): lightness band PASS, chroma floor PASS, worst adjacent CVD pair
+       #eda100↔#1baf7a ΔE 9.1 protan / 27.0 tritan PASS, normal-vision ΔE 22.9
+       PASS. Contrast WARNs at #1baf7a 2.82:1 and #eda100 2.17:1 — below 3:1,
+       which is legal ONLY with visible labels or a table view. NarrativeTrends
+       carries both (direct end-labels on every line, plus a figures table), and
+       `narrative-trends.test.tsx` asserts they stay.
+
+       Deliberately NOT --long/--short: ADR-0126 measured those at ΔE 6.1 under
+       deuteranopia, and they already mean DIRECTION everywhere in this app. A
+       narrative has no direction, so reusing them would say something false. */
+    --series-1: #2a78d6;     /* blue */
+    --series-2: #eb6834;     /* orange */
+    --series-3: #1baf7a;     /* aqua — sub-3:1, needs the label relief */
+    --series-4: #eda100;     /* yellow — sub-3:1, needs the label relief */
+    --series-5: #4a3aa7;     /* violet */
 
     /* Height of LiveFeed, the fixed pipeline ribbon at the bottom of every page.
        It is `position: fixed` at z-40, so it is OUT of flow — nothing below it

@@ -219,3 +219,88 @@ class TestCorpusFromThemeNews:
             def table(self, name):
                 raise Exception("network down")
         assert td.corpus_from_theme_news(_SB(), lookback_days=180) == []
+
+class TestImportsWithoutTheModels:
+    """`theme_discovery` must import with NO heavy ML installed (ADR-0130).
+
+    This is the property the module docstring has always claimed and did not have:
+    the pure functions were factored out, but module-scope `gensim` /
+    `sentence_transformers` / `umap` / `hdbscan` imports meant importing them
+    pulled in torch. CI's answer was `--ignore=tests/backend/test_theme_discovery.py`,
+    so 14 tests that touch no model went ungated.
+    """
+
+    def test_module_imports_with_the_ml_stack_blocked(self):
+        """Run in a SUBPROCESS with the heavy modules blocked at import time.
+
+        A subprocess because the property is about a fresh interpreter: in THIS
+        process another test may already have imported the real modules, and
+        `sys.modules` would mask a module-scope import that would fail on a clean
+        machine. See the entry-point lesson — verify under the invocation
+        production uses, not the one pytest happens to give you.
+        """
+        import subprocess
+        import sys
+        import textwrap
+        from pathlib import Path
+
+        repo = Path(__file__).resolve().parents[2]
+        program = textwrap.dedent(
+            """
+            import sys
+
+            BLOCKED = {"gensim", "sentence_transformers", "umap", "hdbscan", "torch"}
+
+            class Blocker:
+                def find_module(self, name, path=None):
+                    return self if name.split(".")[0] in BLOCKED else None
+                def find_spec(self, name, path=None, target=None):
+                    if name.split(".")[0] in BLOCKED:
+                        raise ImportError(f"blocked for test: {name}")
+                    return None
+
+            sys.meta_path.insert(0, Blocker())
+
+            import scripts.theme_discovery as td
+
+            # The pure surface must be reachable and callable.
+            assert callable(td.agree_themes)
+            assert callable(td.cluster_term_sets)
+            assert callable(td.corpus_from_theme_news)
+            assert callable(td.persist_discovered_themes)
+            assert td.agree_themes([{"a", "b", "c"}], [{"a", "b", "d"}])["tier2"]
+            print("OK")
+            """
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", program],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            "theme_discovery does not import without the ML stack.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert "OK" in result.stdout
+
+    def test_no_heavy_import_survives_at_module_scope(self):
+        """The specific regression: a heavy import at column 0. Cheap, and it
+        names the exact line a future edit would add."""
+        import re
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parents[2] / "scripts" / "theme_discovery.py").read_text(
+            encoding="utf-8"
+        )
+        offenders = [
+            line
+            for line in src.splitlines()
+            if re.match(r"^(import|from)\s+(gensim|sentence_transformers|umap|hdbscan|torch)\b", line)
+        ]
+        assert offenders == [], (
+            "heavy ML imported at module scope — move it inside run_discovery: " f"{offenders}"
+        )

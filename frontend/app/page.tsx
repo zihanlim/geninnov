@@ -9,12 +9,12 @@ import ThemeDerivationDrawer from "@/components/ThemeDerivationDrawer";
 import ThemeHeatmap from "@/components/ThemeHeatmap";
 import TerminalPane from "@/components/home/TerminalPane";
 import DiscoveredThemes from "@/components/DiscoveredThemes";
+import NarrativeTrends from "@/components/NarrativeTrends";
 import PredictionMarkets from "@/components/PredictionMarkets";
 import MarketBar from "@/components/MarketBar";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
 import { NewsFeed } from "@/components/news/NewsFeed";
 import { NewsRibbon } from "@/components/news/NewsRibbon";
-import LiveNewsDock from "@/components/live/LiveNewsDock";
 import { fetchLatestNews, type NewsItem } from "@/lib/news";
 import { StatusBadge } from "@/components/status/StatusBadge";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
@@ -174,6 +174,10 @@ function ConvictionPageInner() {
     shortCount: 0,
     aboveThreshold: 0,
     avgHype: 0,
+    // How many themes the average is actually over. Printed, because "Avg
+    // HypeScore 57.8" over 8 of 9 themes is a different claim from the same
+    // number over 9 of 9, and the strip cannot say which without it.
+    scoredCount: 0,
     threshold: 50,
     topScore: 0,
   });
@@ -304,6 +308,12 @@ function ConvictionPageInner() {
       const hypeGate = Number.isFinite(cfg.hype_score_threshold)
         ? cfg.hype_score_threshold
         : 50;
+      // A theme is SCORED only once a pipeline run has written its HypeScore.
+      // A theme created between runs has NULL across every sub-score, and NULL
+      // is not a low score — it is the absence of one (ADR-0066).
+      const scoredThemes = rawThemes.filter(
+        (t) => typeof t.hype_score === "number" && Number.isFinite(t.hype_score),
+      );
       setCounts({
         total: rawThemes.length,
         longCount: cands.filter((c) => c.direction === "long").length,
@@ -314,15 +324,28 @@ function ConvictionPageInner() {
         // (ADR-0029), so "candidates" and "above the gate" routinely disagree.
         aboveThreshold: rawThemes.filter((t) => (t.hype_score ?? 0) >= hypeGate)
           .length,
+        // Averaged over the SCORED themes, not over every row.
+        //
+        // `reduce(s + (t.hype_score ?? 0)) / rawThemes.length` counted a theme
+        // that no run has scored yet as a zero in the numerator AND as a member
+        // of the denominator, so one unscored theme dragged the board average
+        // down twice over. Live on 2026-07-28: eight scored themes average 57.8,
+        // and adding AI Capex — created between two pipeline runs (ADR-0129) and
+        // therefore NULL, not 0 — printed 51.4. That is not a low reading, it is
+        // a reading of a theme that was never measured.
         avgHype:
-          rawThemes.length > 0
-            ? rawThemes.reduce((s, t) => s + (t.hype_score ?? 0), 0) /
-              rawThemes.length
+          scoredThemes.length > 0
+            ? scoredThemes.reduce((s, t) => s + (t.hype_score as number), 0) /
+              scoredThemes.length
             : 0,
+        scoredCount: scoredThemes.length,
         threshold: Number.isFinite(cfg.hype_score_threshold)
           ? cfg.hype_score_threshold
           : 50,
-        topScore: rawThemes[0]?.hype_score ?? 0,
+        // The query orders by hype_score desc with NULLs sorted by Postgres'
+        // default (NULLS LAST on DESC), so rawThemes[0] is the top SCORED theme —
+        // but read it from the filtered list rather than relying on that.
+        topScore: scoredThemes[0]?.hype_score ?? 0,
       });
       setLoading(false);
     }
@@ -364,11 +387,17 @@ function ConvictionPageInner() {
   const top3 = useMemo(() => enriched.slice(0, 3), [enriched]);
   const watchlistItems = useMemo(
     () =>
-      enriched.slice(0, 7).map((t) => ({
-        name: t.name,
-        score: t.hype_score ?? 0,
-        delta: t.delta_1d ?? null,
-      })),
+      // Unscored themes are omitted from the watchlist rather than listed at 0.
+      // A watchlist row IS a ranking claim, and a theme no run has scored has no
+      // rank — showing it bottom at "0" asserts a measurement nobody made.
+      enriched
+        .filter((t) => typeof t.hype_score === "number" && Number.isFinite(t.hype_score))
+        .slice(0, 7)
+        .map((t) => ({
+          name: t.name,
+          score: t.hype_score as number,
+          delta: t.delta_1d ?? null,
+        })),
     [enriched]
   );
 
@@ -413,7 +442,7 @@ function ConvictionPageInner() {
     // page that scrolls once, shows the same material without cutting any of it —
     // which is design goal 7's original position, restored.
     <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-4 pb-20">
-      <div className="flex justify-between items-end mb-4 lg:mb-0 gap-4 flex-wrap shrink-0">
+      <div className="flex justify-between items-end mb-4 gap-4 flex-wrap shrink-0">
         <div>
           <h1 className="text-[19px] font-semibold tracking-[-0.01em] m-0">
             What we&apos;re watching
@@ -426,13 +455,13 @@ function ConvictionPageInner() {
           </p>
         </div>
         <div className="text-right text-text-secondary text-[12px]">
+          {/* `LiveNewsDock` used to sit here, beside the status. It is now a TopBar
+              control next to `Ask`, at the owner's direction: both are tools for
+              reading the site rather than things the site publishes, so they belong
+              in the same cluster, and the streams are no more specific to `/` than
+              the chat is. Its "off by default, and off means no third-party request"
+              property is a property of the component and travels with it. */}
           <div className="flex items-center justify-end gap-3 mb-1">
-            {/* Top right, beside the status — a toggle rather than a grid cell.
-                A permanent pane implied the streams are one of the things this
-                site publishes; they are explicitly not a source the book is
-                built on. Closed by default, and closed means no third-party
-                request is made at all. */}
-            <LiveNewsDock runDate={runDate} />
             <StatusBadge status={dashboardStatus} />
           </div>
           <div className="mt-1">
@@ -532,14 +561,22 @@ function ConvictionPageInner() {
               scroller they never need and cost the grid a cell. The crowding
               warning stays inline because it is prose about the figure beside
               it (design goal 6), not a separate finding. */}
-          <div className="shrink-0 card px-4 py-2.5 flex flex-wrap items-center gap-x-7 gap-y-2 mb-4 lg:mb-0">
+          <div className="shrink-0 card px-4 py-2.5 flex flex-wrap items-center gap-x-7 gap-y-2 mb-4">
             <StripStat label="Themes tracked" value={String(counts.total)} />
             <StripStat
               label="Long / short"
               value={`${counts.longCount} / ${counts.shortCount}`}
               sub={`${counts.aboveThreshold} of ${counts.total} cleared ${counts.threshold}`}
             />
-            <StripStat label="Avg HypeScore" value={counts.avgHype.toFixed(1)} sub={`top ${counts.topScore.toFixed(1)}`} />
+            <StripStat
+              label="Avg HypeScore"
+              value={counts.avgHype.toFixed(1)}
+              sub={
+                counts.scoredCount < counts.total
+                  ? `top ${counts.topScore.toFixed(1)} · ${counts.scoredCount} of ${counts.total} scored`
+                  : `top ${counts.topScore.toFixed(1)}`
+              }
+            />
             <StripStat
               label="Attention concentration"
               value={attn.top3Share === null ? "—" : `${(attn.top3Share * 100).toFixed(0)}%`}
@@ -586,10 +623,36 @@ function ConvictionPageInner() {
               height between panes and force every one of them to clip whatever
               does not fit; `auto` lets each row be as tall as its tallest pane,
               so a card shows its content instead of a scrollbar. `items-start`
-              stops a short pane from stretching to match a tall neighbour. */}
+              stops a short pane from stretching to match a tall neighbour.
+
+              PLACEMENT IS EXPLICIT, and has to be. Auto-flow cannot fit a
+              2-column pane after a 1-column one: with `themes` spanning 2x2 and
+              the other three flowing, `discovery` was pushed to row 3 column 1
+              and left columns 2-3 of that row empty -- an 891x731 hole at 1440,
+              beside a card squeezed into 437px. The 2-row span made it worse:
+              `items-start` meant `themes` (1450px) never filled the 1868px its
+              span reserved, so a 435px void sat under it (576px at 1024).
+              Measured, ~30% of the grid was empty.
+
+              `items-start` IS STILL THE DEFAULT, but four panes now opt out with
+              `self-stretch`. The two are not in tension: `items-start` exists so a
+              pane never stretches to match a TALLER pane it has nothing to do with,
+              and `self-stretch` is for panes that are deliberately paired across the
+              grid and must share an edge. Where a pane opts in, the card inside it
+              carries `lg:h-full` (or a `lg:flex-1` absorber) as well -- stretching a
+              pane without stretching its card moves the ragged edge inward instead of
+              removing it, which is the trap this page fell into twice.
+
+              The five panes sit on three rows; see the map above `headlines` below.
+              Below lg none of this applies and they stack in DOM order. */}
           <div className="lg:grid lg:grid-cols-3 lg:auto-rows-auto lg:items-start lg:gap-4">
 
-          <TerminalPane id="themes" title="Theme scores" bare className="lg:col-span-2 lg:row-span-2">
+          <TerminalPane
+            id="themes"
+            title="Theme scores"
+            bare
+            className="lg:col-span-2 lg:col-start-1 lg:row-start-1 lg:self-stretch"
+          >
             {themeError ? (
               <QueryErrorState
                 what="Themes"
@@ -645,7 +708,13 @@ function ConvictionPageInner() {
               />
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            /* `lg:flex-1` makes this row of cards the pane's ABSORBER: row 1 is as
+               tall as the taller of this pane and the news feed beside it, and
+               whichever is shorter would otherwise end early and leave the two
+               columns visibly ragged. The conviction cards grow into the slack
+               instead, so their bottom edge meets the feed's. `mb-8` is gone —
+               `Theme momentum` is its own grid row now and the grid gap spaces it. */
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:flex-1">
               {top3.map((t, i) => (
                 <ConvictionCard
                   key={t.id}
@@ -662,7 +731,27 @@ function ConvictionPageInner() {
             </div>
           )}
 
-            <div className="mt-6">
+          </TerminalPane>
+
+          {/* `Theme momentum` IS ITS OWN GRID ROW, and that is a layout fix as much
+              as an editorial one. Inside the scores pane, the boundary between the
+              conviction cards and this card was an ordinary collapsed margin — not a
+              grid line — so nothing in column 3 could align to it. The news feed
+              therefore ran past the cards it sits beside, and `crowd` began wherever
+              the feed happened to stop. As a row of its own the boundary is a real
+              grid line: the feed ends on it, and `crowd` starts on it.
+
+              The reason it lived inside the scores pane no longer holds either. That
+              was ADR-0103's lock ("the pane scrolls; the document does not"), and the
+              lock is gone — panes size to their content and the page scrolls. What
+              the restoration actually required was that the block not be DROPPED;
+              nothing required it to be a child of the scores pane. */}
+          <TerminalPane
+            id="momentum"
+            title="Theme momentum"
+            bare
+            className="lg:col-span-2 lg:col-start-1 lg:row-start-2"
+          >
             <div className="card">
               <div className="card-header">
                 <span className="card-title">Theme momentum</span>
@@ -682,7 +771,6 @@ function ConvictionPageInner() {
                   />
                 )}
               </div>
-            </div>
             </div>
 
             {/* Both of these are statements ABOUT the scores in this pane — that a Δ
@@ -712,10 +800,26 @@ function ConvictionPageInner() {
             )}
           </TerminalPane>
 
+          {/* The rail is gone, and it was the wrong shape. It made column 3 one box
+              spanning both rows so `crowd` could take the remainder after the feed --
+              which aligned the BOTTOM of the column but left its internal split
+              wherever the feed's last headline happened to fall. The split is now a
+              grid line the left column also sits on, so the two columns agree by
+              construction rather than by arithmetic:
+
+                row 1   heatmap + top 3 cards   |  headlines
+                row 2   theme momentum          |  crowd (spans rows 2-3)
+                row 3   discovered themes       |
+
+              `headlines` ends on the row-1 line, level with the conviction cards.
+              `crowd` starts on the row-2 line, level with `Theme momentum`, and spans
+              to the bottom of `discovered themes`. Below lg all of it is inert and the
+              panes stack in DOM order. */}
           <TerminalPane
             id="headlines"
             title="Headlines behind today's scores"
             bare
+            className="lg:col-start-3 lg:row-start-1 lg:self-stretch"
           >
             {/* embedded: the pane supplies the heading, the card and the scroll
                 box. Without it the feed rendered its own <h2> with the same
@@ -723,12 +827,43 @@ function ConvictionPageInner() {
             <NewsFeed embedded />
           </TerminalPane>
 
-          <TerminalPane id="crowd" title="What the crowd is pricing" bare>
+          <TerminalPane
+            id="crowd"
+            title="What the crowd is pricing"
+            bare
+            className="lg:col-start-3 lg:row-start-2 lg:row-span-2 lg:self-stretch"
+          >
             <PredictionMarkets />
           </TerminalPane>
 
-          <TerminalPane id="discovery" title="What the engine is discovering" bare>
+          <TerminalPane
+            id="discovery"
+            title="What the engine is discovering"
+            bare
+            // `self-stretch` so the pane fills row 3 even when `crowd`, spanning rows
+            // 2-3 beside it, is what forces that row taller. Left at the grid's
+            // `items-start` the pane would keep its content height and its bottom edge
+            // would fall short of `crowd`'s by the difference -- the same misalignment
+            // one row down.
+            className="lg:col-span-2 lg:col-start-1 lg:row-start-3 lg:self-stretch"
+          >
             <DiscoveredThemes />
+          </TerminalPane>
+
+          {/* Full width, and BELOW discovery rather than beside it. The trends
+              board is a time series across several narratives, so it needs
+              horizontal room the two-column slot cannot give it -- a 30-run x-axis
+              squeezed into half the grid puts the run dates on top of each other.
+              It sits next to `DiscoveredThemes` conceptually: that card is what the
+              MONTHLY two-method job proposes, this is what the DAILY frequency
+              method sees (ADR-0128). */}
+          <TerminalPane
+            id="narratives"
+            title="Which narratives are trending"
+            bare
+            className="lg:col-span-3 lg:col-start-1 lg:row-start-4"
+          >
+            <NarrativeTrends />
           </TerminalPane>
           </div>
         </>

@@ -275,6 +275,21 @@ SCENARIOS: list[Scenario] = [
             "Tech Growth":          -0.09,   # long duration meets input costs
             "Disruptive Innovation":-0.14,   # highest duration, least pricing power
             "Autos":                -0.13,   # input costs plus supply chain, no pass-through
+            # AI capex chain (ADR-0129). A maritime supply shock hits this chain
+            # harder than broad equity, not as much as it hits Autos, and for
+            # three different reasons — so three numbers rather than one bucket.
+            "Semiconductors":       -0.16,   # the most shipping- and Taiwan-exposed
+                                             # sector in the book; a chokepoint
+                                             # event is a direct fab/logistics hit,
+                                             # not a demand story
+            "Electrical Equipment": -0.12,   # turbines and power plant are
+                                             # metals- and freight-intensive
+                                             # capital goods with long lead times
+            "Utilities":            -0.03,   # defensive and domestically
+                                             # regulated, so nearly insulated on
+                                             # demand — but input costs rise and
+                                             # pass-through lags, so NOT a haven
+                                             # and not zero
             "US Equities":          -0.07,   # energy self-sufficient: least exposed equity bloc
             "Financials":           -0.05,
             "Credit":               -0.05,

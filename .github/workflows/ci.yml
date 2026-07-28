@@ -68,12 +68,17 @@ jobs:
       # collected nothing at all — every test lives in tests/backend/ — so the
       # whole suite was invisible to CI while appearing to be covered.
       #
-      # test_theme_discovery.py is excluded: scripts/theme_discovery.py imports
-      # gensim / sentence_transformers / umap / hdbscan at module scope, and
-      # installing those to run 14 tests means pulling torch into every push.
-      # It stays covered by the monthly theme-discovery workflow actually running.
+      # test_theme_discovery.py used to be excluded here, because
+      # scripts/theme_discovery.py imported gensim / sentence_transformers / umap
+      # / hdbscan at MODULE scope — so running its 14 tests meant pulling torch
+      # into every push. Not one of those 14 tests touches a model; they were
+      # ungated purely by where four import statements sat. ADR-0130 moved them
+      # inside run_discovery (past the corpus-size gate), so the whole file now
+      # runs here with no new dependency. `TestImportsWithoutTheModels` blocks the
+      # ML stack in a subprocess and fails if a heavy import returns to module
+      # scope, which is what stops this exclusion from being needed again.
       - name: pytest
-        run: pytest tests/backend/ --ignore=tests/backend/test_theme_discovery.py
+        run: pytest tests/backend/
 
   # ──────────────────────────────────────────────────────────────────────────
   # L5 acceptance battery: backend/eval

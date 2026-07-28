@@ -43,18 +43,33 @@ def fetch_price_data(tickers: list[str], lookback_days: int = 30) -> pd.DataFram
 
     return pd.DataFrame(rows)
 
-def correlation_with_mentions(price_df: pd.DataFrame, mention_series: pd.Series, ticker: str) -> float:
+def correlation_with_mentions(price_df: pd.DataFrame, mention_series: pd.Series, ticker: str) -> float | None:
     """
     Compute Pearson correlation between daily mention count and daily asset return.
     mention_series: pd.Series with date index, int values (mention count per day).
-    Returns correlation coefficient or 0.0 if insufficient data.
+
+    Returns the correlation coefficient, or **None when it is not measurable** —
+    no price history, fewer than 5 overlapping sessions, or a degenerate (constant)
+    series. None is not 0.0 and the distinction is load-bearing.
+
+    WHY (ADR-0127): this used to return 0.0 for "not measurable", and the sole
+    caller looped over a theme's mapped tickers guarded by ``if not pd.isna(corr)``
+    — a test that a 0.0 sentinel can never fail. The loop therefore always took the
+    FIRST ticker and broke, even when that ticker had no overlapping sessions and
+    seven other mapped instruments did. A third of HypeScore (hype_corr_weight =
+    0.30) rested on an arbitrary single instrument, and could be a hard zero while
+    the theme was in fact strongly correlated across four asset classes.
+
+    Returning None makes "we could not measure this" un-ignorable at the call site:
+    it cannot be averaged, compared, or mistaken for a measured absence of
+    correlation.
     """
     if price_df.empty or mention_series.empty:
-        return 0.0
+        return None
 
     price_ticker = price_df[price_df["ticker"] == ticker][["date", "return"]].set_index("date")["return"]
     if price_ticker.empty or len(price_ticker) < 5:
-        return 0.0
+        return None
 
     # Normalize BOTH indices to datetime.date before aligning. The mention series
     # is keyed by ISO strings ("2026-07-23") while price dates are datetime.date;
@@ -70,7 +85,9 @@ def correlation_with_mentions(price_df: pd.DataFrame, mention_series: pd.Series,
 
     common_dates = mentions.index.intersection(returns.index)
     if len(common_dates) < 5:
-        return 0.0
+        return None
 
+    # NaN here means a constant series on one side (zero variance) — Pearson is
+    # undefined, not zero. Same contract as the guards above.
     corr = mentions.loc[common_dates].corr(returns.loc[common_dates])
-    return 0.0 if pd.isna(corr) else float(corr)
+    return None if pd.isna(corr) else float(corr)

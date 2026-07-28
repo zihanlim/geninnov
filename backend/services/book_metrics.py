@@ -112,6 +112,37 @@ ASSETS: dict[str, AssetRecord] = {
     "FCX":   AssetRecord("Metals",                   "US",        "equity"),
     "NEM":   AssetRecord("Gold Miners",              "US",        "equity"),
     "NUE":   AssetRecord("Metals",                   "US",        "equity"),
+    # ── AI Capex (ADR-0129) ────────────────────────────────────────────────
+    # The buildout, link by link, so the theme can express as a CHAIN rather
+    # than as one tech bet: what is bought (compute), who buys it
+    # (hyperscalers), what physically constrains it (power, electrical plant),
+    # and where it is manufactured (Taiwan).
+    #
+    # Three NEW SECTORS rather than filing these under "Tech Growth". A sector
+    # is what the 30% cap binds on, so putting semis, utilities and electrical
+    # plant in one bucket would let the book hold three legs of the same chain
+    # and call it diversified — while a real AI-capex drawdown hits all three.
+    # ADR-0043 added Defense and Autos for the same reason.
+    "SMH":   AssetRecord("Semiconductors",           "US",        "equity"),
+    "NVDA":  AssetRecord("Semiconductors",           "US",        "equity"),
+    # Taiwan is its OWN geo, not "EM". It is the single manufacturing
+    # concentration in this theme and the geo cap is the only thing that can
+    # express that; hidden inside EM it would net against Brazil and China.
+    # It also links this theme to Geopolitical Risk, whose keyword list already
+    # contains "Taiwan" — the same tape moves both, in opposite directions.
+    "TSM":   AssetRecord("Semiconductors",           "Taiwan",    "equity"),
+    # The spenders. Filed under the EXISTING "Tech Growth" alongside QQQ on
+    # purpose: they are 40%+ of it, so a separate bucket would double the
+    # effective cap on one exposure.
+    "MSFT":  AssetRecord("Tech Growth",              "US",        "equity"),
+    "GOOGL": AssetRecord("Tech Growth",              "US",        "equity"),
+    # The physical constraint. This is the leg that makes AI capex a
+    # CROSS-ASSET theme rather than a tech trade — it transmits to power,
+    # natural gas and copper.
+    "VST":   AssetRecord("Utilities",                "US",        "equity"),
+    "XLU":   AssetRecord("Utilities",                "US",        "equity"),
+    "GEV":   AssetRecord("Electrical Equipment",     "US",        "equity"),
+    "VRT":   AssetRecord("Electrical Equipment",     "US",        "equity"),
 }
 
 # Derived views, one per consumer vocabulary. Plain dicts, built once at import;
@@ -659,6 +690,7 @@ def book_metrics_to_dict(bm: BookMetrics) -> dict:
 
 def correlation_pairs_to_dict(
     pairs: list[tuple[str, str, float]],
+    threshold: float = HIGH_CORR_THRESHOLD,
 ) -> list[dict]:
     """High-correlation pairs as records, for the /risk correlation view."""
     return [
@@ -667,7 +699,7 @@ def correlation_pairs_to_dict(
             "asset_b": b,
             "corr": corr,
             "relationship": "same-direction" if corr > 0 else "inverse",
-            "threshold": HIGH_CORR_THRESHOLD,
+            "threshold": threshold,
         }
         for a, b, corr in pairs
     ]

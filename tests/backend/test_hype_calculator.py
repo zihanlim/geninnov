@@ -321,3 +321,132 @@ def test_persisted_subscores_reproduce_the_persisted_hype_score():
             + cfg.hype_momentum_weight * momentum_subscore(r["momentum_raw"])
         )
         assert scored_row["hype_score"] == pytest.approx(recomposed)
+
+
+# ─── Cross-asset correlation (ADR-0127) ──────────────────────────────────────
+
+class TestCrossAssetCorrelation:
+    """A theme is a narrative driving CROSS-ASSET moves. Before ADR-0127 the
+    correlation term read one instrument — whichever ticker came back first — so
+    a theme moving four asset classes together and a theme tracking a single ETF
+    were indistinguishable."""
+
+    CLASSES = {
+        "TLT": "rates", "IEF": "rates", "SHY": "rates",
+        "GLD": "commodity", "SLV": "commodity",
+        "UUP": "fx",
+        "SPY": "equity",
+    }
+
+    def test_unmeasurable_tickers_are_dropped_not_counted_as_zero(self):
+        from backend.services.hype_calculator import per_class_corr
+        per_class = per_class_corr(
+            {"TLT": None, "GLD": 0.6, "UUP": None}, self.CLASSES
+        )
+        assert per_class == {"commodity": 0.6}
+
+    def test_unclassified_tickers_cannot_contribute_to_a_breadth_claim(self):
+        from backend.services.hype_calculator import per_class_corr
+        per_class = per_class_corr({"GLD": 0.6, "WHAT": 0.9}, self.CLASSES)
+        assert per_class == {"commodity": 0.6}
+
+    def test_strongest_reading_wins_within_a_class_with_its_sign(self):
+        from backend.services.hype_calculator import per_class_corr
+        per_class = per_class_corr(
+            {"TLT": 0.2, "IEF": -0.55, "SHY": 0.1}, self.CLASSES
+        )
+        assert per_class == {"rates": -0.55}
+
+    def test_breadth_beats_depth_a_theme_moving_four_classes_scores_higher(self):
+        """The whole point. Both themes have a 0.50 strongest correlation; one
+        moves its entire complex and the other moves one leg of it."""
+        from backend.services.hype_calculator import cross_asset_corr_subscore
+        broad = cross_asset_corr_subscore(
+            {"rates": 0.5, "commodity": 0.5, "fx": -0.5, "equity": 0.5}
+        )
+        narrow = cross_asset_corr_subscore(
+            {"rates": 0.5, "commodity": 0.02, "fx": 0.01, "equity": 0.0}
+        )
+        assert broad == pytest.approx(1.0)
+        assert narrow < 0.3
+        assert broad > narrow
+
+    def test_the_old_single_ticker_reading_could_not_tell_these_apart(self):
+        """Regression, stated as the defect: representative_corr — the one-number
+        summary that replaces the old `price_corr` — is IDENTICAL for both books
+        above. Only the sub-score separates them, which is why the sub-score is
+        what HypeScore consumes."""
+        from backend.services.hype_calculator import (
+            representative_corr, cross_asset_corr_subscore,
+        )
+        broad = {"rates": 0.5, "commodity": 0.5, "fx": -0.5, "equity": 0.5}
+        narrow = {"rates": 0.5, "commodity": 0.02, "fx": 0.01, "equity": 0.0}
+        assert representative_corr(broad) == representative_corr(narrow) == 0.5
+        assert cross_asset_corr_subscore(broad) != cross_asset_corr_subscore(narrow)
+
+    def test_the_denominator_counts_measured_classes_not_mapped_ones(self):
+        """A class we could not measure must not depress the score — the same
+        renormalise-over-what-is-present rule ADR-0036 applies to EdgeScore."""
+        from backend.services.hype_calculator import per_class_corr, cross_asset_corr_subscore
+        # rates and fx unmeasurable; commodity saturated.
+        measured = per_class_corr({"TLT": None, "UUP": None, "GLD": 0.5}, self.CLASSES)
+        assert cross_asset_corr_subscore(measured) == pytest.approx(1.0)
+
+    def test_nothing_measurable_is_none_not_zero(self):
+        from backend.services.hype_calculator import per_class_corr, cross_asset_corr_subscore
+        assert cross_asset_corr_subscore(per_class_corr({"TLT": None}, self.CLASSES)) is None
+        assert cross_asset_corr_subscore({}) is None
+
+    def test_representative_corr_keeps_the_sign_crowding_depends_on(self):
+        from backend.services.hype_calculator import representative_corr, crowding_label
+        per_class = {"rates": 0.2, "equity": -0.8}
+        rep = representative_corr(per_class)
+        assert rep == -0.8
+        # An inverse mover is a natural HEDGE, not a crowded consensus. A breadth
+        # average would have folded the sign away and reported "neutral".
+        assert crowding_label(rep, volume_norm=0.9) == "hedge"
+
+    def test_breadth_counts_are_reported_as_n_of_m(self):
+        from backend.services.hype_calculator import corr_breadth
+        assert corr_breadth({"rates": 0.5, "commodity": 0.3, "fx": 0.05, "equity": 0.0}) == (2, 4)
+        assert corr_breadth({}) == (0, 0)
+
+
+class TestHypeScoreWithUnmeasurableCorrelation:
+    def test_an_unmeasurable_correlation_renormalises_instead_of_scoring_zero(self):
+        """With hype_corr_weight = 0.30, scoring an unmeasured correlation as 0
+        silently deducts up to 30 points for a gap in our data, and the theme
+        reads as quiet when it was never measured."""
+        cfg = ScoringConfig(0.30, 0.20, 0.30, 0.20, 0.0, 0.0)
+        as_zero = hype_score(volume=0.8, sentiment=0.0, corr=0.0, momentum=0.6, cfg=cfg)
+        unmeasured = hype_score(volume=0.8, sentiment=0.0, corr=None, momentum=0.6, cfg=cfg)
+        assert unmeasured > as_zero
+        # Renormalised over the three present components (0.30 + 0.20 + 0.20).
+        expected = 100 * (0.30 * 0.8 + 0.20 * 0.5 + 0.20 * 0.6) / 0.70
+        assert unmeasured == pytest.approx(expected)
+
+    def test_all_four_present_is_arithmetically_unchanged(self):
+        """/method reproduces HypeScore as `100 x sum(w_i . s_i)` from the
+        persisted sub-scores. That reconciliation must stay byte-exact."""
+        cfg = ScoringConfig(0.30, 0.20, 0.30, 0.20, 0.0, 0.0)
+        got = hype_score(volume=0.8, sentiment=0.4, corr=0.55, momentum=0.6, cfg=cfg)
+        expected = 100 * (0.30 * 0.8 + 0.20 * rescale_vader(0.4) + 0.30 * 0.55 + 0.20 * 0.6)
+        assert got == pytest.approx(expected)
+
+
+class TestThemeCorrSubscoreRouting:
+    def test_prefers_the_cross_asset_reading_over_the_legacy_scalar(self):
+        from backend.services.hype_calculator import theme_corr_subscore
+        row = {"price_corr": 0.5, "corr_by_class": {"rates": 0.5, "fx": 0.02}}
+        # The legacy scalar would say min(1, 0.5/0.5) = 1.0; the cross-asset
+        # reading says the fx leg did not participate.
+        assert theme_corr_subscore(row) < 0.6
+
+    def test_falls_back_to_the_legacy_scalar_for_pre_adr0123_rows(self):
+        from backend.services.hype_calculator import theme_corr_subscore, corr_subscore
+        row = {"price_corr": 0.4}
+        assert theme_corr_subscore(row) == pytest.approx(corr_subscore(0.4))
+
+    def test_an_empty_measured_map_is_unmeasured_not_zero(self):
+        from backend.services.hype_calculator import theme_corr_subscore
+        assert theme_corr_subscore({"price_corr": None, "corr_by_class": {}}) is None

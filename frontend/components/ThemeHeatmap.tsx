@@ -97,8 +97,20 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({
     );
   }
 
-  // Sort by hype_score desc
-  const sorted = [...themes].sort((a, b) => (b.hype_score ?? 0) - (a.hype_score ?? 0));
+  // Sort by hype_score desc, with UNSCORED themes last rather than ranked as 0.
+  // `?? 0` sorted them among the genuinely-low scores, which reads as a measured
+  // bottom-of-the-board placement when the truth is that no run has scored them
+  // yet — a theme created between two pipeline runs (AI Capex, ADR-0129) sat
+  // below Inflation as though it had been measured and found quiet.
+  const isScored = (v: number | null | undefined): v is number =>
+    typeof v === "number" && Number.isFinite(v);
+  const sorted = [...themes].sort((a, b) => {
+    const sa = isScored(a.hype_score);
+    const sb = isScored(b.hype_score);
+    if (sa !== sb) return sa ? -1 : 1;
+    if (!sa || !sb) return a.name.localeCompare(b.name);
+    return (b.hype_score as number) - (a.hype_score as number);
+  });
 
   // How many themes carry a synthetic (mock/mixed) HypeScore this run — an
   // honesty count so a PM knows the heatmap is not all live signal.
@@ -271,7 +283,14 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({
                     color: cellTextColor(t.hype_score ?? null),
                   }}
                 >
-                  {t.hype_score !== undefined ? Math.round(t.hype_score) : "—"}
+                  {/* `!== undefined` was the bug: Supabase returns NULL, not
+                      undefined, so the guard never fired and `Math.round(null)`
+                      rendered 0. The cell's own BACKGROUND already passed
+                      `?? null` to cellColor and painted as no-data, so the cell
+                      disagreed with itself — a grey "no reading" swatch with a
+                      confident 0 printed inside it. The sub-score cells directly
+                      above use `v === null`; this now matches them. */}
+                  {isScored(t.hype_score) ? Math.round(t.hype_score) : "—"}
                 </td>
                 <td
                   className="px-2 py-2 text-center num text-[11px]"

@@ -1287,7 +1287,12 @@ function BookPageInner() {
             <Link href="/method" className="text-accent hover:underline">
               Method
             </Link>
-            .
+            . To edit a copy of this book — drop a name, resize it, add one it passed
+            on — open the{" "}
+            <Link href="/workbench" className="text-accent hover:underline">
+              Workbench
+            </Link>
+            ; nothing there changes what is published here.
           </div>
         </>
       )}

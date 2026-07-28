@@ -65,6 +65,8 @@ FORBIDDEN_FIELDS = (
 def extract_signal(
     picks: list[dict[str, Any]],
     candidates: list[dict[str, Any]] | None = None,
+    sector_map: dict[str, str] | None = None,
+    geo_map: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """The mandate-free signal for each name the agent chose.
 
@@ -76,6 +78,17 @@ def extract_signal(
         candidates: the L1 candidate rows, which carry `edge_score`, `conviction` and
                     `vol`. The pick itself does not — the LLM names and argues, it
                     does not score.
+        sector_map,
+        geo_map:    a ticker's sector and geography. PASSED IN rather than imported,
+                    so this module does not pull `book_metrics` (and through it
+                    pandas and yfinance) into every consumer of the signal.
+
+    Sector and geography are facts about the INSTRUMENT, not about the mandate, so
+    they belong here: a consumer applying their own sector cap cannot do it without
+    knowing sectors. They come from `book_metrics.ASSETS`, which ADR-0121/0125 made
+    the single record for a ticker's identity precisely so that a second copy could
+    not drift — which is why the frontend reads them from this row rather than
+    keeping its own map.
 
     Returns one row per pick, ordered as the agent ordered them.
     """
@@ -105,6 +118,11 @@ def extract_signal(
             "conviction": _num(cand.get("conviction")),
             "vol": _num(cand.get("vol")),
             "hype_score": _num(pick.get("hype_score") or cand.get("hype_score")),
+            # Instrument identity, not mandate. A consumer applying their own sector
+            # or geography cap needs these; None when the ticker is unmapped, never
+            # a synthetic "Unknown" group that would invent a cap check.
+            "sector": (sector_map or {}).get(asset),
+            "geo": (geo_map or {}).get(asset),
             "citations": pick.get("citations") or [],
         }
         for field in _THESIS_FIELDS:
@@ -136,6 +154,8 @@ def signal_payload(
     picks: list[dict[str, Any]],
     candidates: list[dict[str, Any]] | None = None,
     lens: str | None = None,
+    sector_map: dict[str, str] | None = None,
+    geo_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """The full persisted payload: the rows plus what a consumer must know to use them.
 
@@ -143,7 +163,7 @@ def signal_payload(
     enforces. It is stated in the payload rather than in documentation because the MCP
     consumer reads the payload and never reads the docs.
     """
-    rows = extract_signal(picks, candidates)
+    rows = extract_signal(picks, candidates, sector_map, geo_map)
     return {
         "run_date": run_date,
         "lens": lens,

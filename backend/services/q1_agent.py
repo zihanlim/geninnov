@@ -3738,6 +3738,8 @@ def _persist_signal(sb: Client, state: Q1State) -> None:
                 "conviction": row.get("conviction"),
                 "vol": row.get("vol"),
                 "hype_score": row.get("hype_score"),
+                "sector": row.get("sector"),
+                "geo": row.get("geo"),
                 "thesis": row.get("thesis"),
                 "catalysts": row.get("catalysts"),
                 "risk": row.get("risk"),
@@ -3905,6 +3907,11 @@ def run_q1_agent(
         picks=state.get("picks", []),
         candidates=state.get("candidates", []),
         lens=state.get("lens"),
+        # From book_metrics.ASSETS, the single record for a ticker's identity
+        # (ADR-0121/0125). Passed in rather than imported inside signal.py so the
+        # signal module does not drag pandas and yfinance into every consumer.
+        sector_map=SECTOR_MAP,
+        geo_map=GEO_MAP,
     )
 
     # Size once, after the picks are final. Sizing before the retry loop meant a

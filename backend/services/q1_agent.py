@@ -2235,6 +2235,38 @@ def verify_citations(state: Q1State) -> Q1State:
     if failures:
         print(f"[verify_citations] tolerated {len(failures)}/{checked} ungrounded "
               f"citations ({grounded_ratio:.0%} grounded, e.g. {failures[0][:100]})")
+
+    # Does the prose describe a book we actually hold? (ADR-0135)
+    #
+    # Everything above verifies NUMBERS. It has no notion of a POSITION, so a
+    # thesis can assert a trade the book does not contain and pass with every
+    # figure correct. Live on 2026-07-28: VRT's thesis argued "the long VRT /
+    # short MSFT structure below", and MSFT was not in the book — the agent
+    # reasoned about a pair and published half of it.
+    #
+    # This WARNS rather than rejecting, deliberately. A citation failure means a
+    # number is wrong and the book is unsafe; this means one sentence over-claims
+    # while every figure is sound, and discarding a correct book over a clause
+    # would be the disproportionate response. The caveat travels ON the pick, so
+    # /book, /ask and MCP all read it from the same payload rather than from a
+    # log line nobody sees.
+    try:
+        # Imported here, not at module scope: this is an advisory check inside a
+        # try/except, and the shared import block above is edited concurrently.
+        from .book_metrics import ASSETS as _ASSETS
+        from .thesis_positions import apply_caveats
+
+        stale_claims = apply_caveats(state.get("picks") or [], set(_ASSETS.keys()))
+        if stale_claims:
+            print(f"[verify_citations] {len(stale_claims)} thesis position claim(s) "
+                  f"name assets not in the book "
+                  f"({', '.join(sorted({f['references'] for f in stale_claims}))}); "
+                  f"caveated on the pick, book NOT rejected (ADR-0135).")
+    except Exception as exc:
+        # Never let an advisory check cost a verified book.
+        print(f"[verify_citations] thesis position audit skipped "
+              f"({exc.__class__.__name__}: {exc}).")
+
     state["verified"] = True
     state["error"] = None
     return state

@@ -122,6 +122,34 @@ most change how you should read a number:
 - ADR-0087 — the request-time agent cannot do arithmetic; it may only quote fetched facts.
 - ADR-0088 — a stress scenario that transmits through sector dependency, not market beta.
 - ADR-0090 — a published pick must be falsifiable; the forward track record and its spec.
+- ADR-0147 — the mandate is a parameter of sizing, not an ambient constant.
+
+## The mandate
+
+The book is sized under constraints stated in full at /risk#mandate. They are read
+from the scoring_config table and mirrored in backend/services/mandate.py; a drift
+test fails the build if the two disagree.
+
+Enforced — entered into the optimizer as constraints, so a published book cannot
+breach one:
+
+- Capital base $100M. Whatever the limits refuse is held as CASH, not redeployed,
+  so a book routinely deploys less than $100M (ADR-0037).
+- Single name <= 20%, sector <= 30%, geography <= 35%, with no minimum group size.
+- Gross (long + short) <= 100%. This is a ceiling approached from below, not a
+  target, and NOT 200% — the sizer cannot produce leverage.
+- A correlation complex (pairwise > 0.70) shares one name's 20% allowance.
+- A crowded name gets half its single-name cap; every other name is unaffected.
+
+Monitored — reported but constraining nothing. There is no net-exposure constraint
+and no beta target anywhere in the sizer, so the book can and does cross these:
+VaR 6%, CVaR 9%, drawdown 15%, net exposure 30%, |beta| 0.50, HHI 2000.
+
+Book shape (at most 5 long and 5 short) is enforced during selection, not by the
+sizer. The lens is a per-run argument (ADR-0015), not a standing limit.
+
+The mandate is operator-set and takes effect on the next scheduled run. No control
+on this site can change it, and none pretends to.
 
 ## Limits
 
@@ -130,6 +158,10 @@ most change how you should read a number:
 - Scenario P&L figures are model estimates from historical betas, not forecasts.
 - The forward track record resolves at 21 trading days, so early runs read as pending
   rather than as a hit rate.
+- The realised return curve on /risk is GROSS OF TRANSACTION COSTS. The book
+  reconstitutes itself each run at 50-77% turnover, so that series is what a book
+  would have earned had every rebalance been instant and free. pick_outcomes is the
+  forward record that does not carry this assumption.
 `;
 
 export function GET() {

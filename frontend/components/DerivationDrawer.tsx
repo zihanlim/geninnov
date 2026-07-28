@@ -2,8 +2,17 @@
 import { ReactNode, useEffect, useRef } from "react";
 
 /**
- * Base slide-in drawer used by ThemeDerivationDrawer and TradeDerivationDrawer.
+ * Base slide-in drawer used by ThemeDerivationDrawer.
  * Closes on ESC, on backdrop click, and on the X button.
+ *
+ * TradeDerivationDrawer used to be the other consumer. It was deleted unreferenced:
+ * it described the PRE-ADR-0037 allocator, asserting that sector and geography caps
+ * applied "only when the group has ≥ 3 members" and that a capped name's excess was
+ * "redistributed to uncapped names… then the book is normalised once". ADR-0037
+ * removed the member-count qualifier and reversed the redistribution — whatever the
+ * limits refuse is now held as CASH, and the book is deliberately not renormalised
+ * back to full notional. The file was the only list-form statement of the three caps
+ * in the frontend, and every line of it was wrong.
  *
  * a11y (T23): role="dialog", aria-modal, ESC close, backdrop click close,
  * aria-labelledby pointing at the title, and a minimal focus trap that keeps

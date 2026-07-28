@@ -61,7 +61,11 @@ describe("the mandate agrees across the language boundary", () => {
 
     const lensesBlock = /^LENSES\s*=\s*\(([^)]*)\)/m.exec(MANDATE_PY);
     expect(lensesBlock, "LENSES should exist in mandate.py").not.toBeNull();
-    const pyLenses = [...lensesBlock![1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
+    // `match` rather than a `matchAll` spread: the repo's tsconfig target predates
+    // downlevelIteration, as risk-thresholds.test.ts already notes.
+    const pyLenses = (lensesBlock![1].match(/"[a-z_]+"/g) ?? []).map((s) =>
+      s.replace(/"/g, ""),
+    );
     expect([...LENSES]).toEqual(pyLenses);
   });
 
@@ -97,7 +101,9 @@ describe("the mandate agrees across the language boundary", () => {
     const keyBlock = /^CONFIG_KEYS:[^=]*=\s*\{([\s\S]*?)^\}/m.exec(MANDATE_PY);
     expect(keyBlock, "CONFIG_KEYS should exist in mandate.py").not.toBeNull();
     const pyKeys = new Set(
-      [...keyBlock![1].matchAll(/"[a-z_]+":\s*"([a-z_]+)"/g)].map((m) => m[1]),
+      (keyBlock![1].match(/"[a-z_]+":\s*"[a-z0-9_]+"/g) ?? []).map(
+        (s) => /:\s*"([a-z0-9_]+)"/.exec(s)![1],
+      ),
     );
     for (const limit of Object.values(ENFORCED)) {
       expect(

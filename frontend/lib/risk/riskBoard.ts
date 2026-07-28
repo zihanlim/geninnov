@@ -14,6 +14,7 @@
 //     (direction, weight): long → +weight, short → −weight.
 
 import { isNum } from "@/lib/risk/analytics";
+import { ENFORCED, MONITORED } from "@/lib/mandate";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Positions & factor betas
@@ -141,46 +142,78 @@ export interface LimitRow extends LimitDef {
 }
 
 /**
- * House defaults for limits with no scoring_config row. Documented here so the
- * board can say "house default" and a PM can see the assumption. Percentages are
- * decimals (0.20 = 20%).
+ * Fallbacks for limits with no scoring_config row, DERIVED from `lib/mandate.ts`.
  *
- * Single-name / sector / geo MUST mirror the caps the backend actually enforces
- * in sizing — book_metrics.py MAX_SINGLE_NAME_WEIGHT = 0.20, MAX_SECTOR_WEIGHT =
- * 0.30, MAX_GEO_WEIGHT = 0.35. The single-name and geo values here were
- * transposed (0.35 / 0.20), so the board judged every position against the wrong
- * ceiling: it understated single-name breaches (measuring a 20% cap as 35%) and
- * overstated geography ones (measuring a 35% cap as 20%). Keep these three in
- * step with book_metrics or the board contradicts the sizer that produced the book.
+ * These used to be hand-written literals kept in step with `book_metrics.py` by a
+ * comment. The comment failed twice. The single-name and geo values shipped
+ * TRANSPOSED (0.35 / 0.20), so the board judged every position against the wrong
+ * ceiling — understating single-name breaches by measuring a 20% cap as 35%, and
+ * overstating geographic ones by measuring a 35% cap as 20%. And
+ * `gross_exposure_pct` read 2.0 (200% gross, 2× leverage) against an optimizer that
+ * has enforced `max_gross = 1.0` since ADR-0037 banked un-deployable capital as cash
+ * rather than renormalising the book. The board was publishing a limit permitting
+ * leverage the sizer structurally cannot produce, which is the defect ADR-0123 names:
+ * a published risk limit disagreeing with the published book.
+ *
+ * Now every value reads through the mandate module, and
+ * `tests/unit/mandate-drift.test.ts` parses `backend/services/mandate.py` and fails
+ * if the two ever disagree. Percentages are decimals (0.20 = 20%).
  */
 export const DEFAULT_LIMITS = {
-  var_95_pct: 0.06, // 6% of capital 1-day 95% VaR
-  cvar_95_pct: 0.09, // 9% of capital 95% CVaR (tail beyond VaR)
-  max_drawdown_pct: 0.15, // 15% peak-to-trough on the realised curve
-  net_exposure_pct: 0.3, // ±30% net long/short of capital
-  gross_exposure_pct: 2.0, // 200% gross (2x leverage)
-  beta_abs: 0.5, // |beta| to SPX, market-neutral-ish mandate
-  hhi: 2000, // Herfindahl ceiling on the 0–10 000 (DOJ) scale — backend
-  // concentration_hhi = Σwᵢ²·10 000, so the limit must be on the same scale.
-  // 2 000 ≈ five equal-weight names; the old 0.2 (a 0–1-scale value) made a 2 500
-  // book read as 1 250 000 % utilisation.
-  single_name_pct: 0.20,  // book_metrics.MAX_SINGLE_NAME_WEIGHT
-  sector_pct: 0.30,       // book_metrics.MAX_SECTOR_WEIGHT
-  geo_pct: 0.35,          // book_metrics.MAX_GEO_WEIGHT
-} as const;
+  var_95_pct: MONITORED.var_95_pct.value,
+  cvar_95_pct: MONITORED.cvar_95_pct.value,
+  max_drawdown_pct: MONITORED.max_drawdown_pct.value,
+  net_exposure_pct: MONITORED.net_exposure_pct.value,
+  gross_exposure_pct: ENFORCED.gross_exposure_pct.value,
+  beta_abs: MONITORED.beta_abs.value,
+  hhi: MONITORED.hhi.value,
+  single_name_pct: ENFORCED.single_name_pct.value,
+  sector_pct: ENFORCED.sector_pct.value,
+  geo_pct: ENFORCED.geo_pct.value,
+};
 
-/** scoring_config keys we look up before falling back to DEFAULT_LIMITS. */
+/**
+ * Which of these the SIZER actually enforces.
+ *
+ * `single_name_pct`, `sector_pct`, `geo_pct` and `gross_exposure_pct` are entered
+ * into the solver as constraints (ADR-0107) and clamped by the heuristic allocator
+ * (ADR-0037): a published book cannot breach one. Everything else on this board —
+ * VaR, CVaR, drawdown, net exposure, beta, HHI — constrains NOTHING. There is no net
+ * or beta constraint anywhere in `optimizer.py`.
+ *
+ * Rendering all ten in one undifferentiated list told a reader that a 30% net band
+ * was as binding as the 20% single-name cap. A breach of the first is information; a
+ * breach of the second would be a bug.
+ */
+export const ENFORCED_LIMIT_KEYS: ReadonlySet<keyof typeof DEFAULT_LIMITS> = new Set([
+  "single_name_pct",
+  "sector_pct",
+  "geo_pct",
+  "gross_exposure_pct",
+] as const);
+
+export function isEnforcedLimit(key: keyof typeof DEFAULT_LIMITS): boolean {
+  return ENFORCED_LIMIT_KEYS.has(key);
+}
+
+/**
+ * scoring_config keys we look up before falling back to DEFAULT_LIMITS.
+ *
+ * The four enforced keys are taken from the mandate module rather than restated, so
+ * a lookup key cannot drift from the row migration 054 actually seeds — which is how
+ * these three came to be looked up for months against rows that did not exist.
+ */
 const CONFIG_KEYS: Record<keyof typeof DEFAULT_LIMITS, string> = {
-  var_95_pct: "limit_var_95_pct",
-  cvar_95_pct: "limit_cvar_95_pct",
-  max_drawdown_pct: "limit_max_drawdown_pct",
-  net_exposure_pct: "limit_net_exposure_pct",
-  gross_exposure_pct: "limit_gross_exposure_pct",
-  beta_abs: "limit_beta_abs",
-  hhi: "limit_hhi",
-  single_name_pct: "max_single_name_weight",
-  sector_pct: "max_sector_weight",
-  geo_pct: "max_geo_weight",
+  var_95_pct: MONITORED.var_95_pct.configKey,
+  cvar_95_pct: MONITORED.cvar_95_pct.configKey,
+  max_drawdown_pct: MONITORED.max_drawdown_pct.configKey,
+  net_exposure_pct: MONITORED.net_exposure_pct.configKey,
+  gross_exposure_pct: ENFORCED.gross_exposure_pct.configKey,
+  beta_abs: MONITORED.beta_abs.configKey,
+  hhi: MONITORED.hhi.configKey,
+  single_name_pct: ENFORCED.single_name_pct.configKey,
+  sector_pct: ENFORCED.sector_pct.configKey,
+  geo_pct: ENFORCED.geo_pct.configKey,
 };
 
 function resolveLimit(

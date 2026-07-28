@@ -64,6 +64,8 @@ import ClearedNotTaken, {
 import { ScrollArea } from "@/components/ScrollArea";
 import { ProvenanceStrip } from "@/components/status/ProvenanceStrip";
 import { PositionRow } from "@/components/book/PositionRow";
+import SourceTag from "@/components/source/SourceTag";
+import type { SourceToken } from "@/components/source/SourceTag";
 import {
   FACTOR_LABELS,
   SEVERITY_COLOR,
@@ -87,6 +89,10 @@ import {
   type ScoringConfigRow,
 } from "@/lib/book/positionEdge";
 import { severityRank } from '@/lib/risk/analytics';
+import { ENFORCED } from '@/lib/mandate';
+
+/** The capital base the book is sized against — the mandate's, not a literal. */
+const TOTAL_CAPITAL = ENFORCED.total_capital.value;
 
 /**
  * /book — the $100M long-short book, as ONE object.
@@ -383,6 +389,37 @@ function BookPageInner() {
     return m;
   }, [rec, posEdgeByAsset, edgeByTheme]);
 
+  // Cleared alternatives — candidates that shared this held position's theme
+  // AND direction and were considered by L5 but not picked. Renders as a
+  // cross-anchor block inside each PositionRow's expanded panel so a reader
+  // can jump straight from "why this name" to "what we passed on instead".
+  //
+  // theme_id may be null on L5 output (the same fallback AbstentionRoster
+  // uses for tradedThemeIds, line ~1124) so the held position's effective
+  // theme_id prefers p.theme_id and falls back to posEdgeByAsset. Candidates
+  // with no theme_id are skipped — they belong to no theme and there is
+  // nothing to match against. The held asset itself is excluded so a row
+  // never lists itself as a "passed-over alternative".
+  const clearedByHeldAsset = useMemo(() => {
+    const m = new Map<string, CandidateRow[]>();
+    const heldAssets = new Set((rec?.picks ?? []).map((p) => p.asset));
+    const themeOfHeld = (p: Pick): string | null =>
+      p.theme_id || posEdgeByAsset[p.asset]?.theme_id || null;
+    for (const p of rec?.picks ?? []) {
+      const tid = themeOfHeld(p);
+      if (!tid) continue;
+      const alts: CandidateRow[] = [];
+      for (const c of candidates) {
+        if (heldAssets.has(c.asset)) continue;
+        if (c.theme_id !== tid) continue;
+        if (c.direction !== p.direction) continue;
+        alts.push(c);
+      }
+      if (alts.length > 0) m.set(p.asset, alts);
+    }
+    return m;
+  }, [rec, posEdgeByAsset, candidates]);
+
   // Σ conviction across every sized position with a non-null conviction — the
   // normalisation denominator the sizing chain shows.
   const convictionSum = useMemo(() => {
@@ -435,11 +472,16 @@ function BookPageInner() {
           ? " It is close to market-neutral."
           : ` It leans net ${net > 0 ? "long" : "short"} at ${fmtPct(Math.abs(net), 0)} of capital.`;
     // Cash is a POSITION, not a rounding error. Once the caps genuinely bind, a
-    // book that cannot be filled inside its own limits deploys less than $100M —
-    // and a reader who is told "sized across $100M" while the notionals add to
-    // $60M is owed the difference and the reason for it.
+    // book that cannot be filled inside its own limits deploys less than the
+    // capital base — and a reader who is told "sized across $100M" while the
+    // notionals add to $60M is owed the difference and the reason for it.
+    //
+    // The capital base reads from the mandate, not a literal. /risk has always read
+    // portfolio_risk.total_capital while this page hardcoded 100_000_000 twice, so
+    // changing the capital base would have moved one page and not the other, with
+    // no error anywhere.
     const deployed = (rec.picks ?? []).reduce((s, p) => s + (p.notional ?? 0), 0);
-    const cash = 100_000_000 - deployed;
+    const cash = TOTAL_CAPITAL - deployed;
     const cashNote =
       cash > 500_000
         ? ` ${fmtUSD(cash)} is held in cash: at ${n} name${n === 1 ? "" : "s"} the` +
@@ -800,7 +842,7 @@ function BookPageInner() {
             net={bm?.net_exposure ?? null}
             deployed={(rec.picks ?? []).reduce((s, p) => s + (p.notional ?? 0), 0)}
             cash={
-              100_000_000 -
+              TOTAL_CAPITAL -
               (rec.picks ?? []).reduce((s, p) => s + (p.notional ?? 0), 0)
             }
             worstLabel={worstScenario?.label ?? null}
@@ -826,6 +868,7 @@ function BookPageInner() {
               label="Gross"
               value={fmtPct(bm?.gross_exposure)}
               hint="Long + short — total capital at risk"
+              tag="LIVE"
             />
             <Stat
               label="Net"
@@ -835,6 +878,7 @@ function BookPageInner() {
                   : `${bm.net_exposure >= 0 ? "+" : ""}${fmtPct(bm.net_exposure)}`
               }
               hint="Long − short — directional tilt"
+              tag="LIVE"
             />
             <Stat
               label="Deployed"
@@ -843,11 +887,12 @@ function BookPageInner() {
               )}
               hint={(() => {
                 const dep = rec.picks.reduce((s, p) => s + (p.notional ?? 0), 0);
-                const cash = 100_000_000 - dep;
+                const cash = TOTAL_CAPITAL - dep;
                 return cash > 500_000
-                  ? `of $100M — ${fmtUSD(cash)} in cash, held back by position limits`
-                  : "Capital allocated of $100M";
+                  ? `of ${fmtUSD(TOTAL_CAPITAL)} — ${fmtUSD(cash)} in cash, held back by position limits`
+                  : `Capital allocated of ${fmtUSD(TOTAL_CAPITAL)}`;
               })()}
+              tag="EST"
             />
             <Stat
               label="Worst scenario"
@@ -858,6 +903,7 @@ function BookPageInner() {
               }
               hint={worstScenario?.label}
               color={worstScenario ? "var(--short)" : undefined}
+              tag="EST"
             />
           </div>
 
@@ -937,6 +983,7 @@ function BookPageInner() {
                 correlationPairs={correlationPairs}
                 ideas={rec?.independent_ideas ?? null}
                 scenarios={rec.scenario_results ?? []}
+                clearedByHeldAsset={clearedByHeldAsset}
               />
               <PositionSection
                 title="Shorts"
@@ -959,6 +1006,7 @@ function BookPageInner() {
                 ideas={rec?.independent_ideas ?? null}
                 scenarios={rec.scenario_results ?? []}
                 emptyNote="This book has no short positions. A $100M long-short mandate with zero shorts carries full directional market exposure — check the screening funnel for why no theme produced a negative TradeScore."
+                clearedByHeldAsset={clearedByHeldAsset}
               />
               </div>
 
@@ -1238,6 +1286,7 @@ function Stat({
   color,
   warn,
   warnHint,
+  tag,
 }: {
   label: string;
   value: string;
@@ -1245,17 +1294,30 @@ function Stat({
   color?: string;
   warn?: boolean;
   warnHint?: string;
+  /**
+   * Provenance pill rendered inline with the value. `SourceToken` from
+   * `lib/sourceTokens.ts` — use `LIVE` for the published-book rollups
+   * (Gross, Net) and `EST` for figures reduced or modelled client-side
+   * (Deployed, Worst scenario). Omit for stats whose value is self-evidently
+   * literal — e.g. the positions count or the longs/shorts split.
+   */
+  tag?: SourceToken;
 }) {
   return (
     <div className="px-4 py-3">
       <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-semibold leading-none mb-1">
         {label}
       </div>
-      <div
-        className="num text-[16px] font-semibold leading-[1.1]"
-        style={{ color: warn ? "var(--warning)" : color }}
-      >
-        {value}
+      <div className="flex items-center gap-1.5">
+        <div
+          className="num text-[16px] font-semibold leading-[1.1]"
+          style={{ color: warn ? "var(--warning)" : color }}
+        >
+          {value}
+        </div>
+        {tag && (
+          <SourceTag token={tag} marginLeft={false} />
+        )}
       </div>
       {(hint || (warn && warnHint)) && (
         <div className="text-[10.5px] text-text-secondary mt-1 leading-[1.35]">
@@ -1287,6 +1349,7 @@ function PositionSection({
   repl,
   bookRunDate,
   emptyNote,
+  clearedByHeldAsset,
 }: {
   title: string;
   glyph: string;
@@ -1308,6 +1371,7 @@ function PositionSection({
   ideas: IndependentIdeas | null;
   scenarios: ScenarioResult[];
   emptyNote?: string;
+  clearedByHeldAsset: Map<string, CandidateRow[]>;
 }) {
   return (
     <section className="mb-6">
@@ -1392,6 +1456,7 @@ function PositionSection({
               correlationPairs={correlationPairs}
               ideas={ideas}
               scenarios={scenarios}
+              clearedAlternatives={clearedByHeldAsset.get(p.asset) ?? []}
             />
           ))}
         </ScrollArea>

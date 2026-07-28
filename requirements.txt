@@ -1,0 +1,30 @@
+# Dependencies for the Vercel Python functions under api/compute/.
+#
+# DELIBERATELY NOT backend/requirements.txt. That file is the nightly pipeline's:
+# it pulls gensim, sentence-transformers, praw, nltk and the rest of the discovery
+# and ingestion stack, none of which a request-time solve touches. Installing it
+# here would put hundreds of megabytes and a model download into a serverless
+# bundle to run a quadratic program.
+#
+# What api/compute/size.py actually reaches:
+#   compute_api -> optimizer (cvxpy, numpy, pandas)
+#               -> mandate   (stdlib only)
+#   optimizer   -> book_metrics, for SECTOR_MAP / GEO_MAP, which imports pandas
+#                  and yfinance at module scope
+#
+# yfinance is here for that import chain, not because a solve fetches prices. If
+# book_metrics ever splits its asset records from its price helpers, this can go.
+#
+# Keep the pins compatible with backend/requirements.txt: a solve that behaves
+# differently at request time than it does in the nightly run is the exact defect
+# this whole compute path exists to avoid.
+
+cvxpy>=1.9.1
+numpy>=1.26.0
+pandas>=2.2.0
+scipy>=1.11.0
+yfinance>=0.2.0
+
+# Only for the rate-limit RPC. The endpoint runs without it (see _rate_limit's
+# fail-open note), so this is not on the critical path for a solve.
+supabase>=2.0.0

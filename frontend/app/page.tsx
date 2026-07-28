@@ -11,6 +11,7 @@ import ThemeHeatmap from "@/components/ThemeHeatmap";
 import TerminalPane from "@/components/home/TerminalPane";
 import DiscoveredThemes from "@/components/DiscoveredThemes";
 import NarrativeTrends from "@/components/NarrativeTrends";
+import ThemeTrends from "@/components/ThemeTrends";
 import PredictionMarkets from "@/components/PredictionMarkets";
 import MarketBar from "@/components/MarketBar";
 import { FreshnessLabel } from "@/components/status/FreshnessLabel";
@@ -889,6 +890,20 @@ function ConvictionPageInner() {
             className="lg:col-span-3 lg:col-start-1 lg:row-start-4"
           >
             <NarrativeTrends />
+          </TerminalPane>
+
+          {/* The SAME chart, pointed at the nine ANCHORS. The board above plots
+              phrases nobody named; this one plots the themes the pipeline has
+              scored daily since migration 001 — the Google-Trends view of the
+              attention the book actually trades on. Shares one TrendPlot with
+              the narrative board (ADR-0064 applied to chart geometry). */}
+          <TerminalPane
+            id="theme-trends"
+            title="Theme attention over time"
+            bare
+            className="lg:col-span-3 lg:col-start-1 lg:row-start-5"
+          >
+            <ThemeTrends />
           </TerminalPane>
           </div>
         </>

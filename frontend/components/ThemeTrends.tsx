@@ -1,0 +1,149 @@
+"use client";
+
+// frontend/components/ThemeTrends.tsx
+//
+// The anchor themes' attention over time — the Google-Trends view of the NINE
+// named themes, beside NarrativeTrends' view of the phrases nobody named.
+//
+// Same chart contract as the narrative board (ADR-0126): a value axis, direct
+// end-labels with leader lines, and a figures table that is the relief for the
+// two low-contrast palette slots. The PLOT IS SHARED — `TrendPlot` from
+// NarrativeTrends renders both boards, so a geometry fix lands on each at once
+// (ADR-0064 applied to chart code). Five colour slots, fixed order, no sixth:
+// themes past the fifth live in the table, not in a generated hue.
+//
+// The metric's honesty note lives in the caption and in lib/themeTrends.ts:
+// this is relative attention AMONG the anchors (each theme is counted by its
+// own query), not share of an unbiased corpus — that claim belongs to the
+// narrative board (ADR-0141), and this board deliberately does not make it.
+
+import { useEffect, useState } from "react";
+import { SERIES_COLORS, TrendPlot } from "@/components/NarrativeTrends";
+import {
+  fetchThemeTrends,
+  themeSharePct,
+  topThemeSeries,
+  toThemeTrendSeries,
+  type ThemeTrendSeries,
+} from "@/lib/themeTrends";
+
+export function ThemeTrendsTable({ series }: { series: ThemeTrendSeries[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-[11.5px] border-collapse">
+        <thead>
+          <tr className="text-text-tertiary text-left">
+            <th className="font-normal py-1 pr-3">Theme</th>
+            <th className="font-normal py-1 pr-3 text-right">Share today</th>
+            <th className="font-normal py-1 pr-3 text-right">Mentions</th>
+            <th className="font-normal py-1 text-right">&Delta; vs prior run</th>
+          </tr>
+        </thead>
+        <tbody>
+          {series.map((s, i) => (
+            <tr key={s.phrase} className="border-t border-border align-top">
+              <td className="py-1 pr-3">
+                <span className="inline-flex items-center gap-1.5">
+                  {/* Only the five plotted series get a dot; a sixth hue does
+                      not exist, so a sixth row simply has no dot. */}
+                  {i < SERIES_COLORS.length ? (
+                    <span
+                      aria-hidden="true"
+                      className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ background: SERIES_COLORS[i] }}
+                    />
+                  ) : (
+                    <span className="inline-block w-2.5 h-2.5 shrink-0" aria-hidden="true" />
+                  )}
+                  <span className="text-text-primary">{s.phrase}</span>
+                </span>
+              </td>
+              <td className="py-1 pr-3 text-right num">{themeSharePct(s.latest.share)}</td>
+              <td className="py-1 pr-3 text-right num">
+                {s.latest.mentions === null ? (
+                  <span className="text-text-tertiary">not reported</span>
+                ) : (
+                  s.latest.mentions
+                )}
+              </td>
+              <td className="py-1 text-right num">
+                {s.latest.delta === null ? (
+                  <span className="text-text-tertiary">—</span>
+                ) : (
+                  `${s.latest.delta >= 0 ? "+" : ""}${(s.latest.delta * 100).toFixed(1)}pp`
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export default function ThemeTrends() {
+  const [series, setSeries] = useState<ThemeTrendSeries[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchThemeTrends().then(({ rows, error }) => {
+      if (error) {
+        setError(error);
+        return;
+      }
+      setSeries(toThemeTrendSeries(rows));
+    });
+  }, []);
+
+  const top = series ? topThemeSeries(series, SERIES_COLORS.length) : [];
+  const runs = series
+    ? new Set(series.flatMap((s) => s.points.map((p) => p.run_date))).size
+    : 0;
+  const dropped = series ? Math.max(0, series.length - top.length) : 0;
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <span className="card-title">Theme trends</span>
+        <span className="text-[10.5px] text-text-tertiary">
+          share of theme-news mentions · {runs} runs
+        </span>
+      </div>
+      <div className="p-4 pt-3">
+        <p className="m-0 mb-3 text-[12px] text-text-secondary leading-[1.6]">
+          Each anchor theme&rsquo;s share of the day&rsquo;s theme-news mentions —
+          relative attention among the nine anchors, since every theme is counted by
+          its own query. Not a share of an unbiased corpus: that claim belongs to
+          the narrative board above (ADR-0141). A missing day is a gap, never a zero.
+        </p>
+
+        {error ? (
+          <div className="text-[12.5px] text-text-secondary leading-[1.6]">
+            theme_signals_history could not be read: <span className="num">{error}</span>
+          </div>
+        ) : series === null ? (
+          <div className="skeleton h-[240px]" />
+        ) : runs < 2 ? (
+          <div className="text-[12.5px] text-text-secondary leading-[1.6]">
+            Only {runs === 1 ? "one run" : "no runs"} of theme history so far — a
+            trend needs two. The table below carries today&rsquo;s readings; the
+            lines arrive with tomorrow&rsquo;s run.
+          </div>
+        ) : (
+          <div className="mb-3">
+            <TrendPlot series={top} />
+            {dropped > 0 && (
+              <p className="m-0 mt-1 text-[11px] text-text-tertiary leading-[1.5]">
+                Top {top.length} by today&rsquo;s share drawn — the palette has five
+                validated slots and a sixth hue would be a guess. All{" "}
+                {series.length} themes are in the table.
+              </p>
+            )}
+          </div>
+        )}
+
+        {series !== null && series.length > 0 && <ThemeTrendsTable series={series} />}
+      </div>
+    </div>
+  );
+}

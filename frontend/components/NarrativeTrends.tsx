@@ -63,14 +63,25 @@ const PLOT_HEIGHT = HEIGHT - PLOT_TOP - PLOT_BOTTOM;
 /** Validated categorical slots, assigned in FIXED order and never cycled.
  *  Read as tokens, not hex: the values, their validation record and the reason
  *  they are not --long/--short all live in globals.css beside the rest of the
- *  palette. A sixth series would need a generated hue, so there is no sixth. */
-const SERIES_COLORS = [
+ *  palette. A sixth series would need a generated hue, so there is no sixth.
+ *  Exported for ThemeTrends, which draws on the SAME five slots — a second
+ *  palette would be a second thing to validate. */
+export const SERIES_COLORS = [
   "var(--series-1)",
   "var(--series-2)",
   "var(--series-3)",
   "var(--series-4)",
   "var(--series-5)",
 ];
+
+/** The minimal shape TrendPlot needs. NarrativeSeries satisfies it structurally;
+ *  ThemeTrends supplies its own. One plot implementation for both boards —
+ *  ADR-0064's one-formula-one-place, applied to chart geometry, so an axis or
+ *  label-collision fix lands on every trends board at once. */
+export interface TrendSeries {
+  phrase: string;
+  points: Array<{ run_date: string; share: number }>;
+}
 
 const STATUS_COPY: Record<NarrativeStatus, string> = {
   new: "too little history to judge",
@@ -102,7 +113,7 @@ function clamp(v: number, lo: number, hi: number) {
 
 /** Exported for test: the geometry is the part ADR-0126's bug class lives in, and
  *  a test that cannot render the plot can only assert on source text. */
-export function TrendPlot({ series }: { series: NarrativeSeries[] }) {
+export function TrendPlot({ series }: { series: TrendSeries[] }) {
   // One shared date axis across every series, so two lines at the same x are the
   // same day. Building each line against its own point count would compress a
   // sparse series to fill the plot and make it look denser than it is.

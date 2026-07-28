@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -308,5 +310,31 @@ describe("two-method agreement is visible (ADR-0133)", () => {
     expect(isCorroborated(row({ methods: ["frequency"] }))).toBe(false);
     expect(isCorroborated(row({ methods: ["frequency", "lda"] }))).toBe(true);
     expect(isCorroborated(row({ methods: null }))).toBe(false);
+  });
+});
+
+describe("the emerging shortlist's two empties stay distinct", () => {
+  // ADR-0059 / ADR-0143's lesson applied to prose: "measured, none found" is
+  // a finding; "cannot measure yet" is silence. With one day of rebuilt
+  // corpus every phrase has velocity null, so the board must not claim
+  // "every phrase breaking out today is covered" — nothing CAN break out.
+  const src = readFileSync(
+    path.resolve(__dirname, "../../components/NarrativeTrends.tsx"),
+    "utf8",
+  );
+
+  it("branches the empty state on velocity measurability", () => {
+    expect(src).toContain("velocityMeasurable ?");
+    expect(src).toContain("That is a finding");
+    expect(src).toContain("not a finding");
+  });
+
+  it("the unmeasurable copy refuses the finding claim and counts the unwatched", () => {
+    expect(src).toContain("Not measurable yet");
+    expect(src).toContain("uncoveredCount");
+  });
+
+  it("says nine anchors, not the stale eight", () => {
+    expect(src).not.toMatch(/eight anchor/i);
   });
 });

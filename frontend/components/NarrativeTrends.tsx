@@ -5,8 +5,8 @@
 // The trends board: share of voice per narrative, over time (ADR-0128).
 //
 // This is the Google-Trends-shaped view of the attention signal, over phrases
-// NOBODY NAMED IN ADVANCE. The eight anchor themes have had a time series since
-// migration 001; what they never had is a peer group. A phrase here arrived
+// NOBODY NAMED IN ADVANCE. The anchor themes (nine since migration 050) have
+// had a time series since migration 001; what they never had is a peer group. A phrase here arrived
 // because the market news was about it, so the chart can show a narrative the
 // pipeline is not watching next to one it is.
 //
@@ -363,6 +363,12 @@ export default function NarrativeTrends() {
 
   const top = series ? topSeries(series, SERIES_COLORS.length) : [];
   const emerging = series ? emergingUncovered(series) : [];
+  // Distinguishes the two empties (ADR-0059 / ADR-0143): "measured, none
+  // found" is a finding; "cannot measure yet" is silence. With no measurable
+  // velocity anywhere, NOTHING can be classified emerging regardless of what
+  // the market is doing, and the copy below must not claim otherwise.
+  const velocityMeasurable = series?.some((s) => s.latest.velocity !== null) ?? false;
+  const uncoveredCount = series?.filter((s) => s.latest.covered_by === null).length ?? 0;
   const latestRun = series?.[0]?.latest.run_date ?? null;
   const corpus = series?.[0]?.latest.corpus_size ?? null;
   const dropped = series ? Math.max(0, series.length - top.length) : 0;
@@ -396,7 +402,7 @@ export default function NarrativeTrends() {
           <div className="text-[12.5px] text-text-secondary leading-[1.6]">
             No narrative signals recorded yet. The daily job collects general
             market news (<code className="num">market_news</code>) alongside the
-            eight anchor themes, then tracks every phrase&rsquo;s share of voice in{" "}
+            nine anchor themes, then tracks every phrase&rsquo;s share of voice in{" "}
             <code className="num">narrative_signals</code>. Velocity needs several
             runs of history before it reports anything, so the first few days will
             show every phrase as <span className="num">new</span>.
@@ -429,11 +435,25 @@ export default function NarrativeTrends() {
                 Emerging &middot; watched by nothing
               </h4>
               {emerging.length === 0 ? (
-                <p className="m-0 text-[12px] text-text-secondary leading-[1.6]">
-                  No narrative is currently both accelerating and outside the eight
-                  anchor themes. That is a finding, not an empty state: every phrase
-                  breaking out today is one an anchor theme already asks for.
-                </p>
+                velocityMeasurable ? (
+                  <p className="m-0 text-[12px] text-text-secondary leading-[1.6]">
+                    No narrative is currently both accelerating and outside the nine
+                    anchor themes. That is a finding, not an empty state: every phrase
+                    breaking out today is one an anchor theme already asks for.
+                  </p>
+                ) : (
+                  <p className="m-0 text-[12px] text-text-secondary leading-[1.6]">
+                    Not measurable yet. Velocity compares each phrase against its own
+                    history, and no tracked phrase has enough observed days since the
+                    corpus rebuild (ADR-0141) — so nothing <em>can</em> be classified
+                    as accelerating, whatever the market is doing. This silence is an
+                    empty instrument, not a finding:{" "}
+                    <span className="num">{uncoveredCount}</span> of the{" "}
+                    <span className="num">{series?.length ?? 0}</span> tracked phrases
+                    are watched by no anchor theme, and whether any is breaking out
+                    cannot be said until the history accrues.
+                  </p>
+                )
               ) : (
                 <ul className="m-0 p-0 list-none flex flex-col gap-1.5">
                   {emerging.slice(0, 6).map((s) => (

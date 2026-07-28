@@ -883,27 +883,26 @@ function ConvictionPageInner() {
               It sits next to `DiscoveredThemes` conceptually: that card is what the
               MONTHLY two-method job proposes, this is what the DAILY frequency
               method sees (ADR-0128). */}
+          {/* ONE section, TWO boards: they answer the same question — what is
+              the market paying attention to? — from two corpora with different
+              biases, and the grouping says so structurally. Narratives first,
+              because that board pairs with `DiscoveredThemes` directly above
+              (monthly job proposes / daily frequency sees, ADR-0128), and the
+              theme board's caption points "above" at it for the
+              unbiased-corpus claim (ADR-0141/0145). NOT one chart: different
+              denominators must not share an axis (ADR-0145's rejected
+              alternative). NOT side by side: a trends x-axis in half the grid
+              stacks its run dates (the width note above). */}
           <TerminalPane
             id="narratives"
-            title="Which narratives are trending"
+            title="What the market is paying attention to"
             bare
             className="lg:col-span-3 lg:col-start-1 lg:row-start-4"
           >
-            <NarrativeTrends />
-          </TerminalPane>
-
-          {/* The SAME chart, pointed at the nine ANCHORS. The board above plots
-              phrases nobody named; this one plots the themes the pipeline has
-              scored daily since migration 001 — the Google-Trends view of the
-              attention the book actually trades on. Shares one TrendPlot with
-              the narrative board (ADR-0064 applied to chart geometry). */}
-          <TerminalPane
-            id="theme-trends"
-            title="Theme attention over time"
-            bare
-            className="lg:col-span-3 lg:col-start-1 lg:row-start-5"
-          >
-            <ThemeTrends />
+            <div className="flex flex-col gap-4">
+              <NarrativeTrends />
+              <ThemeTrends />
+            </div>
           </TerminalPane>
           </div>
         </>

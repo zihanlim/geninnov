@@ -165,7 +165,31 @@ MARKET_SEED_QUERIES: list[str] = [
     '"investors" OR "traders" OR "fund managers"',
     '"global markets" OR "world economy" OR "central banks"',
     '"commodities" OR "currencies" OR "credit markets"',
-    '"earnings" OR "guidance" OR "capital spending"',
+    # "capital spending" was removed on 2026-07-28 (ADR-0140). It is a synonym for
+    # capex, so it does not ask what the market is talking about — it asks about
+    # one narrative, and right now capex stories ARE AI stories. Measured: this
+    # query returned 52 of the corpus's 100 documents and **33 of its 34
+    # AI-mentioning ones**, which made "AI is 34% of the un-themed corpus" a
+    # statement about the query rather than about the market.
+    #
+    # "earnings" and "guidance" stay: an earnings season is a calendar event every
+    # listed company participates in, not a narrative anyone is pushing.
+    '"earnings" OR "guidance" OR "results season"',
+    # Added 2026-07-28 (ADR-0140). Brave caps at 50 results per query and the five
+    # above overlap heavily, deduping to ~100 documents — too thin a denominator
+    # for a share-of-voice measure, and thin enough that MIN_DOC_COUNT=3 imposes a
+    # 3% floor on anything visible at all. These retrieve DIFFERENT slices of
+    # market coverage rather than restating the same one.
+    #
+    # Every one is deliberately narrative-neutral. Adding "technology" or "AI"
+    # here would grow the corpus by pre-selecting the answer, which is the exact
+    # failure the un-themed corpus exists to avoid — it would be the anchor-keyword
+    # problem again, wearing the clothes of a fix.
+    '"market outlook" OR "analysts expect" OR "price target"',
+    '"risk appetite" OR "volatility" OR "positioning"',
+    '"sector rotation" OR "fund flows" OR "asset allocation"',
+    '"economic data" OR "growth forecast" OR "macro outlook"',
+    '"quarterly results" OR "profit margins" OR "revenue growth"',
 ]
 
 

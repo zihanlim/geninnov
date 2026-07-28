@@ -353,3 +353,77 @@ class TestDiscoveryUsesTheSharedTokenizer:
             "OPEC+ raises output amid Hormuz tensions",
         ]:
             assert td.preprocess(text) == tokenize(text)
+
+
+class TestTheDiscoveryCorpusIsNotCircular:
+    """`corpus_from_theme_news` must read the UN-THEMED corpus too (ADR-0139).
+
+    ADR-0128 built `market_news` to break the circularity this function's own
+    docstring described, and wired it into the daily tracker -- but not into this
+    function, which is the one the caveat was about. Discovery therefore stayed
+    circular after the ADR that claimed to fix it.
+    """
+
+    class _Sb:
+        def __init__(self, market, theme, fail=()):
+            self.market, self.theme, self.fail = market, theme, fail
+            self._t = None
+
+        def table(self, name):
+            if name in self.fail:
+                raise RuntimeError(f"{name} unavailable")
+            self._t = name
+            return self
+
+        def select(self, *a, **k): return self
+        def gte(self, *a, **k): return self
+        def limit(self, *a, **k): return self
+
+        def execute(self):
+            rows = self.market if self._t == "market_news" else self.theme
+            return type("R", (), {"data": rows})()
+
+    def _rows(self, *headlines):
+        return [{"headline": h, "published_date": "2026-07-28",
+                 "run_date": "2026-07-28", "source": "brave"} for h in headlines]
+
+    def test_it_reads_market_news(self):
+        import scripts.theme_discovery as td
+        sb = self._Sb(self._rows("AI capex guidance lifts Alphabet"),
+                      self._rows("Fed holds rates steady"))
+        texts = [d["text"] for d in td.corpus_from_theme_news(sb, 180)]
+        assert "AI capex guidance lifts Alphabet" in texts
+
+    def test_it_still_reads_theme_news(self):
+        import scripts.theme_discovery as td
+        sb = self._Sb(self._rows("AI capex guidance"), self._rows("Fed holds rates steady"))
+        texts = [d["text"] for d in td.corpus_from_theme_news(sb, 180)]
+        assert "Fed holds rates steady" in texts
+
+    def test_the_unthemed_half_is_read_first(self):
+        """On a run where the row cap binds, the half that survives should be the
+        one discovery cannot do without."""
+        import scripts.theme_discovery as td
+        sb = self._Sb(self._rows("unthemed one"), self._rows("themed one"))
+        texts = [d["text"] for d in td.corpus_from_theme_news(sb, 180)]
+        assert texts[0] == "unthemed one"
+
+    def test_a_story_in_both_corpora_counts_once(self):
+        import scripts.theme_discovery as td
+        sb = self._Sb(self._rows("Same story"), self._rows("Same story"))
+        assert len(td.corpus_from_theme_news(sb, 180)) == 1
+
+    def test_a_missing_market_news_says_the_run_is_circular(self, capsys):
+        """Degrading quietly here would leave discovery circular with nothing
+        saying so -- the exact failure this change exists to end."""
+        import scripts.theme_discovery as td
+        sb = self._Sb([], self._rows("Fed holds"), fail=("market_news",))
+        out = td.corpus_from_theme_news(sb, 180)
+        assert [d["text"] for d in out] == ["Fed holds"]
+        assert "CIRCULAR" in capsys.readouterr().out
+
+    def test_it_reports_the_split(self, capsys):
+        import scripts.theme_discovery as td
+        sb = self._Sb(self._rows("a", "b"), self._rows("c"))
+        td.corpus_from_theme_news(sb, 180)
+        assert "2 un-themed, 1 themed" in capsys.readouterr().out

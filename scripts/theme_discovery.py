@@ -203,46 +203,80 @@ def corpus_from_theme_news(sb, lookback_days: int) -> list[dict]:
     unit-testable. Real (non-mock) rows only; deduped by headline text so a story
     that appeared under several themes / on several run dates counts once.
 
-    Caveat (honest): today's ``theme_news`` is news collected *for the Tier-1
-    anchor themes*, so discovery over it surfaces sub-themes and cross-cutting
-    terms within that universe rather than wholly unseen themes. Broadening the
-    upstream collection with general market-news seed queries is the next step to
-    make discovery fully non-circular; the agreement/clustering machinery here is
-    unchanged by where the corpus comes from.
+    **Reads BOTH `market_news` and `theme_news`** (ADR-0139). The docstring here
+    used to carry this caveat:
+
+        "today's theme_news is news collected *for the Tier-1 anchor themes*, so
+         discovery over it surfaces sub-themes and cross-cutting terms within that
+         universe rather than wholly unseen themes. Broadening the upstream
+         collection with general market-news seed queries is the next step."
+
+    That next step was built — `market_news`, ADR-0128 — and wired into the daily
+    narrative tracker, but **not into this function**, which is the one the caveat
+    was written about. So discovery stayed circular after the ADR that claimed to
+    fix it: it could only ever cluster what the eight anchor keyword queries had
+    already asked for, and a narrative nobody had named could not appear no matter
+    how well the clustering worked.
+
+    `market_news` is the corpus collected by market-wide seed queries that name no
+    theme. It is read FIRST so that, on a run where the row cap binds, the
+    un-themed half is the half that survives — the themed half is the one
+    discovery least needs.
     """
     from datetime import timedelta
     cutoff = (date.today() - timedelta(days=lookback_days)).isoformat()
+
+    seen: set[str] = set()
+    corpus: list[dict] = []
+
+    def _add(rows, default_src: str):
+        for r in rows or []:
+            headline = (r.get("headline") or "").strip()
+            src = str(r.get("source") or default_src)
+            if not headline or src.startswith("mock_"):
+                continue
+            key = headline.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            corpus.append({
+                "text": headline,
+                "date": r.get("published_date") or r.get("run_date") or "",
+                "source": src,
+                "theme": "",
+            })
+
+    # The un-themed corpus first — the only half that can contain a narrative the
+    # anchors never asked about.
     try:
-        rows = (
+        _add(
+            sb.table("market_news")
+            .select("headline, published_date, run_date, source")
+            .gte("run_date", cutoff).limit(5000).execute().data,
+            "brave_market",
+        )
+    except Exception as exc:
+        print(f"[theme_discovery] market_news read failed ({exc.__class__.__name__}); "
+              f"discovery is CIRCULAR on this run — it can only surface sub-themes "
+              f"of the eight anchors. Apply migration 049.")
+
+    n_market = len(corpus)
+
+    try:
+        _add(
             sb.table("theme_news")
             .select("headline, published_date, run_date, source")
-            .gte("run_date", cutoff)
-            .limit(5000)
-            .execute()
-            .data
+            .gte("run_date", cutoff).limit(5000).execute().data,
+            "brave",
         )
     except Exception as exc:
         print(f"[theme_discovery] theme_news read failed ({exc.__class__.__name__}); "
               f"falling back to a live fetch.")
-        return []
+        if not corpus:
+            return []
 
-    seen: set[str] = set()
-    corpus: list[dict] = []
-    for r in rows or []:
-        headline = (r.get("headline") or "").strip()
-        src = str(r.get("source") or "brave")
-        if not headline or src.startswith("mock_"):
-            continue
-        key = headline.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        corpus.append({
-            "text": headline,
-            "date": r.get("published_date") or r.get("run_date") or "",
-            "source": src,
-            "theme": "",
-        })
+    print(f"[theme_discovery] corpus: {len(corpus)} unique headlines "
+          f"({n_market} un-themed, {len(corpus) - n_market} themed).")
     return corpus
 
 

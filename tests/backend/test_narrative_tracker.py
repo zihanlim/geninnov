@@ -461,3 +461,83 @@ class TestSingleTokenAliasesClaimOnlyThemselves:
         assert self._cov("data center") == "AI Capex"
         # too generic to claim anything but itself
         assert self._cov("center") is None
+
+
+class TestTheDenominatorIsUnbiased:
+    """Share of voice is scored on the UN-THEMED corpus only (ADR-0140).
+
+    Measured 2026-07-28: AI was 34% of the un-themed corpus and 5.5% of the
+    anchor-fetched one. Blending them -- 100 un-themed against 1688 themed --
+    reported 7%, so the largest narrative in the only unbiased sample read as
+    marginal. A bigger denominator of self-selected text corrupts the estimate.
+    """
+
+    class _Sb:
+        def __init__(self, market, theme, fail=()):
+            self.market, self.theme, self.fail, self._t = market, theme, fail, None
+        def table(self, name):
+            if name in self.fail:
+                raise RuntimeError(f"{name} unavailable")
+            self._t = name
+            return self
+        def select(self, *a, **k): return self
+        def gte(self, *a, **k): return self
+        def limit(self, *a, **k): return self
+        def execute(self):
+            return type("R", (), {"data": self.market if self._t == "market_news" else self.theme})()
+
+    def _rows(self, *hs):
+        return [{"headline": h, "source": "brave"} for h in hs]
+
+    def _load(self, sb):
+        # daily_refresh reads SUPABASE_* at module scope (GitHub Actions injects
+        # them), so a stub is needed before import -- the same pattern
+        # test_daily_refresh.py uses.
+        import os
+        os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+        os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+        import scripts.daily_refresh as d
+        real, d.supabase = d.supabase, sb
+        try:
+            return d.load_market_corpus(RUN, lookback_days=7)
+        finally:
+            d.supabase = real
+
+    def test_themed_news_is_excluded_from_the_denominator(self):
+        sb = self._Sb(self._rows("AI capex lifts Alphabet"),
+                      self._rows("Fed holds", "Dollar firms", "Oil slips"))
+        assert self._load(sb) == ["AI capex lifts Alphabet"]
+
+    def test_a_dominant_narrative_is_not_diluted_by_our_own_queries(self):
+        """The live shape, in miniature: 1 of 2 un-themed docs is AI (50%), and
+        6 anchor-fetched docs would drag it to 12.5%."""
+        sb = self._Sb(self._rows("AI capex surges", "Bond yields rise"),
+                      self._rows(*[f"Fed story {i}" for i in range(6)]))
+        docs = self._load(sb)
+        assert len(docs) == 2
+        assert sum(1 for d in docs if "AI" in d) / len(docs) == 0.5
+
+    def test_it_falls_back_to_themed_news_rather_than_scoring_nothing(self):
+        sb = self._Sb([], self._rows("Fed holds"))
+        assert self._load(sb) == ["Fed holds"]
+
+    def test_the_fallback_says_the_reading_is_about_our_own_queries(self, capsys):
+        sb = self._Sb([], self._rows("Fed holds"))
+        self._load(sb)
+        out = capsys.readouterr().out
+        assert "WARNING" in out
+        assert "our own keyword mix" in out
+
+    def test_the_normal_path_states_what_it_excluded(self, capsys):
+        sb = self._Sb(self._rows("AI capex"), self._rows("Fed holds"))
+        self._load(sb)
+        assert "themed news excluded from the denominator" in capsys.readouterr().out
+
+    def test_mock_rows_never_enter_the_denominator(self):
+        sb = self._Sb([{"headline": "synthetic", "source": "mock_brave"},
+                       {"headline": "real story", "source": "brave_market"}], [])
+        assert self._load(sb) == ["real story"]
+
+    def test_duplicates_do_not_inflate_a_share(self):
+        sb = self._Sb(self._rows("Same story", "Same story", "Other"), [])
+        assert len(self._load(sb)) == 2

@@ -958,65 +958,89 @@ def persist_market_news(run_date: date, items: list[dict]) -> int:
 
 
 def load_market_corpus(run_date: date, lookback_days: int = 7) -> list[str]:
-    """The documents narrative tracking reads: today's un-themed market news, plus
-    the anchor themes' headlines for the same window.
+    """The documents narrative tracking scores: the UN-THEMED corpus only.
 
-    BOTH, deliberately. The un-themed corpus is what makes discovery non-circular;
-    the themed corpus is real market news that was already paid for, and excluding
-    it would throw away most of the day's documents and leave share-of-voice
-    computed on too small a denominator. What keeps the result honest is not
-    excluding themed news but `covered_by` — every phrase is labelled with the
-    anchor that already asks for it, so a surge in "fomc" is visibly Fed Policy
-    doing its job rather than a discovery.
+    THIS CHANGED ON 2026-07-28 (ADR-0140), and the previous docstring argued the
+    opposite:
+
+        "BOTH, deliberately... excluding [themed news] would throw away most of
+         the day's documents and leave share-of-voice computed on too small a
+         denominator."
+
+    That reasoning was wrong, and the data says so plainly. Share of voice over a
+    corpus that is 94% self-selected measures OUR QUERY MIX, not the market's
+    attention. Measured on 2026-07-28:
+
+        un-themed  (market_news):   100 docs,  34 AI-mentioning  = 34.0%
+        anchor-fetched (theme_news): 1688 docs, 92               =  5.5%
+        blended (what was scored):   1788 docs, 126              =  7.0%
+
+    AI was the single largest narrative in the only unbiased sample available and
+    was diluted 5x into looking marginal, because 1688 of the 1788 documents had
+    been fetched by asking about Fed, dollar, oil and China. The board duly read
+    `us` 14.1%, `dollar` 13.5%, `oil` 12.8%, `fed` 9.3% — every one of them a
+    thing we went looking for. A bigger denominator of self-selected text does not
+    improve the estimate; it corrupts it, and `covered_by` cannot repair a
+    denominator.
+
+    Themed news is still collected and still used — for `covered_by` attribution,
+    for the L5 agent, and for theme discovery's clustering, where more text
+    genuinely helps and no share is computed. It is only excluded from the
+    DENOMINATOR of a share.
+
+    Falls back to themed headlines when the un-themed corpus is unavailable,
+    because a biased reading that says so beats no reading at all — but it says so
+    loudly, because every share it then produces is a statement about our queries.
     """
     cutoff = (run_date - timedelta(days=lookback_days)).isoformat()
-    docs: list[str] = []
+
+    def _dedupe(rows) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for r in rows or []:
+            if str(r.get("source") or "").startswith("mock_"):
+                continue
+            text = (r.get("headline") or "").strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(text)
+        return out
 
     try:
-        rows = (
+        unthemed = _dedupe(
             supabase.table("market_news")
-            .select("headline")
-            .gte("run_date", cutoff)
-            .limit(5000)
-            .execute()
-            .data
+            .select("headline, source")
+            .gte("run_date", cutoff).limit(5000).execute().data
         )
-        docs.extend((r.get("headline") or "") for r in rows or [])
     except Exception as exc:
-        print(f"[narrative_tracker] market_news read failed ({exc.__class__.__name__}); "
-              f"falling back to themed headlines only — discovery is CIRCULAR on "
-              f"this run and can only surface sub-themes of the eight anchors.")
+        print(f"[narrative_tracker] market_news read failed ({exc.__class__.__name__}).")
+        unthemed = []
+
+    if unthemed:
+        print(f"[narrative_tracker] scoring {len(unthemed)} un-themed documents "
+              f"(themed news excluded from the denominator — ADR-0140).")
+        return unthemed
 
     try:
-        rows = (
+        themed = _dedupe(
             supabase.table("theme_news")
             .select("headline, source")
-            .gte("run_date", cutoff)
-            .limit(5000)
-            .execute()
-            .data
-        )
-        docs.extend(
-            (r.get("headline") or "") for r in rows or []
-            if not str(r.get("source") or "").startswith("mock_")
+            .gte("run_date", cutoff).limit(5000).execute().data
         )
     except Exception as exc:
         print(f"[narrative_tracker] theme_news read failed ({exc.__class__.__name__}).")
+        themed = []
 
-    # Dedupe: the same story is routinely returned by both a themed query and a
-    # market seed query, and counting it twice inflates its own share of voice.
-    seen: set[str] = set()
-    out: list[str] = []
-    for d in docs:
-        d = (d or "").strip()
-        if not d:
-            continue
-        k = d.lower()
-        if k in seen:
-            continue
-        seen.add(k)
-        out.append(d)
-    return out
+    if themed:
+        print(f"[narrative_tracker] WARNING: no un-themed corpus; scoring "
+              f"{len(themed)} ANCHOR-FETCHED documents. Every share this run "
+              f"produces describes our own keyword mix, not market attention. "
+              f"Check BRAVE_SEARCH_API_KEY and migration 049.")
+    return themed
 
 
 def run_narrative_tracking(run_date: date) -> int:

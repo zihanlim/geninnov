@@ -327,8 +327,13 @@ describe("the next layout moves cards without changing what they say", () => {
     const at = html.indexOf(title);
     if (at === -1) return null;
     const before = html.slice(0, at);
-    const m = [...before.matchAll(/lg:row-start-(\d) lg:col-start-(\d)/g)].pop();
-    return m ? `r${m[1]}c${m[2]}` : null;
+    // A while-loop rather than [...matchAll]: the tsconfig target predates
+    // downlevelIteration, so spreading a RegExpStringIterator does not compile.
+    const re = /lg:row-start-(\d) lg:col-start-(\d)/g;
+    let last: RegExpExecArray | null = null;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(before)) !== null) last = m;
+    return last ? `r${last[1]}c${last[2]}` : null;
   };
 
   it("renders every field in both variants", () => {

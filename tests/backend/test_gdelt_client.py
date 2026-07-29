@@ -133,6 +133,57 @@ class TestNoMockFallback:
             assert gc.fetch_market_news_gdelt(['"a"', '"b"']) == []
 
 
+class TestDateWindowing:
+    """`maxrecords` caps a RESPONSE, not a query.
+
+    One request spanning 45 days therefore returns 250 articles for the whole
+    window (~5.5/day) and the rest are never returned at all. Splitting the same
+    query into WINDOW_DAYS chunks returns up to 250 EACH. Measured on one live seed
+    query, 2026-07-29: 232 articles over 45 days in one request, against 250 over 7
+    days in one request -- six times the density (ADR-0154).
+    """
+
+    def test_one_query_is_split_into_windows_covering_the_lookback(self):
+        seen_ranges = []
+
+        def capture(url, params=None, **_k):
+            seen_ranges.append((params["startdatetime"], params["enddatetime"]))
+            return _Resp(_articles(_art(f"H{len(seen_ranges)}")))
+
+        with patch.object(gc.requests, "get", side_effect=capture),              patch.object(gc.time, "sleep"):
+            gc.fetch_market_news_gdelt(['"a"'], lookback_days=28)
+
+        # 28 days / 7 = 4 requests for ONE query, where the old client sent one.
+        assert len(seen_ranges) == 28 // gc.WINDOW_DAYS
+        # Contiguous and non-overlapping: each window starts where the last ended,
+        # so no day is double-counted into a share and none is skipped.
+        for (_, prev_end), (next_start, _) in zip(seen_ranges, seen_ranges[1:]):
+            assert prev_end == next_start
+        # Oldest first -- a truncated fetch must lose the RECENT end, which Brave
+        # already covers densely, rather than tear a hole in the only history there is.
+        assert seen_ranges == sorted(seen_ranges)
+
+    def test_a_query_that_fails_on_its_first_window_is_abandoned(self):
+        """Not retried once per window.
+
+        `_get` returns None for a MALFORMED query as readily as for an exhausted
+        retry ladder, and a malformed one fails identically in all windows. Six more
+        doomed requests cost ~45s to learn what the first already said.
+        """
+        calls = {"n": 0}
+
+        def always_rejected(*_a, **_k):
+            calls["n"] += 1
+            return _Resp("Queries containing OR'd terms must be surrounded by ()",
+                         status=200)
+
+        with patch.object(gc.requests, "get", side_effect=always_rejected),              patch.object(gc.time, "sleep"):
+            out = gc.fetch_market_news_gdelt(['"a" OR "b"'], lookback_days=28)
+
+        assert out == []
+        assert calls["n"] == 1, "a doomed query must not be retried per window"
+
+
 class TestTimeBudget:
     """A degraded provider must not become a stalled pipeline. The retry ladder
     is 15+30+60s over 6.5s pacing, so one throttled query can burn ~131s and ten

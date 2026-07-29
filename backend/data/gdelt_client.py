@@ -56,7 +56,29 @@ GDELT_DOC_API = "https://api.gdeltproject.org/api/v2/doc/doc"
 MIN_SECONDS_BETWEEN_CALLS = 6.5
 
 #: GDELT's own cap. Asking for more is silently truncated.
+#:
+#: It caps a RESPONSE, not a query — which is the whole reason WINDOW_DAYS exists.
 MAX_RECORDS = 250
+
+#: Days per request. THIS is what sets the archive's density.
+#:
+#: `maxrecords` bounds one response, so asking for 45 days at once returns 250
+#: articles for the entire window — ~5.5/day — and the rest are simply never
+#: returned. Splitting the same query into 7-day windows returns up to 250 EACH.
+#: Measured on one seed query, 2026-07-29:
+#:
+#:     1 request x 45 days  ->  232 articles,  ~5.5/day   (capped)
+#:     1 request x  7 days  ->  250 articles,   34/day    (capped)
+#:
+#: Six times the density, same query, same API. It is the difference between a
+#: corpus where `narrative_tracker.MIN_DOC_COUNT = 3` is a 27% share of the day —
+#: which only register words like "prices" and "global" clear — and one where it is
+#: 9% (ADR-0154).
+#:
+#: Still capped at 7 days, so narrower windows would yield more again. Not taken
+#: further because each halving doubles the request count against a 5s server-side
+#: rate limit, and the corpus has to be worth the wall clock.
+WINDOW_DAYS = 7
 
 #: Backoff after a 429, in seconds. The observed cooldown exceeded 5s by a lot.
 _RETRY_WAITS = (15.0, 30.0, 60.0)
@@ -183,31 +205,28 @@ def _seendate_to_iso(seendate: str) -> str | None:
 #: On expiry the fetch returns what it has and SAYS how many queries it skipped
 #: (GOAL.md's no-silent-caps rule) — a short corpus that reports its shortfall is
 #: recoverable; one that looks complete is not.
-#: MEASURED, 2026-07-29, and left at 200s: raising it buys nothing.
+#: Raised to 600s on 2026-07-29 — for a reason that did NOT hold the first time.
 #:
-#: The archive looked truncated — 462 documents over 41 days (~11/day) from ten seed
-#: queries, while ONE query measured alone returns 232 over the same window. The
-#: obvious inference was that the budget cut the fetch off early, so it was raised
-#: to 420s. That inference was wrong and the measurement says so:
+#: It was raised to 420s earlier the same day on the theory that ten queries at ~30s
+#: each were overrunning 200s. That was wrong and the measurement said so: one query
+#: returned 232 articles, four returned 462, ten returned the SAME 462. Queries five
+#: through ten added nothing, because the seed set is broad market language and dedup
+#: collapsed the overlap. The budget was not the constraint, so the raise was
+#: reverted.
 #:
-#:     1 query   ->  232 deduped articles, 41 days
-#:     4 queries ->  462 deduped articles, 41 days, median 11/day
-#:    10 queries ->  462   (what was already stored)
+#: WINDOW_DAYS changes the arithmetic. Each query is now ~7 requests rather than 1,
+#: so ten queries is ~70 requests at 6.5s pacing — roughly 8 minutes, against a
+#: budget that allowed three. The request count really did multiply this time, and
+#: the ceiling really does bind.
 #:
-#: Queries five through ten add **nothing**. The seed set is broad market language
-#: and GDELT returns heavily overlapping articles for it, so dedup collapses the
-#: gain long before the clock runs out. What the run does hit is HTTP 429 — the
-#: pacing below is already at 6.5s against a 5s server limit and still gets
-#: throttled, and a query can be abandoned outright.
+#: 600s buys the full set with margin for a retry ladder or two. That is a real cost
+#: on a ~10-minute nightly job, and it is spent on the ONLY source of history the
+#: system has: Brave holds nothing older than 8 days, so a document GDELT does not
+#: return today is missing from the series permanently rather than until tomorrow.
 #:
-#: So the binding constraint is GDELT's coverage of these terms plus its rate
-#: limiter, not this budget. ~11 documents/day is what the archive HAS. Spending
-#: more wall-clock on a nightly job to re-fetch the same articles would be paying
-#: for the appearance of thoroughness.
-#:
-#: The real lever, if the discovery layer needs a denser corpus, is a more diverse
-#: query set or a provider with genuine archival depth — not this number.
-DEFAULT_TIME_BUDGET_S = 200.0
+#: The skip report still fires if even this is short. A truncated archive has to say
+#: so rather than look complete.
+DEFAULT_TIME_BUDGET_S = 600.0
 
 
 def fetch_market_news_gdelt(
@@ -227,50 +246,100 @@ def fetch_market_news_gdelt(
     `fetch_market_news` gives: a frequency tracker reading template headlines
     would report the template's own vocabulary as an emerging narrative.
 
-    At ~6.5s per query this takes about a minute for ten queries. That is
-    acceptable for a daily job and is why it is not called per request.
+    **Requests are WINDOWED by date, and that is what sets the density.**
+    `maxrecords` caps a RESPONSE, not a query, so one request spanning 45 days
+    returns 250 articles for the whole window — about 5.5 a day. The same query over
+    a 7-day window also returns 250, which is 34 a day. Measured, 2026-07-29:
+
+        1 request  x 45 days  ->  232 articles,  ~5.5/day   (capped)
+        1 request  x  7 days  ->  250 articles,   34/day    (capped)
+
+    Six times the density from asking for less at a time. It matters because
+    `narrative_tracker.MIN_DOC_COUNT = 3` is a share of the day's corpus: at 11
+    documents a phrase must appear in 27% of them to register, which only register
+    words like "prices" and "global" ever do. At 34 the bar is 9% (ADR-0154).
+
+    At ~6.5s per request and ~7 windows per query, ten queries is ~7 minutes — which
+    is why `time_budget_s` matters now and did not before.
     """
     end = datetime.utcnow()
-    start = end - timedelta(days=lookback_days)
     seen: set[str] = set()
     out: list[dict] = []
     began = time.monotonic()
     skipped = 0
+    requests_made = 0
+
+    # Oldest window first. A truncated fetch then loses the RECENT end, which the
+    # live Brave corpus already covers densely — losing old days instead would tear
+    # a hole in the only history the archive exists to provide.
+    windows: list[tuple[datetime, datetime]] = []
+    cursor = end - timedelta(days=lookback_days)
+    while cursor < end:
+        stop = min(cursor + timedelta(days=WINDOW_DAYS), end)
+        windows.append((cursor, stop))
+        cursor = stop
 
     for index, query in enumerate(queries):
         if time.monotonic() - began > time_budget_s:
             skipped = len(queries) - index
             break
-        payload = _get({
-            "query": f"{gdelt_query(query)} sourcelang:english",
-            "mode": "artlist",
-            "format": "json",
-            "maxrecords": str(min(max_records, MAX_RECORDS)),
-            "startdatetime": start.strftime("%Y%m%d%H%M%S"),
-            "enddatetime": end.strftime("%Y%m%d%H%M%S"),
-        })
-        if payload is None:
-            print(f"[gdelt] gave up on query: {query[:60]}")
-            continue
 
-        for art in payload.get("articles") or []:
-            headline = (art.get("title") or "").strip()
-            if not headline:
-                continue
-            key = headline.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append({
-                "headline": headline,
-                "date": _seendate_to_iso(art.get("seendate")),
-                "url": art.get("url"),
-                "source": "gdelt",
-                "query": query,
+        for w_index, (w_start, w_end) in enumerate(windows):
+            # Checked BETWEEN windows, never before the first. A query the outer
+            # check just admitted must contribute at least one window, or the fetch
+            # can return NOTHING while reporting that it ran — which is how this
+            # loop first failed `test_it_returns_what_it_gathered_rather_than_nothing`.
+            #
+            # Counts as a skipped QUERY: it ran, but not over its whole window, so
+            # its coverage is not what the caller asked for.
+            if w_index and time.monotonic() - began > time_budget_s:
+                skipped = len(queries) - index
+                break
+
+            payload = _get({
+                "query": f"{gdelt_query(query)} sourcelang:english",
+                "mode": "artlist",
+                "format": "json",
+                "maxrecords": str(min(max_records, MAX_RECORDS)),
+                "startdatetime": w_start.strftime("%Y%m%d%H%M%S"),
+                "enddatetime": w_end.strftime("%Y%m%d%H%M%S"),
             })
+            requests_made += 1
+            if payload is None:
+                print(f"[gdelt] gave up on {w_start:%Y-%m-%d} window of: {query[:48]}")
+                if w_index == 0:
+                    # Abandon the whole query, not just this window. `_get` returns
+                    # None for a MALFORMED query as readily as for an exhausted
+                    # retry ladder, and a malformed one fails identically in all
+                    # seven windows — so continuing spends six more doomed requests
+                    # (~45s) to learn what the first already said. This is
+                    # _PERMANENT_QUERY_ERRORS' no-pointless-retry rule, which
+                    # windowing had quietly reintroduced one level up.
+                    break
+                continue
 
+            for art in payload.get("articles") or []:
+                headline = (art.get("title") or "").strip()
+                if not headline:
+                    continue
+                key = headline.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({
+                    "headline": headline,
+                    "date": _seendate_to_iso(art.get("seendate")),
+                    "url": art.get("url"),
+                    "source": "gdelt",
+                    "query": query,
+                })
+        if skipped:
+            break
+
+    print(f"[gdelt] {requests_made} requests over {len(windows)} "
+          f"{WINDOW_DAYS}-day windows -> {len(out)} deduped articles.")
     if skipped:
         print(f"[gdelt] time budget ({time_budget_s:.0f}s) reached — "
-              f"{skipped} of {len(queries)} queries not run. The corpus is short "
-              f"by those queries, not complete.")
+              f"{skipped} of {len(queries)} queries not run to completion. The "
+              f"corpus is short by those queries, not complete.")
     return out

@@ -128,9 +128,27 @@ THEME_COVERAGE_ALIASES: dict[str, list[str]] = {
                           "oil prices"],
     "US Election":       ["trump", "biden", "harris", "congress", "senate",
                          "democrats", "republicans"],
+    # "capex guidance" for the same reason as "oil prices" above, and found the
+    # same way: it reached 6.1% of the combined corpus on 2026-07-28 reading as
+    # watched by nothing, because the single token "capex" claims only the phrase
+    # "capex". The documents behind it are not ambiguous — "Bond market anxiety is
+    # growing over AI capex budgets", "Microsoft and Amazon earnings outlook: capex
+    # story above all else", "GOOGL stock sinks on 2026 capex hike", "the market
+    # would go straight down if hyperscalers cut capex".
+    #
+    # NOT added, having checked the corpus rather than the intuition:
+    #   amd     Ambiguous IN THIS CORPUS, not in principle. The same week carries
+    #           "What Going On With AMD Stock" (the chip company) and "FDA Approval
+    #           Of Wet AMD Drug" (macular degeneration). Claiming it would file a
+    #           biotech story under AI Capex — the expensive direction of ADR-0128's
+    #           trade, since a wrongly-COVERED phrase leaves the shortlist silently.
+    #   cloud   Half the live "cloud" headlines are the weather metaphor ("Trump
+    #           Tariffs Cloud Market Outlook"). `cloud growth` is real but is the
+    #           demand side, and this theme is AI *Capex* — the spending side.
     "AI Capex":          ["ai", "artificial intelligence", "nvidia", "chips",
                           "semiconductor", "gpu", "datacenter", "data centre",
-                          "hyperscalers", "openai", "compute", "capex"],
+                          "hyperscalers", "openai", "compute", "capex",
+                          "capex guidance"],
 }
 
 

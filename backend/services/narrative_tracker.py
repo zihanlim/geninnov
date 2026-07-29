@@ -222,6 +222,26 @@ EMERGENCE_WINDOW_DAYS = 21
 SHARE_SCALE_FLOOR = 0.005
 
 
+def document_floor(
+    corpus_size: int,
+    min_doc_count: int = MIN_DOC_COUNT,
+    min_doc_share: float = MIN_DOC_SHARE,
+) -> int:
+    """How many documents a phrase must reach on a day of this size to be tracked.
+
+    Whichever of the two bars is HIGHER (ADR-0155): an absolute count, which stops a
+    thin day admitting a phrase seen once, and a share of the corpus, which stops 3
+    documents being a 0.35% accident once the corpus is large. Neither alone survives
+    the 80-fold range this corpus actually spans.
+
+    Extracted so `scripts/watch_phrases.py` can say how close an untracked phrase is
+    to being tracked WITHOUT restating the arithmetic. A watch that computed its own
+    floor would answer a question the tracker never asked, and would keep answering it
+    after the tracker's floor moved.
+    """
+    return max(min_doc_count, math.ceil(corpus_size * min_doc_share))
+
+
 def tokenize(text: str) -> list[str]:
     """Lowercase content tokens, stopwords and newswire furniture removed.
 
@@ -310,11 +330,8 @@ def daily_phrase_counts(
         for p in found:
             counts[p] = counts.get(p, 0) + 1
 
-    # The floor is whichever of the two is HIGHER (ADR-0155): an absolute document
-    # count, which protects a thin day from admitting a phrase seen once, and a
-    # share of the corpus, which stops 3 documents from being a 0.35% accident once
-    # the corpus is large. Neither alone survives an 80-fold change in corpus size.
-    floor = max(min_doc_count, math.ceil(n_docs * min_doc_share))
+    # See `document_floor` for why it is the higher of two bars (ADR-0155).
+    floor = document_floor(n_docs, min_doc_count, min_doc_share)
     kept = {p: c for p, c in counts.items() if c >= floor}
     return DailyCorpus(
         run_date=run_date,

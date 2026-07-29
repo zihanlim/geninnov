@@ -388,16 +388,10 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
   const LABEL_H = 11;
   const byShare = (a: NarrativeSeries, b: NarrativeSeries) =>
     b.latest.share - a.latest.share;
-  const labelled = [
-    ...measurable
-      .filter((s) => s.latest.covered_by === null && s.phrase !== "global" && s.phrase !== "us")
-      .sort(byShare)
-      .slice(0, LABEL_CAP_UNCOVERED),
-    ...measurable
-      .filter((s) => s.latest.covered_by !== null && s.phrase !== "global" && s.phrase !== "us")
-      .sort(byShare)
-      .slice(0, LABEL_CAP_COVERED),
-  ]
+  const labelled = measurable
+    .filter((s) => s.phrase !== "global" && s.phrase !== "us")
+    .sort(byShare)
+    .slice(0, LABEL_CAP_UNCOVERED)
     .map((s) => ({
       s,
       covered: s.latest.covered_by !== null,

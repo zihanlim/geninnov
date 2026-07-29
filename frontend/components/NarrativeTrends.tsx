@@ -596,32 +596,31 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
             .join("  ·  ")}
         </text>
       )}
-
-      {/* Immediate tooltip on hover — no browser-native delay.
-          Positioned in screen pixels relative to the container. */}
-      {tooltip && (
-        <div
-          style={{
-            position: "absolute",
-            left: tooltip.screenX + 10,
-            top: tooltip.screenY - 8,
-            whiteSpace: "nowrap",
-            backgroundColor: "var(--bg-surface)",
-            border: "1px solid var(--border)",
-            borderRadius: "6px",
-            padding: "4px 8px",
-            fontSize: "10.5px",
-            color: "var(--text-primary)",
-            lineHeight: "1.4",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
-            pointerEvents: "none",
-            zIndex: 10,
-          }}
-        >
-          {tooltip.text}
-        </div>
-      )}
     </svg>
+    {/* Immediate tooltip on hover — no browser-native delay.
+        Positioned in screen pixels relative to the SVG. */}
+    {tooltip && (
+      <div
+        style={{
+          position: "absolute",
+          left: tooltip.screenX + 10,
+          top: tooltip.screenY - 8,
+          whiteSpace: "nowrap",
+          backgroundColor: "var(--bg-surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "6px",
+          padding: "4px 8px",
+          fontSize: "10.5px",
+          color: "var(--text-primary)",
+          lineHeight: "1.4",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
+          pointerEvents: "none",
+          zIndex: 10,
+        }}
+      >
+        {tooltip.text}
+      </div>
+    )}
     </div>
   );
 }

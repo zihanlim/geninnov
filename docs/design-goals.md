@@ -252,7 +252,19 @@ Stated so nobody re-litigates them by accident:
   repo has always served `/trades`, `/portfolio` and `/research` as redirects
   behind that same four-item bar. The objection here is to the unlabelled glyph
   rail, which trades clarity for the appearance of scale; it was never a count
-  of URLs. See [ADR-0084](adrs/0084-method-splits-by-reader-question-not-by-copy.md)
+  of URLs.
+
+  **It is five destinations as of 2026-07-29, and the widening is recorded here
+  rather than absorbed.** `/portfolio` was retired by ADR-0025 because it was one of
+  three pages rendering the SAME ten positions, and un-retired by
+  [ADR-0151](adrs/0151-the-portfolio-is-not-the-book.md) because that premise stopped
+  being true: there is now a book that is HELD, with its own positions, its own
+  cost-netted returns and its own tables, and on the live history it disagrees with
+  the published book by more than the return (+0.76% against −0.72%). Two pages that
+  disagree about what you own are not duplicates, and collapsing them hides the
+  disagreement. The test this has to keep passing is the one above — a destination
+  earns its place by being a different OBJECT, never by being a second view of one.
+  See [ADR-0084](adrs/0084-method-splits-by-reader-question-not-by-copy.md)
   for the stop rules that keep this from becoming the rail by increments —
   chiefly: **split by section, never by copy of the same data.**
   `/ask` ([ADR-0087](adrs/0087-a-chat-that-cannot-do-arithmetic.md)) is the

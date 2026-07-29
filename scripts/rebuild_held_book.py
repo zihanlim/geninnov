@@ -163,10 +163,15 @@ def main() -> int:
         return 0
 
     sb.table("book_holdings_performance").upsert(rows_perf, on_conflict="run_date").execute()
+
+    # Clear each rebuilt date before inserting, rather than upserting into whatever
+    # is already there. An upsert writes the names that ARE held and says nothing
+    # about the ones that are not, so a name dropped between two runs of this script
+    # keeps its row and the date becomes a union of every book ever written for it.
+    for row in rows_perf:
+        sb.table("book_holdings").delete().eq("run_date", row["run_date"]).execute()
     for i in range(0, len(rows_hold), 500):
-        sb.table("book_holdings").upsert(
-            rows_hold[i : i + 500], on_conflict="run_date,asset"
-        ).execute()
+        sb.table("book_holdings").insert(rows_hold[i : i + 500]).execute()
     print(f"\nwrote {len(rows_perf)} performance rows and {len(rows_hold)} holdings rows")
     return 0
 

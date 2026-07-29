@@ -2084,8 +2084,20 @@ def extend_held_book(run_date: date) -> None:
         on_conflict="run_date",
     ).execute()
 
+    # DELETE then insert, rather than upsert alone.
+    #
+    # An upsert writes the names that ARE held and is silent about the ones that are
+    # not. A name exited on this date keeps its row forever, so the holdings become
+    # the UNION of every book ever published for the date rather than the book
+    # actually held. Observed on 2026-07-28: the pipeline re-ran and republished with
+    # four names dropped and three added, and the table went to 13 rows for a 9-name
+    # portfolio — overstating its own position count and gross.
+    #
+    # This mirrors what the pipeline already does for `portfolio_positions`: clear
+    # the run_date, then write it.
+    supabase.table("book_holdings").delete().eq("run_date", run_str).execute()
     if out["held"]:
-        supabase.table("book_holdings").upsert(
+        supabase.table("book_holdings").insert(
             [
                 {
                     "run_date": run_str,
@@ -2094,8 +2106,7 @@ def extend_held_book(run_date: date) -> None:
                     "target_weight": target.get(asset),
                 }
                 for asset, weight in out["held"].items()
-            ],
-            on_conflict="run_date,asset",
+            ]
         ).execute()
 
     net = out["net_return"]

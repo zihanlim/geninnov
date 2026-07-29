@@ -8,19 +8,37 @@ import LiveNewsDock from "@/components/live/LiveNewsDock";
 import AskDock from "@/components/chat/AskDock";
 import { resolveRunDates } from "@/lib/homeFreshness";
 
-// Ordered as a portfolio manager's morning: what's moving → what we hold →
-// what could go wrong → how it was derived.
+// Ordered as a portfolio manager's morning: what's moving → what we'd put on →
+// what we actually hold → what could go wrong → how it was derived.
 //
 // /trades, /portfolio and /research used to sit beside these as a SECONDARY_NAV,
-// labelled "legacy links (redirects)" in this file, "while the consolidation beds
-// in". The consolidation finished at ADR-0040 and all three page components are now
-// nothing but `redirect("/book")` — so the header offered four separate items that
-// all land on the same page, and showed a reader this project's migration history
-// for no benefit. The ROUTES stay, so bookmarks and inbound links still resolve;
-// only the header entries are gone (ADR-0054).
+// labelled "legacy links (redirects)". The consolidation finished at ADR-0040 and
+// all three became `redirect("/book")` — the header was offering four items that
+// all landed on one page, which showed a reader this project's migration history
+// for no benefit. The entries went (ADR-0054) and the routes stayed.
+//
+// **/portfolio is back, and it is not a reversal of that reasoning — it is that
+// reasoning applied to a changed fact.** The old /portfolio was a second view of
+// the SAME ten positions. The new one is the book that is HELD: carried across
+// runs, charged for its own trading, with a NAV that compounds (ADR-0150). On the
+// live history it and /book disagree by more than the return — the recommendation
+// reads +0.76% and the portfolio −0.72%. Two pages that disagree about what you own
+// are not duplicates; collapsing them is what would hide something.
+//
+// The comment above used to describe /book as "what we hold". It is not: it is what
+// the research recommends today, and nobody has paid to put it on. That slip is the
+// whole reason this route came back. See ADR-0151.
+//
+// On the count: design-goals says "Four top-bar destinations", and its own text
+// resolves this — "The objection here is to the unlabelled glyph rail, which trades
+// clarity for the appearance of scale; it was never a count of URLs." A fifth
+// LABELLED destination for a genuinely distinct object is not what that non-goal
+// was protecting against. The widening is recorded in design-goals.md rather than
+// absorbed silently.
 const NAV_ITEMS = [
   { href: "/", label: "Themes" },
   { href: "/book", label: "Book" },
+  { href: "/portfolio", label: "Portfolio" },
   { href: "/risk", label: "Risk" },
   { href: "/method", label: "Method" },
 ];

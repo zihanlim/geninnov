@@ -345,7 +345,8 @@ const LABEL_CAP_COVERED = 2;
 const RUG_NAMED = 4;
 
 export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const xMax = Math.max(...series.map((s) => s.latest.share), 0.01) * 1.08;
@@ -413,7 +414,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
   }
 
   return (
-    <div className="relative inline-block w-full">
+    <div ref={containerRef} className="relative inline-block w-full">
       <svg
         ref={svgRef}
         viewBox={`0 0 ${S_WIDTH} ${S_HEIGHT}`}
@@ -500,13 +501,11 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
               stroke={uncovered ? "none" : "var(--text-tertiary)"}
               strokeWidth={uncovered ? 0 : 1.2}
               onMouseEnter={(e) => {
-                const svgRect = svgRef.current?.getBoundingClientRect();
-                if (!svgRect) return;
-                const svgX = (e.clientX - svgRect.left) * (S_WIDTH / svgRect.width);
-                const svgY = (e.clientY - svgRect.top) * (S_HEIGHT / svgRect.height);
+                const rect = containerRef.current?.getBoundingClientRect();
+                if (!rect) return;
                 setTooltip({
-                  x: svgX,
-                  y: svgY,
+                  screenX: e.clientX - rect.left,
+                  screenY: e.clientY - rect.top,
                   text: `${s.phrase} — ${sharePct(s.latest.share)} share, velocity ${(s.latest.velocity as number).toFixed(2)}, ${s.latest.covered_by ? `watched by ${s.latest.covered_by}` : "watched by nothing"}`,
                 });
               }}
@@ -600,13 +599,13 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
       )}
 
       {/* Immediate tooltip on hover — no browser-native delay.
-          Positioned in SVG viewBox coords; JSX expressions evaluate these. */}
+          Positioned in screen pixels relative to the container. */}
       {tooltip && (
         <div
           style={{
             position: "absolute",
-            left: `calc(${(tooltip.x / S_WIDTH) * 100}% + 8px)`,
-            top: `calc(${(tooltip.y / S_HEIGHT) * 100}% - 6px)`,
+            left: tooltip.screenX + 10,
+            top: tooltip.screenY - 8,
             whiteSpace: "nowrap",
             backgroundColor: "var(--bg-surface)",
             border: "1px solid var(--border)",

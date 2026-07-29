@@ -217,7 +217,7 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
       </text>
 
       {series.map((s, i) => {
-        const color = s.phrase === "AI Capex" ? "var(--series-5)" : SERIES_COLORS[i % SERIES_COLORS.length];
+        const color = s.phrase === "AI Capex" ? "#e91e8c" : SERIES_COLORS[i % SERIES_COLORS.length];
         const d = s.points
           .map((p, j) => `${j === 0 ? "M" : "L"}${x(p.run_date).toFixed(2)},${y(p.share).toFixed(2)}`)
           .join(" ");

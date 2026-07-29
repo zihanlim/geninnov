@@ -64,7 +64,7 @@ export function ThemeTrendsTable({ series }: { series: ThemeTrendSeries[] }) {
                     <span
                       aria-hidden="true"
                       className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ background: s.phrase === "AI Capex" ? "var(--series-5)" : SERIES_COLORS[i] }}
+                      style={{ background: s.phrase === "AI Capex" ? "#e91e8c" : SERIES_COLORS[i] }}
                     />
                   ) : (
                     <span className="inline-block w-2.5 h-2.5 shrink-0" aria-hidden="true" />

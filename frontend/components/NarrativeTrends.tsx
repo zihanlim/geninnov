@@ -390,11 +390,11 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
     b.latest.share - a.latest.share;
   const labelled = [
     ...measurable
-      .filter((s) => s.latest.covered_by === null)
+      .filter((s) => s.latest.covered_by === null && s.phrase !== "global" && s.phrase !== "us")
       .sort(byShare)
       .slice(0, LABEL_CAP_UNCOVERED),
     ...measurable
-      .filter((s) => s.latest.covered_by !== null)
+      .filter((s) => s.latest.covered_by !== null && s.phrase !== "global" && s.phrase !== "us")
       .sort(byShare)
       .slice(0, LABEL_CAP_COVERED),
   ]

@@ -766,18 +766,32 @@ export default function NarrativeTrends() {
               accrues.
             </p>
 
-            <DetectionScatter series={series} />
+            {/* Plane ‖ figures, 2fr / 1fr. `items-start` so neither column stretches
+                to the other's height, and `min-w-0` on both because a grid item
+                defaults to min-width:auto and will refuse to shrink below its
+                content — without it the table's `overflow-x-auto` never engages and
+                the whole card scrolls sideways instead.
 
-            <SeriesTable series={top} />
+                Gated at `wide` (1424px) rather than `lg`. This table is SEVEN
+                columns; at a third of a narrower canvas it becomes a horizontal
+                scroller, and a scroller is how a column stops being read. Below the
+                gate the two stack exactly as they did. */}
+            <div className="grid wide:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-5 items-start [&>*]:min-w-0">
+              <DetectionScatter series={series} />
 
-            {dropped > 0 && (
-              <p className="m-0 text-[11px] text-text-tertiary leading-[1.55]">
-                The table details the {top.length} loudest of{" "}
-                <span className="num">{series.length}</span> tracked narratives —
-                every one of the {series.length} is a mark in the plane or the strip
-                above.
-              </p>
-            )}
+              <div>
+                <SeriesTable series={top} />
+
+                {dropped > 0 && (
+                  <p className="m-0 mt-2 text-[11px] text-text-tertiary leading-[1.55]">
+                    The table details the {top.length} loudest of{" "}
+                    <span className="num">{series.length}</span> tracked narratives —
+                    every one of the {series.length} is a mark in the plane or the
+                    strip beside it.
+                  </p>
+                )}
+              </div>
+            </div>
 
             <div className="border-t border-border pt-3">
               <h4 className="m-0 mb-1 text-[11px] uppercase tracking-[0.1em] text-text-secondary">

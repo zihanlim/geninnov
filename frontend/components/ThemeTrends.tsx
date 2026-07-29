@@ -149,32 +149,49 @@ export default function ThemeTrends() {
           </p>
         )}
 
-        {error ? (
-          <div className="text-[12.5px] text-text-secondary leading-[1.6]">
-            theme_signals_history could not be read: <span className="num">{error}</span>
-          </div>
-        ) : series === null ? (
-          <div className="skeleton h-[240px]" />
-        ) : runs < 2 ? (
-          <div className="text-[12.5px] text-text-secondary leading-[1.6]">
-            Only {runs === 1 ? "one run" : "no runs"} of theme history so far — a
-            trend needs two. The table below carries today&rsquo;s readings; the
-            lines arrive with tomorrow&rsquo;s run.
-          </div>
-        ) : (
-          <div className="mb-3">
-            <TrendPlot series={top} />
-            {dropped > 0 && (
-              <p className="m-0 mt-1 text-[11px] text-text-tertiary leading-[1.5]">
-                Top {top.length} by today&rsquo;s share drawn — the palette has five
-                validated slots and a sixth hue would be a guess. All{" "}
-                {series.length} themes are in the table.
-              </p>
+        {/* Chart ‖ figures, 2fr / 1fr. `items-start` so the shorter column does not
+            stretch, and `min-w-0` on both because a grid item defaults to
+            min-width:auto and refuses to shrink below its content — without it the
+            table's own `overflow-x-auto` never engages and the CARD scrolls instead.
+
+            Gated at `wide` (1424px), not `lg`: the table is four columns and reads
+            fine at a third of the content width, but the plot carries direct end
+            labels, and below this the 2fr column is too narrow for them to sit
+            beside the lines rather than on top of them. Below the gate both stack
+            exactly as before. */}
+        <div className="grid wide:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-5 items-start [&>*]:min-w-0">
+          <div>
+            {error ? (
+              <div className="text-[12.5px] text-text-secondary leading-[1.6]">
+                theme_signals_history could not be read:{" "}
+                <span className="num">{error}</span>
+              </div>
+            ) : series === null ? (
+              <div className="skeleton h-[240px]" />
+            ) : runs < 2 ? (
+              <div className="text-[12.5px] text-text-secondary leading-[1.6]">
+                Only {runs === 1 ? "one run" : "no runs"} of theme history so far — a
+                trend needs two. The table beside this carries today&rsquo;s readings;
+                the lines arrive with tomorrow&rsquo;s run.
+              </div>
+            ) : (
+              <>
+                <TrendPlot series={top} />
+                {dropped > 0 && (
+                  <p className="m-0 mt-1 text-[11px] text-text-tertiary leading-[1.5]">
+                    Top {top.length} by today&rsquo;s share drawn — the palette has
+                    five validated slots and a sixth hue would be a guess. All{" "}
+                    {series.length} themes are in the table.
+                  </p>
+                )}
+              </>
             )}
           </div>
-        )}
 
-        {series !== null && series.length > 0 && <ThemeTrendsTable series={series} />}
+          {series !== null && series.length > 0 && (
+            <ThemeTrendsTable series={series} />
+          )}
+        </div>
       </div>
     </div>
   );

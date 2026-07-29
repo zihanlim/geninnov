@@ -220,7 +220,19 @@ describe("a source that is collected but read by nothing is SHADOW, not current"
   it("still reports the age, so declaring a source shadow hides no fact", () => {
     const r = row(board, "rss");
     expect(r.ageDays).toBe(1);
-    expect(r.note).toContain("1 days old");
+    expect(r.note).toContain("1 day old");
+    // "1 days old" shipped to the live page before this was pinned.
+    expect(r.note).not.toContain("1 days old");
+  });
+
+  it("says 'from today' rather than '0 days old' on the live case", () => {
+    // The state the page is in every morning after a successful run.
+    const b = buildSourceBoard(
+      LIVE.map((o) => (o.key === "rss" ? { ...o, published: "2026-07-27" } : o)),
+      NOW,
+    );
+    expect(row(b, "rss").note).toContain("from today");
+    expect(row(b, "rss").note).not.toContain("0 days");
   });
 
   it("is silent, not shadow, when the feeds returned nothing", () => {

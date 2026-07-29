@@ -270,7 +270,11 @@ export function buildSourceBoard(
       note =
         `Collected and stored, but no scored corpus reads it — it is not counted in any ` +
         `published share (ADR-0157). ` +
-        (ageDays !== null ? `Newest row is ${ageDays} days old. ` : "") +
+        (ageDays !== null
+          ? ageDays === 0
+            ? "Newest row is from today. "
+            : `Newest row is ${ageDays} day${ageDays === 1 ? "" : "s"} old. `
+          : "") +
         spec.cadence;
     } else if (ageMeasuredFrom === "retrieved") {
       // The finding worth stating: we know when we asked, not when the world was in

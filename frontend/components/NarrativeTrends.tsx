@@ -114,6 +114,9 @@ function clamp(v: number, lo: number, hi: number) {
 /** Exported for test: the geometry is the part ADR-0126's bug class lives in, and
  *  a test that cannot render the plot can only assert on source text. */
 export function TrendPlot({ series }: { series: TrendSeries[] }) {
+  const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   // One shared date axis across every series, so two lines at the same x are the
   // same day. Building each line against its own point count would compress a
   // sparse series to fill the plot and make it look denser than it is.
@@ -163,14 +166,16 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
   const lastDate = dates[dates.length - 1];
 
   return (
-    <svg
-      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-      className="w-full h-auto"
-      role="img"
-      aria-label={`Share of voice over ${dates.length} runs for ${series
-        .map((s) => s.phrase)
-        .join(", ")}`}
-    >
+    <div ref={containerRef} className="relative inline-block w-full">
+      <svg
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        className="w-full h-auto"
+        role="img"
+        aria-label={`Share of voice over ${dates.length} runs for ${series
+          .map((s) => s.phrase)
+          .join(", ")}`}
+        onMouseLeave={() => setTooltip(null)}
+      >
       {ticks.map((v) => (
         <g key={`t-${v}`}>
           <line
@@ -231,9 +236,17 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
                 cy={y(p.share)}
                 r={2}
                 fill={color}
-              >
-                <title>{`${s.phrase} - ${p.run_date} - ${sharePct(p.share)} of headlines`}</title>
-              </circle>
+                onMouseEnter={(e) => {
+                  const rect = containerRef.current?.getBoundingClientRect();
+                  if (!rect) return;
+                  setTooltip({
+                    screenX: e.clientX - rect.left,
+                    screenY: e.clientY - rect.top,
+                    text: `${s.phrase} — ${p.run_date} — ${sharePct(p.share)} of headlines`,
+                  });
+                }}
+                onMouseLeave={() => setTooltip(null)}
+              />
             ))}
           </g>
         );
@@ -278,7 +291,32 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
           </g>
         );
       })}
+
+      {/* Immediate tooltip on hover — no browser-native delay. */}
+      {tooltip && (
+        <div
+          style={{
+            position: "absolute",
+            left: tooltip.screenX + 10,
+            top: tooltip.screenY - 8,
+            whiteSpace: "nowrap",
+            backgroundColor: "var(--series-1)",
+            border: "1px solid var(--series-1)",
+            borderRadius: "6px",
+            padding: "4px 8px",
+            fontSize: "10.5px",
+            color: "#ffffff",
+            lineHeight: "1.4",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
+            pointerEvents: "none",
+            zIndex: 10,
+          }}
+        >
+          {tooltip.text}
+        </div>
+      )}
     </svg>
+    </div>
   );
 }
 

@@ -259,6 +259,14 @@ def main() -> int:
                     help="Days of market_news to assemble, as load_market_corpus does.")
     args = ap.parse_args()
 
+    # Same pattern as `check_data_integrity`: local runs read `.env`, CI runs already
+    # have the secrets in the environment and this is a no-op.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
     if not (os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_SERVICE_KEY")):
         print("Set SUPABASE_URL and SUPABASE_SERVICE_KEY.", file=sys.stderr)
         return 2

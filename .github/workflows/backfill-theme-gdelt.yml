@@ -30,6 +30,10 @@ on:
         description: "Optional comma-separated subset, e.g. 'Fed Policy,Inflation'"
         type: string
         default: ""
+      theme_budget:
+        description: "Seconds per theme. Must exceed the 105s a single 429 backoff costs, or themes truncate unevenly"
+        type: string
+        default: "600"
 
 concurrency:
   # Never two backfills at once: they would race on the same
@@ -48,7 +52,10 @@ jobs:
     # Nine themes x ceil(45/7) windows x 5s pacing is ~315s of pure waiting before
     # any retry. The per-theme budget in the client caps a slow theme; this caps the
     # job, with room for 429 backoff on top.
-    timeout-minutes: 45
+    # Nine themes at a 600s budget each is 90 minutes worst case if GDELT throttles
+    # every one of them. The first live pass proved that matters: at 120s per theme
+    # four themes returned nothing and the rest stopped at different windows.
+    timeout-minutes: 120
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -80,7 +87,7 @@ jobs:
 
       - name: Backfill
         run: |
-          ARGS="--lookback-days ${{ inputs.lookback_days }}"
+          ARGS="--lookback-days ${{ inputs.lookback_days }} --theme-budget ${{ inputs.theme_budget }}"
           if [ -n "${{ inputs.themes }}" ]; then
             ARGS="$ARGS --themes '${{ inputs.themes }}'"
           fi

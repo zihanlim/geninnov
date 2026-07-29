@@ -161,7 +161,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--apply", action="store_true", help="write; otherwise dry-run")
     ap.add_argument("--lookback-days", type=int, default=DEFAULT_LOOKBACK_DAYS)
+    ap.add_argument("--theme-budget", type=float, default=600.0,
+                    help="seconds per theme; must exceed the 105s backoff a single "
+                         "throttle sequence costs, or themes truncate unevenly")
     ap.add_argument("--themes", help="comma-separated subset, for a cheap trial run")
+    ap.add_argument("--force", action="store_true",
+                    help="write even when the fetch came back partial (see the gate below)")
     args = ap.parse_args()
 
     sb = _supabase()
@@ -185,7 +190,12 @@ def main() -> int:
     print(f"Fetching GDELT for {len(keywords)} theme(s), {args.lookback_days}d lookback.")
     print("Expect roughly "
           f"{len(keywords) * -(-args.lookback_days // 7) * 5}s of pacing at 1 req/5s.\n")
-    fetched = fetch_theme_news_gdelt(keywords, lookback_days=args.lookback_days)
+    # 120s (the client default) is too small: one throttle sequence costs 105s of
+    # backoff, so a throttled theme stops after 1-2 of its 7 windows. Measured on the
+    # first live pass, which is why this is set here rather than left to default.
+    fetched = fetch_theme_news_gdelt(
+        keywords, lookback_days=args.lookback_days, theme_budget_s=args.theme_budget
+    )
 
     ids = [theme_ids[t] for t in keywords if t in theme_ids]
     skip = existing_keys(sb, ids, run_date) if ids else set()
@@ -201,6 +211,50 @@ def main() -> int:
     if by_day:
         span = f"{min(by_day)} .. {max(by_day)}"
         print(f"  span {span}; median day {sorted(by_day.values())[len(by_day)//2]} docs")
+
+    # ── Completeness gate ───────────────────────────────────────────────────────
+    #
+    # THE FAILURE THIS EXISTS FOR, observed on the first live pass (2026-07-29):
+    # GDELT throttled, every theme stopped at a DIFFERENT window, and four themes
+    # returned nothing at all. The result read as US Dollar 802 documents against
+    # Geopolitical Risk 0 — a spread produced entirely by which requests happened to
+    # get through, not by the news.
+    #
+    # `mention_count` is a numerator over a shared daily denominator, so writing a
+    # partial fetch does not merely under-count the missing themes: it inflates the
+    # share of every theme that DID complete. That is ADR-0155's failure arriving
+    # through the fetcher instead of through the corpus definition, and it would be
+    # invisible in the chart.
+    #
+    # So a partial pass is refused rather than written. `--force` exists because a
+    # deliberate single-theme top-up is legitimate; the default is not to.
+    asked = [t for t in keywords if t in theme_ids]
+    empty = [t for t in asked if not any(r["theme_id"] == theme_ids[t] for r in rows)]
+    days_by_theme = {
+        t: len({r["published_date"] for r in rows if r["theme_id"] == theme_ids[t]})
+        for t in asked
+    }
+    covered = [d for d in days_by_theme.values() if d]
+    lopsided = bool(covered) and min(covered) * 2 < max(covered)
+
+    if empty or lopsided:
+        print("\n--- INCOMPLETE FETCH ---")
+        if empty:
+            print(f"  {len(empty)} of {len(asked)} themes returned nothing: {empty}")
+        if lopsided:
+            lo, hi = min(covered), max(covered)
+            print(f"  publication-day coverage ranges {lo}..{hi} across themes")
+        for t in asked:
+            print(f"    {t}: {days_by_theme[t]} publication days")
+        print(
+            "\n  A theme's mention count is a numerator over a denominator shared with\n"
+            "  every other theme, so writing this would not just under-count the empty\n"
+            "  themes — it would inflate the share of the ones that completed.\n"
+            "  Re-run when GDELT is not throttling, or raise the per-theme budget."
+        )
+        if args.apply and not args.force:
+            print("\nREFUSING to write. Pass --force if this partial pass is intended.")
+            return 1
 
     if not args.apply:
         print("\nDRY RUN — nothing written. Re-run with --apply.")

@@ -598,7 +598,14 @@ export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
             <th className="font-normal py-1 pr-2 text-right">Share</th>
             <th className="font-normal py-1 pr-2 text-right">Velocity</th>
             <th className="font-normal py-1 pr-2">Status</th>
-            <th className="font-normal py-1 pr-2">Already watched by</th>
+            {/* "Anchor", not "Already watched by". Measured at the `figures` gate
+                the long form wrapped to THREE lines in a 53px column — the column
+                is sized by its widest WORD, and "watched" (48px) was wider than
+                any value in it. The repo's own vocabulary for this field is the
+                anchor theme (see the card caption above, and ADR-0128), and it
+                reads correctly against the null value: "Anchor — nothing". Every
+                other header here is one line; this was the only one that was not. */}
+            <th className="font-normal py-1 pr-2">Anchor</th>
             <th className="font-normal py-1">Found by</th>
           </tr>
         </thead>

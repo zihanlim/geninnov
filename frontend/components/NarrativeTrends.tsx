@@ -559,7 +559,22 @@ export default function NarrativeTrends() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchNarratives(30).then(({ rows, error }) => {
+    // THE ARCHIVE SERIES, not the dense one (ADR-0153).
+    //
+    // This board is a share x velocity DETECTION PLANE (ADR-0146) and its question
+    // is "is anything accelerating that nothing watches?" — a question about change
+    // over time. Only the archive series can answer it: `combined` is denser
+    // (~98 docs/day against ~27) but its composition changes as providers come and
+    // go, so it holds one run_date and zero measurable velocities, and every mark
+    // would sit in the "not yet measurable" rug forever.
+    //
+    // The archive is GDELT alone — sparser, but counted out of ONE definition back
+    // to 2026-06-14, which is what makes a velocity mean anything. It carries 103
+    // measured velocities where `combined` carries none.
+    //
+    // `combined` becomes the better instrument once it has four runs of its own
+    // history and stops changing composition; this default should move then.
+    fetchNarratives(30, "archive").then(({ rows, error }) => {
       if (error) {
         setError(error);
         return;
@@ -617,6 +632,12 @@ export default function NarrativeTrends() {
         ) : (
           <div className="flex flex-col gap-4">
             <p className="m-0 text-[11px] text-text-tertiary leading-[1.55]">
+              Counted out of the <strong>archive corpus</strong> (GDELT alone,
+              ~27 headlines/day back to 2026-06-14) rather than the denser combined
+              one. A share is a fraction OF a corpus, so a velocity is only
+              meaningful where the corpus is defined the same way every day, and the
+              combined corpus is not — Brave contributes ~90 headlines/day inside an
+              8-day window and none before it (ADR-0153).{" "}
               A detector, not a comparison (ADR-0146): each phrase is placed by how
               loud it is (share of the day&rsquo;s headlines — not mention counts,
               which rise on a day the fetcher simply worked better) and whether it is

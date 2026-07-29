@@ -229,7 +229,15 @@ def main() -> int:
     # behind phrases that were persisted for a date and are not in the recomputed
     # set, so the day would become a union of two runs rather than the corpus's
     # actual top-N — the same defect `extend_held_book` had (ADR-0152).
-    for d in usable:
+    # Clear EVERY archived date in range, not just the ones being rebuilt.
+    #
+    # Deleting only `usable` leaves rows behind on days this run skipped as too
+    # thin — rows written by an earlier run under a LOWER --min-docs. The series
+    # then mixes two thresholds, and the most recent date can be a stale 11-document
+    # day that the current settings would never have accepted. That is exactly what
+    # happened: the board anchors on the latest run_date and found one phrase with
+    # no velocity, while 103 measured velocities sat in the days before it.
+    for d in days:
         (sb.table("narrative_signals")
            .delete()
            .eq("run_date", d.isoformat())

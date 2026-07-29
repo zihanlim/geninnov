@@ -13,6 +13,7 @@ from backend.services.narrative_tracker import (
     anchor_for_phrase,
     build_narrative_signals,
     classify_status,
+    NarrativeSignal,
     daily_phrase_counts,
     emerging_narratives,
     load_history,
@@ -230,6 +231,101 @@ class TestEmergingNarratives:
         fresh = self._emerging("ai capex cycle", None, 3.0)
         shortlist = emerging_narratives(fresh)
         assert [s.phrase for s in shortlist] == ["ai capex cycle"]
+
+
+class TestTheFloorScalesWithTheCorpus:
+    """An absolute document count does not survive an 80-fold change in corpus size.
+
+    Measured on live runs: 3 documents is an 11% bar at 11 docs/day and a 0.35% bar
+    at 868. The first admits only newswire register; the second admits coincidence.
+    """
+
+    def _docs(self, n: int, phrase_in: int) -> list[str]:
+        """`n` headlines, `phrase_in` of which contain a shared phrase."""
+        return (
+            [f"copper supply squeeze deepens number {i}" for i in range(phrase_in)]
+            + [f"unrelated filler headline number {i}" for i in range(n - phrase_in)]
+        )
+
+    def test_thin_day_uses_the_absolute_count(self):
+        # 20 docs: 1% is 0.2, so the count binds and the bar stays 3.
+        c = daily_phrase_counts(self._docs(20, 3), RUN)
+        assert c.floor == 3
+        assert "copper supply squeeze" in c.doc_counts
+
+    def test_dense_day_uses_the_share(self):
+        # 800 docs: 1% is 8, so 3 documents is no longer enough.
+        c = daily_phrase_counts(self._docs(800, 3), RUN)
+        assert c.floor == 8
+        assert "copper supply squeeze" not in c.doc_counts
+
+    def test_the_same_phrase_clears_the_dense_day_at_the_share(self):
+        c = daily_phrase_counts(self._docs(800, 8), RUN)
+        assert c.floor == 8
+        assert "copper supply squeeze" in c.doc_counts
+
+    def test_the_floor_travels_with_the_corpus(self):
+        # Carried, not recomputed: a run has to be able to SAY what bar it applied
+        # rather than leave a reader to infer it from a constant that is no longer
+        # the whole story.
+        assert daily_phrase_counts(self._docs(500, 9), RUN).floor == 5
+
+
+class TestTheKeepListDoesNotDiscardThePayload:
+    """An emerging narrative is QUIET and accelerating.
+
+    `signals` is sorted by share descending, so truncating at top_n keeps the
+    loudest -- and discards the phrase this detector exists to find. The live
+    2026-07-29 run persisted 150 of 736 phrases and reported 0 emerging on a day
+    with 34 measured velocities.
+    """
+
+    def _sig(self, phrase, share, velocity):
+        return NarrativeSignal(
+            run_date=RUN, phrase=phrase, doc_count=int(share * 100), corpus_size=100,
+            share=share, velocity=velocity, days_observed=5, first_seen=RUN,
+            status="emerging" if velocity and velocity >= 1.5 else "established",
+            covered_by=None, methods=["frequency"],
+        )
+
+    def test_a_quiet_mover_below_the_cut_is_kept(self):
+        written = {}
+
+        class _Sb:
+            def table(self, _n): return self
+            def upsert(self, rows, **_k):
+                written["rows"] = rows
+                return self
+            def execute(self): return type("R", (), {"data": []})()
+
+        signals = (
+            [self._sig(f"loud{i}", 0.9 - i * 0.001, None) for i in range(5)]
+            + [self._sig("quiet breakout", 0.01, 3.2)]
+        )
+        persist_narrative_signals(_Sb(), signals, top_n=5)
+
+        kept = {r["phrase"] for r in written["rows"]}
+        assert "quiet breakout" in kept, "the accelerating phrase was truncated away"
+        assert len(kept) == 6, "loudest five plus the one mover"
+
+    def test_a_quiet_phrase_that_is_NOT_moving_is_still_dropped(self):
+        # The cap still caps. Only movement earns a reprieve, or nothing is dropped
+        # and the cap means nothing.
+        written = {}
+
+        class _Sb:
+            def table(self, _n): return self
+            def upsert(self, rows, **_k):
+                written["rows"] = rows
+                return self
+            def execute(self): return type("R", (), {"data": []})()
+
+        signals = (
+            [self._sig(f"loud{i}", 0.9 - i * 0.001, None) for i in range(5)]
+            + [self._sig("quiet and flat", 0.01, 0.2)]
+        )
+        persist_narrative_signals(_Sb(), signals, top_n=5)
+        assert "quiet and flat" not in {r["phrase"] for r in written["rows"]}
 
 
 class TestNewswireFurniture:

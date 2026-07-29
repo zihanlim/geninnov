@@ -52,6 +52,7 @@ themes have and a fresh phrase does not.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -167,6 +168,29 @@ MAX_NGRAM = 3
 # a narrative, and the velocity of a 1-document phrase is pure noise.
 MIN_DOC_COUNT = 3
 
+#: The floor as a SHARE of the day's corpus, applied alongside MIN_DOC_COUNT.
+#:
+#: A fixed document count does not survive a change of scale, and the corpus grew
+#: 80-fold in one day. Measured on live runs:
+#:
+#:     11 docs/day  ->  3 docs is an 11% bar   (far too strict: only register clears)
+#:    868 docs/day  ->  3 docs is a 0.35% bar  (far too loose: 3 of 868 is coincidence)
+#:  24000 docs/day  ->  3 docs is a 0.01% bar  (pure noise)
+#:
+#: So the effective floor is `max(MIN_DOC_COUNT, ceil(corpus_size * MIN_DOC_SHARE))`.
+#: The absolute term binds on thin days, where a share floor would admit a phrase
+#: seen once; the share term binds once the corpus is large enough for 3 documents
+#: to be an accident.
+#:
+#: 1% is chosen against what a real narrative looked like when we could see one: the
+#: emerging finds on the archive sat at 8-25% share, and the quietest phrase worth
+#: persisting on the 868-document run was ~1%. Below that, on this corpus, a phrase
+#: is a handful of syndicated copies of one story.
+#:
+#: Crossover is at 300 documents/day: thinner and the count binds, denser and the
+#: share does.
+MIN_DOC_SHARE = 0.01
+
 # A phrase must be observed on at least this many days before its velocity is
 # reported. `robust_momentum` needs spread in the window to say anything; with
 # fewer points it returns its degenerate 0.0, which reads as "no change" when the
@@ -253,7 +277,11 @@ class DailyCorpus:
     run_date: date
     doc_counts: dict[str, int]
     corpus_size: int
-    #: Phrases that appeared but did not clear MIN_DOC_COUNT. A count, not a list —
+    #: The document count a phrase had to reach on this day. Carried rather than
+    #: recomputed, so a run can SAY what bar it applied instead of leaving a reader
+    #: to infer it from a constant that is no longer the whole story.
+    floor: int = 0
+    #: Phrases that appeared but did not clear the floor. A count, not a list —
     #: carried so a run can SAY how much of the tail it discarded rather than
     #: presenting the survivors as if they were everything (GOAL: no silent caps).
     below_threshold: int = 0
@@ -264,8 +292,14 @@ def daily_phrase_counts(
     run_date: date,
     min_doc_count: int = MIN_DOC_COUNT,
     max_ngram: int = MAX_NGRAM,
+    min_doc_share: float = MIN_DOC_SHARE,
 ) -> DailyCorpus:
-    """Document frequency per phrase across one day's headlines."""
+    """Document frequency per phrase across one day's headlines.
+
+    The floor is `max(min_doc_count, ceil(corpus_size * min_doc_share))` — see
+    MIN_DOC_SHARE for why a fixed count alone breaks at both ends of the density
+    range this corpus actually spans.
+    """
     counts: dict[str, int] = {}
     n_docs = 0
     for doc in documents:
@@ -276,12 +310,18 @@ def daily_phrase_counts(
         for p in found:
             counts[p] = counts.get(p, 0) + 1
 
-    kept = {p: c for p, c in counts.items() if c >= min_doc_count}
+    # The floor is whichever of the two is HIGHER (ADR-0155): an absolute document
+    # count, which protects a thin day from admitting a phrase seen once, and a
+    # share of the corpus, which stops 3 documents from being a 0.35% accident once
+    # the corpus is large. Neither alone survives an 80-fold change in corpus size.
+    floor = max(min_doc_count, math.ceil(n_docs * min_doc_share))
+    kept = {p: c for p, c in counts.items() if c >= floor}
     return DailyCorpus(
         run_date=run_date,
         doc_counts=prune_subsumed(kept),
         corpus_size=n_docs,
         below_threshold=len(counts) - len(kept),
+        floor=floor,
     )
 
 
@@ -606,7 +646,29 @@ def persist_narrative_signals(
     if not signals:
         return 0
 
-    kept = signals[:top_n]
+    # Top-N BY SHARE, plus every phrase below the cut that is actually moving.
+    #
+    # `signals` is sorted by share descending, so `signals[:top_n]` keeps the day's
+    # LOUDEST phrases. That was harmless when a day yielded ~20 phrases. At 868
+    # documents it yields 736, and truncating by share discards 586 of them — by
+    # exactly the wrong criterion, because an emerging narrative is by definition
+    # QUIET and accelerating. The phrase this detector exists to find ranks ~600th
+    # and never reached the table; the 2026-07-29 run reported 0 emerging on a day
+    # with 34 measured velocities (ADR-0155).
+    #
+    # So the keep-list is a union of the two questions the table serves: "what is
+    # the news about today" (share) and "what is breaking out" (velocity). The
+    # second set is naturally small — it is bounded by the phrases with enough
+    # history to have a velocity at all — so this cannot balloon.
+    loudest = signals[:top_n]
+    loud_keys = {s.phrase for s in loudest}
+    movers = [
+        s for s in signals[top_n:]
+        if s.phrase not in loud_keys
+        and s.velocity is not None
+        and abs(s.velocity) >= VELOCITY_MATERIAL
+    ]
+    kept = loudest + movers
     dropped = len(signals) - len(kept)
     rows = [{
         "run_date": s.run_date.isoformat(),
@@ -640,7 +702,8 @@ def persist_narrative_signals(
     # widen `methods`, and two byte-identical "Persisted 150 phrases" lines read
     # as an accidental double-write rather than a deliberate update.
     print(f"[narrative_tracker] Persisted {len(rows)} {corpus} phrases{note}"
-          f"{f' (dropped {dropped} below the top {top_n} by share)' if dropped else ''}. "
+          f"{f' = {len(loudest)} loudest + {len(movers)} movers below the cut' if movers else ''}"
+          f"{f' (dropped {dropped}: below the top {top_n} by share AND not moving)' if dropped else ''}. "
           f"{len(emerging)} emerging and not covered by an anchor theme.")
     for s in emerging[:10]:
         print(f"[narrative_tracker]   EMERGING  {s.phrase!r} "

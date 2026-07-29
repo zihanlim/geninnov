@@ -241,7 +241,7 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
 
       {/* Direct labels. Identity never depends on a colour lookup. */}
       {series.map((s, i) => {
-        const color = SERIES_COLORS[i % SERIES_COLORS.length];
+        const color = s.phrase === "AI Capex" ? "#e91e8c" : SERIES_COLORS[i % SERIES_COLORS.length];
         const yl = labelY.get(i) ?? PLOT_TOP;
         const last = s.points[s.points.length - 1];
         const yEnd = y(last.share);

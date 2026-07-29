@@ -323,10 +323,11 @@ const S_PLOT_LEFT = 40;
 const S_PLOT_RIGHT = 92;
 const S_PLOT_WIDTH = S_WIDTH - S_PLOT_LEFT - S_PLOT_RIGHT;
 
-const S_HEIGHT = 252;
+const S_HEIGHT = 258;
 const S_PLOT_TOP = 16;
 const S_PLOT_H = 152;
-const RUG_TOP = S_PLOT_TOP + S_PLOT_H + 16;
+/** x-axis tick labels and axis caption sit here above the rug. */
+const XLABEL_Y = 248;
 const RUG_H = 14;
 /** Rug marks are capped to bound the DOM; the overflow is counted, not hidden. */
 const RUG_CAP = 80;
@@ -404,7 +405,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
   for (const l of labelled) {
     const placed = Math.max(l.yRaw, prevLabelY + LABEL_H);
     prevLabelY = placed;
-    (l as { yLabel?: number }).yLabel = clamp(placed, S_PLOT_TOP + 5, RUG_TOP - 8);
+    (l as { yLabel?: number }).yLabel = clamp(placed, S_PLOT_TOP + 5, S_PLOT_TOP + S_PLOT_H);
   }
 
   return (
@@ -441,7 +442,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
         velocity
       </text>
 
-      {/* x: share ticks along the bottom, below the rug. */}
+      {/* x: share ticks along the bottom, above the rug. */}
       {xTicks.map((v) => (
         <g key={`vx-${v}`}>
           <line
@@ -452,14 +453,14 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
             stroke="var(--border)"
             opacity={0.35}
           />
-          <text x={x(v)} y={S_HEIGHT - 4} textAnchor="middle" fill="var(--text-tertiary)" fontSize="9">
+          <text x={x(v)} y={XLABEL_Y - 4} textAnchor="middle" fill="var(--text-tertiary)" fontSize="9">
             {fmtX(v)}
           </text>
         </g>
       ))}
       <text
         x={S_PLOT_LEFT + S_PLOT_WIDTH}
-        y={S_HEIGHT - 4}
+        y={XLABEL_Y - 4}
         textAnchor="start"
         fill="var(--text-tertiary)"
         fontSize="9"
@@ -547,9 +548,8 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
       })}
 
       {/* The rug: measured in x (share), honest about y (nothing to plot).
-          Label sits ABOVE the strip, start-anchored — end-anchored in the
-          44px left gutter it clipped through the viewBox edge. */}
-      <text x={S_PLOT_LEFT} y={RUG_TOP - 4} textAnchor="start" fill="var(--text-tertiary)" fontSize="9">
+          Sits BELOW the x-axis label, start-anchored in the left gutter. */}
+      <text x={S_PLOT_LEFT} y={XLABEL_Y + 14} textAnchor="start" fill="var(--text-tertiary)" fontSize="9">
         velocity not yet measurable · {unmeasurable.length}
       </text>
       {unmeasurable.slice(0, RUG_CAP).map((s) => (
@@ -557,8 +557,8 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
           key={`rug-${s.phrase}`}
           x1={x(s.latest.share)}
           x2={x(s.latest.share)}
-          y1={RUG_TOP}
-          y2={RUG_TOP + RUG_H}
+          y1={XLABEL_Y + 22}
+          y2={XLABEL_Y + 22 + RUG_H}
           stroke={s.latest.covered_by === null ? "var(--series-1)" : "var(--text-tertiary)"}
           strokeWidth={1.5}
           opacity={0.65}
@@ -569,7 +569,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
       {unmeasurable.length > RUG_CAP && (
         <text
           x={S_PLOT_LEFT + S_PLOT_WIDTH}
-          y={RUG_TOP + RUG_H - 3}
+          y={XLABEL_Y + 22 + RUG_H - 3}
           textAnchor="start"
           dx="8"
           fill="var(--text-tertiary)"
@@ -587,7 +587,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
       {unmeasurable.length > 0 && (
         <text
           x={S_PLOT_LEFT}
-          y={RUG_TOP + RUG_H + 11}
+          y={XLABEL_Y + 22 + RUG_H + 11}
           textAnchor="start"
           fill="var(--text-tertiary)"
           fontSize="9"

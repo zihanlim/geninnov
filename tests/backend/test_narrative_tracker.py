@@ -232,6 +232,40 @@ class TestEmergingNarratives:
         assert [s.phrase for s in shortlist] == ["ai capex cycle"]
 
 
+class TestNewswireFurniture:
+    """A stoplist is a silent editorial decision about what counts, so each entry
+    has to survive the question the `data` / `data center` case poses: what n-grams
+    containing this token exist in the live corpus?"""
+
+    def test_top_and_wall_are_stopped(self):
+        # Both reached the emerging shortlist on the deepened archive -- `wall` at
+        # 0.208 max share over 6 days -- and neither is a narrative.
+        assert phrases_in("Top stocks to watch on Monday") == set()
+        assert "wall" not in phrases_in("Wall Street drifts mixed as investors weigh")
+
+    def test_stopping_wall_destroys_nothing_because_street_was_already_stopped(self):
+        """The INVERSE of the `data` / `data center` trap.
+
+        `street` is already newswire furniture, so "wall street" can never form as a
+        bigram -- which is why the corpus yielded `wall`, `wall drifts` and
+        `wall drifts mixed`. `wall` was the residue of a phrase already dismantled,
+        not a fragment competing with a real one.
+        """
+        got = phrases_in("Wall Street rallies on Fed pivot")
+        assert not any("wall" in p or "street" in p for p in got)
+
+    def test_data_center_still_survives(self):
+        """The regression this whole class of change risks (ADR-0129).
+
+        n-grams are built over the FILTERED token stream, so stopping one token
+        removes every phrase containing it. Stopping `data` once silently destroyed
+        `data center` -- the phrase the entire AI capex buildout is described in.
+        """
+        got = phrases_in("AI data center buildout accelerates")
+        assert "data center" in got
+        assert "ai data center" in got
+
+
 class TestTrackNarratives:
     class _FakeTable:
         def __init__(self, store):

@@ -104,8 +104,28 @@ share shares st stock stocks story street summary thursday today tuesday update
 updates video watch wednesday week weekly what why wrap year years
 january february march april may june july august september october
 november december holds forecast forecasts primary times ahead amid set
-meeting
+meeting top wall
 """.split())
+
+# `top` and `wall`, added 2026-07-29 after both reached the emerging shortlist on
+# the deepened archive (`wall` at 0.208 max share over 6 days, `top` at 0.122 over
+# 5). Neither is a narrative, and the reason each is safe to stop is different:
+#
+#   top   Ordinary furniture, in the same class as `highlights` and `roundup`
+#         already here -- "top stocks", "top gainers", "top picks". No phrase worth
+#         tracking needs it.
+#
+#   wall  Looks like the `data` / `data center` trap above, and is its INVERSE.
+#         `street` is already stopped (see the list above), so "wall street" can
+#         never form as a bigram -- which is why the corpus yields `wall`,
+#         `wall drifts` and `wall drifts mixed` from "Wall Street drifts mixed as
+#         ...". `wall` is not a fragment competing with a real phrase; it is the
+#         residue of one that was already dismantled, and stopping it destroys
+#         nothing that could be formed.
+#
+# The general rule the `data` case establishes still binds: before stopping a
+# token, check what n-grams containing it exist in the live corpus. Here that check
+# is what showed "wall street" was already unreachable.
 
 # Publisher names, which are NOT narratives. Measured on the live corpus: with
 # these unstopped, "fxstreet" ranked as the 6th-loudest narrative of the day at

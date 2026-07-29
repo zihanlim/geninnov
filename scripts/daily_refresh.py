@@ -47,10 +47,18 @@ from backend.data.gdelt_client import fetch_market_news_gdelt
 #: clears ADR-0143's 20-session belief floor with margin, and GDELT's flat
 #: distribution means those days are genuinely populated rather than nominal.
 GDELT_LOOKBACK_DAYS = 45
+
+#: The provider whose date distribution can carry a share-of-voice SERIES.
+#: Brave supplies 87-94 docs/day inside its 8-day window and nothing before it,
+#: so a series including it has a 5-10x corpus discontinuity at that boundary
+#: (ADR-0153). Matches `market_news.source`.
+ARCHIVE_SOURCE = "gdelt"
 from backend.data.reddit_client import fetch_posts_for_theme
 from backend.services.narrative_tracker import (
     track_narratives,
     persist_narrative_signals,
+    ARCHIVE_CORPUS,
+    COMBINED_CORPUS,
 )
 from backend.services.method_agreement import (
     MIN_TERM_OVERLAP,
@@ -982,7 +990,11 @@ def persist_market_news(run_date: date, items: list[dict]) -> int:
     return len(rows)
 
 
-def load_market_corpus(run_date: date, lookback_days: int = 7) -> list[str]:
+def load_market_corpus(
+    run_date: date,
+    lookback_days: int = 7,
+    sources: list[str] | None = None,
+) -> list[str]:
     """The documents narrative tracking scores: the UN-THEMED corpus only.
 
     THIS CHANGED ON 2026-07-28 (ADR-0141), and the previous docstring argued the
@@ -1036,11 +1048,17 @@ def load_market_corpus(run_date: date, lookback_days: int = 7) -> list[str]:
         return out
 
     try:
-        unthemed = _dedupe(
+        # `sources` restricts the corpus to named providers, which is what lets the
+        # archive-only series be counted out of one stable definition (ADR-0153).
+        # None means every un-themed source — the dense combined corpus.
+        query = (
             supabase.table("market_news")
             .select("headline, source")
-            .gte("run_date", cutoff).limit(5000).execute().data
+            .gte("run_date", cutoff)
         )
+        if sources:
+            query = query.in_("source", sources)
+        unthemed = _dedupe(query.limit(5000).execute().data)
     except Exception as exc:
         print(f"[narrative_tracker] market_news read failed ({exc.__class__.__name__}).")
         unthemed = []
@@ -1106,8 +1124,30 @@ def run_narrative_tracking(run_date: date) -> int:
         # forms a headline actually uses ("fed", "oil"), which are deliberately
         # absent from the SEARCH keywords because they would widen every fetch.
         signals = track_narratives(
-            supabase, run_date, docs, anchor_keywords=coverage_keywords()
+            supabase, run_date, docs, anchor_keywords=coverage_keywords(),
+            corpus=COMBINED_CORPUS,
         )
+
+        # The SAME day, counted again out of the archive alone (ADR-0153).
+        #
+        # These are two answers to two questions, not a duplicate. The combined
+        # corpus above is dense (~98 docs/day) and is the honest answer to "what is
+        # the news about today" — but its composition changes as providers come and
+        # go, so a share from it is not comparable with one from a week ago. The
+        # archive is sparse (~11/day) and has ONE definition back to 2026-06-14,
+        # which is the only thing that makes a velocity mean anything.
+        #
+        # Neither dominates: dense-and-incomparable and sparse-but-comparable are
+        # different failures. Both are stored, each labelled with what it counted.
+        archive_docs = load_market_corpus(run_date, sources=[ARCHIVE_SOURCE])
+        if archive_docs:
+            track_narratives(
+                supabase, run_date, archive_docs,
+                anchor_keywords=coverage_keywords(), corpus=ARCHIVE_CORPUS,
+            )
+        else:
+            print(f"[{run_date}] no archive documents this run — the comparable "
+                  f"series is not extended today. This is a gap in it, not a zero.")
 
         # Two-method agreement (ADR-0133). Frequency found these; the monthly
         # LDA-intersect-embedding job proposed its own candidates. Where the two

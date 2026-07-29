@@ -31,8 +31,12 @@ phrase's share would jump on the day the second provider appears — a velocity 
 that is an artefact of provider mix rather than of attention. A series has to be
 counted out of the same kind of corpus every day or its differences mean nothing.
 
-So: GDELT alone, every day, including today's. Today's live row is recomputed on the
-GDELT-only corpus so the series is homogeneous end to end.
+So these rows are GDELT alone, every day, and they are written as
+`corpus = 'archive'` (ADR-0153). They do NOT replace the combined series: the daily
+job now writes both, because "what is the news about today" wants density and "what
+is accelerating" wants comparability, and those are different questions with
+different right answers. This script only ever touches archive rows — it deletes and
+rebuilds by `(run_date, corpus)`, so the dense series is untouched by a replay.
 
 WHAT THIS IS AND IS NOT
 -----------------------
@@ -60,6 +64,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.services.narrative_tracker import (  # noqa: E402
+    ARCHIVE_CORPUS,
     MIN_DAYS_FOR_VELOCITY,
     TOP_N_PERSISTED,
     build_narrative_signals,
@@ -171,6 +176,9 @@ def main() -> int:
                 "status": s.status,
                 "covered_by": s.covered_by,
                 "methods": s.methods,
+                # These rows ARE the archive series, and mislabelling them would
+                # put GDELT-only shares into the combined series' history.
+                "corpus": ARCHIVE_CORPUS,
             })
 
         # Feed today's share forward for tomorrow's comparison.
@@ -206,7 +214,11 @@ def main() -> int:
     # set, so the day would become a union of two runs rather than the corpus's
     # actual top-N — the same defect `extend_held_book` had (ADR-0152).
     for d in usable:
-        sb.table("narrative_signals").delete().eq("run_date", d.isoformat()).execute()
+        (sb.table("narrative_signals")
+           .delete()
+           .eq("run_date", d.isoformat())
+           .eq("corpus", ARCHIVE_CORPUS)
+           .execute())
     for i in range(0, len(all_rows), 500):
         sb.table("narrative_signals").insert(all_rows[i : i + 500]).execute()
 

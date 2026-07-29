@@ -510,19 +510,47 @@ TOP_N_PERSISTED = 150
 #: Days of history to load for the velocity computation.
 HISTORY_DAYS = 60
 
+#: The two corpora a phrase can be counted out of (ADR-0153). They answer different
+#: questions and must never share a comparison:
+#:
+#:   combined  every un-themed source. Dense (~98 docs/day) and therefore the honest
+#:             answer to "what is the news about today". Its composition changes as
+#:             providers come and go — Brave contributes 87-94 docs/day after
+#:             2026-07-21 and nothing before it — so shares are only comparable
+#:             across days where the mix is stable.
+#:   archive   GDELT alone. Sparse (~11 docs/day) but ONE definition all the way
+#:             back, which is the only thing that makes a velocity mean anything.
+#:
+#: A share is a fraction OF a corpus. Comparing one to the other measures the corpus
+#: difference and calls it attention.
+COMBINED_CORPUS = "combined"
+ARCHIVE_CORPUS = "archive"
 
-def load_history(sb, run_date: date, days: int = HISTORY_DAYS) -> dict[str, list[tuple[date, float]]]:
+
+def load_history(
+    sb,
+    run_date: date,
+    days: int = HISTORY_DAYS,
+    corpus: str = COMBINED_CORPUS,
+) -> dict[str, list[tuple[date, float]]]:
     """Prior daily shares per phrase, ascending, EXCLUDING ``run_date`` itself.
 
     Excluding today matters: `build_narrative_signals` compares today's share
     against its history, and a window that already contained today would compare
     the value to itself and damp every genuine break.
+
+    **Filtered to one corpus, and that filter is load-bearing** (ADR-0153). A share
+    is a fraction OF a corpus, so comparing today's archive share against a history
+    of combined shares measures the difference between the two corpora — GDELT's ~11
+    documents a day against a combined ~98 — and reports it as a change in
+    attention. The filter is what keeps a velocity a statement about the phrase.
     """
     cutoff = (run_date - timedelta(days=days)).isoformat()
     try:
         rows = (
             sb.table("narrative_signals")
             .select("phrase, run_date, share")
+            .eq("corpus", corpus)
             .gte("run_date", cutoff)
             .lt("run_date", run_date.isoformat())
             .order("run_date", desc=False)
@@ -551,6 +579,7 @@ def persist_narrative_signals(
     signals: list[NarrativeSignal],
     top_n: int = TOP_N_PERSISTED,
     note: str = "",
+    corpus: str = COMBINED_CORPUS,
 ) -> int:
     """Upsert the day's narrative signals. Best-effort: logs and returns 0 if the
     table isn't deployed, exactly as `persist_discovered_themes` does."""
@@ -571,10 +600,16 @@ def persist_narrative_signals(
         "status": s.status,
         "covered_by": s.covered_by,
         "methods": s.methods,
+        "corpus": corpus,
     } for s in kept]
 
     try:
-        sb.table("narrative_signals").upsert(rows, on_conflict="run_date,phrase").execute()
+        # (run_date, phrase, corpus) — migration 057. Without the corpus in the key
+        # the second series would overwrite the first and the survivor would depend
+        # on write order.
+        sb.table("narrative_signals").upsert(
+            rows, on_conflict="run_date,phrase,corpus"
+        ).execute()
     except Exception as exc:
         print(f"[narrative_tracker] narrative_signals upsert failed "
               f"({exc.__class__.__name__}); apply migration 049. Nothing persisted.")
@@ -584,7 +619,7 @@ def persist_narrative_signals(
     # `note` distinguishes the second write of a run. Corroboration re-persists to
     # widen `methods`, and two byte-identical "Persisted 150 phrases" lines read
     # as an accidental double-write rather than a deliberate update.
-    print(f"[narrative_tracker] Persisted {len(rows)} phrases{note}"
+    print(f"[narrative_tracker] Persisted {len(rows)} {corpus} phrases{note}"
           f"{f' (dropped {dropped} below the top {top_n} by share)' if dropped else ''}. "
           f"{len(emerging)} emerging and not covered by an anchor theme.")
     for s in emerging[:10]:
@@ -599,8 +634,14 @@ def track_narratives(
     run_date: date,
     documents: list[str],
     anchor_keywords: dict[str, list[str]] | None = None,
+    corpus: str = COMBINED_CORPUS,
 ) -> list[NarrativeSignal]:
-    """One day's narrative tracking, end to end.
+    """One day's narrative tracking, end to end, over ONE corpus.
+
+    `corpus` labels which set of documents these counts came from and is threaded
+    through BOTH the history read and the write (ADR-0153). Counting today out of
+    one corpus while reading history from another compares a share against
+    fractions of a different denominator and reports the gap as attention.
 
     Returns the signals it built (persisted or not) so the caller can log or
     surface them even when the table is missing. An empty corpus returns an empty
@@ -618,15 +659,15 @@ def track_narratives(
               f"heterogeneous to support a frequency claim.")
         return []
 
-    history = load_history(sb, run_date) if sb is not None else {}
+    history = load_history(sb, run_date, corpus=corpus) if sb is not None else {}
     signals = build_narrative_signals(today, history, anchor_keywords)
 
-    print(f"[narrative_tracker] {today.corpus_size} documents, "
+    print(f"[narrative_tracker] [{corpus}] {today.corpus_size} documents, "
           f"{len(today.doc_counts)} tracked phrases "
           f"({today.below_threshold} below the {MIN_DOC_COUNT}-document floor).")
 
     if sb is not None:
-        persist_narrative_signals(sb, signals)
+        persist_narrative_signals(sb, signals, corpus=corpus)
     return signals
 
 

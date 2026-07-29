@@ -241,6 +241,13 @@ class TestTrackNarratives:
         def select(self, *_a, **_k):
             return self
 
+        def eq(self, col, val):
+            # load_history filters by corpus (ADR-0153). Recorded, not just
+            # swallowed: a fake that quietly accepts any call would have hidden the
+            # filter going missing, which is the bug this guards.
+            self.store.setdefault("filters", {})[col] = val
+            return self
+
         def gte(self, *_a, **_k):
             return self
 
@@ -266,6 +273,31 @@ class TestTrackNarratives:
 
         def table(self, _name):
             return TestTrackNarratives._FakeTable(self.store)
+
+    def test_history_is_read_from_the_SAME_corpus_it_writes(self):
+        """The filter that keeps a velocity a statement about the phrase.
+
+        A share is a fraction OF a corpus. Reading history from `combined` while
+        counting today out of `archive` compares GDELT's ~11 documents a day against
+        a combined ~98 and reports the difference as a change in attention. Nothing
+        about the output would look wrong — every velocity would simply be an
+        artefact — so the filter is asserted here rather than trusted.
+        """
+        for corpus in ("combined", "archive"):
+            store: dict = {}
+            # Four documents sharing a phrase, so it clears MIN_DOC_COUNT = 3 and
+            # the run actually reaches the persist path.
+            docs = [
+                "oil prices climb on supply worry",
+                "oil prices climb again in asia",
+                "traders watch oil prices climb",
+                "oil prices climb to a monthly high",
+            ]
+            track_narratives(self._FakeSb(store), RUN, docs, corpus=corpus)
+            assert store["filters"]["corpus"] == corpus
+            # ...and the rows it writes carry the same label, so the next run's
+            # history read finds them.
+            assert all(r["corpus"] == corpus for r in store["written"])
 
     def test_an_empty_corpus_produces_no_signal_and_says_why(self, capsys):
         """Never a fabricated signal, never silence."""
@@ -482,6 +514,7 @@ class TestTheDenominatorIsUnbiased:
             return self
         def select(self, *a, **k): return self
         def gte(self, *a, **k): return self
+        def in_(self, *a, **k): return self
         def limit(self, *a, **k): return self
         def execute(self):
             return type("R", (), {"data": self.market if self._t == "market_news" else self.theme})()

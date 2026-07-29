@@ -16,6 +16,7 @@ import {
 import ThesisBlock from "@/components/research/ThesisBlock";
 import CollapsibleSection from "@/components/CollapsibleSection";
 import SectionNav from "@/components/SectionNav";
+import PhaseChip from "@/components/PhaseChip";
 import AnswerCards from "@/components/book/AnswerCards";
 
 // Four anchored groups, in the order the page already rendered them. Labels are
@@ -653,6 +654,7 @@ function BookPageInner() {
           it, and the paragraphs drop their 62ch cap to fill the width — at 1400px a
           62ch column left the summary wrapping early against empty space. */}
       <div className="mb-7">
+        <PhaseChip route="/book" />
         <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
           The $100M Book
         </h1>
@@ -1135,7 +1137,12 @@ function BookPageInner() {
                  than a card in the grid above: the comparison table needs the
                  room, and "how was this sized" is not a footnote to the book —
                  ADR-0053 is what happens when nobody can check it. */}
-          <div className="panel p-4 mb-6">
+          {/* `id` on the PANEL, not on `SizingProvenance`'s own root, which
+              carries a data-testid and renders nothing until there is a book to
+              size. Phase 4 of the process map (ADR-0169) links here, and an
+              anchor that disappears with the data is a link that silently
+              scrolls to the top of the page. */}
+          <div id="sizing" className="panel p-4 mb-6">
             <h3 className="text-[13px] font-semibold mb-1">Sizing</h3>
             <p className="text-[11.5px] text-text-tertiary leading-[1.55] mb-3">
               The agent picks the names and the sides. This is what set the sizes.

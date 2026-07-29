@@ -15,11 +15,22 @@
 // here is a broken inbound link, which is why method-anchors.test.ts asserts the
 // documented set by name rather than by count.
 
-/** The two chapters of /method. */
+/** The two chapters of /method that `MethodBody` renders.
+ *
+ *  The process map at bare `/method` (ADR-0169) is deliberately NOT a member.
+ *  This union means "a chapter MethodBody renders, filtered by chapterOwns" —
+ *  `CHAPTER_STEPS`, `CHAPTER_NAV` and `chapterOwns` are all keyed on it, and the
+ *  map renders no gated section, carries no step number and reads no Supabase
+ *  table. Admitting it here would add three entries that could only be empty and
+ *  would make `chapterOwns("process", id)` a question with no meaning. */
 export type MethodChapter = "build" | "evidence";
 
 export const CHAPTER_ROUTE: Record<MethodChapter, string> = {
-  build: "/method",
+  // Was bare `/method` until ADR-0169 reassigned that route to the process map.
+  // Documented deep links of the form /method#hypescore still resolve: the
+  // fragment never reaches the server, so `LegacyAnchorHop` reads this map
+  // client-side and replaces to /method/build#hypescore.
+  build: "/method/build",
   evidence: "/method/evidence",
 };
 
@@ -31,7 +42,7 @@ export const CHAPTER_ROUTE: Record<MethodChapter, string> = {
  *   evidence — "did it run, and who checked it?" pipeline status, feeds, guardrails
  *
  * The falsifier for that split: "why is HypeScore 62 for theme X?" must be
- * answerable from /method alone. It is — the formula, the terms table, the
+ * answerable from one chapter alone. It is — the formula, the terms table, the
  * worked example, SignalValidation and the reconciliation all live in `build`.
  */
 export const METHOD_ANCHORS = {

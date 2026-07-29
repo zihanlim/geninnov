@@ -37,11 +37,29 @@ describe("METHOD_ANCHORS", () => {
     expect(Object.keys(METHOD_ANCHORS).sort()).toEqual([...BUILD, ...EVIDENCE].sort());
   });
 
-  it("routes the build-chapter anchors to /method", () => {
+  // ADR-0169 moved this chapter off bare `/method`, which now renders the process
+  // map. The assertion is deliberately still hardcoded to a literal rather than
+  // read from CHAPTER_ROUTE: the point is to catch the route CHANGING, which a
+  // self-referential expectation cannot do.
+  it("routes the build-chapter anchors to /method/build", () => {
     for (const id of BUILD) {
-      expect(routeForAnchor(id), `${id} should resolve to /method`).toBe("/method");
+      expect(routeForAnchor(id), `${id} should resolve to /method/build`).toBe(
+        "/method/build",
+      );
       expect(chapterOwns("build", id)).toBe(true);
       expect(chapterOwns("evidence", id)).toBe(false);
+    }
+  });
+
+  // The hop in `LegacyAnchorHop` is a no-op when the target equals the current
+  // pathname. If a chapter route were ever set back to bare /method, a reader
+  // following /method#hypescore would land on the process map — which does not
+  // render that section — and stay there silently.
+  it("keeps every chapter route off the process map's own route", () => {
+    for (const [chapter, route] of Object.entries(CHAPTER_ROUTE)) {
+      expect(route, `${chapter} would collide with the process map`).not.toBe(
+        "/method",
+      );
     }
   });
 

@@ -25,6 +25,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import SectionNav from "@/components/SectionNav";
+import PhaseChip from "@/components/PhaseChip";
 import {
   CHAPTER_NAV,
   CHAPTER_ROUTE,
@@ -761,6 +762,11 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
   return (
     <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-7 pb-20">
       <header className="mb-5">
+        {/* Renders for `evidence` (phase 6) and nothing for `build`, which is
+            the arithmetic behind every phase rather than a step in the sequence.
+            The chip derives that from the route, so neither chapter asserts it
+            here. */}
+        <PhaseChip route={CHAPTER_ROUTE[chapter]} />
         <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
           Method{" "}
           <span className="text-text-tertiary font-normal">

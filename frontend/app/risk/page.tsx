@@ -75,6 +75,7 @@ import {
 } from "@/lib/risk/riskBoard";
 import { fetchThemeHistories } from "@/lib/themeSignals";
 import SectionNav from "@/components/SectionNav";
+import PhaseChip from "@/components/PhaseChip";
 
 // Six anchored groups, in the order the page already rendered them — no panel
 // moved. Labels are nouns and carry no figure (SectionNav is tested for that:
@@ -608,6 +609,10 @@ function RiskPageInner() {
     <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-7 pb-20">
       <div className="flex justify-between items-end mb-7 gap-6 flex-wrap">
         <div>
+          {/* Two chips, not one. This page serves phase 1 (the mandate the book
+              is measured against) and phase 3 (the scenarios that stress it) —
+              and that pairing is the reason ADR-0169 rejected a tab per phase. */}
+          <PhaseChip route="/risk" />
           <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
             Book Risk
           </h1>

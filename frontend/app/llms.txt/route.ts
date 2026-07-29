@@ -55,7 +55,10 @@ published.
   and the screening funnel that rejected everything else.
 - \`/risk\` — stress scenarios (six calibrated shocks, worst first), correlation matrix,
   cap headroom, factor tilt, Euler risk decomposition, realised drawdown.
-- \`/method\` — how each number is built: HypeScore, TradeScore, EdgeScore, the FF5+UMD
+- \`/method\` — the process map: the six phases of the investment process (mandate,
+  alpha sourcing, catalyst/scenario, construction, execution, attribution) and the
+  surface performing each. Execution is out of scope and says why.
+- \`/method/build\` — how each number is built: HypeScore, TradeScore, EdgeScore, the FF5+UMD
   factor model, conviction sizing, worked examples.
 - \`/method/evidence\` — whether it ran and who checked it: per-stage pipeline health,
   data-source provenance, the LLM citation-guardrail audit, and the forward track record

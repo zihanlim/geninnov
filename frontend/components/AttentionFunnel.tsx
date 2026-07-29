@@ -147,7 +147,7 @@ export default function AttentionFunnel() {
   const linked = basis ? basis.measured + basis.operator : 0;
 
   return (
-    <div className="card px-4 py-3">
+    <div className="card px-4 py-3 flex flex-col flex-1">
       <div className="flex items-baseline justify-between gap-3 mb-2.5">
         <span className="text-[10.5px] uppercase tracking-[0.1em] text-text-secondary">
           Attention funnel

@@ -902,7 +902,7 @@ function ConvictionPageInner() {
             id="narratives"
             title="What the market is paying attention to"
             bare
-            className="lg:col-span-2 lg:col-start-1 lg:row-start-4 lg:h-full"
+            className="lg:col-span-2 lg:col-start-1 lg:row-start-4 lg:row-span-1 lg:h-full"
           >
             <NarrativeTrends />
           </TerminalPane>
@@ -911,7 +911,7 @@ function ConvictionPageInner() {
             id="funnel"
             title="Attention funnel"
             bare
-            className="lg:col-start-3 lg:row-start-4 lg:h-full"
+            className="lg:col-start-3 lg:row-start-4 lg:row-span-1 lg:h-full"
           >
             <AttentionFunnel />
           </TerminalPane>

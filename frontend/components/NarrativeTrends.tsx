@@ -413,7 +413,14 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
   const xDigits = xStep * 100 >= 1 ? 0 : 1;
   const fmtX = (v: number) => `${(v * 100).toFixed(xDigits)}%`;
 
-  // Direct labels on BOTH encodings (ADR-0162), not on the payload alone.
+  // Color for detection scatter markers: pink for AI, purple for oil/oil prices/energy prices
+function phraseColor(phrase: string): string {
+  if (phrase.includes("ai")) return "#e91e8c";
+  if (["oil", "oil prices", "energy prices"].some(p => phrase.includes(p))) return "var(--series-5)";
+  return "var(--series-1)";
+}
+
+// Direct labels on BOTH encodings (ADR-0162), not on the payload alone.
   //
   // ADR-0146 labelled only the uncovered marks, on the reasoning that covered
   // ones are context. But a hollow 3px ring is already the muted channel, and
@@ -526,14 +533,14 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
           return (
             <g key={s.phrase}>
               {s.latest.status === "emerging" && (
-                <circle cx={cx} cy={cy} r={6.5} fill="none" stroke="var(--series-1)" strokeWidth={1} opacity={0.8} />
+                <circle cx={cx} cy={cy} r={6.5} fill="none" stroke={phraseColor(s.phrase)} strokeWidth={1} opacity={0.8} />
               )}
               <circle
                 cx={cx}
                 cy={cy}
                 r={uncovered ? 3.5 : 3}
-                fill={uncovered ? "var(--series-1)" : "transparent"}
-                stroke={uncovered ? "none" : "var(--text-tertiary)"}
+                fill={phraseColor(s.phrase)}
+                stroke={uncovered ? "none" : phraseColor(s.phrase)}
                 strokeWidth={uncovered ? 0 : 1.2}
                 onMouseEnter={(e) => {
                   const svgRect = svgRef.current?.getBoundingClientRect();
@@ -570,7 +577,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
               <text
                 x={l.xr + 9}
                 y={yLabel + 3}
-                fill={l.covered ? "var(--text-tertiary)" : "var(--text-secondary)"}
+                fill={phraseColor(l.s.phrase)}
                 fontSize="9.5"
               >
                 {l.s.phrase.length > 18 ? `${l.s.phrase.slice(0, 17)}…` : l.s.phrase}
@@ -767,7 +774,7 @@ export default function NarrativeTrends() {
   const dropped = series ? Math.max(0, series.length - top.length) : 0;
 
   return (
-    <div className="card">
+    <div className="card flex flex-col flex-1">
       <div className="card-header flex-wrap gap-2">
         <div>
           <span className="card-title">Narrative detection</span>

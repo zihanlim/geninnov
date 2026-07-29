@@ -323,11 +323,11 @@ const S_PLOT_LEFT = 40;
 const S_PLOT_RIGHT = 92;
 const S_PLOT_WIDTH = S_WIDTH - S_PLOT_LEFT - S_PLOT_RIGHT;
 
-const S_HEIGHT = 258;
+const S_HEIGHT = 225;
 const S_PLOT_TOP = 16;
 const S_PLOT_H = 152;
-/** x-axis tick labels and axis caption sit here above the rug. */
-const XLABEL_Y = 248;
+/** x-axis tick labels sit here — plot ends at S_PLOT_TOP+S_PLOT_H=168. */
+const XLABEL_Y = 177;
 const RUG_H = 14;
 /** Rug marks are capped to bound the DOM; the overflow is counted, not hidden. */
 const RUG_CAP = 80;

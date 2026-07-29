@@ -413,21 +413,15 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
   }
 
   return (
-    <svg
-      ref={svgRef}
-      viewBox={`0 0 ${S_WIDTH} ${S_HEIGHT}`}
-      // `max-w` is not decoration — it bounds the SCALE. With a viewBox sized for
-      // the 386px column beside the table, a plain `w-full` renders this plane at
-      // the full card width whenever the two stack (below the `figures` gate the
-      // card is ~1134px), which is 2.98x: the 9px axis labels come out at 27px and
-      // the chart reads as a blown-up detail crop. 520 caps it at ~1.37x — labels
-      // 12.3px, still comfortably a chart. The plane simply stops growing and sits
-      // left in a wider column, which is the cheap direction to be wrong in.
-      className="w-full h-auto relative"
-      role="img"
-      aria-label={`Narrative detection plane: ${measurable.length} phrases with measurable velocity, ${unmeasurable.length} not yet measurable`}
-      onMouseLeave={() => setTooltip(null)}
-    >
+    <div className="relative inline-block w-full">
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${S_WIDTH} ${S_HEIGHT}`}
+        className="w-full h-auto"
+        role="img"
+        aria-label={`Narrative detection plane: ${measurable.length} phrases with measurable velocity, ${unmeasurable.length} not yet measurable`}
+        onMouseLeave={() => setTooltip(null)}
+      >
       {/* y: velocity gridlines; the zero line is the one that matters. */}
       {yTicks.map((v) => (
         <g key={`vy-${v}`}>
@@ -508,7 +502,6 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
               onMouseEnter={(e) => {
                 const svgRect = svgRef.current?.getBoundingClientRect();
                 if (!svgRect) return;
-                // Convert screen pixels → SVG viewBox coordinates
                 const svgX = (e.clientX - svgRect.left) * (S_WIDTH / svgRect.width);
                 const svgY = (e.clientY - svgRect.top) * (S_HEIGHT / svgRect.height);
                 setTooltip({
@@ -607,31 +600,31 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
       )}
 
       {/* Immediate tooltip on hover — no browser-native delay.
-          Positioned with percentage x/y so it scales with the SVG. */}
+          Positioned in SVG viewBox coords; JSX expressions evaluate these. */}
       {tooltip && (
-        <foreignObject
-          x={`${(tooltip.x / S_WIDTH) * 100}%`}
-          y={`${(tooltip.y / S_HEIGHT) * 100}%`}
-          width="1"
-          height="1"
-          overflow="visible"
-          pointerEvents="none"
-          style={{ display: "block" }}
+        <div
+          style={{
+            position: "absolute",
+            left: `calc(${(tooltip.x / S_WIDTH) * 100}% + 8px)`,
+            top: `calc(${(tooltip.y / S_HEIGHT) * 100}% - 6px)`,
+            whiteSpace: "nowrap",
+            backgroundColor: "var(--bg-surface)",
+            border: "1px solid var(--border)",
+            borderRadius: "6px",
+            padding: "4px 8px",
+            fontSize: "10.5px",
+            color: "var(--text-primary)",
+            lineHeight: "1.4",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
+            pointerEvents: "none",
+            zIndex: 10,
+          }}
         >
-          <div
-            style={{
-              position: "absolute",
-              left: `calc(${(tooltip.x / S_WIDTH) * 100}% + 8px)`,
-              top: `calc(${(tooltip.y / S_HEIGHT) * 100}% - 6px)`,
-              whiteSpace: "nowrap",
-            }}
-            className="bg-bg-elevated border border-border rounded px-2 py-1.5 text-[10.5px] text-text-primary leading-[1.4] shadow-sm"
-          >
-            {tooltip.text}
-          </div>
-        </foreignObject>
+          {tooltip.text}
+        </div>
       )}
     </svg>
+    </div>
   );
 }
 

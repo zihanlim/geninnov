@@ -24,6 +24,7 @@
 import Link from "next/link";
 import { PHASES, phaseHref, phaseNumber } from "@/lib/method/phases";
 import { Note } from "@/components/method/primitives";
+import ChapterTabs from "@/components/method/ChapterTabs";
 
 export default function ProcessMap() {
   return (
@@ -35,17 +36,13 @@ export default function ProcessMap() {
         <p className="m-0 text-text-secondary text-[13px] max-w-[80ch]">
           The six phases a portfolio manager works through, and the surface in
           this system that performs each one. Five are live and link to their
-          evidence; one is out of scope and says why. For the arithmetic behind a
-          score see{" "}
-          <Link href="/method/build" className="text-accent hover:underline">
-            how a number is built
-          </Link>
-          ; for whether the pipeline ran and who checked it see{" "}
-          <Link href="/method/evidence" className="text-accent hover:underline">
-            the audit trail
-          </Link>
-          .
+          evidence; one is out of scope and says why.
         </p>
+        {/* The two detail chapters are named in the TABS, not in this paragraph.
+            They were prose links here and the detailed method page was reported
+            as deleted — a sibling route mentioned only in running text is one a
+            reader has to read to find. */}
+        <ChapterTabs current="/method" />
       </div>
 
       <ol className="list-none m-0 p-0 space-y-3">

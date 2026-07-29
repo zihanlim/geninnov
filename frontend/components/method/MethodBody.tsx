@@ -26,6 +26,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import SectionNav from "@/components/SectionNav";
 import PhaseChip from "@/components/PhaseChip";
+import ChapterTabs from "@/components/method/ChapterTabs";
 import {
   CHAPTER_NAV,
   CHAPTER_ROUTE,
@@ -799,23 +800,11 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
 
         {/* Chapter switch. Plain <Link>s, so this works with JS off and a reader
             can copy either chapter's URL. Both chapters render the same body from
-            the same fetch, so switching cannot show a different vintage. */}
-        <nav aria-label="Method chapters" className="flex gap-1 mt-3">
-          {(["build", "evidence"] as const).map((c) => (
-            <Link
-              key={c}
-              href={CHAPTER_ROUTE[c]}
-              aria-current={c === chapter ? "page" : undefined}
-              className={`px-3 py-1.5 rounded-md font-medium text-[12.5px] border transition-colors ${
-                c === chapter
-                  ? "text-text-primary bg-bg-elevated border-border-strong"
-                  : "text-text-secondary border-border hover:text-text-primary hover:bg-bg-hover"
-              }`}
-            >
-              {c === "build" ? "How it is built" : "Evidence it ran"}
-            </Link>
-          ))}
-        </nav>
+            the same fetch, so switching cannot show a different vintage.
+
+            Shared with the process map since ADR-0169 left bare /method without
+            one — see ChapterTabs. It was two tabs here; it is three everywhere. */}
+        <ChapterTabs current={CHAPTER_ROUTE[chapter]} />
       </header>
 
       <SectionNav items={CHAPTER_NAV[chapter]} />

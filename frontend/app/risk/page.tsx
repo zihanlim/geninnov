@@ -82,6 +82,12 @@ import PhaseChip from "@/components/PhaseChip";
 // a count here would be an untraceable number that goes stale against the panel
 // it labels).
 const RISK_SECTIONS = [
+  // The mandate is its own tab, and it is FIRST. It was inside `limits`, which
+  // made "what is this book allowed to be" a preamble to the board that measures
+  // against it — reachable only by knowing to scroll. It is also phase 1 of the
+  // process map (ADR-0169), the one phase a reader is most likely to arrive
+  // looking for, and `/risk#mandate` was already the link they arrive on.
+  { id: "mandate", label: "Mandate" },
   { id: "limits", label: "Limits" },
   { id: "attribution", label: "Attribution" },
   { id: "stress", label: "Stress" },
@@ -724,12 +730,19 @@ function RiskPageInner() {
           it would let a reader navigate away from a breach they never saw. */}
       <SectionNav items={RISK_SECTIONS} />
 
-      <section id="limits" aria-label="Limits and headline risk">
       {/* The mandate comes FIRST, because the board below measures against it.
           Until this panel the caps existed only as per-name utilisation bars: a
-          reader saw "US 35% — at limit" with no way to learn who chose 35%. */}
-      <MandatePanel config={data.config} lens={data.lens} />
+          reader saw "US 35% — at limit" with no way to learn who chose 35%.
 
+          Its own <section>, not a preamble inside `limits`: MandatePanel already
+          carried id="mandate" and the section nav tabs by section id, so being
+          nested left the tab strip unable to name the one thing on this page a
+          reader most often arrives asking for. */}
+      <section aria-label="The mandate">
+        <MandatePanel config={data.config} lens={data.lens} />
+      </section>
+
+      <section id="limits" aria-label="Limits and headline risk">
       <RiskLimitBoard
         loading={data.loading}
         rows={limitBoard}

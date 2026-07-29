@@ -9,7 +9,7 @@ import AskDock from "@/components/chat/AskDock";
 import { resolveRunDates } from "@/lib/homeFreshness";
 
 // Ordered as a portfolio manager's morning: what's moving → what we'd put on →
-// what we actually hold → what could go wrong → how it was derived.
+// what could go wrong → how it was derived.
 //
 // /trades, /portfolio and /research used to sit beside these as a SECONDARY_NAV,
 // labelled "legacy links (redirects)". The consolidation finished at ADR-0040 and
@@ -17,28 +17,26 @@ import { resolveRunDates } from "@/lib/homeFreshness";
 // all landed on one page, which showed a reader this project's migration history
 // for no benefit. The entries went (ADR-0054) and the routes stayed.
 //
-// **/portfolio is back, and it is not a reversal of that reasoning — it is that
-// reasoning applied to a changed fact.** The old /portfolio was a second view of
-// the SAME ten positions. The new one is the book that is HELD: carried across
-// runs, charged for its own trading, with a NAV that compounds (ADR-0150). On the
-// live history it and /book disagree by more than the return — the recommendation
-// reads +0.76% and the portfolio −0.72%. Two pages that disagree about what you own
-// are not duplicates; collapsing them is what would hide something.
+// /portfolio was added back here for a day as the HELD book and removed again the
+// same day (ADR-0151 → ADR-0152). The held book IS a different object from the
+// published one, so it was not the duplicate ADR-0025 retired — but it answers a
+// question `task.md` does not ask. Q1 wants "top five long and short trades, and
+// why"; the $100M in it is scale framing, not a mandate to run money, and neither
+// question asks what the book EARNED. A fifth destination reporting NAV also makes
+// "what is your track record?" the obvious next question, which six sessions of
+// data cannot answer.
 //
-// The comment above used to describe /book as "what we hold". It is not: it is what
-// the research recommends today, and nobody has paid to put it on. That slip is the
-// whole reason this route came back. See ADR-0151.
+// Note the ordering comment above once read "what we hold" for /book. It does not
+// hold anything — it is what the research RECOMMENDS, and nobody has paid to put it
+// on. That distinction is real and is why the held book still exists in the data
+// and on /risk; it just does not need a destination.
 //
-// On the count: design-goals says "Four top-bar destinations", and its own text
-// resolves this — "The objection here is to the unlabelled glyph rail, which trades
-// clarity for the appearance of scale; it was never a count of URLs." A fifth
-// LABELLED destination for a genuinely distinct object is not what that non-goal
-// was protecting against. The widening is recorded in design-goals.md rather than
-// absorbed silently.
+// Four, then. If a fifth is ever proposed, the bar is design-goals' own: a
+// destination earns its place by being a different OBJECT the brief asks for, never
+// by being a second view of one — and never by being a true thing nobody asked.
 const NAV_ITEMS = [
   { href: "/", label: "Themes" },
   { href: "/book", label: "Book" },
-  { href: "/portfolio", label: "Portfolio" },
   { href: "/risk", label: "Risk" },
   { href: "/method", label: "Method" },
 ];

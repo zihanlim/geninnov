@@ -254,16 +254,19 @@ Stated so nobody re-litigates them by accident:
   rail, which trades clarity for the appearance of scale; it was never a count
   of URLs.
 
-  **It is five destinations as of 2026-07-29, and the widening is recorded here
-  rather than absorbed.** `/portfolio` was retired by ADR-0025 because it was one of
-  three pages rendering the SAME ten positions, and un-retired by
-  [ADR-0151](adrs/0151-the-portfolio-is-not-the-book.md) because that premise stopped
-  being true: there is now a book that is HELD, with its own positions, its own
-  cost-netted returns and its own tables, and on the live history it disagrees with
-  the published book by more than the return (+0.76% against −0.72%). Two pages that
-  disagree about what you own are not duplicates, and collapsing them hides the
-  disagreement. The test this has to keep passing is the one above — a destination
-  earns its place by being a different OBJECT, never by being a second view of one.
+  **Still four, and there is now a worked example of the bar a fifth has to clear.**
+  `/portfolio` was un-retired as a fifth destination on 2026-07-29
+  ([ADR-0151](adrs/0151-the-portfolio-is-not-the-book.md)) and retired again the same
+  day ([ADR-0152](adrs/0152-a-true-page-nobody-asked-for.md)). The argument for it was
+  correct as far as it went — the HELD book is a genuinely different object from the
+  published one, not the duplicate ADR-0025 retired. It was still wrong, because
+  being a distinct object is necessary and **not sufficient**: `task.md` asks for
+  "top five long and short trades, and why" and for a daily theme process, and
+  nothing in either question asks what the book EARNED. A destination has to be a
+  different object **the brief asks for**. A true page nobody asked for still costs
+  a reader the attention it takes to rule out, and a page reporting NAV invites
+  "what is your track record?" — which the data cannot answer and ADR-0090/0112
+  already refuse to claim.
   See [ADR-0084](adrs/0084-method-splits-by-reader-question-not-by-copy.md)
   for the stop rules that keep this from becoming the rail by increments —
   chiefly: **split by section, never by copy of the same data.**

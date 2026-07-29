@@ -1,8 +1,15 @@
 # ADR-0151: The portfolio is not the book
 
-**Status:** Accepted
+**Status:** Reversed the same day by [ADR-0152](0152-a-true-page-nobody-asked-for.md)
 **Date:** 2026-07-29
 **Reverses:** the `/portfolio` retirement in [ADR-0025](0025-book-centric-information-architecture.md) and [ADR-0054](0054-a-daily-publication-not-a-scanner.md)
+
+> **Left in place deliberately.** The reasoning below is correct on its own terms —
+> the held book genuinely is not the duplicate ADR-0025 retired. It reaches the wrong
+> conclusion because it never checks the brief: `task.md` asks for ten trades with
+> reasons and a daily theme process, and neither question asks what the book EARNED.
+> Being a distinct object is necessary and not sufficient. A decision log that
+> silently drops its wrong turns teaches nothing, so this stays.
 
 ## Context
 

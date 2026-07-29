@@ -46,6 +46,7 @@ import { supabase } from "@/lib/supabase";
 import {
   attentionFunnel,
   fetchNarratives,
+  latestMeasuredDate,
   toSeries,
   type AttentionFunnelCounts,
 } from "@/lib/narratives";
@@ -94,7 +95,11 @@ function ObservedBar({
         <span
           className="block h-2 rounded-sm"
           style={{
-            width: `${Math.max(share * 100, 1.5)}%`,
+            // The 1.5% floor keeps a small NON-ZERO stage visible; it must not
+            // apply at zero, or a measured 0 renders as a stub bar that reads as
+            // "a few". Zero and nearly-zero are different readings, and the
+            // figure beside the bar is already the record either way.
+            width: share > 0 ? `${Math.max(share * 100, 1.5)}%` : "0%",
             background: "var(--series-1)",
             opacity: 0.85,
           }}
@@ -107,10 +112,38 @@ function ObservedBar({
 export default function AttentionFunnel() {
   const [funnel, setFunnel] = useState<AttentionFunnelCounts | null>(null);
   const [basis, setBasis] = useState<ThemeBasis | null>(null);
+  /** Non-null when the counts are from an EARLIER day than the newest run,
+   *  because the newest carried no measurable velocity. Same fallback and same
+   *  disclosure as the board — see the corpus note in the effect below. */
+  const [asOfFallback, setAsOfFallback] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchNarratives().then(({ rows, error }) => {
-      if (!error) setFunnel(attentionFunnel(toSeries(rows)));
+    // THE SAME SERIES THE BOARD ABOVE READS, on both axes that can differ.
+    //
+    // This defaulted to `fetchNarratives()` — i.e. `corpus: "combined"` — while
+    // NarrativeTrends reads `"archive"`. Two corpora on one screen, in a strip
+    // positioned as the summary of the board directly above it: the funnel said
+    // 193 tracked and "velocity not measurable yet" over a board showing 76
+    // tracked and velocities up to +2.27. Both were correct about their own
+    // corpus and the pair was incoherent, which is the comparability failure
+    // ADR-0155 names and the exact reason ADR-0153 moved the board to `archive`
+    // (`combined` holds one run_date and zero measurable velocities, because
+    // Brave contributes ~90 headlines/day inside an 8-day window and none
+    // before it, so its composition changes as providers come and go).
+    //
+    // Matching the corpus is necessary and NOT sufficient. The board also
+    // applies ADR-0159's fallback — if the newest day carries no measurable
+    // velocity, read the most recent day that does — so a funnel keyed to
+    // max(run_date) would still disagree with it on the thinnest publication
+    // day, which is structurally every day GDELT lags. Both fixes, or the strip
+    // is coherent on the corpus and wrong on the date.
+    fetchNarratives(30, "archive").then(({ rows, error }) => {
+      if (error) return;
+      const newest = toSeries(rows);
+      const measurable = newest.some((s) => s.latest.velocity !== null);
+      const measuredDay = measurable ? null : latestMeasuredDate(rows);
+      setFunnel(attentionFunnel(measuredDay ? toSeries(rows, measuredDay) : newest));
+      setAsOfFallback(measuredDay);
     });
     supabase
       .from("themes")
@@ -157,6 +190,17 @@ export default function AttentionFunnel() {
         <div className="flex flex-col gap-1.5 min-w-0">
           <span className="text-[10px] uppercase tracking-[0.08em] text-text-tertiary">
             Observed &middot; <code className="num">narrative_signals</code>
+            {/* The day these counts are FROM, whenever it is not the newest run.
+                Stated for the same reason the board states it (ADR-0159): a
+                count keyed to one day under a heading implying another is the
+                mislabel, not the fallback. */}
+            {asOfFallback && (
+              <>
+                {" "}
+                &middot; <span className="num">{asOfFallback}</span>, last
+                measured day
+              </>
+            )}
           </span>
           {funnel && (
             <>

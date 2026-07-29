@@ -10,6 +10,24 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+# Line-buffer stdout, or this log tells you nothing until the process exits.
+#
+# Python block-buffers stdout when it is not a TTY — which is every way this
+# actually runs: `> pipeline.log`, and GitHub Actions. `build_theme_signals`
+# passes flush=True on its own progress lines and nothing else does, so a run
+# redirected to a file showed 21 lines (everything up to L1) for 45 minutes while
+# L0-L5 completed behind them. Diagnosing where a run was required querying
+# Supabase, and a HUNG job is indistinguishable from a slow one — which is the
+# opposite of what a log is for.
+#
+# Cheaper than `python -u` because it survives however the module is invoked, and
+# cheaper than auditing ~200 print() calls for flush=True.
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except AttributeError:  # pragma: no cover — reconfigure is 3.7+
+    pass
+
 import pandas as pd
 import yfinance as yf
 from supabase import create_client

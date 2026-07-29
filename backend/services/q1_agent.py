@@ -1733,8 +1733,15 @@ def reason_picks(state: Q1State) -> Q1State:
             # a timeout asks a deterministic model the same question again while the
             # provider is demonstrably slow, and pays another full deadline to learn
             # nothing.
+            # The message used to end "not retrying; a stall is not fixed by asking
+            # again", which described THIS function and not what happens: the
+            # caller's loop retried on the very next line, and twice now that retry
+            # is what produced a real book. Saying so here is not cosmetic — a log
+            # that contradicts the run it is describing is how the 45-minute
+            # worst case stayed invisible (ADR-0160).
             print(f"[reason_picks] LLM TIMED OUT (attempt {retries + 1}): {exc} — "
-                  f"not retrying; a stall is not fixed by asking again.")
+                  f"this loop does not retry a stall (ADR-0052); run_q1_agent gets "
+                  f"exactly one timeout retry (ADR-0160).")
             state["error"] = f"LLM timeout: {exc} — using fallback"
             return fallback_picks(state)
         except Exception as exc:
@@ -3758,6 +3765,70 @@ def _persist_signal(sb: Client, state: Q1State) -> None:
 # Main entry point  — wired from daily_refresh.py
 # ─────────────────────────────────────────────────────────────────────────────
 
+#: How many times `reason_picks` may be re-called after a failed verification.
+MAX_REASON_RETRIES = 2
+#: How many of those may be spent on a STALL, as opposed to a bad answer.
+MAX_TIMEOUT_RETRIES = 1
+
+
+def reason_and_verify_with_retries(
+    state: dict,
+    reason_fn,
+    verify_fn,
+    max_retries: int = MAX_REASON_RETRIES,
+    max_timeout_retries: int = MAX_TIMEOUT_RETRIES,
+) -> dict:
+    """Re-call reason_picks when verification fails. A STALL is retried once, only.
+
+    EXTRACTED SO THE BUDGET IS TESTABLE (ADR-0160). This was inline in
+    `run_q1_agent`, which takes ten arguments and persists to Supabase, so nothing
+    ever exercised it — and that is why the following survived:
+
+    `reason_picks` refuses to retry its own timeout (ADR-0052: three attempts at
+    `LLM_TIMEOUT_SECONDS` is 2700s, and a 45-minute stalled run is exactly what was
+    measured). But a timeout sets ``state["error"]``, and this loop retried on ANY
+    error, so the run could still reach 3 x 900s. The 2026-07-29 log shows both
+    halves on consecutive lines — "not retrying; a stall is not fixed by asking
+    again", then "Retrying reason_picks (attempt 2/3)". Neither line is wrong about
+    its own function; together they describe a system doing the opposite of what it
+    says.
+
+    **One retry, not zero.** ADR-0052 was right about the cost and wrong about the
+    remedy. The same shape has now been seen at two different ceilings: the module
+    comment records "timed out at 420 on attempt 1 and succeeded on attempt 2", and
+    2026-07-29 timed out at 900 on attempt 1 and succeeded on attempt 2 with a real
+    ten-pick book carrying 45 citations. Raising the ceiling did not stop attempt 1
+    stalling; the retry is what rescues the book. Without it that run publishes an
+    empty-thesis fallback.
+
+    A CITATION failure keeps its full budget — the model can produce better output
+    for the same prompt, which is the case retrying was designed for.
+    """
+    retry_count = 0
+    timeout_retries = 0
+
+    while not state.get("verified") and retry_count < max_retries and state.get("error"):
+        is_timeout = str(state.get("error") or "").startswith("LLM timeout:")
+        print(f"[run_q1_agent] Citation verification failed: {state['error']}")
+
+        if is_timeout and timeout_retries >= max_timeout_retries:
+            print("[run_q1_agent] Second consecutive TIMEOUT — stopping rather than "
+                  "spending a third deadline (ADR-0160). Falling back.")
+            break
+
+        print(f"[run_q1_agent] Retrying reason_picks (attempt {retry_count + 2}/"
+              f"{max_retries + 1})"
+              f"{' after a TIMEOUT — the one timeout retry' if is_timeout else ''}...")
+        if is_timeout:
+            timeout_retries += 1
+        state["retries"] = state.get("retries", 0) + 1
+        state = reason_fn(state)
+        state = verify_fn(state)
+        retry_count += 1
+
+    return state
+
+
 def run_q1_agent(
     run_date: date,
     supabase_url: str,
@@ -3875,24 +3946,45 @@ def run_q1_agent(
         "fallback_used": False,
     })
 
-    # Run graph nodes in sequence
-    state = aggregate_context(state)
-    state = screen_candidates(state)
-    state = compute_book_metrics_node(state)    # v2: factor tilts, cap checks, corr matrix
-    state = run_scenario_analysis_node(state)  # v2: 4 stress scenarios
-    state = classify_news(state)
-    state = reason_picks(state)
-    state = verify_citations(state)
+    # Run graph nodes in sequence, timing each one.
+    #
+    # WHY THE TIMING IS HERE (ADR-0160). `pipeline_runs` records one duration for
+    # the whole L5 stage, so "is 22 minutes normal?" could only be answered by
+    # arithmetic: no single call may exceed LLM_TIMEOUT_SECONDS, therefore a
+    # 21.6-minute stage spanned more than one — but whether that was several
+    # legitimate calls or one burned deadline plus a retry was NOT recoverable from
+    # anything recorded. Both readings imply different fixes, so the distinction
+    # has to be measured rather than reasoned about.
+    import time as _time
 
-    # Retry loop: if citations failed, re-call reason_picks (max 2 total)
-    retry_count = 0
-    while not state.get("verified") and retry_count < 2 and state.get("error"):
-        print(f"[run_q1_agent] Citation verification failed: {state['error']}")
-        print(f"[run_q1_agent] Retrying reason_picks (attempt {retry_count + 2}/3)...")
-        state["retries"] += 1
-        state = reason_picks(state)
-        state = verify_citations(state)
-        retry_count += 1
+    _timings: list[tuple[str, float]] = []
+
+    def _timed(fn, st):
+        t0 = _time.monotonic()
+        out = fn(st)
+        _timings.append((fn.__name__, _time.monotonic() - t0))
+        return out
+
+    state = _timed(aggregate_context, state)
+    state = _timed(screen_candidates, state)
+    state = _timed(compute_book_metrics_node, state)  # v2: factor tilts, caps, corr
+    state = _timed(run_scenario_analysis_node, state)  # v2: 4 stress scenarios
+    state = _timed(classify_news, state)
+    state = _timed(reason_picks, state)
+    state = _timed(verify_citations, state)
+
+    state = reason_and_verify_with_retries(
+        state,
+        lambda st: _timed(reason_picks, st),
+        lambda st: _timed(verify_citations, st),
+    )
+
+    # One line, so the next "is this normal?" is answered by reading rather than
+    # inferring. reason_picks appears once per attempt, in order.
+    if _timings:
+        total = sum(d for _, d in _timings)
+        parts = " · ".join(f"{n} {d:.0f}s" for n, d in _timings)
+        print(f"[run_q1_agent] node timings ({total:.0f}s total): {parts}")
 
     # THE SIGNAL, captured here and nowhere else: the picks are final (the retry
     # loop is done) and nothing has sized them yet. Taking it at this exact point is

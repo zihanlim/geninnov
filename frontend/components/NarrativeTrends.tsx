@@ -294,6 +294,11 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
 // are NEVER plotted at y = 0 — absence is not zero (ADR-0066) — they sit in a
 // labelled rug below the plane, positioned by the one thing that IS measured
 // (share), and rise into the plane as their history accrues.
+//
+// EVERY REGION OF THIS CHART NAMES ITS LOUDEST MARKS (ADR-0162). Hollow/filled
+// and plane/rug are the encodings; neither is allowed to also mean "anonymous".
+// The failure both halves were written against is the same one: a mark a reader
+// can see but cannot identify is a mark they report as absent.
 
 const S_HEIGHT = 252;
 const S_PLOT_TOP = 16;
@@ -302,6 +307,17 @@ const RUG_TOP = S_PLOT_TOP + S_PLOT_H + 16;
 const RUG_H = 14;
 /** Rug marks are capped to bound the DOM; the overflow is counted, not hidden. */
 const RUG_CAP = 80;
+/** Direct labels in the plane, per encoding. The payload is named more deeply
+ *  than the context, but neither is named zero times — see the label pass. */
+const LABEL_CAP_UNCOVERED = 6;
+const LABEL_CAP_COVERED = 4;
+/** How many rug phrases are named in text beneath the strip. The rug's marks are
+ *  ticks on one axis with no room for per-mark labels, so the loudest few are
+ *  named in a line instead — otherwise the strip says only how MANY phrases it
+ *  is withholding a velocity for, never which. `chip` (7.3% of headlines on
+ *  2026-07-28, first seen that day) appeared nowhere in text on the whole board:
+ *  not in the plane, not in the rug, and 7th by share against a 5-row table. */
+const RUG_NAMED = 4;
 
 export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
   const xMax = Math.max(...series.map((s) => s.latest.share), 0.01) * 1.08;
@@ -327,15 +343,39 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
   const xDigits = xStep * 100 >= 1 ? 0 : 1;
   const fmtX = (v: number) => `${(v * 100).toFixed(xDigits)}%`;
 
-  // Direct labels on the payload only: uncovered, loudest first, pushed apart
-  // vertically so converging marks stay named (same collision rule as the
-  // trend plot's end labels).
+  // Direct labels on BOTH encodings (ADR-0162), not on the payload alone.
+  //
+  // ADR-0146 labelled only the uncovered marks, on the reasoning that covered
+  // ones are context. But a hollow 3px ring is already the muted channel, and
+  // leaving it unnamed as well meant the loudest phrase on the board could sit
+  // in the top-right alarm corner looking like a gridline artefact. On
+  // 2026-07-28 that phrase was `ai` — 15.6% share, velocity +2.27, the maximum
+  // of both axes, so it SET the x-scale — and a reader asked why it was missing
+  // from the plot. It was not missing. It was unlabelled.
+  //
+  // Two caps rather than one: the payload is what the board is for, so it is
+  // named more deeply than the context. Both sets are ranked by share and share
+  // ONE collision pass — a covered label overprinting an uncovered one would
+  // cost the payload exactly the legibility this split exists to protect.
   const LABEL_H = 11;
-  const labelled = measurable
-    .filter((s) => s.latest.covered_by === null)
-    .sort((a, b) => b.latest.share - a.latest.share)
-    .slice(0, 6)
-    .map((s) => ({ s, xr: x(s.latest.share), yRaw: y(s.latest.velocity as number) }))
+  const byShare = (a: NarrativeSeries, b: NarrativeSeries) =>
+    b.latest.share - a.latest.share;
+  const labelled = [
+    ...measurable
+      .filter((s) => s.latest.covered_by === null)
+      .sort(byShare)
+      .slice(0, LABEL_CAP_UNCOVERED),
+    ...measurable
+      .filter((s) => s.latest.covered_by !== null)
+      .sort(byShare)
+      .slice(0, LABEL_CAP_COVERED),
+  ]
+    .map((s) => ({
+      s,
+      covered: s.latest.covered_by !== null,
+      xr: x(s.latest.share),
+      yRaw: y(s.latest.velocity as number),
+    }))
     .sort((a, b) => a.yRaw - b.yRaw);
   let prevLabelY = -Infinity;
   for (const l of labelled) {
@@ -434,17 +474,47 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
           </g>
         );
       })}
-      {labelled.map((l) => (
-        <text
-          key={`dl-${l.s.phrase}`}
-          x={l.xr + 7}
-          y={((l as { yLabel?: number }).yLabel ?? l.yRaw) + 3}
-          fill="var(--text-secondary)"
-          fontSize="9.5"
-        >
-          {l.s.phrase.length > 18 ? `${l.s.phrase.slice(0, 17)}…` : l.s.phrase}
-        </text>
-      ))}
+      {/* Leader lines wherever the collision pass moved a label off its own mark
+          — the rule TrendPlot already applies to its end labels, brought here
+          because this plane now carries up to ten labels instead of six and the
+          anti-collision stack routinely pushes one 50px below the dot it names.
+          An unconnected label 50px from its mark is not a weaker label; it is a
+          label pointing at the wrong mark. */}
+      {labelled.map((l) => {
+        const yLabel = (l as { yLabel?: number }).yLabel ?? l.yRaw;
+        const displaced = Math.abs(yLabel - l.yRaw) > 1.5;
+        // The leader carries the same payload/context ink as the mark it leaves,
+        // so following one never loses which of the two encodings you are in.
+        const ink = l.covered ? "var(--text-tertiary)" : "var(--series-1)";
+        return (
+          <g key={`dl-${l.s.phrase}`}>
+            {displaced && (
+              <polyline
+                points={[
+                  `${(l.xr + 7).toFixed(2)},${l.yRaw.toFixed(2)}`,
+                  `${(l.xr + 10).toFixed(2)},${l.yRaw.toFixed(2)}`,
+                  `${(l.xr + 10).toFixed(2)},${yLabel.toFixed(2)}`,
+                  `${(l.xr + 12).toFixed(2)},${yLabel.toFixed(2)}`,
+                ].join(" ")}
+                fill="none"
+                stroke={ink}
+                strokeWidth={1}
+                opacity={0.55}
+              />
+            )}
+            <text
+              x={l.xr + (displaced ? 14 : 7)}
+              y={yLabel + 3}
+              // The ink carries the covered/uncovered split that the fill already
+              // carries, so naming a context mark does not promote it to payload.
+              fill={l.covered ? "var(--text-tertiary)" : "var(--text-secondary)"}
+              fontSize="9.5"
+            >
+              {l.s.phrase.length > 18 ? `${l.s.phrase.slice(0, 17)}…` : l.s.phrase}
+            </text>
+          </g>
+        );
+      })}
 
       {/* The rug: measured in x (share), honest about y (nothing to plot).
           Label sits ABOVE the strip, start-anchored — end-anchored in the
@@ -476,6 +546,26 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
           fontSize="9"
         >
           +{unmeasurable.length - RUG_CAP} more
+        </text>
+      )}
+
+      {/* The rug's loudest phrases, NAMED (ADR-0162). The strip's own header
+          says how many phrases are waiting; without this line it never says
+          which, and a phrase can be the 7th-loudest on the board while appearing
+          in no text anywhere on it. Shares travel with the names because a
+          <title> is never the only copy of a number (ADR-0126). */}
+      {unmeasurable.length > 0 && (
+        <text
+          x={PLOT_LEFT}
+          y={RUG_TOP + RUG_H + 11}
+          textAnchor="start"
+          fill="var(--text-tertiary)"
+          fontSize="9"
+        >
+          {unmeasurable
+            .slice(0, RUG_NAMED)
+            .map((s) => `${s.phrase} ${sharePct(s.latest.share)}`)
+            .join("  ·  ")}
         </text>
       )}
     </svg>
@@ -668,9 +758,12 @@ export default function NarrativeTrends() {
               which rise on a day the fetcher simply worked better) and whether it is
               breaking out against its own history (velocity). Hollow marks are
               phrases an anchor theme already watches — context. Filled marks are
-              watched by nothing — the payload. The alarm sits top-right. Phrases
-              whose velocity cannot be measured yet wait in the strip below the
-              plane; they rise into it as history accrues.
+              watched by nothing — the payload. The alarm sits top-right. Both
+              kinds are named, the covered ones in lighter ink, so no mark on this
+              plane is one you can see but cannot identify. Phrases whose velocity
+              cannot be measured yet wait in the strip below the plane, with its
+              loudest few named beneath it; they rise into the plane as history
+              accrues.
             </p>
 
             <DetectionScatter series={series} />

@@ -401,9 +401,97 @@ describe("DetectionScatter — the detector's honesty (ADR-0146)", () => {
     );
     expect(out).toContain('fill="transparent"'); // covered: hollow
     expect(out).toContain('fill="var(--series-1)"'); // uncovered: filled
-    // The payload gets the direct label; the covered context does not.
-    expect(out).toContain(">ai datacenter</text>");
-    expect(out).not.toContain(">fomc</text>");
+  });
+
+  it("names a covered mark too, in the muted ink (ADR-0162)", () => {
+    // ADR-0146 labelled the payload only, so `ai` — 15.6% share and the
+    // loudest phrase on the 2026-07-28 board, hard against the top-right
+    // alarm corner — rendered as an unnamed 3px hollow ring and was reported
+    // as missing from the chart. Hollow is already the muted channel; being
+    // anonymous as well is what made it unreadable.
+    const out = renderToStaticMarkup(
+      <DetectionScatter
+        series={[
+          detRow({ phrase: "ai", share: 0.156, velocity: 2.27, covered_by: "AI Capex" }),
+          detRow({ phrase: "oil prices", share: 0.1, velocity: 0.32, covered_by: null }),
+        ]}
+      />,
+    );
+    expect(out).toContain(">ai</text>");
+    expect(out).toContain(">oil prices</text>");
+    // Named, but still context: the ink carries the same split as the fill, so
+    // labelling a covered mark does not promote it to payload.
+    expect(out).toMatch(/<text[^>]*fill="var\(--text-tertiary\)"[^>]*>ai<\/text>/);
+    expect(out).toMatch(
+      /<text[^>]*fill="var\(--text-secondary\)"[^>]*>oil prices<\/text>/,
+    );
+  });
+
+  it("labels of both kinds share ONE collision pass", () => {
+    // A covered label overprinting an uncovered one would cost the payload the
+    // legibility the hollow/filled split exists to protect. Two marks at nearly
+    // the same velocity, one of each kind, must still produce two readable rows.
+    const out = renderToStaticMarkup(
+      <DetectionScatter
+        series={[
+          detRow({ phrase: "covered one", share: 0.12, velocity: 1.9, covered_by: "Fed Policy" }),
+          detRow({ phrase: "uncovered one", share: 0.11, velocity: 1.9001, covered_by: null }),
+        ]}
+      />,
+    );
+    // font-size 9.5 is the direct-label size and nothing else on this chart.
+    const ys = (out.match(/<text[^>]*font-size="9.5"[^>]*>/g) ?? []).map((t) =>
+      Number(t.match(/\sy="([\d.]+)"/)?.[1]),
+    );
+    expect(ys).toHaveLength(2);
+    const sorted = [...ys].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i++) {
+      // LABEL_H is 11 against a 9.5px face; the tolerance is float slack only.
+      expect(sorted[i] - sorted[i - 1]).toBeGreaterThan(10.9);
+    }
+  });
+
+  it("ties a displaced label back to its mark with a leader", () => {
+    // With up to ten labels the collision stack routinely pushes one 50px below
+    // the dot it names. An unconnected label that far from its mark is not a
+    // weaker label — it is a label pointing at the wrong mark. Same rule
+    // TrendPlot already applies to its end labels.
+    const converging = Array.from({ length: 5 }, (_, i) =>
+      detRow({
+        phrase: `narrative ${i}`,
+        share: 0.12 - i * 0.01,
+        velocity: 1.9 - i * 0.005, // nearly equal → the stack must push them apart
+        covered_by: null,
+      }),
+    );
+    const out = renderToStaticMarkup(<DetectionScatter series={converging} />);
+    expect(out).toContain("<polyline");
+
+    // A label sitting on its own mark gets no leader — the connector appears
+    // only where the collision pass actually moved something.
+    const alone = renderToStaticMarkup(
+      <DetectionScatter series={[detRow({ phrase: "solo", velocity: 1.2 })]} />,
+    );
+    expect(alone).not.toContain("<polyline");
+    expect(alone).toContain(">solo</text>");
+  });
+
+  it("names the rug's loudest phrases, not just how many there are", () => {
+    // `chip` on 2026-07-28: 7.3% of headlines, first seen that day, so no
+    // velocity and no plane. It was 7th by share against a 5-row table, which
+    // put it in NO text anywhere on the board — the strip counted it and never
+    // named it. A count alone cannot be looked up.
+    const out = renderToStaticMarkup(
+      <DetectionScatter
+        series={[
+          detRow({ phrase: "chip", share: 0.0734, velocity: null, covered_by: "AI Capex" }),
+          detRow({ phrase: "emerging", share: 0.0642, velocity: null, covered_by: null }),
+        ]}
+      />,
+    );
+    expect(out).toContain("velocity not yet measurable · 2");
+    expect(out).toContain("chip 7.3%");
+    expect(out).toContain("emerging 6.4%");
   });
 
   it("an emerging mark gets the ring — status from the backend, no threshold copied", () => {

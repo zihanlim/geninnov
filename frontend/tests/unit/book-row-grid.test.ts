@@ -1,6 +1,6 @@
 // The book row's columns are defined once.
 //
-// The legend header (app/book/page.tsx) and the rows beneath it
+// The legend header (components/book/BookBody.tsx) and the rows beneath it
 // (components/book/PositionRow.tsx) must use the same seven-column template or
 // the headings stop lining up with the numbers they name. They used to hold two
 // copies of an inline `style={{ gridTemplateColumns: "..." }}` with nothing
@@ -21,7 +21,9 @@ import {
 } from "@/lib/book/grid";
 
 const ROOT = path.resolve(__dirname, "../..");
-const CONSUMERS = ["components/book/PositionRow.tsx", "app/book/page.tsx"];
+// BookBody, not app/book/page.tsx: the body moved out of the route file so that
+// /book and /book2 could share one fetch. A route module may only export `default`.
+const CONSUMERS = ["components/book/PositionRow.tsx", "components/book/BookBody.tsx"];
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
 
 /** "grid-cols-[a_b_c]" -> ["a","b","c"] */

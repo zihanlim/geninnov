@@ -95,6 +95,7 @@ function SubCard({
 
 export function PositionRow({
   variant = "current",
+  chrome = "full",
   pick,
   rank,
   open,
@@ -116,6 +117,21 @@ export function PositionRow({
 }: {
   /** `next` is the /book2 comparison layout. Temporary — see components/book/BookBody.tsx. */
   variant?: BookVariant;
+  /**
+   * Which halves of the row to draw.
+   *
+   * `full` is the shipped accordion: clickable header, detail panel underneath when
+   * open. `header` and `detail` split those across the master-detail layout on
+   * `/book2` — the list draws headers, a sticky pane draws the detail for whichever
+   * one is selected.
+   *
+   * Deliberately ONE component with three renderings rather than a separate detail
+   * component. A second component would need every derived local recomputed
+   * (`sizingChain`, `marginal`, `sibling`, the scenario lines, stability) — sixty
+   * lines of derivation with two places to fix each future change. Splitting the
+   * CHROME keeps one derivation and one set of content.
+   */
+  chrome?: "full" | "header" | "detail";
   pick: Pick;
   rank: number;
   open: boolean;
@@ -242,10 +258,15 @@ export function PositionRow({
     .filter((s) => s.line);
 
   return (
-    <div className="border-b border-border last:border-b-0">
+    <div
+      className={
+        chrome === "detail" ? "" : "border-b border-border last:border-b-0"
+      }
+    >
       {/* A div, not a button: the theme name is an <a>, which cannot be nested
           inside a <button>. Keyboard + ARIA are wired by hand to keep the row a
           single toggle target while the inner link stays independently focusable. */}
+      {chrome !== "detail" && (
       <div
         role="button"
         tabIndex={0}
@@ -390,12 +411,19 @@ export function PositionRow({
           )}
         </span>
         <span className="text-text-tertiary text-[12px] text-right">
-          {open ? "−" : "+"}
+          {chrome === "header" ? (open ? "◀" : "") : open ? "−" : "+"}
         </span>
       </div>
+      )}
 
-      {open && (
-        <div className="px-[18px] pb-5 pt-1 bg-bg-elevated/40">
+      {open && chrome !== "header" && (
+        <div
+          className={
+            chrome === "detail"
+              ? "px-0 pb-0 pt-0"
+              : "px-[18px] pb-5 pt-1 bg-bg-elevated/40"
+          }
+        >
           {/*
             Expanded-panel layout: a flat grid where each SubCard is placed on
             an explicit `lg:row-start-N` / `lg:col-start-N` cell.

@@ -63,6 +63,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from backend.data.brave_client import coverage_keywords  # noqa: E402
 from backend.services.narrative_tracker import (  # noqa: E402
     ARCHIVE_CORPUS,
     MIN_DAYS_FOR_VELOCITY,
@@ -147,10 +148,25 @@ def main() -> int:
     all_rows: list[dict] = []
     first_measurable: date | None = None
 
+    # `covered_by` needs the anchor keywords or it is NULL for every phrase,
+    # which makes "watched by no anchor theme" vacuously true and the whole
+    # shortlist meaningless. The first version omitted them and every row read
+    # uncovered.
+    #
+    # These are TODAY's anchors, which answers "would the themes we now track
+    # have caught this?" -- NOT "was anything watching it at the time". The
+    # second question needs the theme roster as it stood on each date, which is
+    # not persisted. The distinction bites hardest on AI Capex, an anchor only
+    # from 2026-07-27: judged by today's keywords an earlier surge in `ai` reads
+    # as COVERED, and judged by the roster of the day it was a narrative nothing
+    # was watching. This prints the conservative reading.
+    anchors = coverage_keywords()
+    print(f"anchors: {len(anchors)} themes, judged as of TODAY")
+
     print(f"\n{'date':12} {'docs':>5} {'phrases':>8} {'w/vel':>6} {'emerging':>9}  top phrase")
     for d in usable:
         corpus = daily_phrase_counts(by_day[d], d)
-        signals = build_narrative_signals(corpus, dict(history))
+        signals = build_narrative_signals(corpus, dict(history), anchors)
 
         with_vel = sum(1 for s in signals if s.velocity is not None)
         emerging = [s for s in signals if s.status == "emerging"]

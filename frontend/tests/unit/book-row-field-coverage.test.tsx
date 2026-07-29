@@ -311,3 +311,82 @@ describe("/book position row — absence is stated, not filled", () => {
     expect(html).toContain("Fit quality not recorded.");
   });
 });
+
+// ── /book2 comparison layout ────────────────────────────────────────────────────
+//
+// TEMPORARY, alongside the `/book2` route. Delete this block when the variant goes.
+//
+// The point of the comparison is that only PLACEMENT differs. If `next` ever renders
+// different CONTENT, the comparison stops being about layout and starts being about
+// which branch someone remembered to update — so the first test here is that the two
+// variants render the same fields, and the rest pin where they sit.
+describe("the next layout moves cards without changing what they say", () => {
+  const cellOf = (html: string, title: string): string | null => {
+    // The SubCard's grid classes and its title live in the same element subtree;
+    // find the title, then walk back to the nearest className that placed it.
+    const at = html.indexOf(title);
+    if (at === -1) return null;
+    const before = html.slice(0, at);
+    const m = [...before.matchAll(/lg:row-start-(\d) lg:col-start-(\d)/g)].pop();
+    return m ? `r${m[1]}c${m[2]}` : null;
+  };
+
+  it("renders every field in both variants", () => {
+    const current = render({ open: true, variant: "current" });
+    const next = render({ open: true, variant: "next" });
+    // Only cards this fixture actually produces. `Risk` and `Also cleared, not taken`
+    // are conditional on data it does not carry, and asserting them here would pass
+    // for the wrong reason — absent from both variants is not "the same".
+    for (const field of [
+      "Thesis",
+      "Counter-thesis",
+      "Catalysts",
+      "Contribution to book",
+      "Under stress",
+      "Sizing — conviction",
+      "Factor exposure",
+      "8.8%",
+    ]) {
+      expect(current, `current is missing ${field}`).toContain(field);
+      expect(next, `next is missing ${field}`).toContain(field);
+    }
+  });
+
+  it("currently separates the argument from its rebuttal", () => {
+    // The shipped layout. Counter-thesis is directly BELOW the thesis, and the card
+    // beside it is `Sizing` (auto-placed). Not a hole -- the grid is full -- but the
+    // claim and its rebuttal are never on the same line.
+    const html = render({ open: true, variant: "current" });
+    expect(cellOf(html, "Thesis")).toBe("r1c1");
+    expect(cellOf(html, "Counter-thesis")).toBe("r2c1");
+    expect(cellOf(html, "Why long")).toBe("r1c2");
+  });
+
+  it("puts the counter-thesis beside the thesis in the next layout", () => {
+    const html = render({ open: true, variant: "next" });
+    expect(cellOf(html, "Thesis")).toBe("r1c1");
+    expect(cellOf(html, "Counter-thesis")).toBe("r1c2");
+    expect(cellOf(html, "Why long")).toBe("r2c1");
+  });
+
+  it("swaps exactly two cards and leaves the rest where they were", () => {
+    // A wider reshuffle would fight the two AUTO-PLACED cards (`Sizing`, `Factor
+    // exposure`), which carry no row/col and fill whatever is free. Pinning the
+    // untouched placements is what stops a future edit from quietly reflowing them.
+    const cur = render({ open: true, variant: "current" });
+    const next = render({ open: true, variant: "next" });
+    for (const [title, at] of [
+      ["Catalysts", "r3c1"],
+      ["Contribution to book", "r4c1"],
+      ["Under stress", "r4c2"],
+    ] as const) {
+      expect(cellOf(cur, title), `current ${title}`).toBe(at);
+      expect(cellOf(next, title), `next ${title}`).toBe(at);
+    }
+  });
+
+  it("defaults to the current layout when no variant is passed", () => {
+    // /book must be bit-identical while the comparison is open.
+    expect(render({ open: true })).toBe(render({ open: true, variant: "current" }));
+  });
+});

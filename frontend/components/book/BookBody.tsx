@@ -16,6 +16,7 @@ import {
 import ThesisBlock from "@/components/research/ThesisBlock";
 import CollapsibleSection from "@/components/CollapsibleSection";
 import SectionNav from "@/components/SectionNav";
+import type { BookVariant } from "@/lib/book/variant";
 import AnswerCards from "@/components/book/AnswerCards";
 
 // Four anchored groups, in the order the page already rendered them. Labels are
@@ -175,21 +176,6 @@ function parsePicks(raw: Pick[] | string | null | undefined): Pick[] {
 
 
 
-
-/**
- * Which layout the book renders.
- *
- * `next` exists only for `/book2`, the temporary surface for comparing the adopted
- * Stitch layout ideas against what ships. It is a PROP rather than a copy of this
- * page for one reason: two routes fetching `research_recommendations` separately are
- * two chances to describe different vintages — the class ADR-0040 closed, and the
- * reason `/method` and `/method/evidence` share one `MethodBody`. One `useEffect`,
- * one set of queries, two renderings.
- *
- * When the comparison is decided this type, the `/book2` route, and every
- * `variant === "next"` branch come out together. Nothing else moved to put it in.
- */
-export type BookVariant = "current" | "next";
 
 /**
  * The book, rendered by `/book` and by the temporary `/book2` comparison surface.
@@ -1003,6 +989,7 @@ function BookPageInner({ variant }: { variant: BookVariant }) {
                   on a 375px phone instead of letting each row's ScrollArea scroll. */}
               <div className="grid wide:grid-cols-2 gap-6 items-start [&>*]:mb-0 [&>*]:min-w-0 mb-6">
               <PositionSection
+                variant={variant}
                 title="Longs"
                 glyph="▲"
                 color="var(--long)"
@@ -1025,6 +1012,7 @@ function BookPageInner({ variant }: { variant: BookVariant }) {
                 clearedByHeldAsset={clearedByHeldAsset}
               />
               <PositionSection
+                variant={variant}
                 title="Shorts"
                 glyph="▼"
                 color="var(--short)"
@@ -1373,6 +1361,7 @@ function Stat({
 }
 
 function PositionSection({
+  variant,
   title,
   glyph,
   color,
@@ -1395,6 +1384,7 @@ function PositionSection({
   emptyNote,
   clearedByHeldAsset,
 }: {
+  variant: BookVariant;
   title: string;
   glyph: string;
   color: string;
@@ -1477,6 +1467,7 @@ function PositionSection({
           {picks.map((p, i) => (
             <PositionRow
               key={`${p.asset}-${i}`}
+              variant={variant}
               pick={p}
               rank={i + 1}
               open={openAsset === `${title}-${p.asset}-${i}`}

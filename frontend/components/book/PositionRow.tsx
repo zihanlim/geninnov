@@ -16,6 +16,7 @@
 
 import Link from "next/link";
 import CitationList, { Citation } from "@/components/CitationList";
+import { isNext, type BookVariant } from "@/lib/book/variant";
 import EdgeBars from "@/components/book/EdgeBars";
 import SizingChainView from "@/components/book/SizingChainView";
 import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
@@ -93,6 +94,7 @@ function SubCard({
 }
 
 export function PositionRow({
+  variant = "current",
   pick,
   rank,
   open,
@@ -112,6 +114,8 @@ export function PositionRow({
   bookRunDate,
   clearedAlternatives,
 }: {
+  /** `next` is the /book2 comparison layout. Temporary — see components/book/BookBody.tsx. */
+  variant?: BookVariant;
   pick: Pick;
   rank: number;
   open: boolean;
@@ -175,6 +179,16 @@ export function PositionRow({
     distinguishPosition(pick.asset, pick.direction, ideas)
   );
   const rationaleDetail = hasEdge && edge ? edgeRationale(edge) : undefined;
+
+  /**
+   * Grid cell for an expanded-panel SubCard, per variant.
+   *
+   * Written as one call per card rather than two JSX trees so the two layouts cannot
+   * drift in CONTENT — only in placement. A second copy of the panel would be a second
+   * place to fix every future thesis change, and the comparison is meant to be about
+   * layout, not about which branch someone remembered to update.
+   */
+  const cell = (current: string, next: string) => (isNext(variant) ? next : current);
 
   // The sizing derivation — conviction × inverse-vol → cap → notional.
   const sizingChain = buildSizingChain({
@@ -384,16 +398,33 @@ export function PositionRow({
         <div className="px-[18px] pb-5 pt-1 bg-bg-elevated/40">
           {/*
             Expanded-panel layout: a flat grid where each SubCard is placed on
-            an explicit `lg:row-start-N` / `lg:col-start-N` cell. Adjacent pairs
-            (Thesis | Edge decomposition, Counter-thesis | Sizing, etc.) share
-            a row, and `items-stretch` makes that row as tall as its taller
-            cell -- so paired cards have aligned tops AND aligned bottoms. The
-            five-row layout is the same pairs the eye already read as one
-            "review stack" but no longer drifts vertically between columns.
+            an explicit `lg:row-start-N` / `lg:col-start-N` cell.
+            `items-stretch` makes a row as tall as its taller cell, so paired
+            cards have aligned tops AND aligned bottoms.
 
             On mobile (grid-cols-1) the `lg:` row/col classes are inert and the
-            SubCards flow in source order, which is preserved as "left column
-            first, then right column" so the mobile narrative is unchanged.
+            SubCards flow in source order, which is preserved as "the argument,
+            then its rebuttal" -- so moving a card between COLUMNS must never
+            reorder the DOM.
+
+            NOT every card is placed. `Sizing` and `Factor exposure` carry no
+            row/col at all and are positioned by grid AUTO-FLOW into the first
+            free cells -- which is why r2c2 and r3c2 look empty in the source and
+            are not empty in the browser. Read the placements without that in
+            mind and you will "find" holes that do not exist. (This note is here
+            because that mistake was made.)
+
+            So CURRENT is a full 5x2 grid: Thesis | Edge decomposition,
+            Counter-thesis | Sizing (auto), Catalysts | Factor exposure (auto),
+            Contribution | Under stress, Risk | Also cleared.
+
+            NEXT (/book2) SWAPS exactly two cards -- Counter-thesis to r1c2 and
+            Edge decomposition to r2c1 -- so the thesis and its rebuttal sit side
+            by side. That is the one idea worth taking from the Stitch comp's
+            answer layout: it renders a claim next to its offset (`CAPEX RISK` |
+            `CYCLICAL BUFFER`) rather than under it, because a rebuttal you have
+            to scroll past is a rebuttal you weigh less. Nothing else moves, and
+            the two auto-flow cards keep filling what is left.
           */}
           <div className="grid grid-cols-1 lg:grid-cols-2 items-stretch gap-3">
             <SubCard className="lg:row-start-1 lg:col-start-1" title="Thesis">
@@ -409,7 +440,7 @@ export function PositionRow({
               </SubCard>
 
               {showProse && pick.counter_thesis && (
-                <SubCard className="lg:row-start-2 lg:col-start-1" title="Counter-thesis">
+                <SubCard className={cell("lg:row-start-2 lg:col-start-1", "lg:row-start-1 lg:col-start-2")} title="Counter-thesis">
                   <div
                     className="rounded-md px-3 py-2.5 text-[12.5px] leading-[1.6] border"
                     style={{
@@ -472,7 +503,7 @@ export function PositionRow({
               </SubCard>
 
             <SubCard
-                className="lg:row-start-1 lg:col-start-2"
+                className={cell("lg:row-start-1 lg:col-start-2", "lg:row-start-2 lg:col-start-1")}
                 title={
                   <>Why {isLong ? "long" : "short"} — EdgeScore decomposition</>
                 }

@@ -43,6 +43,7 @@ from backend.data.brave_client import (
     coverage_keywords,
 )
 from backend.data.gdelt_client import fetch_market_news_gdelt
+from backend.data.rss_client import fetch_market_rss
 
 #: How far back GDELT is asked to reach. 45 days is ~31 trading sessions, which
 #: clears ADR-0143's 20-session belief floor with margin, and GDELT's flat
@@ -54,6 +55,19 @@ GDELT_LOOKBACK_DAYS = 45
 #: so a series including it has a 5-10x corpus discontinuity at that boundary
 #: (ADR-0153). Matches `market_news.source`.
 ARCHIVE_SOURCE = "gdelt"
+
+#: The providers the COMBINED corpus is counted out of, named explicitly.
+#:
+#: This list is the corpus definition (ADR-0157). It was previously "every source in
+#: `market_news`", which made adding a provider — an insert, not a config change —
+#: silently redefine the denominator every share in the combined series is a fraction
+#: of. ADR-0155 is about what that does to a series; this closes the door it would
+#: have come through.
+#:
+#: `rss` is deliberately ABSENT. RSS is collected daily and reads into nothing until
+#: there is enough parallel history to say whether it agrees with Brave about which
+#: themes are loud. Adding it here is the whole act of turning it on.
+COMBINED_SOURCES = ["brave_market", ARCHIVE_SOURCE]
 from backend.data.reddit_client import fetch_posts_for_theme
 from backend.services.narrative_tracker import (
     track_narratives,
@@ -1095,14 +1109,20 @@ def load_market_corpus(
     try:
         # `sources` restricts the corpus to named providers, which is what lets the
         # archive-only series be counted out of one stable definition (ADR-0153).
-        # None means every un-themed source — the dense combined corpus.
+        #
+        # The default is COMBINED_SOURCES — an explicit list — and NOT "whatever is
+        # in the table" (ADR-0157). It used to be the latter, which meant persisting
+        # a new provider into `market_news` silently redefined the combined corpus
+        # and moved every share in it. That is the failure ADR-0155 is about, and it
+        # would have arrived through a code path nobody was looking at: adding rows.
+        # Naming the providers makes including one a decision rather than a
+        # side effect.
         query = (
             supabase.table("market_news")
             .select("headline, source")
             .gte("run_date", cutoff)
+            .in_("source", sources or COMBINED_SOURCES)
         )
-        if sources:
-            query = query.in_("source", sources)
         unthemed = _dedupe(query.limit(5000).execute().data)
     except Exception as exc:
         print(f"[narrative_tracker] market_news read failed ({exc.__class__.__name__}).")
@@ -1157,6 +1177,33 @@ def run_narrative_tracking(run_date: date) -> int:
             print(f"[{run_date}] GDELT fetch failed ({exc.__class__.__name__}); "
                   f"continuing on Brave alone — the corpus loses its history, "
                   f"not its present.")
+
+        # THIRD provider: RSS (ADR-0157). No key, no host, and `pubDate` is
+        # required by the spec rather than inferred from a search-result page —
+        # measured 383/383 dated on the first live run, against SearXNG's 84% in
+        # its news category and 0% in general.
+        #
+        # SHADOW on arrival. These rows are persisted and source-tagged and NO
+        # scored corpus reads them: `COMBINED_SOURCES` names its providers
+        # explicitly below, so adding one here cannot move a published share the
+        # way ADR-0155 describes. Turning RSS on is a separate decision, taken
+        # once there is enough parallel history to see whether it and Brave agree.
+        try:
+            rss = fetch_market_rss()
+            if rss.failures:
+                print(f"[{run_date}] [rss] {len(rss.failures)} of "
+                      f"{rss.feeds_ok + len(rss.failures)} feeds FAILED: "
+                      f"{', '.join(sorted(rss.failures))}")
+            if rss.all_failed:
+                # Distinguishable from "the feeds were quiet" — the whole point.
+                print(f"[{run_date}] [rss] EVERY feed failed; contributing nothing.")
+            elif rss.items:
+                print(f"[{run_date}] [rss] {len(rss.items)} headlines from "
+                      f"{rss.feeds_ok} feeds (shadow — no scored corpus reads these).")
+                items = items + rss.items
+        except Exception as exc:
+            print(f"[{run_date}] [rss] fetch raised ({exc.__class__.__name__}): {exc}")
+
         if items:
             persist_market_news(run_date, items)
         else:

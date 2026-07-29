@@ -53,8 +53,18 @@ published.
 - \`/book\` — the published book: one row per position with thesis, counter-thesis,
   catalysts, the full sizing chain, factor tilts, per-scenario stress, cap utilisation,
   and the screening funnel that rejected everything else.
-- \`/risk\` — stress scenarios (six calibrated shocks, worst first), correlation matrix,
-  cap headroom, factor tilt, Euler risk decomposition, realised drawdown.
+- \`/mandate\` — what this book is allowed to be: capital base, single-name/sector/geo
+  caps, correlation-complex and crowded-name limits, each with its source, and the limit
+  board that measures the published book against them.
+- \`/scenario\` — stress scenarios (six calibrated shocks, worst first), per-position risk
+  attribution, correlation matrix, attention crowding, cap headroom, factor tilt.
+- \`/execution\` — OUT OF SCOPE, deliberately. The book is a recommendation, not a held
+  position, so no fill, borrow cost or slippage exists anywhere in this system. The page
+  names what the phase would need rather than reporting figures that do not exist.
+- \`/attribution\` — realised drawdown and the return path, against the ex-ante figures.
+  The only backward-looking surface.
+- \`/risk\` — retired as a destination; forwards each old fragment to the phase that now
+  owns that section.
 - \`/method\` — the process map: the six phases of the investment process (mandate,
   alpha sourcing, catalyst/scenario, construction, execution, attribution) and the
   surface performing each. Execution is out of scope and says why.

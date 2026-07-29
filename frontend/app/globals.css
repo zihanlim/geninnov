@@ -183,6 +183,23 @@
     --series-4: #eda100;     /* yellow — sub-3:1, needs the label relief */
     --series-5: #4a3aa7;     /* violet */
 
+    /* AI Capex is the one theme with a FIXED hue rather than a rotation slot.
+       It is the dominant theme in the register and appears on both trends
+       boards, where a slot assigned by index means it changes colour whenever
+       another phrase overtakes it — so a reader tracking it across two charts
+       or two days is tracking a colour that moved.
+
+       Off the five-slot ramp on purpose: those are a categorical ROTATION, and
+       adding a sixth would break the "assigned in fixed order, never cycled"
+       property the ramp is validated under. This is an IDENTITY, closer in kind
+       to the Bitcoin orange in PredictionMarkets.tsx than to --series-N.
+
+       Measured against the surfaces it is drawn on: 4.18:1 on --bg-surface,
+       3.98:1 on --bg-primary, 3.78:1 on --bg-elevated. Above the 3:1 floor for
+       graphical objects on all three, and ahead of --series-2/3/4, which carry
+       the label relief for being below it. */
+    --theme-ai-capex: #e91e8c;  /* magenta — AI Capex identity, not a slot */
+
     /* Height of LiveFeed, the fixed pipeline ribbon at the bottom of every page.
        It is `position: fixed` at z-40, so it is OUT of flow — nothing below it
        in the document reserves its space, and anything an element anchors to the

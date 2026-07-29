@@ -74,6 +74,25 @@ export const SERIES_COLORS = [
   "var(--series-5)",
 ];
 
+/** AI Capex holds ONE hue wherever it appears, instead of taking whichever
+ *  rotation slot its rank that day happens to land on. It is the dominant theme
+ *  and it renders on both trends boards, so an index-assigned colour means a
+ *  reader tracking it across two charts is tracking a colour that moved.
+ *
+ *  A token, not a hex — `chip-contrast.test.ts` scans for literals, and the
+ *  measurement that justifies this hue (4.18:1 on --bg-surface) belongs beside
+ *  the rest of the palette in globals.css, not inline at a call site. */
+const IDENTITY_COLORS: Record<string, string> = {
+  "AI Capex": "var(--theme-ai-capex)",
+};
+
+/** The colour for a series: its fixed identity if it has one, else its rotation
+ *  slot. One helper rather than a ternary repeated at each call site — the two
+ *  in TrendPlot had already drifted from the one in ThemeTrends' legend. */
+export function seriesColor(phrase: string, i: number): string {
+  return IDENTITY_COLORS[phrase] ?? SERIES_COLORS[i % SERIES_COLORS.length];
+}
+
 /** The minimal shape TrendPlot needs. NarrativeSeries satisfies it structurally;
  *  ThemeTrends supplies its own. One plot implementation for both boards —
  *  ADR-0064's one-formula-one-place, applied to chart geometry, so an axis or
@@ -222,7 +241,7 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
         </text>
 
         {series.map((s, i) => {
-          const color = s.phrase === "AI Capex" ? "#e91e8c" : SERIES_COLORS[i % SERIES_COLORS.length];
+          const color = seriesColor(s.phrase, i);
           const d = s.points
             .map((p, j) => `${j === 0 ? "M" : "L"}${x(p.run_date).toFixed(2)},${y(p.share).toFixed(2)}`)
             .join(" ");
@@ -256,7 +275,7 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
 
         {/* Direct labels. Identity never depends on a colour lookup. */}
         {series.map((s, i) => {
-          const color = s.phrase === "AI Capex" ? "#e91e8c" : SERIES_COLORS[i % SERIES_COLORS.length];
+          const color = seriesColor(s.phrase, i);
           const yl = labelY.get(i) ?? PLOT_TOP;
           const last = s.points[s.points.length - 1];
           const yEnd = y(last.share);
@@ -413,12 +432,17 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
   const xDigits = xStep * 100 >= 1 ? 0 : 1;
   const fmtX = (v: number) => `${(v * 100).toFixed(xDigits)}%`;
 
-  // Color for detection scatter markers: pink for AI, purple for oil/oil prices/energy prices
-function phraseColor(phrase: string): string {
-  if (phrase.includes("ai")) return "#e91e8c";
-  if (["oil", "oil prices", "energy prices"].some(p => phrase.includes(p))) return "var(--series-5)";
-  return "var(--series-1)";
-}
+  // The HUE of a mark. Coverage is NOT carried here — it is the fill/hollow
+  // split below, and the label ink beside it. Keeping the two channels separate
+  // is what lets a mark say "this is AI Capex" and "nothing is watching this"
+  // at the same time.
+  //
+  // Matched on the phrase a narrative was CLASSIFIED under, not on a substring
+  // of the phrase itself. `phrase.includes("ai")` also caught `supply chain`,
+  // `rail freight` and `capital` — a mark's identity cannot be decided by two
+  // letters appearing anywhere in it.
+  const markColor = (s: { covered_by?: string | null }) =>
+    (s.covered_by && IDENTITY_COLORS[s.covered_by]) || "var(--series-1)";
 
 // Direct labels on BOTH encodings (ADR-0162), not on the payload alone.
   //
@@ -533,14 +557,19 @@ function phraseColor(phrase: string): string {
           return (
             <g key={s.phrase}>
               {s.latest.status === "emerging" && (
-                <circle cx={cx} cy={cy} r={6.5} fill="none" stroke={phraseColor(s.phrase)} strokeWidth={1} opacity={0.8} />
+                <circle cx={cx} cy={cy} r={6.5} fill="none" stroke={markColor(s.latest)} strokeWidth={1} opacity={0.8} />
               )}
+              {/* Hue and coverage are separate channels. The hue names WHICH
+                  narrative; the fill/hollow split names whether anything is
+                  already watching it — which is the whole question the plane
+                  exists to answer, so it may not be spent on identity. A
+                  covered mark is a ring in its own colour, not a solid dot. */}
               <circle
                 cx={cx}
                 cy={cy}
                 r={uncovered ? 3.5 : 3}
-                fill={phraseColor(s.phrase)}
-                stroke={uncovered ? "none" : phraseColor(s.phrase)}
+                fill={uncovered ? markColor(s.latest) : "transparent"}
+                stroke={uncovered ? "none" : markColor(s.latest)}
                 strokeWidth={uncovered ? 0 : 1.2}
                 onMouseEnter={(e) => {
                   const svgRect = svgRef.current?.getBoundingClientRect();
@@ -574,10 +603,16 @@ function phraseColor(phrase: string): string {
                   opacity={0.6}
                 />
               )}
+              {/* Label ink carries COVERAGE, not identity — the mark beside it
+                  already carries the hue. ADR-0162 named covered marks so the
+                  loudest phrase on the board could not read as a gridline
+                  artefact, and was explicit that naming one must not promote it
+                  to payload. A covered mark labelled in its own bright hue is
+                  exactly that promotion, which is why identity stops at the dot. */}
               <text
                 x={l.xr + 9}
                 y={yLabel + 3}
-                fill={phraseColor(l.s.phrase)}
+                fill={l.covered ? "var(--text-tertiary)" : "var(--text-secondary)"}
                 fontSize="9.5"
               >
                 {l.s.phrase.length > 18 ? `${l.s.phrase.slice(0, 17)}…` : l.s.phrase}

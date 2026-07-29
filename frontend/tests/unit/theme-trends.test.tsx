@@ -103,7 +103,18 @@ describe("shared plot and honest caption", () => {
   );
 
   it("renders through the narrative board's TrendPlot, not a copy", () => {
-    expect(src).toContain('import { SERIES_COLORS, TrendPlot } from "@/components/NarrativeTrends"');
+    // Asserted on the BINDINGS, not on the exact import line. The literal string
+    // this used to match broke the moment `seriesColor` joined the same import —
+    // a change that makes the two boards share MORE, which is the property this
+    // test exists to protect. A test that fails on the fix it is meant to
+    // encourage is testing the punctuation, not the design.
+    const imported = src.match(
+      /import\s*\{([^}]+)\}\s*from\s*"@\/components\/NarrativeTrends"/,
+    );
+    expect(imported, "ThemeTrends must import from NarrativeTrends").not.toBeNull();
+    const names = imported![1].split(",").map((s) => s.trim());
+    expect(names).toContain("TrendPlot");
+    expect(names).toContain("SERIES_COLORS");
     expect(src).not.toMatch(/function TrendPlot/);
   });
 

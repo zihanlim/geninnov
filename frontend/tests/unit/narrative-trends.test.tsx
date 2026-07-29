@@ -427,6 +427,49 @@ describe("DetectionScatter — the detector's honesty (ADR-0146)", () => {
     );
   });
 
+  it("keeps the identity hue and the coverage split on the SAME mark", () => {
+    // 2026-07-30: a commit titled "align card row height" also replaced the
+    // coverage encoding with a flat per-phrase hue — `fill={phraseColor(...)}`
+    // — so every mark rendered solid and the covered/uncovered distinction the
+    // plane exists to draw was gone. The pink itself was wanted; spending the
+    // fill channel on it was not.
+    //
+    // Two channels, one mark: HUE says which narrative, FILL says whether
+    // anything is already watching it. This asserts they cannot be collapsed
+    // into each other again.
+    const out = renderToStaticMarkup(
+      <DetectionScatter
+        series={[
+          detRow({ phrase: "ai", share: 0.156, velocity: 2.27, covered_by: "AI Capex" }),
+          detRow({ phrase: "oil prices", share: 0.1, velocity: 0.32, covered_by: null }),
+        ]}
+      />,
+    );
+    // Covered AND carrying its identity: a hollow ring stroked in the theme hue.
+    expect(out).toMatch(
+      /<circle[^>]*fill="transparent"[^>]*stroke="var\(--theme-ai-capex\)"[^>]*>/,
+    );
+    // Uncovered stays the payload: solid, in the default series ink.
+    expect(out).toMatch(/<circle[^>]*fill="var\(--series-1\)"[^>]*stroke="none"[^>]*>/);
+    // And the hue is never a literal — globals.css owns the value and the
+    // contrast measurement that justifies it.
+    expect(out).not.toContain("#e91e8c");
+  });
+
+  it("does not colour a mark by a substring of its phrase", () => {
+    // `phrase.includes("ai")` also matched `supply chain`, `rail freight` and
+    // `capital`. Identity is matched on what a narrative is COVERED BY, which is
+    // a classification, not on two letters appearing anywhere in its text.
+    const out = renderToStaticMarkup(
+      <DetectionScatter
+        series={[
+          detRow({ phrase: "supply chain", share: 0.09, velocity: 0.5, covered_by: null }),
+        ]}
+      />,
+    );
+    expect(out).not.toContain("var(--theme-ai-capex)");
+  });
+
   it("labels of both kinds share ONE collision pass", () => {
     // A covered label overprinting an uncovered one would cost the payload the
     // legibility the hollow/filled split exists to protect. Two marks at nearly

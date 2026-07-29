@@ -18,7 +18,7 @@
 // narrative board (ADR-0141), and this board deliberately does not make it.
 
 import { useEffect, useState } from "react";
-import { SERIES_COLORS, TrendPlot } from "@/components/NarrativeTrends";
+import { SERIES_COLORS, seriesColor, TrendPlot } from "@/components/NarrativeTrends";
 import {
   MIN_DAY_MENTIONS_FOR_SHARE,
   fetchThemeTrends,
@@ -57,14 +57,16 @@ export function ThemeTrendsTable({ series }: { series: ThemeTrendSeries[] }) {
             <tr key={s.phrase} className="border-t border-border align-top">
               <td className="py-1 pr-3">
                 <span className="inline-flex items-center gap-1.5">
-                  {/* Only the five plotted series get a dot; a sixth hue does
-                      not exist, so a sixth row simply has no dot. AI Capex is
-                      forced into the chart and always gets a pink dot. */}
+                  {/* Only the five plotted series get a dot; a sixth rotation
+                      hue does not exist, so a sixth row simply has no dot. AI
+                      Capex is forced into the chart and carries its own fixed
+                      identity hue, so it gets one at any rank — which is the
+                      case `seriesColor` exists to keep in one place. */}
                   {i < SERIES_COLORS.length || s.phrase === "AI Capex" ? (
                     <span
                       aria-hidden="true"
                       className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ background: s.phrase === "AI Capex" ? "#e91e8c" : SERIES_COLORS[i] }}
+                      style={{ background: seriesColor(s.phrase, i) }}
                     />
                   ) : (
                     <span className="inline-block w-2.5 h-2.5 shrink-0" aria-hidden="true" />

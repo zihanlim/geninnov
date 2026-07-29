@@ -185,7 +185,14 @@ export default function AttentionFunnel() {
         </span>
       </div>
 
-      <div className="grid gap-x-5 gap-y-3 figures:grid-cols-[minmax(0,1fr)_auto_minmax(0,340px)] items-start">
+      {/* One column, always. This card lives in the 1fr slot beside the
+          narrative board, so its widest possible rendering is
+          (1400 − 64 − 16) / 3 ≈ 440px — 408px inside the card padding. The
+          committed half alone was budgeted 340px, so the two halves have no
+          viewport at which they fit side by side. Same bound as the note in
+          `NarrativeTrends`: with `main` capped at 1400px this is provable, not
+          a guess about typical screens. */}
+      <div className="grid gap-x-5 gap-y-3 items-start">
         {/* ── Observed: narrative_signals. Genuinely nested, so proportional. ── */}
         <div className="flex flex-col gap-1.5 min-w-0">
           <span className="text-[10px] uppercase tracking-[0.08em] text-text-tertiary">
@@ -250,11 +257,10 @@ export default function AttentionFunnel() {
         </div>
 
         {/* A rule, NOT an arrow. An arrow here would restate the subset claim
-            the whole component was rewritten to stop making. */}
-        <div
-          aria-hidden="true"
-          className="hidden figures:block self-stretch border-l border-border"
-        />
+            the whole component was rewritten to stop making. Horizontal now the
+            halves stack — it separates the same two things in the same way; only
+            the axis changed. */}
+        <div aria-hidden="true" className="border-t border-border" />
 
         {/* ── Committed: themes. A COUNT, on no shared scale with the left. ── */}
         <div className="flex flex-col gap-1.5 min-w-0">

@@ -901,10 +901,24 @@ function ConvictionPageInner() {
             className="lg:col-span-3 lg:col-start-1 lg:row-start-4"
           >
             <div className="flex flex-col gap-4">
-              <NarrativeTrends />
-              {/* The lifecycle, as counts: what the detector tracks narrowing
-                  into what the theme board trades (ADR-0146). */}
-              <AttentionFunnel />
+              {/* Detector ‖ its counts, 2fr / 1fr. The funnel is a READOUT ON the
+                  narrative board — same corpus, same day, same fallback — so it
+                  reads as a margin note beside it rather than a band beneath it.
+
+                  This costs the narrative board its own internal plot ‖ figures
+                  split, and the arithmetic says it must: at this gate the section
+                  is ~1134px, so a 2fr card is ~745px and ~713px inside. Split 2:1
+                  again that leaves the seven-column table 231px against the 364px
+                  it needs (ADR-0165). Fitting both would take a ~1780px viewport
+                  against `main`'s 1400px cap — impossible, not merely tight. So
+                  the board stacks plot-over-table and `ThemeTrends` below keeps
+                  the side-by-side, because it is still full width. */}
+              <div className="grid gap-4 figures:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-start [&>*]:min-w-0">
+                <NarrativeTrends />
+                {/* The lifecycle, as counts: what the detector tracks narrowing
+                    into what the theme board trades (ADR-0146/0166). */}
+                <AttentionFunnel />
+              </div>
               <ThemeTrends />
             </div>
           </TerminalPane>

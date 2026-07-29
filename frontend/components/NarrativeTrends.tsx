@@ -791,16 +791,25 @@ export default function NarrativeTrends() {
                 content — without it the table's `overflow-x-auto` never engages and
                 the whole card scrolls sideways instead.
 
-                Gated at `figures` (1248px), not `wide` (1424px). The scroller risk
-                the old gate was written against is real — this table is SEVEN
-                columns and wants 388px — but `wide` is derived from the SideRail
-                and the two-pane book row (ADR-0084/0086), which are nav and book
-                concerns. Pricing this split at a rail's breakpoint meant a 1920px
-                screen at Windows' default 150% scaling reports 1280 CSS px and
-                never saw the split at all. `figures` is derived from THIS table's
-                measured width instead; the arithmetic is in tailwind.config.ts.
-                Below the gate the two stack exactly as they did. */}
-            <div className="grid figures:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-5 items-start [&>*]:min-w-0">
+                NO viewport gate here any more, and that is a derivation rather
+                than a preference. This card now sits in the 2fr column of the
+                narratives section, beside `AttentionFunnel` — so its own width is
+                ~2/3 of the section, not the section. The widest it can ever be is
+                (1400 − 64 gutter − 16 gap) × 2/3 ≈ 880px, and `main` is capped at
+                1400px so that bound is absolute. Inside that: 880 − 32 (card p-4)
+                = 848px, split 2:1 with a 20px gap leaves the figures table 276px
+                against the 364px it needs (see `SeriesTable`). It never fits, at
+                any viewport, so a gate here could only ever be a gate that never
+                opens — and one that WOULD open is what an unwary `figures:` left
+                behind when this card moved into a column.
+
+                `ThemeTrends` keeps its `figures:` split because it is still full
+                width. Same section, two cards, two answers — which is the case a
+                viewport breakpoint cannot express and the reason ADR-0165 named
+                container queries as the tool to revisit if a third card needed
+                it. Two do now; the arithmetic above is what makes the simple
+                answer provable instead of merely convenient. */}
+            <div className="grid gap-5 items-start [&>*]:min-w-0">
               <DetectionScatter series={series} />
 
               <div>

@@ -112,7 +112,7 @@ export default function ThemeTrends() {
     });
   }, []);
 
-  const top = series ? topThemeSeries(series, SERIES_COLORS.length) : [];
+  const top = series ? topThemeSeries(series, SERIES_COLORS.length, ["AI Capex"]) : [];
   const runs = series
     ? new Set(series.flatMap((s) => s.points.map((p) => p.run_date))).size
     : 0;

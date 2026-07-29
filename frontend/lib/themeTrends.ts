@@ -170,9 +170,17 @@ export function latestSampleShortfall(
   return total < MIN_DAY_MENTIONS_FOR_SHARE ? { run_date: latest, total } : null;
 }
 
-/** The five colour slots are the cap; everything else lives in the table. */
-export function topThemeSeries(series: ThemeTrendSeries[], n: number): ThemeTrendSeries[] {
-  return series.filter((s) => s.points.length > 0).slice(0, n);
+/** The five colour slots are the cap; everything else lives in the table.
+ *  `forced` names phrases that must appear even if they fall outside the top-N. */
+export function topThemeSeries(series: ThemeTrendSeries[], n: number, forced: string[] = []): ThemeTrendSeries[] {
+  const valid = series.filter((s) => s.points.length > 0);
+  const top = valid.slice(0, n);
+  const topPhrases = new Set(top.map((s) => s.phrase));
+  const added = forced
+    .filter((p) => !topPhrases.has(p))
+    .map((p) => valid.find((s) => s.phrase === p))
+    .filter(Boolean) as ThemeTrendSeries[];
+  return [...top, ...added];
 }
 
 /** Human-readable share, e.g. 0.043 -> "4.3%". */

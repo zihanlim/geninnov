@@ -342,7 +342,7 @@ const LABEL_CAP_COVERED = 2;
  *  is withholding a velocity for, never which. `chip` (7.3% of headlines on
  *  2026-07-28, first seen that day) appeared nowhere in text on the whole board:
  *  not in the plane, not in the rug, and 7th by share against a 5-row table. */
-const RUG_NAMED = 4;
+const RUG_NAMED = 3;
 
 export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
   const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string } | null>(null);

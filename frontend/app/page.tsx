@@ -672,7 +672,7 @@ function ConvictionPageInner() {
 
               The five panes sit on three rows; see the map above `headlines` below.
               Below lg none of this applies and they stack in DOM order. */}
-          <div className="lg:grid lg:grid-cols-3 lg:auto-rows-auto lg:items-start lg:gap-4">
+          <div className="lg:grid lg:grid-cols-3 lg:auto-rows-auto lg:items-stretch lg:gap-4">
 
           <TerminalPane
             id="themes"

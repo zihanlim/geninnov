@@ -169,7 +169,7 @@ export default function MacroCrossCurrents({ cycle, cc }: MacroCrossCurrentsProp
                   {pivot === 0 && " (net unchanged over 13 weeks)"}
                 </>
               ) : (
-                <>No pivot reading — no posture on record 13 weeks back (a different absence from "no pivot")</>
+                <>No pivot reading — no posture on record 13 weeks back (a different absence from &ldquo;no pivot&rdquo;)</>
               )}
             </div>
             <div className="text-[11px] text-text-secondary">
@@ -236,7 +236,7 @@ export default function MacroCrossCurrents({ cycle, cc }: MacroCrossCurrentsProp
         </div>
         <div className="text-[10.5px] text-text-tertiary leading-[1.5]">
           Three independent readings — cycle, posture, debasement — presented side by side so
-          "late-cycle" never stands in for "is the dollar being eroded".
+          &ldquo;late-cycle&rdquo; never stands in for &ldquo;is the dollar being eroded&rdquo;.
         </div>
       </div>
     </div>

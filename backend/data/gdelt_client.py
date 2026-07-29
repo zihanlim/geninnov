@@ -183,7 +183,24 @@ def _seendate_to_iso(seendate: str) -> str | None:
 #: On expiry the fetch returns what it has and SAYS how many queries it skipped
 #: (GOAL.md's no-silent-caps rule) — a short corpus that reports its shortfall is
 #: recoverable; one that looks complete is not.
-DEFAULT_TIME_BUDGET_S = 200.0
+#: Raised from 200s on 2026-07-29, having measured what 200s actually bought.
+#:
+#: A single seed query takes ~30s end to end — the 6.5s pace plus GDELT's own
+#: response time for 250 records — so 10 queries need ~300s and the old budget cut
+#: the fetch off after six or seven. The archive was short by three queries on every
+#: run, and it is the ONLY source of history: Brave supplies 88% of recent documents
+#: and nothing at all before its 8-day window, so whatever GDELT misses is missing
+#: from the series permanently rather than until tomorrow.
+#:
+#: The symptom this explains: `market_news` held 462 GDELT documents over 41 days
+#: (~11/day), while ONE query measured alone returns 232 over the same window. The
+#: corpus was not thin because GDELT is sparse; it was thin because the fetch
+#: stopped early.
+#:
+#: 420s leaves margin over the ~300s the full set needs, on a nightly job that
+#: already runs ~10 minutes. The skip report below still fires if even this is not
+#: enough — a truncated archive must say so rather than look complete.
+DEFAULT_TIME_BUDGET_S = 420.0
 
 
 def fetch_market_news_gdelt(

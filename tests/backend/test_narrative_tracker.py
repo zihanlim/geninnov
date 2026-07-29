@@ -608,6 +608,43 @@ class TestCoverageAttribution:
         assert self._covered("oil") == "Energy Prices"
         assert self._covered("opec") == "Energy Prices"
 
+    def test_oil_prices_is_attributed_despite_being_its_own_phrase(self):
+        """"oil" and "oil prices" are two tracked phrases, not one.
+
+        `prune_subsumed` keeps both whenever the bigram holds under 80% of the
+        unigram's documents (11 of 16 on 2026-07-28), so the split is by design.
+        Attribution then diverged from it: the bare token "oil" claims only the
+        phrase "oil" under ADR-0128's asymmetry, and `THEME_KEYWORDS` had "crude
+        oil" and "energy prices" with nothing bridging them - so the day's
+        SECOND-loudest phrase sat on the uncovered side of a detector whose whole
+        question is what nothing is watching.
+
+        Both singular and plural, because `_fold` normalises the trailing s.
+        """
+        assert self._covered("oil prices") == "Energy Prices"
+        assert self._covered("oil price") == "Energy Prices"
+
+    def test_the_oil_prices_alias_claims_only_phrases_that_name_it(self):
+        """A two-token alias claims only phrases at least as specific as itself.
+
+        The headline-verb variants are the same narrative and should be claimed;
+        the fragments are not, and adding an alias must not start annexing them.
+        """
+        for claimed in ("oil prices fall", "oil prices surge", "oil prices keep",
+                        "accelerates oil prices", "drop oil prices"):
+            assert self._covered(claimed) == "Energy Prices", claimed
+        # Neither of these names the oil-price narrative: one is a price phrase
+        # with no oil in it, the other an oil phrase with no price in it.
+        assert self._covered("prices keep easing") is None
+        assert self._covered("elsewhere accelerates oil") is None
+
+    def test_the_oil_prices_alias_does_not_reach_into_inflation(self):
+        """Inflation owns the generic "prices" alias, and "oil prices" contains
+        it. The two must not start trading attributions."""
+        assert self._covered("prices") == "Inflation"
+        assert self._covered("price pressure") == "Inflation"
+        assert self._covered("inflation") == "Inflation"
+
     def test_trump_is_attributed_to_the_election_theme(self):
         assert self._covered("trump") == "US Election"
 

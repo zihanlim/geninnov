@@ -109,7 +109,23 @@ THEME_COVERAGE_ALIASES: dict[str, list[str]] = {
     "US Dollar":         ["dollar", "usd", "dollar index", "greenback", "euro", "yen", "forex"],
     "Geopolitical Risk": ["ukraine", "russia", "israel", "iran", "gaza", "tariffs", "tariff"],
     "Corporate Credit":  ["credit", "bonds", "junk", "spreads", "default", "leveraged loans"],
-    "Energy Prices":     ["oil", "gas", "energy", "barrel", "crude", "opec"],
+    # "oil prices" is a SEPARATE tracked phrase from "oil", and was reading as
+    # watched by nothing. `prune_subsumed` keeps both whenever the bigram holds
+    # under 80% of the unigram's documents — 11 of 16 on 2026-07-28 — so the two
+    # coexist on the board by design. Attribution then split them: the bare token
+    # "oil" covers the phrase "oil" and, per ADR-0128's asymmetry, NOTHING else,
+    # while `THEME_KEYWORDS` offers "crude oil" and "energy prices" and no bridge
+    # between them. So the day's second-loudest phrase sat on the uncovered side
+    # of a detector whose entire question is "what is nothing watching?".
+    #
+    # A two-token alias claims only phrases at least as specific as itself, which
+    # is the whole point of the rule: measured over every phrase ever tracked, it
+    # newly covers "oil price(s)", "oil prices fall/surge/tumble/keep",
+    # "accelerates oil prices" and "drop oil prices" — nine phrases, all of them
+    # Energy Prices — and leaves "prices keep easing" and "elsewhere accelerates
+    # oil" uncovered, correctly, since neither names the narrative.
+    "Energy Prices":     ["oil", "gas", "energy", "barrel", "crude", "opec",
+                          "oil prices"],
     "US Election":       ["trump", "biden", "harris", "congress", "senate",
                          "democrats", "republicans"],
     "AI Capex":          ["ai", "artificial intelligence", "nvidia", "chips",

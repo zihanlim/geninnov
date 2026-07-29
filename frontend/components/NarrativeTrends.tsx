@@ -335,7 +335,7 @@ const RUG_CAP = 80;
 /** Direct labels in the plane, per encoding. The payload is named more deeply
  *  than the context, but neither is named zero times — see the label pass. */
 const LABEL_CAP_UNCOVERED = 3;
-const LABEL_CAP_COVERED = 2;
+const LABEL_CAP_COVERED = 0;
 /** How many rug phrases are named in text beneath the strip. The rug's marks are
  *  ticks on one axis with no room for per-mark labels, so the loudest few are
  *  named in a line instead — otherwise the strip says only how MANY phrases it

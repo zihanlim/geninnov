@@ -42,6 +42,7 @@ import {
   type NarrativeStatus,
 } from "@/lib/narratives";
 import { useNarrativeSeries } from "@/lib/useNarrativeSeries";
+import { useState, useRef } from "react";
 
 const WIDTH = 720;
 const HEIGHT = 240;
@@ -344,6 +345,9 @@ const LABEL_CAP_COVERED = 2;
 const RUG_NAMED = 4;
 
 export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+
   const xMax = Math.max(...series.map((s) => s.latest.share), 0.01) * 1.08;
   const x = (share: number) => S_PLOT_LEFT + clamp(share / xMax, 0, 1) * S_PLOT_WIDTH;
 
@@ -410,6 +414,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
 
   return (
     <svg
+      ref={svgRef}
       viewBox={`0 0 ${S_WIDTH} ${S_HEIGHT}`}
       // `max-w` is not decoration — it bounds the SCALE. With a viewBox sized for
       // the 386px column beside the table, a plain `w-full` renders this plane at
@@ -418,9 +423,10 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
       // the chart reads as a blown-up detail crop. 520 caps it at ~1.37x — labels
       // 12.3px, still comfortably a chart. The plane simply stops growing and sits
       // left in a wider column, which is the cheap direction to be wrong in.
-      className="w-full h-auto"
+      className="w-full h-auto relative"
       role="img"
       aria-label={`Narrative detection plane: ${measurable.length} phrases with measurable velocity, ${unmeasurable.length} not yet measurable`}
+      onMouseLeave={() => setTooltip(null)}
     >
       {/* y: velocity gridlines; the zero line is the one that matters. */}
       {yTicks.map((v) => (
@@ -499,9 +505,20 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
               fill={uncovered ? "var(--series-1)" : "transparent"}
               stroke={uncovered ? "none" : "var(--text-tertiary)"}
               strokeWidth={uncovered ? 0 : 1.2}
-            >
-              <title>{`${s.phrase} — ${sharePct(s.latest.share)} share, velocity ${(s.latest.velocity as number).toFixed(2)}, ${s.latest.covered_by ? `watched by ${s.latest.covered_by}` : "watched by nothing"}`}</title>
-            </circle>
+              onMouseEnter={(e) => {
+                const svgRect = svgRef.current?.getBoundingClientRect();
+                if (!svgRect) return;
+                // Convert screen pixels → SVG viewBox coordinates
+                const svgX = (e.clientX - svgRect.left) * (S_WIDTH / svgRect.width);
+                const svgY = (e.clientY - svgRect.top) * (S_HEIGHT / svgRect.height);
+                setTooltip({
+                  x: svgX,
+                  y: svgY,
+                  text: `${s.phrase} — ${sharePct(s.latest.share)} share, velocity ${(s.latest.velocity as number).toFixed(2)}, ${s.latest.covered_by ? `watched by ${s.latest.covered_by}` : "watched by nothing"}`,
+                });
+              }}
+              onMouseLeave={() => setTooltip(null)}
+            />
           </g>
         );
       })}
@@ -587,6 +604,32 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
             .map((s) => `${s.phrase} ${sharePct(s.latest.share)}`)
             .join("  ·  ")}
         </text>
+      )}
+
+      {/* Immediate tooltip on hover — no browser-native delay.
+          Positioned with percentage x/y so it scales with the SVG. */}
+      {tooltip && (
+        <foreignObject
+          x={`${(tooltip.x / S_WIDTH) * 100}%`}
+          y={`${(tooltip.y / S_HEIGHT) * 100}%`}
+          width="1"
+          height="1"
+          overflow="visible"
+          pointerEvents="none"
+          style={{ display: "block" }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: `calc(${(tooltip.x / S_WIDTH) * 100}% + 8px)`,
+              top: `calc(${(tooltip.y / S_HEIGHT) * 100}% - 6px)`,
+              whiteSpace: "nowrap",
+            }}
+            className="bg-bg-elevated border border-border rounded px-2 py-1.5 text-[10.5px] text-text-primary leading-[1.4] shadow-sm"
+          >
+            {tooltip.text}
+          </div>
+        </foreignObject>
       )}
     </svg>
   );

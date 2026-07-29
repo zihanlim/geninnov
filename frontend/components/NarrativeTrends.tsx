@@ -728,7 +728,7 @@ export default function NarrativeTrends() {
         )}
       </div>
 
-      <div className="p-4">
+      <div className="px-4 pb-4">
         {asOfFallback && (
           <p className="m-0 mb-3 text-[12px] text-text-secondary leading-[1.6] border-l-2 border-border pl-3">
             Showing <span className="num">{asOfFallback}</span>, the most recent day

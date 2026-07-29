@@ -38,6 +38,7 @@ import {
   emergingUncovered,
   fetchNarratives,
   isCorroborated,
+  latestMeasuredDate,
   sharePct,
   topSeries,
   toSeries,
@@ -556,6 +557,9 @@ export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
 
 export default function NarrativeTrends() {
   const [series, setSeries] = useState<NarrativeSeries[] | null>(null);
+  // Non-null when the plane is showing an EARLIER day than the newest run,
+  // because the newest had no measurable velocity. The date must be stated.
+  const [asOfFallback, setAsOfFallback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -579,7 +583,15 @@ export default function NarrativeTrends() {
         setError(error);
         return;
       }
-      setSeries(toSeries(rows));
+      // If the newest day carries no measurable velocity, read the most recent
+      // day that does, and say which (ADR-0159). The newest publication day is
+      // structurally the thinnest — GDELT publishes with a lag — so keying the
+      // plane to max(run_date) blanks it on top of a series full of velocities.
+      const newest = toSeries(rows);
+      const measurable = newest.some((x) => x.latest.velocity !== null);
+      const measuredDay = measurable ? null : latestMeasuredDate(rows);
+      setSeries(measuredDay ? toSeries(rows, measuredDay) : newest);
+      setAsOfFallback(measuredDay);
     });
   }, []);
 
@@ -608,11 +620,24 @@ export default function NarrativeTrends() {
           <span className="text-[11px] text-text-tertiary num">
             run {latestRun}
             {corpus ? ` · ${corpus} headlines` : ""}
+            {asOfFallback ? " · last measured day" : ""}
           </span>
         )}
       </div>
 
       <div className="p-4">
+        {asOfFallback && (
+          <p className="m-0 mb-3 text-[12px] text-text-secondary leading-[1.6] border-l-2 border-border pl-3">
+            Showing <span className="num">{asOfFallback}</span>, the most recent day
+            with a measurable velocity — not the newest day in the window. A
+            velocity compares a phrase&rsquo;s share against its own history, and
+            the newest publication day is always the thinnest because GDELT
+            publishes with a lag, so it is the day most often withheld. Both
+            coordinates below come from{" "}
+            <span className="num">{asOfFallback}</span>; plotting today&rsquo;s
+            share against an older velocity would not be a point on this plane.
+          </p>
+        )}
         {error ? (
           <div className="text-[12.5px] text-text-tertiary leading-[1.6]">
             Could not read <code className="num">narrative_signals</code>: {error}.

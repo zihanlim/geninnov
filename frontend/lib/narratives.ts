@@ -100,12 +100,14 @@ export async function fetchNarratives(
  * different claims and the chart cannot tell them apart, so it does not draw the
  * one it cannot support.
  */
-export function toSeries(rows: NarrativeRow[]): NarrativeSeries[] {
+export function toSeries(
+  rows: NarrativeRow[],
+  asOf?: string,
+): NarrativeSeries[] {
   if (rows.length === 0) return [];
-  const latestDate = rows.reduce(
-    (max, r) => (r.run_date > max ? r.run_date : max),
-    rows[0].run_date,
-  );
+  const latestDate =
+    asOf ??
+    rows.reduce((max, r) => (r.run_date > max ? r.run_date : max), rows[0].run_date);
 
   const byPhrase = new Map<string, NarrativeRow[]>();
   for (const r of rows) {
@@ -127,6 +129,36 @@ export function toSeries(rows: NarrativeRow[]): NarrativeSeries[] {
     out.push({ phrase, points, latest });
   });
   return out;
+}
+
+/**
+ * The most recent run_date at which ANY phrase had a measurable velocity.
+ *
+ * WHY THE PLANE NEEDS THIS
+ * ------------------------
+ * `toSeries` keys every consumer off `max(run_date)`, and the detection plane
+ * plots `latest.velocity`. That single day is structurally the LEAST measurable
+ * one: GDELT publishes with a lag, so the newest publication day is always the
+ * thinnest, and a thin day is exactly what ADR-0155's guard withholds a velocity
+ * for. The result is a blank plane sitting on top of a series that is full of
+ * velocities — 381 across 35 days on 2026-07-29, none of which the board could
+ * see, because it only ever looked at the newest.
+ *
+ * Falling back to the most recent MEASURED day is honest as long as the date is
+ * stated, which is why this returns the date rather than a boolean. Both plane
+ * coordinates then come from that one day: a share from today plotted against a
+ * velocity from Tuesday is not a point on any plane.
+ *
+ * Returns null when no day in the window has a measurable velocity — genuinely
+ * nothing to show, which is a different fact from "today was thin".
+ */
+export function latestMeasuredDate(rows: NarrativeRow[]): string | null {
+  let best: string | null = null;
+  for (const r of rows) {
+    if (r.velocity === null || r.velocity === undefined) continue;
+    if (best === null || r.run_date > best) best = r.run_date;
+  }
+  return best;
 }
 
 /**

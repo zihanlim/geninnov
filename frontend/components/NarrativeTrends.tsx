@@ -765,25 +765,54 @@ export default function NarrativeTrends() {
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            <p className="m-0 text-[11px] text-text-tertiary leading-[1.55]">
-              Counted out of the <strong>archive corpus</strong> (GDELT alone,
-              ~27 headlines/day back to 2026-06-14) rather than the denser combined
-              one. A share is a fraction OF a corpus, so a velocity is only
-              meaningful where the corpus is defined the same way every day, and the
-              combined corpus is not — Brave contributes ~90 headlines/day inside an
-              8-day window and none before it (ADR-0153).{" "}
-              A detector, not a comparison (ADR-0146): each phrase is placed by how
-              loud it is (share of the day&rsquo;s headlines — not mention counts,
-              which rise on a day the fetcher simply worked better) and whether it is
-              breaking out against its own history (velocity). Hollow marks are
-              phrases an anchor theme already watches — context. Filled marks are
-              watched by nothing — the payload. The alarm sits top-right. Both
-              kinds are named, the covered ones in lighter ink, so no mark on this
-              plane is one you can see but cannot identify. Phrases whose velocity
-              cannot be measured yet wait in the strip below the plane, with its
-              loudest few named beneath it; they rise into the plane as history
-              accrues.
-            </p>
+            {/* LEGEND VISIBLE, METHOD COLLAPSED — and the split is not arbitrary.
+                This block was 136px of a card that had grown to 829px beside a
+                393px neighbour, and it is the only part of the card that is
+                neither the chart nor a finding. But it was carrying two different
+                jobs in one paragraph:
+
+                  • the ENCODING (filled vs hollow, where the alarm is) — without
+                    which the marks cannot be read at all, so hiding it would make
+                    the chart a shape (ADR-0126's own failure mode);
+                  • the METHOD (which corpus, why archive not combined, what the
+                    rug is) — genuine "why", and exactly what design goal 7 says
+                    to collapse rather than delete or leave always-on.
+
+                So the legend stays inline as one line and the method goes behind
+                a <details>. Note the ordering rule this does NOT break: goal 6's
+                "the rationale is never hidden behind an expand" is about a
+                POSITION explaining its own side before a reader decodes a figure.
+                This is a shadow board that sizes nothing. */}
+            <div className="flex flex-col gap-1.5">
+              <p className="m-0 text-[11px] text-text-tertiary leading-[1.55]">
+                A detector, not a comparison (ADR-0146). Each phrase sits at how{" "}
+                <strong>loud</strong> it is (share of the day&rsquo;s headlines) ×
+                whether it is <strong>breaking out</strong> against its own history
+                (velocity). <strong>Filled</strong> marks are watched by nothing —
+                the payload; <strong>hollow</strong> marks are ones an anchor theme
+                already watches — context. The alarm sits top-right.
+              </p>
+              <details className="group">
+                <summary className="text-[11px] text-text-tertiary cursor-pointer marker:text-text-tertiary hover:text-text-secondary">
+                  Which corpus, and what the strip below the plane is
+                </summary>
+                <p className="m-0 mt-1.5 text-[11px] text-text-tertiary leading-[1.55]">
+                  Counted out of the <strong>archive corpus</strong> (GDELT alone,
+                  ~27 headlines/day back to 2026-06-14) rather than the denser
+                  combined one. A share is a fraction OF a corpus, so a velocity is
+                  only meaningful where the corpus is defined the same way every
+                  day, and the combined corpus is not — Brave contributes ~90
+                  headlines/day inside an 8-day window and none before it
+                  (ADR-0153). Share is used rather than mention counts, which rise
+                  on a day the fetcher simply worked better. Both kinds of mark are
+                  named, the covered ones in lighter ink, so no mark on this plane
+                  is one you can see but cannot identify. Phrases whose velocity
+                  cannot be measured yet wait in the strip below the plane, with
+                  its loudest few named beneath it; they rise into the plane as
+                  history accrues.
+                </p>
+              </details>
+            </div>
 
             {/* Plane ‖ figures, 2fr / 1fr. `items-start` so neither column stretches
                 to the other's height, and `min-w-0` on both because a grid item

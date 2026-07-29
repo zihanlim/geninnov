@@ -346,7 +346,6 @@ const RUG_NAMED = 4;
 
 export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
   const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string } | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const xMax = Math.max(...series.map((s) => s.latest.share), 0.01) * 1.08;
@@ -414,7 +413,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
   }
 
   return (
-    <div ref={containerRef} className="relative inline-block w-full">
+    <div className="relative inline-block w-full">
       <svg
         ref={svgRef}
         viewBox={`0 0 ${S_WIDTH} ${S_HEIGHT}`}
@@ -501,7 +500,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
               stroke={uncovered ? "none" : "var(--text-tertiary)"}
               strokeWidth={uncovered ? 0 : 1.2}
               onMouseEnter={(e) => {
-                const rect = containerRef.current?.getBoundingClientRect();
+                const rect = svgRef.current?.getBoundingClientRect();
                 if (!rect) return;
                 setTooltip({
                   screenX: e.clientX - rect.left,

@@ -916,7 +916,8 @@ function ConvictionPageInner() {
               <div className="grid gap-4 figures:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-start [&>*]:min-w-0">
                 <NarrativeTrends />
                 {/* The lifecycle, as counts: what the detector tracks narrowing
-                    into what the theme board trades (ADR-0146/0166). */}
+                    into what the theme board trades (ADR-0146/0166). Reads the
+                    same series as the board through `useNarrativeSeries`. */}
                 <AttentionFunnel />
               </div>
               <ThemeTrends />

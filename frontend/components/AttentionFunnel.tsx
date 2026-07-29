@@ -43,13 +43,8 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import {
-  attentionFunnel,
-  fetchNarratives,
-  latestMeasuredDate,
-  toSeries,
-  type AttentionFunnelCounts,
-} from "@/lib/narratives";
+import { attentionFunnel } from "@/lib/narratives";
+import { useNarrativeSeries } from "@/lib/useNarrativeSeries";
 
 /** Live values of `themes.promotion_basis` (migration 051), counted rather than
  *  assumed. `measured_discovery` is the only value that claims the system found
@@ -110,41 +105,18 @@ function ObservedBar({
 }
 
 export default function AttentionFunnel() {
-  const [funnel, setFunnel] = useState<AttentionFunnelCounts | null>(null);
   const [basis, setBasis] = useState<ThemeBasis | null>(null);
-  /** Non-null when the counts are from an EARLIER day than the newest run,
-   *  because the newest carried no measurable velocity. Same fallback and same
-   *  disclosure as the board — see the corpus note in the effect below. */
-  const [asOfFallback, setAsOfFallback] = useState<string | null>(null);
+
+  // The corpus and the day rule are the hook's, not this component's. They were
+  // inlined here — with `fetchNarratives()`'s `combined` default against the
+  // board's `archive` — which is how this strip came to report 193 tracked and
+  // "velocity not measurable yet" beneath a chart reading 76 with velocities to
+  // +2.27. Aligning the two call sites by hand fixed that instance and left the
+  // next one available; the choice lives in one place now.
+  const { series, asOfFallback } = useNarrativeSeries();
+  const funnel = series ? attentionFunnel(series) : null;
 
   useEffect(() => {
-    // THE SAME SERIES THE BOARD ABOVE READS, on both axes that can differ.
-    //
-    // This defaulted to `fetchNarratives()` — i.e. `corpus: "combined"` — while
-    // NarrativeTrends reads `"archive"`. Two corpora on one screen, in a strip
-    // positioned as the summary of the board directly above it: the funnel said
-    // 193 tracked and "velocity not measurable yet" over a board showing 76
-    // tracked and velocities up to +2.27. Both were correct about their own
-    // corpus and the pair was incoherent, which is the comparability failure
-    // ADR-0155 names and the exact reason ADR-0153 moved the board to `archive`
-    // (`combined` holds one run_date and zero measurable velocities, because
-    // Brave contributes ~90 headlines/day inside an 8-day window and none
-    // before it, so its composition changes as providers come and go).
-    //
-    // Matching the corpus is necessary and NOT sufficient. The board also
-    // applies ADR-0159's fallback — if the newest day carries no measurable
-    // velocity, read the most recent day that does — so a funnel keyed to
-    // max(run_date) would still disagree with it on the thinnest publication
-    // day, which is structurally every day GDELT lags. Both fixes, or the strip
-    // is coherent on the corpus and wrong on the date.
-    fetchNarratives(30, "archive").then(({ rows, error }) => {
-      if (error) return;
-      const newest = toSeries(rows);
-      const measurable = newest.some((s) => s.latest.velocity !== null);
-      const measuredDay = measurable ? null : latestMeasuredDate(rows);
-      setFunnel(attentionFunnel(measuredDay ? toSeries(rows, measuredDay) : newest));
-      setAsOfFallback(measuredDay);
-    });
     supabase
       .from("themes")
       .select("id, promotion_basis")

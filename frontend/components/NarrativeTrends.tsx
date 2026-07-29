@@ -32,19 +32,15 @@
 // 3. ADR-0054 — a daily publication, not a scanner. No filter panel, no query
 //    composition, no realtime. The machine picks the series; the reader reads it.
 
-import { useEffect, useState } from "react";
-import Sparkline from "@/components/Sparkline";
 import {
   emergingUncovered,
-  fetchNarratives,
   isCorroborated,
-  latestMeasuredDate,
   sharePct,
   topSeries,
-  toSeries,
   type NarrativeSeries,
   type NarrativeStatus,
 } from "@/lib/narratives";
+import { useNarrativeSeries } from "@/lib/useNarrativeSeries";
 
 const WIDTH = 720;
 const HEIGHT = 240;
@@ -300,6 +296,32 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
 // The failure both halves were written against is the same one: a mark a reader
 // can see but cannot identify is a mark they report as absent.
 
+// ── Scatter geometry, DELIBERATELY NARROWER THAN TrendPlot's ────────────────
+//
+// The detection plane draws in its own coordinate space so it can sit BESIDE
+// the figures table inside one card. `TrendPlot` keeps WIDTH = 720 — it is
+// rendered by `ThemeTrends`, which is still full width — and the two no longer
+// share a horizontal scale.
+//
+// Why a narrower viewBox rather than a smaller rendering. An SVG with a viewBox
+// and `w-full` scales UNIFORMLY: squeezing the 720-wide plane into a 484px
+// column renders every label at 0.672x, i.e. the 9px axis ticks at 6.0px, which
+// was measured and rejected. Narrowing the viewBox instead keeps the type at
+// its designed size and spends the saving on DATA space — the plane holds the
+// same marks over fewer horizontal units. Less room to separate marks, full-size
+// labels; the other way round is a chart you cannot read at all.
+//
+// S_WIDTH is set at roughly the NARROWEST column this card will offer, so the
+// plot scales up from 1.0 and never down: below 1.0 the labels shrink, above it
+// they grow, and only one of those directions is recoverable.
+const S_WIDTH = 380;
+const S_PLOT_LEFT = 40;
+/** Right gutter for the in-plane labels, which extend rightward from their own
+ *  marks, plus the "share" axis caption. Smaller than TrendPlot's 148 because
+ *  those are END labels for lines that run the full width; these hang off dots. */
+const S_PLOT_RIGHT = 92;
+const S_PLOT_WIDTH = S_WIDTH - S_PLOT_LEFT - S_PLOT_RIGHT;
+
 const S_HEIGHT = 252;
 const S_PLOT_TOP = 16;
 const S_PLOT_H = 152;
@@ -321,7 +343,7 @@ const RUG_NAMED = 4;
 
 export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
   const xMax = Math.max(...series.map((s) => s.latest.share), 0.01) * 1.08;
-  const x = (share: number) => PLOT_LEFT + clamp(share / xMax, 0, 1) * PLOT_WIDTH;
+  const x = (share: number) => S_PLOT_LEFT + clamp(share / xMax, 0, 1) * S_PLOT_WIDTH;
 
   const measurable = series.filter((s) => s.latest.velocity !== null);
   const unmeasurable = series
@@ -386,8 +408,15 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
 
   return (
     <svg
-      viewBox={`0 0 ${WIDTH} ${S_HEIGHT}`}
-      className="w-full h-auto"
+      viewBox={`0 0 ${S_WIDTH} ${S_HEIGHT}`}
+      // `max-w` is not decoration — it bounds the SCALE. With a viewBox sized for
+      // the 386px column beside the table, a plain `w-full` renders this plane at
+      // the full card width whenever the two stack (below the `figures` gate the
+      // card is ~1134px), which is 2.98x: the 9px axis labels come out at 27px and
+      // the chart reads as a blown-up detail crop. 520 caps it at ~1.37x — labels
+      // 12.3px, still comfortably a chart. The plane simply stops growing and sits
+      // left in a wider column, which is the cheap direction to be wrong in.
+      className="w-full max-w-[520px] h-auto"
       role="img"
       aria-label={`Narrative detection plane: ${measurable.length} phrases with measurable velocity, ${unmeasurable.length} not yet measurable`}
     >
@@ -395,19 +424,19 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
       {yTicks.map((v) => (
         <g key={`vy-${v}`}>
           <line
-            x1={PLOT_LEFT}
-            x2={PLOT_LEFT + PLOT_WIDTH}
+            x1={S_PLOT_LEFT}
+            x2={S_PLOT_LEFT + S_PLOT_WIDTH}
             y1={y(v)}
             y2={y(v)}
             stroke="var(--border)"
             opacity={v === 0 ? 1 : 0.5}
           />
-          <text x={PLOT_LEFT - 5} y={y(v) + 3} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">
+          <text x={S_PLOT_LEFT - 5} y={y(v) + 3} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">
             {v > 0 ? `+${v}` : `${v}`}
           </text>
         </g>
       ))}
-      <text x={PLOT_LEFT - 5} y={S_PLOT_TOP - 5} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">
+      <text x={S_PLOT_LEFT - 5} y={S_PLOT_TOP - 5} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">
         velocity
       </text>
 
@@ -428,7 +457,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
         </g>
       ))}
       <text
-        x={PLOT_LEFT + PLOT_WIDTH}
+        x={S_PLOT_LEFT + S_PLOT_WIDTH}
         y={S_HEIGHT - 4}
         textAnchor="start"
         fill="var(--text-tertiary)"
@@ -440,7 +469,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
 
       {measurable.length === 0 && (
         <text
-          x={PLOT_LEFT + PLOT_WIDTH / 2}
+          x={S_PLOT_LEFT + S_PLOT_WIDTH / 2}
           y={S_PLOT_TOP + S_PLOT_H / 2}
           textAnchor="middle"
           fill="var(--text-tertiary)"
@@ -519,7 +548,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
       {/* The rug: measured in x (share), honest about y (nothing to plot).
           Label sits ABOVE the strip, start-anchored — end-anchored in the
           44px left gutter it clipped through the viewBox edge. */}
-      <text x={PLOT_LEFT} y={RUG_TOP - 4} textAnchor="start" fill="var(--text-tertiary)" fontSize="9">
+      <text x={S_PLOT_LEFT} y={RUG_TOP - 4} textAnchor="start" fill="var(--text-tertiary)" fontSize="9">
         velocity not yet measurable · {unmeasurable.length}
       </text>
       {unmeasurable.slice(0, RUG_CAP).map((s) => (
@@ -538,7 +567,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
       ))}
       {unmeasurable.length > RUG_CAP && (
         <text
-          x={PLOT_LEFT + PLOT_WIDTH}
+          x={S_PLOT_LEFT + S_PLOT_WIDTH}
           y={RUG_TOP + RUG_H - 3}
           textAnchor="start"
           dx="8"
@@ -556,7 +585,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
           <title> is never the only copy of a number (ADR-0126). */}
       {unmeasurable.length > 0 && (
         <text
-          x={PLOT_LEFT}
+          x={S_PLOT_LEFT}
           y={RUG_TOP + RUG_H + 11}
           textAnchor="start"
           fill="var(--text-tertiary)"
@@ -577,16 +606,23 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
  *  test can assert the relief exists, rather than trusting this comment.
  *
  *  Column gutters are `pr-2` (8px), not the `pr-3` the sibling ThemeTrendsTable
- *  uses. Seven columns pay that gutter six times, so the 4px buys back 24px:
- *  min-content 388px → 364px, measured. At 388 this table opened an 11px
- *  horizontal scroller inside the 377px figures column — on the exact layout the
- *  `figures` gate exists to enable, which is the worst place to put one.
+ *  uses. Six columns pay that gutter five times, and the 4px is real slack:
+ *  every column width is min-content over a live value ("established",
+ *  "AI Capex", "not measurable"), so the next 4px would truncate a reading
+ *  rather than tighten a rule.
  *
- *  The gutter was the only slack. Every column width is min-content over a real
- *  value ("established", "AI Capex", "not measurable"), so the next 4px would
- *  truncate a reading rather than tighten a rule. If a column is ever added here,
- *  re-measure against the gate in tailwind.config.ts — it is derived from THIS
- *  number. */
+ *  NO SPARKLINE COLUMN, and that is a width decision taken with its eyes open.
+ *  ADR-0146 put an own-scale mini-trend here when the top-5 line chart was
+ *  retired, as the row's trajectory context. It cost ~50px of an unavoidable
+ *  minimum: with it this table would not go below 358px, and the card it now
+ *  lives in (`NarrativeFigures`, in the 1fr column beside the board) offers
+ *  358px inside its padding — a fit with ZERO headroom, which is a layout that
+ *  works until the first theme name longer than "Geopolitical Risk". Without it
+ *  the table measures ~308px and has ~50px to give. Trajectory is the least
+ *  load-bearing column here: the plane beside it already encodes velocity as an
+ *  axis, and `Velocity` remains a column, so what is lost is the SHAPE of the
+ *  path, not the direction or the magnitude. Nothing else could go — see the
+ *  paragraph above. */
 export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
   return (
     <div className="overflow-x-auto">
@@ -594,7 +630,6 @@ export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
         <thead>
           <tr className="text-text-tertiary text-left">
             <th className="font-normal py-1 pr-2">Narrative</th>
-            <th className="font-normal py-1 pr-2">Trend</th>
             <th className="font-normal py-1 pr-2 text-right">Share</th>
             <th className="font-normal py-1 pr-2 text-right">Velocity</th>
             <th className="font-normal py-1 pr-2">Status</th>
@@ -614,20 +649,6 @@ export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
             <tr key={s.phrase} className="border-t border-border align-top">
               <td className="py-1 pr-2">
                 <span className="text-text-primary">{s.phrase}</span>
-              </td>
-              {/* Own-scale mini-trend (ADR-0146): trajectory context moved here
-                  from the retired top-5 line chart. Identity is the row itself,
-                  so no colour slot is spent on it. */}
-              <td className="py-1 pr-2 w-[84px]">
-                {s.points.length > 1 ? (
-                  <Sparkline
-                    points={s.points.map((p) => p.share)}
-                    color="var(--text-tertiary)"
-                    height={16}
-                  />
-                ) : (
-                  <span className="text-text-tertiary">—</span>
-                )}
               </td>
               <td className="py-1 pr-2 text-right num">{sharePct(s.latest.share)}</td>
               <td className="py-1 pr-2 text-right num">
@@ -665,44 +686,11 @@ export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
 }
 
 export default function NarrativeTrends() {
-  const [series, setSeries] = useState<NarrativeSeries[] | null>(null);
-  // Non-null when the plane is showing an EARLIER day than the newest run,
-  // because the newest had no measurable velocity. The date must be stated.
-  const [asOfFallback, setAsOfFallback] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    // THE ARCHIVE SERIES, not the dense one (ADR-0153).
-    //
-    // This board is a share x velocity DETECTION PLANE (ADR-0146) and its question
-    // is "is anything accelerating that nothing watches?" — a question about change
-    // over time. Only the archive series can answer it: `combined` is denser
-    // (~98 docs/day against ~27) but its composition changes as providers come and
-    // go, so it holds one run_date and zero measurable velocities, and every mark
-    // would sit in the "not yet measurable" rug forever.
-    //
-    // The archive is GDELT alone — sparser, but counted out of ONE definition back
-    // to 2026-06-14, which is what makes a velocity mean anything. It carries 103
-    // measured velocities where `combined` carries none.
-    //
-    // `combined` becomes the better instrument once it has four runs of its own
-    // history and stops changing composition; this default should move then.
-    fetchNarratives(30, "archive").then(({ rows, error }) => {
-      if (error) {
-        setError(error);
-        return;
-      }
-      // If the newest day carries no measurable velocity, read the most recent
-      // day that does, and say which (ADR-0159). The newest publication day is
-      // structurally the thinnest — GDELT publishes with a lag — so keying the
-      // plane to max(run_date) blanks it on top of a series full of velocities.
-      const newest = toSeries(rows);
-      const measurable = newest.some((x) => x.latest.velocity !== null);
-      const measuredDay = measurable ? null : latestMeasuredDate(rows);
-      setSeries(measuredDay ? toSeries(rows, measuredDay) : newest);
-      setAsOfFallback(measuredDay);
-    });
-  }, []);
+  // The archive corpus and the last-measured-day rule both live in the hook now
+  // (see its header). They were inlined here, and `AttentionFunnel` inlined its
+  // own copy with a different corpus argument — which is how the two cards came
+  // to disagree on the same screen. One choice, one place.
+  const { series, asOfFallback, error } = useNarrativeSeries();
 
   const top = series ? topSeries(series, SERIES_COLORS.length) : [];
   const emerging = series ? emergingUncovered(series) : [];
@@ -814,31 +802,28 @@ export default function NarrativeTrends() {
               </details>
             </div>
 
-            {/* Plane ‖ figures, 2fr / 1fr. `items-start` so neither column stretches
-                to the other's height, and `min-w-0` on both because a grid item
-                defaults to min-width:auto and will refuse to shrink below its
-                content — without it the table's `overflow-x-auto` never engages and
-                the whole card scrolls sideways instead.
+            {/* Plane ‖ figures, in ONE card, with the plane narrowed to make
+                room rather than the pair split across cards.
 
-                NO viewport gate here any more, and that is a derivation rather
-                than a preference. This card now sits in the 2fr column of the
-                narratives section, beside `AttentionFunnel` — so its own width is
-                ~2/3 of the section, not the section. The widest it can ever be is
-                (1400 − 64 gutter − 16 gap) × 2/3 ≈ 880px, and `main` is capped at
-                1400px so that bound is absolute. Inside that: 880 − 32 (card p-4)
-                = 848px, split 2:1 with a 20px gap leaves the figures table 276px
-                against the 364px it needs (see `SeriesTable`). It never fits, at
-                any viewport, so a gate here could only ever be a gate that never
-                opens — and one that WOULD open is what an unwary `figures:` left
-                behind when this card moved into a column.
+                The table column is FIXED at 340px, not a fraction. It has a hard
+                minimum (319px min-content, measured) and no use for more, so a
+                fraction would either starve it at narrow widths or waste width at
+                wide ones; fixing it hands every remaining pixel to the plane,
+                which is the element that can actually use them.
 
-                `ThemeTrends` keeps its `figures:` split because it is still full
-                width. Same section, two cards, two answers — which is the case a
-                viewport breakpoint cannot express and the reason ADR-0165 named
-                container queries as the tool to revisit if a third card needed
-                it. Two do now; the arithmetic above is what makes the simple
-                answer provable instead of merely convenient. */}
-            <div className="grid gap-5 items-start [&>*]:min-w-0">
+                The plane then fits whatever is left by narrowing its own viewBox
+                (S_WIDTH, see the geometry note above) instead of scaling down
+                into the column. That distinction is the whole reason this layout
+                is possible at all: at 780px card / 746px inner, the plot column
+                is 386px, and the previous 720-wide viewBox rendered there at
+                0.672x with its 9px axis labels at 6.0px. Same column, same
+                marks, legible type — the difference is which quantity gives.
+
+                `items-start` so neither column stretches; `min-w-0` on both
+                because a grid item defaults to min-width:auto and would refuse
+                to shrink below its content, which is what makes the table's
+                `overflow-x-auto` engage instead of the card scrolling. */}
+            <div className="grid gap-5 items-start figures:grid-cols-[minmax(0,1fr)_340px] [&>*]:min-w-0">
               <DetectionScatter series={series} />
 
               <div>
@@ -846,10 +831,10 @@ export default function NarrativeTrends() {
 
                 {dropped > 0 && (
                   <p className="m-0 mt-2 text-[11px] text-text-tertiary leading-[1.55]">
-                    The table details the {top.length} loudest of{" "}
-                    <span className="num">{series.length}</span> tracked narratives —
-                    every one of the {series.length} is a mark in the plane or the
-                    strip beside it.
+                    The {top.length} loudest of{" "}
+                    <span className="num">{series.length}</span> tracked
+                    narratives — every one of the {series.length} is a mark in
+                    the plane or a tick in the strip below it.
                   </p>
                 )}
               </div>

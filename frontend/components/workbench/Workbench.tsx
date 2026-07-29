@@ -342,7 +342,7 @@ export default function Workbench({
           <span className="text-text-secondary">
             {metrics.breaches.join(", ")}. The published book cannot breach these; your
             copy can, which is what makes it useful for asking what a limit costs. See{" "}
-            <Link href="/risk#mandate" className="text-accent hover:underline">
+            <Link href="/mandate" className="text-accent hover:underline">
               the mandate
             </Link>
             .
@@ -388,7 +388,7 @@ export default function Workbench({
                 <span className="text-text-secondary">
                   Weights came from the same optimizer that sized the published book,
                   under the mandate on{" "}
-                  <Link href="/risk#mandate" className="text-accent hover:underline">
+                  <Link href="/mandate" className="text-accent hover:underline">
                     /risk
                   </Link>
                   . Nothing was stored.

@@ -2,8 +2,9 @@
 //
 // The phase map (ADR-0169) claims that each of six process steps is performed by
 // a named surface. Two consumers read it — the /method process map and the
-// PhaseChip eyebrow on every destination header — so a wrong entry is wrong in
-// two places at once and looks authoritative in both.
+// TopBar nav strip — so a wrong entry is wrong in two places at once and looks
+// authoritative in both. Since ADR-0170 the phase map IS the navigation, which
+// makes a bad route here a dead tab rather than a bad link on one page.
 //
 // These assertions catch the three ways it rots:
 //   1. a phase points at an anchor no component renders, so the link scrolls to
@@ -89,14 +90,20 @@ describe("PHASES", () => {
     }
   });
 
-  it("gives the absent phase no destination, and every live phase one", () => {
+  it("gives every phase a destination, including the absent one", () => {
+    // The absent phase has a ROUTE but no data. Under ADR-0169 it had neither,
+    // because it was a row on a page; under ADR-0170 it is a tab, and a tab that
+    // goes nowhere is worse than one that explains itself. What makes it absent
+    // is `coverage`, not a missing href.
     for (const p of PHASES) {
-      if (p.coverage === "absent") {
-        expect(p.route, `${p.id} is absent but has a route`).toBeNull();
-        expect(phaseHref(p), `${p.id} is absent but has an href`).toBeNull();
-      } else {
-        expect(phaseHref(p), `${p.id} is live but has no href`).not.toBeNull();
-      }
+      expect(phaseHref(p), `${p.id} has no href`).not.toBeNull();
+    }
+  });
+
+  it("gives every phase a tab label short enough for the strip", () => {
+    for (const p of PHASES) {
+      expect(p.tab.length, `${p.id} tab "${p.tab}" is too long`).toBeLessThan(15);
+      expect(p.tab.length, `${p.id} has no tab label`).toBeGreaterThan(2);
     }
   });
 
@@ -110,23 +117,54 @@ describe("PHASES", () => {
 });
 
 describe("phasesForRoute", () => {
-  it("returns both phases /risk serves", () => {
-    // The reason ADR-0169 rejected one tab per phase. If this ever returns one,
-    // /risk has been split and the rejection no longer holds.
-    expect(phasesForRoute("/risk").map((p) => p.id)).toEqual(["mandate", "scenario"]);
+  it("gives every phase its OWN route, so a tab can be marked current", () => {
+    // ADR-0170's load-bearing property. /risk used to serve phases 1 and 3, and
+    // a tab strip cannot mark two of its own tabs current — which is why that
+    // page was split across /mandate, /scenario and /attribution.
+    const routes = PHASES.map((p) => p.route);
+    expect(new Set(routes).size, `two phases share a route: ${routes}`).toBe(
+      PHASES.length,
+    );
+    for (const p of PHASES) {
+      expect(phasesForRoute(p.route!).map((x) => x.id)).toEqual([p.id]);
+    }
   });
 
   it("returns nothing for a route that is not a process step", () => {
-    // /ask and /workbench are tools for reading the site, not steps. PhaseChip
-    // renders null on an empty result rather than an empty rule.
+    // Tools and cross-cutting surfaces, not steps: /ask and /workbench are ways
+    // of reading the site, and /method explains EVERY phase rather than being one.
     expect(phasesForRoute("/ask")).toEqual([]);
     expect(phasesForRoute("/workbench")).toEqual([]);
     expect(phasesForRoute("/method")).toEqual([]);
+    expect(phasesForRoute("/risk")).toEqual([]);
   });
 });
 
 describe("phaseNumber", () => {
   it("zero-pads to two digits, matching the chapter step numbers", () => {
     expect(PHASES.map(phaseNumber)).toEqual(["01", "02", "03", "04", "05", "06"]);
+  });
+});
+
+describe("labels fit where they render", () => {
+  it("keeps every rail label inside the 56px collapsed rail", () => {
+    // SideRail is 56px and cannot be widened — ADR-0086 measured that /book's
+    // two-pane layout needs every remaining pixel. px-1 leaves ~48px for 10px
+    // type, which is about nine characters. `Construction` (12) clipped on the
+    // live rail, which is why `short` exists beside `tab`.
+    for (const p of PHASES) {
+      expect(
+        p.short.length,
+        `rail label "${p.short}" (${p.short.length} chars) will clip at 56px`,
+      ).toBeLessThanOrEqual(9);
+    }
+  });
+
+  it("gives the rail a word, never a bare number or a glyph", () => {
+    // SideRail's own rule: icon AND label. A reader who does not recognise the
+    // radar dish must still be able to read where it goes.
+    for (const p of PHASES) {
+      expect(p.short).toMatch(/^[A-Za-z][A-Za-z ]+$/);
+    }
   });
 });

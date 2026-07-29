@@ -187,7 +187,7 @@ function WorkbenchPageInner() {
             book
           </Link>{" "}
           published <span className="num">{runDate ?? "—"}</span>. Limits come from{" "}
-          <Link href="/risk#mandate" className="text-accent hover:underline">
+          <Link href="/mandate" className="text-accent hover:underline">
             the mandate
           </Link>
           .

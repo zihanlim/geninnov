@@ -1,84 +1,127 @@
 // frontend/tests/unit/risk-sections.test.ts
 //
-// /risk's section tabs, and the one that had no tab.
+// The /risk split (ADR-0170).
 //
-// The mandate — what this book is ALLOWED to be — rendered inside
-// <section id="limits">, so the tab strip could not name it. A reader arriving
-// on /risk#mandate (which is where phase 1 of the process map sends them, and
-// where every cap explanation points) landed on a panel the navigation claimed
-// did not exist. MandatePanel had carried id="mandate" the whole time; nothing
-// tabbed to it.
+// /risk answered three phases at once — the mandate a book is measured against,
+// the scenarios that stress it, and what it actually did. Once navigation became
+// one tab per phase, one page could not be marked current for three of them, so
+// the body moved to `RiskBody` and is filtered by `phaseShows`.
+//
+// Two failure modes this guards:
+//   1. a section belongs to no phase, or to two, so it renders nowhere or twice;
+//   2. a phase route stops gating and renders the whole body, which is how a
+//      "split" quietly becomes three copies of the same page.
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import {
+  PHASE_SECTION_NAV,
+  RISK_SECTION_PHASE,
+  phaseShows,
+  type RiskPhase,
+} from "@/lib/method/phaseSections";
 import { PHASES } from "@/lib/method/phases";
 
-const src = readFileSync(
-  path.resolve(__dirname, "../../app/risk/page.tsx"),
-  "utf8",
-);
-const mandatePanel = readFileSync(
-  path.resolve(__dirname, "../../components/risk/MandatePanel.tsx"),
-  "utf8",
-);
+const read = (rel: string) =>
+  readFileSync(path.resolve(__dirname, "../..", rel), "utf8");
+const body = read("components/risk/RiskBody.tsx");
 
-/** The section ids the nav offers, in render order. */
-function navIds(): string[] {
-  const block = src.match(/const RISK_SECTIONS = \[([\s\S]*?)\];/);
-  if (!block) throw new Error("RISK_SECTIONS not found");
-  return [...block[1].matchAll(/id:\s*"([a-z-]+)"/g)].map((m) => m[1]);
-}
+const PHASE_LIST: RiskPhase[] = ["mandate", "scenario", "attribution"];
 
-describe("RISK_SECTIONS", () => {
-  it("offers the mandate its own tab, first", () => {
-    expect(navIds()[0]).toBe("mandate");
+describe("RISK_SECTION_PHASE", () => {
+  it("keeps every section the old page rendered", () => {
+    // Hardcoded: the point is to catch a section being LOST in the split, which
+    // a derived list could never notice.
+    expect(Object.keys(RISK_SECTION_PHASE).sort()).toEqual(
+      [
+        "attribution",
+        "concentration",
+        "exposure",
+        "limits",
+        "mandate",
+        "realised",
+        "stress",
+      ].sort(),
+    );
   });
 
-  it("still offers every other section it did before", () => {
-    // Hardcoded rather than derived: the point is to catch a section being
-    // dropped while the mandate was promoted.
-    expect(navIds()).toEqual([
-      "mandate",
-      "limits",
-      "attribution",
-      "stress",
-      "concentration",
-      "exposure",
-      "realised",
-    ]);
+  it("assigns each section to exactly one phase", () => {
+    for (const id of Object.keys(RISK_SECTION_PHASE)) {
+      const owners = PHASE_LIST.filter((p) => phaseShows(p, id));
+      expect(owners, `${id} is rendered by ${owners.length} phases`).toHaveLength(1);
+    }
   });
 
-  it("has no duplicate tab ids", () => {
-    const ids = navIds();
-    expect(new Set(ids).size).toBe(ids.length);
+  it("leaves no phase empty", () => {
+    for (const p of PHASE_LIST) {
+      const owned = Object.keys(RISK_SECTION_PHASE).filter((id) => phaseShows(p, id));
+      expect(owned.length, `${p} renders no section`).toBeGreaterThan(0);
+    }
+  });
+
+  it("navigates only to sections the phase actually renders", () => {
+    for (const [phase, items] of Object.entries(PHASE_SECTION_NAV)) {
+      for (const item of items) {
+        expect(
+          phaseShows(phase as RiskPhase, item.id),
+          `${phase} nav links to #${item.id}, which ${phase} does not render`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("navigates to every section the phase renders, so none is unreachable", () => {
+    for (const p of PHASE_LIST) {
+      const owned = Object.keys(RISK_SECTION_PHASE)
+        .filter((id) => phaseShows(p, id))
+        .sort();
+      const navved = PHASE_SECTION_NAV[p].map((i) => i.id).sort();
+      expect(navved, `${p} renders a section its nav never names`).toEqual(owned);
+    }
   });
 });
 
-describe("the mandate anchor", () => {
-  it("is rendered by MandatePanel, so the tab has a target", () => {
-    expect(mandatePanel).toContain('id="mandate"');
+describe("RiskBody gates what it renders", () => {
+  it("gates every section id in the map", () => {
+    for (const id of Object.keys(RISK_SECTION_PHASE)) {
+      expect(body, `${id} is in the map but never gated in RiskBody`).toContain(
+        `shows("${id}")`,
+      );
+    }
   });
 
-  it("is not nested inside the limits section it is measured by", () => {
-    // The specific shape of the bug: `<section id="limits">` opening BEFORE
-    // <MandatePanel>. A tab can only scroll to a top-level landmark.
-    const limitsAt = src.indexOf('<section id="limits"');
-    const panelAt = src.indexOf("<MandatePanel");
-    expect(limitsAt, "limits section not found").toBeGreaterThan(-1);
-    expect(panelAt, "MandatePanel not rendered").toBeGreaterThan(-1);
-    expect(
-      panelAt,
-      "MandatePanel renders inside <section id=\"limits\">, so #mandate is not a landmark",
-    ).toBeLessThan(limitsAt);
+  it("takes one fetch, not one per phase route", () => {
+    // The property ADR-0084 protects and this split had to preserve: three
+    // routes with their own useEffects can describe different vintages of the
+    // same run. RiskBody keeps ONE.
+    expect((body.match(/useEffect\(/g) ?? []).length).toBe(1);
   });
 
-  it("is where the process map's phase 1 sends a reader", () => {
-    // Binds the two surfaces: if phase 1 is ever repointed, this fails rather
-    // than leaving the tab and the map disagreeing about where the mandate is.
-    const phase1 = PHASES.find((p) => p.n === 1);
-    expect(phase1?.route).toBe("/risk");
-    expect(phase1?.anchor).toBe("mandate");
-    expect(navIds()).toContain(phase1!.anchor!);
+  it("is what each phase route renders, rather than owning a query itself", () => {
+    for (const r of ["mandate", "scenario", "attribution"]) {
+      const route = read(`app/${r}/page.tsx`);
+      expect(route).toContain("RiskBody");
+      expect(route, `/${r} fetches on its own`).not.toContain("supabase");
+    }
+  });
+});
+
+describe("the phase routes agree with the phase map", () => {
+  it("every risk-derived phase has a route the map points at", () => {
+    for (const p of PHASE_LIST) {
+      const phase = PHASES.find((x) => x.id === p);
+      expect(phase, `no phase named ${p}`).toBeDefined();
+      expect(phase!.route).toBe(`/${p}`);
+    }
+  });
+
+  it("/risk is no longer a phase destination, but still resolves", () => {
+    expect(PHASES.some((p) => p.route === "/risk")).toBe(false);
+    // It hops by fragment rather than redirecting, because its old anchors now
+    // live on three different routes and a server redirect cannot see a hash.
+    const legacy = read("app/risk/page.tsx");
+    expect(legacy).toContain("RISK_SECTION_PHASE");
+    expect(legacy).toContain("router.replace");
   });
 });

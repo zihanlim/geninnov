@@ -27,16 +27,34 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BookOpen, PanelLeftClose, PanelLeftOpen, Radar, ShieldAlert, Sigma } from "lucide-react";
+import { Ban, BookOpen, PanelLeftClose, PanelLeftOpen, Radar, Scale, ShieldAlert, Sigma } from "lucide-react";
+import { PHASES } from "@/lib/method/phases";
 
-const DESTINATIONS = [
-  // Radar: what the engine is detecting. BookOpen: the published book.
-  // ShieldAlert: what could hurt it. Sigma: how every number is built.
-  { href: "/", label: "Themes", Icon: Radar },
-  { href: "/book", label: "Book", Icon: BookOpen },
-  { href: "/risk", label: "Risk", Icon: ShieldAlert },
-  { href: "/method", label: "Method", Icon: Sigma },
-];
+// ADR-0170: the rail mirrors the nav, and the nav is now the six phases. Order,
+// routes and labels are read from PHASES so the rail cannot drift from the
+// strip; only the ICON is chosen here, because an icon is a rendering decision
+// and has no business in the phase model.
+//
+// Scale: the constraints a book is measured against. Radar: what the engine is
+// detecting. ShieldAlert: what could hurt it. BookOpen: the published book.
+// Ban: the phase this system does not perform. Sigma: what it added up to.
+const ICONS: Record<string, typeof Radar> = {
+  mandate: Scale,
+  alpha: Radar,
+  scenario: ShieldAlert,
+  construction: BookOpen,
+  execution: Ban,
+  attribution: Sigma,
+};
+
+const DESTINATIONS = PHASES.map((p) => ({
+  href: p.route as string,
+  // `short`, not `tab`: see the note on Phase.short — 56px of rail is ~nine
+  // characters at 10px, and `Construction` clips.
+  label: p.short,
+  full: p.name,
+  Icon: ICONS[p.id],
+}));
 
 const STORAGE_KEY = "andromeda:rail-expanded";
 
@@ -99,6 +117,10 @@ export default function SideRail() {
               <Link
                 href={d.href}
                 aria-current={active ? "page" : undefined}
+                // The visible short label is the accessible name; `title` carries
+                // the full phase name for a reader who wants it, without spending
+                // rail width on it.
+                title={d.full}
                 className={`flex rounded-md font-medium transition-colors ${
                   expanded
                     ? "flex-row items-center gap-2.5 px-3 py-2 text-[13px]"

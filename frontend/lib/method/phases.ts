@@ -1,28 +1,32 @@
 // frontend/lib/method/phases.ts
 //
-// The six phases of the investment process, and which surface implements each.
+// The six phases of the investment process. This is the site's NAVIGATION.
 //
 // WHY THIS FILE EXISTS.
-// The four destinations in `TopBar.tsx` are ordered as a portfolio manager's
-// morning — what's moving, what we'd put on, what could go wrong, how it was
-// derived — and ADR-0025 chose that ordering deliberately. But the ordering was
-// only ever written in a CODE COMMENT. A reader landing on `/` could not see
-// that Themes feeds Book feeds Risk, and no surface stated the process end to
-// end. The workflow was real and invisible.
+// `task.md` Q1 is answered as a six-phase PM workflow, and this system performs
+// five of the six. That sequence used to be invisible: ADR-0025 ordered four
+// object-shaped destinations "as a PM's morning" and TopBar.tsx repeated the
+// ordering in a CODE COMMENT, so a reader landing on `/` could not see that
+// alpha feeds construction feeds attribution.
 //
-// WHY IT IS DATA AND NOT PROSE ON A PAGE.
-// Two consumers read it: `ProcessMap` (the /method landing) and `PhaseChip`
-// (the eyebrow on every destination header). Written twice, they drift, and the
-// failure is silent — a chip claiming "Phase 3" on a page the map sends Phase 4
-// to. Same reasoning as `anchors.ts`, which is data for the same reason.
+// ADR-0169 surfaced the sequence on one page and labelled each destination.
+// ADR-0170 went further at the owner's direction: navigation IS the sequence
+// now, one tab per phase, because a numbered strip teaches the process before a
+// reader has read anything. `TopBar` renders this array directly — the tabs and
+// the process map cannot disagree, because there is only one list.
 //
-// WHY NAVIGATION IS NOT ORGANISED BY THESE PHASES.
-// A phase-per-tab structure was considered and rejected (ADR-0169). Two phases
-// land on `/risk` — the mandate the book is measured against, and the scenarios
-// that stress it — and splitting them to satisfy the numbering would break the
-// risk picture apart for the sake of the narrative. Phase 5 has no surface at
-// all. Navigation stays organised by the OBJECT a reader asks about; the process
-// gets one surface and a label, which is what was actually missing.
+// WHAT THAT COST, RECORDED HONESTLY.
+// `/risk` answered three phases at once and could not survive as one
+// destination; it is split across /mandate, /scenario and /attribution by
+// `lib/method/phaseSections.ts`. The three routes still share ONE fetch through
+// `RiskBody`, because three useEffects are three chances to describe different
+// vintages of the same run. `/method` and `/risk` remain as routes and leave the
+// nav: the method chapters are cross-cutting — they explain every phase — so
+// naming them as one would be false.
+//
+// PHASE 5 IS A ROUTE WITH NO FIGURES, ON PURPOSE. A sequence that skips from 4
+// to 6 reads as a missing page. It is not missing; it is out of scope, and the
+// reason is worth more than the tab costs.
 
 /** A phase's implementation state. `absent` is a stated scope boundary, not a gap. */
 export type PhaseCoverage = "live" | "absent";
@@ -34,6 +38,18 @@ export interface Phase {
   name: string;
   /** What a PM is asking when they are in this phase. Kept to one line. */
   question: string;
+  /** Tab label. Short because six of these share one strip — `name` is the full
+   *  title and is what the process map and the page headings use. */
+  tab: string;
+  /** Rail label. Shorter still: `SideRail` collapsed is 56px wide and cannot be
+   *  widened (ADR-0086 — /book's two-pane layout needs every remaining pixel),
+   *  which leaves ~48px for 10px type, or about nine characters. `Construction`
+   *  and `Attribution` overrun it and clip.
+   *
+   *  A third label rather than a number, because SideRail's own rule is icon AND
+   *  word, never icon alone: a reader who does not recognise the glyph must
+   *  still be able to read where it goes, and "04" does not tell them. */
+  short: string;
   /** The destination that answers it, or null when nothing does. */
   route: string | null;
   /** Section id within `route`. Null means the whole page is the answer. */
@@ -56,16 +72,20 @@ export const PHASES: readonly Phase[] = [
   {
     n: 1,
     id: "mandate",
+    short: "Mandate",
+    tab: "Mandate",
     name: "Mandate & risk architecture",
     question: "What am I solving for, and inside which limits?",
-    route: "/risk",
-    anchor: "mandate",
+    route: "/mandate",
+    anchor: null,
     coverage: "live",
-    note: "MandatePanel — the caps, the lens and who chose them.",
+    note: "MandatePanel and the limit board that measures against it.",
   },
   {
     n: 2,
     id: "alpha",
+    short: "Alpha",
+    tab: "Alpha",
     name: "Alpha sourcing",
     question: "What is moving, and what does consensus not see yet?",
     route: "/",
@@ -76,16 +96,20 @@ export const PHASES: readonly Phase[] = [
   {
     n: 3,
     id: "scenario",
+    short: "Scenario",
+    tab: "Scenario",
     name: "Catalyst & scenario",
     question: "What proves the thesis right, and what do the other paths cost?",
-    route: "/risk",
-    anchor: "risk-stress-heading",
+    route: "/scenario",
+    anchor: null,
     coverage: "live",
     note: "StressScenarios — the six-scenario matrix, incl. the supply shock that does not transmit through market beta.",
   },
   {
     n: 4,
     id: "construction",
+    short: "Sizing",
+    tab: "Construction",
     name: "Construction & sizing",
     question: "Given the edge and the budget, what weights?",
     route: "/book",
@@ -98,9 +122,11 @@ export const PHASES: readonly Phase[] = [
   {
     n: 5,
     id: "execution",
+    short: "Execution",
+    tab: "Execution",
     name: "Execution & microstructure",
     question: "Can this be put on without the impact eating the thesis?",
-    route: null,
+    route: "/execution",
     anchor: null,
     coverage: "absent",
     // Stated rather than left blank. An empty phase with no explanation reads as
@@ -113,10 +139,12 @@ export const PHASES: readonly Phase[] = [
   {
     n: 6,
     id: "attribution",
+    short: "Outcome",
+    tab: "Attribution",
     name: "Attribution & feedback",
     question: "Was the thesis right, or was the sizing wrong?",
-    route: "/method/evidence",
-    anchor: "track-record",
+    route: "/attribution",
+    anchor: null,
     coverage: "live",
     note: "TrackRecord — published picks resolved against a pipeline-assigned 21-day horizon (ADR-0090).",
   },
@@ -131,9 +159,11 @@ export function phaseHref(p: Phase): string | null {
 /**
  * The phases a destination serves, in order.
  *
- * Returns an ARRAY and not a single phase because `/risk` genuinely serves two
- * (1 and 3). A signature that returned one would force a caller to pick, and
- * whichever it picked would be a page silently claiming to be half of itself.
+ * Still an ARRAY though every route now serves exactly one. Under ADR-0169
+ * `/risk` genuinely served two, and the split that fixed that is a layout
+ * decision rather than a law — a signature that returned one phase would have to
+ * be widened again the moment two share a page, and callers written against it
+ * would each have to pick a winner silently.
  */
 export function phasesForRoute(route: string): Phase[] {
   return PHASES.filter((p) => p.route === route);

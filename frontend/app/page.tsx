@@ -2,7 +2,6 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import PhaseChip from "@/components/PhaseChip";
 import RegimeHero from "@/components/RegimeHero";
 import MacroCrossCurrents, { type CrossCurrents } from "@/components/MacroCrossCurrents";
 import ConvictionCard, { type ConvictionTheme } from "@/components/ConvictionCard";
@@ -461,7 +460,6 @@ function ConvictionPageInner() {
     <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-4 pb-20">
       <div className="flex justify-between items-end mb-4 gap-4 flex-wrap shrink-0">
         <div>
-          <PhaseChip route="/" />
           <h1 className="text-[19px] font-semibold tracking-[-0.01em] m-0">
             What we&apos;re watching
           </h1>

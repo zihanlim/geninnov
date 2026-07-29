@@ -20,7 +20,10 @@ import { describe, expect, it } from "vitest";
 const src = (p: string) => readFileSync(path.resolve(__dirname, "../..", p), "utf8");
 
 const ANALYTICS_TS = src("lib/risk/analytics.ts");
-const RISK_PAGE = src("app/risk/page.tsx");
+// The select list moved with the body when /risk was split across the three
+// phase routes (ADR-0170). app/risk/page.tsx is now a fragment-aware hop and
+// issues no query at all.
+const RISK_PAGE = src("components/risk/RiskBody.tsx");
 
 /** Field names declared on `export interface ResearchAnalyticsRow { ... }`. */
 function rowTypeFields(): string[] {

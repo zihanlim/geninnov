@@ -85,19 +85,29 @@ export default function ProcessMap() {
       </ol>
 
       <div className="mt-7 max-w-[80ch]">
-        <Note label="Why the navigation is not six tabs">
-          These phases are a sequence; the four destinations above are objects. A
-          reader arrives asking <em>what is moving</em> or <em>what kills this
-          book</em>, not asking to perform phase three. Two phases here land on{" "}
-          <Link href="/risk" className="text-accent hover:underline">
-            /risk
-          </Link>{" "}
-          — the mandate a book is measured against, and the scenarios that stress
-          it — and separating them to satisfy the numbering would break the risk
-          picture apart to serve the narrative. Phase 5 would be a permanently
-          empty destination. So the process gets one surface and a label on each
-          page, and navigation stays organised by what a reader came to ask.
+        <Note label="What this page is, now that the nav is the sequence">
+          The tabs above <em>are</em> these six phases, so this page is no longer
+          the only place the process is legible. It stays because a strip can show
+          six labels and not what each phase ASKS, what performs it, or where the
+          system stops — and because the tabs are a place to stand, while this is
+          the map of why they are in that order.
         </Note>
+        <div className="mt-3">
+          <Note label="What the split cost">
+            <Link href="/risk" className="text-accent hover:underline">
+              /risk
+            </Link>{" "}
+            used to answer three of these phases on one page — the mandate a book
+            is measured against, the scenarios that stress it, and what it
+            actually did. One page cannot be the current tab for three phases, so
+            it is now three routes over one shared body and one shared fetch;
+            reading the whole risk picture takes three stops rather than one
+            scroll. Old <code className="num">/risk#…</code> links still resolve:
+            the route reads the fragment and sends each to the phase that now owns
+            it. The method chapters stayed off the strip — they explain{" "}
+            <em>every</em> phase, so naming them as one would be false.
+          </Note>
+        </div>
       </div>
     </main>
   );

@@ -164,7 +164,7 @@ export default function AnswerCards({
 
       <Card
         label="What kills you"
-        href="/risk#stress"
+        href="/scenario#stress"
         source="research_recommendations.scenario_results"
         tone={worstReturn !== null && worstReturn < 0 ? "warning" : "default"}
         figure={worstReturn === null ? null : <>{pct(worstReturn)}</>}
@@ -182,7 +182,7 @@ export default function AnswerCards({
 
       <Card
         label="What's binding"
-        href="/risk#limits"
+        href="/mandate#limits"
         source="research_recommendations.cap_utilisation"
         tone={bindingCaps.length > 0 ? "warning" : "default"}
         figure={

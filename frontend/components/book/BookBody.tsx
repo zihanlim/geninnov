@@ -16,7 +16,6 @@ import {
 import ThesisBlock from "@/components/research/ThesisBlock";
 import CollapsibleSection from "@/components/CollapsibleSection";
 import SectionNav from "@/components/SectionNav";
-import PhaseChip from "@/components/PhaseChip";
 import AnswerCards from "@/components/book/AnswerCards";
 
 // Four anchored groups, in the order the page already rendered them. Labels are
@@ -654,7 +653,6 @@ function BookPageInner() {
           it, and the paragraphs drop their 62ch cap to fill the width — at 1400px a
           62ch column left the summary wrapping early against empty space. */}
       <div className="mb-7">
-        <PhaseChip route="/book" />
         <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
           The $100M Book
         </h1>
@@ -1299,8 +1297,8 @@ function BookPageInner() {
           <div className="mt-6 text-[12px] text-text-secondary">
             Stress scenarios, correlation structure and cap headroom for this
             book are on{" "}
-            <Link href="/risk" className="text-accent hover:underline">
-              Risk &amp; Stress
+            <Link href="/scenario" className="text-accent hover:underline">
+              Catalyst &amp; Scenario
             </Link>
             . The scoring method behind every number is on{" "}
             <Link href="/method" className="text-accent hover:underline">

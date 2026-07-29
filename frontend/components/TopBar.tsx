@@ -7,6 +7,7 @@ import BrandMark from "@/components/BrandMark";
 import LiveNewsDock from "@/components/live/LiveNewsDock";
 import AskDock from "@/components/chat/AskDock";
 import { resolveRunDates } from "@/lib/homeFreshness";
+import { PHASES, phaseNumber } from "@/lib/method/phases";
 
 // Ordered as a portfolio manager's morning: what's moving → what we'd put on →
 // what could go wrong → how it was derived.
@@ -34,12 +35,23 @@ import { resolveRunDates } from "@/lib/homeFreshness";
 // Four, then. If a fifth is ever proposed, the bar is design-goals' own: a
 // destination earns its place by being a different OBJECT the brief asks for, never
 // by being a second view of one — and never by being a true thing nobody asked.
-const NAV_ITEMS = [
-  { href: "/", label: "Themes" },
-  { href: "/book", label: "Book" },
-  { href: "/risk", label: "Risk" },
-  { href: "/method", label: "Method" },
-];
+// ADR-0170 — the nav IS the process, one tab per phase, at the owner's
+// direction. Everything above this line is the reasoning that produced the
+// four object-shaped destinations it replaces; it is kept because the costs it
+// names are now being PAID, not because it still describes the header.
+//
+// Derived from PHASES rather than written here, so the strip and the process map
+// on /method cannot disagree about how many phases there are or what they are
+// called. `tab` is the short label; `name` is the full title the pages use.
+//
+// Six items where the comment below tuned padding for four: the row is
+// `overflow-x-auto`, so on a narrow viewport this scrolls rather than dropping a
+// phase. A sequence that hides its last step is worse than one that scrolls.
+const NAV_ITEMS = PHASES.map((p) => ({
+  href: p.route as string,
+  label: p.tab,
+  n: phaseNumber(p),
+}));
 
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
@@ -183,6 +195,13 @@ export default function TopBar() {
                   : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
               }`}
             >
+              {/* The number is the point — it is what makes the strip read as a
+                  sequence rather than as six unrelated places. Muted so it
+                  locates without competing with the label, and aria-hidden
+                  because "01 Mandate" read aloud is worse than "Mandate". */}
+              <span aria-hidden="true" className="num text-text-tertiary mr-1.5 text-[11px]">
+                {item.n}
+              </span>
               {item.label}
             </Link>
           );

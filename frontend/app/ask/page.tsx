@@ -118,7 +118,7 @@ export default function AskPage() {
             <p className="mt-2 mb-0 text-[13px] leading-[1.65] text-text-secondary max-w-[62ch]">
               Questions are answered from the published run only — the same rows{" "}
               <Link href="/book" className="text-accent hover:underline">/book</Link>,{" "}
-              <Link href="/risk" className="text-accent hover:underline">/risk</Link> and{" "}
+              <Link href="/scenario" className="text-accent hover:underline">/scenario</Link> and{" "}
               <Link href="/method" className="text-accent hover:underline">/method</Link> render. The
               agent fetches values and explains them; it never calculates one, and every figure it
               writes is checked against what it fetched before you see it.

@@ -176,122 +176,122 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
           .join(", ")}`}
         onMouseLeave={() => setTooltip(null)}
       >
-      {ticks.map((v) => (
-        <g key={`t-${v}`}>
-          <line
-            x1={PLOT_LEFT}
-            x2={PLOT_LEFT + PLOT_WIDTH}
-            y1={y(v)}
-            y2={y(v)}
-            stroke="var(--border)"
-            opacity={v === 0 ? 1 : 0.5}
-          />
-          <text
-            x={PLOT_LEFT - 5}
-            y={y(v) + 3}
-            textAnchor="end"
-            fill="var(--text-tertiary)"
-            fontSize="9"
-          >
-            {tickLabel(v)}
-          </text>
-        </g>
-      ))}
-      <text
-        x={PLOT_LEFT - 5}
-        y={PLOT_TOP - 4}
-        textAnchor="end"
-        fill="var(--text-tertiary)"
-        fontSize="9"
-      >
-        share
-      </text>
-
-      <text x={PLOT_LEFT} y={HEIGHT - 8} fill="var(--text-tertiary)" fontSize="9" className="num">
-        {firstDate}
-      </text>
-      <text
-        x={PLOT_LEFT + PLOT_WIDTH}
-        y={HEIGHT - 8}
-        textAnchor="end"
-        fill="var(--text-tertiary)"
-        fontSize="9"
-        className="num"
-      >
-        {lastDate}
-      </text>
-
-      {series.map((s, i) => {
-        const color = s.phrase === "AI Capex" ? "#e91e8c" : SERIES_COLORS[i % SERIES_COLORS.length];
-        const d = s.points
-          .map((p, j) => `${j === 0 ? "M" : "L"}${x(p.run_date).toFixed(2)},${y(p.share).toFixed(2)}`)
-          .join(" ");
-        return (
-          <g key={s.phrase}>
-            <path d={d} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
-            {s.points.map((p) => (
-              <circle
-                key={p.run_date}
-                cx={x(p.run_date)}
-                cy={y(p.share)}
-                r={2}
-                fill={color}
-                onMouseEnter={(e) => {
-                  const rect = containerRef.current?.getBoundingClientRect();
-                  if (!rect) return;
-                  setTooltip({
-                    screenX: e.clientX - rect.left,
-                    screenY: e.clientY - rect.top,
-                    text: `${s.phrase} — ${p.run_date} — ${sharePct(p.share)} of headlines`,
-                  });
-                }}
-                onMouseLeave={() => setTooltip(null)}
-              />
-            ))}
-          </g>
-        );
-      })}
-
-      {/* Direct labels. Identity never depends on a colour lookup. */}
-      {series.map((s, i) => {
-        const color = s.phrase === "AI Capex" ? "#e91e8c" : SERIES_COLORS[i % SERIES_COLORS.length];
-        const yl = labelY.get(i) ?? PLOT_TOP;
-        const last = s.points[s.points.length - 1];
-        const yEnd = y(last.share);
-        // A leader line wherever the anti-collision pass moved a label off its
-        // own line's end. Without it, three narratives converging at ~3% get
-        // three stacked labels whose only tie to their lines is hue — which is
-        // precisely the colour-alone identification the low-contrast slots in
-        // this palette are not allowed to rely on.
-        const displaced = Math.abs(yl - yEnd) > 1.5;
-        return (
-          <g key={`lbl-${s.phrase}`}>
-            {displaced && (
-              <polyline
-                points={[
-                  `${PLOT_LEFT + PLOT_WIDTH},${yEnd.toFixed(2)}`,
-                  `${PLOT_LEFT + PLOT_WIDTH + LEADER_RUN * 0.4},${yEnd.toFixed(2)}`,
-                  `${PLOT_LEFT + PLOT_WIDTH + LEADER_RUN * 0.8},${yl.toFixed(2)}`,
-                  `${PLOT_LEFT + PLOT_WIDTH + LEADER_RUN},${yl.toFixed(2)}`,
-                ].join(" ")}
-                fill="none"
-                stroke={color}
-                strokeWidth={1}
-                opacity={0.7}
-              />
-            )}
+        {ticks.map((v) => (
+          <g key={`t-${v}`}>
+            <line
+              x1={PLOT_LEFT}
+              x2={PLOT_LEFT + PLOT_WIDTH}
+              y1={y(v)}
+              y2={y(v)}
+              stroke="var(--border)"
+              opacity={v === 0 ? 1 : 0.5}
+            />
             <text
-              x={PLOT_LEFT + PLOT_WIDTH + LABEL_X}
-              y={yl + 3}
-              fill={color}
-              fontSize="10"
+              x={PLOT_LEFT - 5}
+              y={y(v) + 3}
+              textAnchor="end"
+              fill="var(--text-tertiary)"
+              fontSize="9"
             >
-              {s.phrase.length > 20 ? `${s.phrase.slice(0, 19)}…` : s.phrase}
+              {tickLabel(v)}
             </text>
           </g>
-        );
-      })}
+        ))}
+        <text
+          x={PLOT_LEFT - 5}
+          y={PLOT_TOP - 4}
+          textAnchor="end"
+          fill="var(--text-tertiary)"
+          fontSize="9"
+        >
+          share
+        </text>
 
+        <text x={PLOT_LEFT} y={HEIGHT - 8} fill="var(--text-tertiary)" fontSize="9" className="num">
+          {firstDate}
+        </text>
+        <text
+          x={PLOT_LEFT + PLOT_WIDTH}
+          y={HEIGHT - 8}
+          textAnchor="end"
+          fill="var(--text-tertiary)"
+          fontSize="9"
+          className="num"
+        >
+          {lastDate}
+        </text>
+
+        {series.map((s, i) => {
+          const color = s.phrase === "AI Capex" ? "#e91e8c" : SERIES_COLORS[i % SERIES_COLORS.length];
+          const d = s.points
+            .map((p, j) => `${j === 0 ? "M" : "L"}${x(p.run_date).toFixed(2)},${y(p.share).toFixed(2)}`)
+            .join(" ");
+          return (
+            <g key={s.phrase}>
+              <path d={d} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+              {s.points.map((p) => (
+                <circle
+                  key={p.run_date}
+                  cx={x(p.run_date)}
+                  cy={y(p.share)}
+                  r={2}
+                  fill={color}
+                  onMouseEnter={(e) => {
+                    const rect = containerRef.current?.getBoundingClientRect();
+                    if (!rect) return;
+                    setTooltip({
+                      screenX: e.clientX - rect.left,
+                      screenY: e.clientY - rect.top,
+                      text: `${s.phrase} — ${p.run_date} — ${sharePct(p.share)} of headlines`,
+                    });
+                  }}
+                  onMouseLeave={() => setTooltip(null)}
+                />
+              ))}
+            </g>
+          );
+        })}
+
+        {/* Direct labels. Identity never depends on a colour lookup. */}
+        {series.map((s, i) => {
+          const color = s.phrase === "AI Capex" ? "#e91e8c" : SERIES_COLORS[i % SERIES_COLORS.length];
+          const yl = labelY.get(i) ?? PLOT_TOP;
+          const last = s.points[s.points.length - 1];
+          const yEnd = y(last.share);
+          // A leader line wherever the anti-collision pass moved a label off its
+          // own line's end. Without it, three narratives converging at ~3% get
+          // three stacked labels whose only tie to their lines is hue — which is
+          // precisely the colour-alone identification the low-contrast slots in
+          // this palette are not allowed to rely on.
+          const displaced = Math.abs(yl - yEnd) > 1.5;
+          return (
+            <g key={`lbl-${s.phrase}`}>
+              {displaced && (
+                <polyline
+                  points={[
+                    `${PLOT_LEFT + PLOT_WIDTH},${yEnd.toFixed(2)}`,
+                    `${PLOT_LEFT + PLOT_WIDTH + LEADER_RUN * 0.4},${yEnd.toFixed(2)}`,
+                    `${PLOT_LEFT + PLOT_WIDTH + LEADER_RUN * 0.8},${yl.toFixed(2)}`,
+                    `${PLOT_LEFT + PLOT_WIDTH + LEADER_RUN},${yl.toFixed(2)}`,
+                  ].join(" ")}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={1}
+                  opacity={0.7}
+                />
+              )}
+              <text
+                x={PLOT_LEFT + PLOT_WIDTH + LABEL_X}
+                y={yl + 3}
+                fill={color}
+                fontSize="10"
+              >
+                {s.phrase.length > 20 ? `${s.phrase.slice(0, 19)}…` : s.phrase}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
       {/* Immediate tooltip on hover — no browser-native delay. */}
       {tooltip && (
         <div
@@ -315,7 +315,6 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
           {tooltip.text}
         </div>
       )}
-    </svg>
     </div>
   );
 }
@@ -454,205 +453,204 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
         aria-label={`Narrative detection plane: ${measurable.length} phrases with measurable velocity, ${unmeasurable.length} not yet measurable`}
         onMouseLeave={() => setTooltip(null)}
       >
-      {/* y: velocity gridlines; the zero line is the one that matters. */}
-      {yTicks.map((v) => (
-        <g key={`vy-${v}`}>
-          <line
-            x1={S_PLOT_LEFT}
-            x2={S_PLOT_LEFT + S_PLOT_WIDTH}
-            y1={y(v)}
-            y2={y(v)}
-            stroke="var(--border)"
-            opacity={v === 0 ? 1 : 0.5}
-          />
-          <text x={S_PLOT_LEFT - 5} y={y(v) + 3} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">
-            {v > 0 ? `+${v}` : `${v}`}
-          </text>
-        </g>
-      ))}
-      <text x={S_PLOT_LEFT - 5} y={S_PLOT_TOP - 5} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">
-        velocity
-      </text>
-
-      {/* x: share ticks along the bottom, above the rug. */}
-      {xTicks.map((v) => (
-        <g key={`vx-${v}`}>
-          <line
-            x1={x(v)}
-            x2={x(v)}
-            y1={S_PLOT_TOP}
-            y2={S_PLOT_TOP + S_PLOT_H}
-            stroke="var(--border)"
-            opacity={0.35}
-          />
-          <text x={x(v)} y={XLABEL_Y - 4} textAnchor="middle" fill="var(--text-tertiary)" fontSize="9">
-            {fmtX(v)}
-          </text>
-        </g>
-      ))}
-      <text
-        x={S_PLOT_LEFT + S_PLOT_WIDTH}
-        y={XLABEL_Y - 4}
-        textAnchor="start"
-        fill="var(--text-tertiary)"
-        fontSize="9"
-        dx="8"
-      >
-        share
-      </text>
-
-      {measurable.length === 0 && (
-        <text
-          x={S_PLOT_LEFT + S_PLOT_WIDTH / 2}
-          y={S_PLOT_TOP + S_PLOT_H / 2}
-          textAnchor="middle"
-          fill="var(--text-tertiary)"
-          fontSize="10.5"
-        >
-          No measurable velocities yet — marks rise into this plane as each phrase
-          accrues enough observed days.
-        </text>
-      )}
-
-      {/* The plane: hollow = an anchor already watches it; filled = nothing does. */}
-      {measurable.map((s) => {
-        const uncovered = s.latest.covered_by === null;
-        const cx = x(s.latest.share);
-        const cy = y(s.latest.velocity as number);
-        return (
-          <g key={s.phrase}>
-            {s.latest.status === "emerging" && (
-              <circle cx={cx} cy={cy} r={6.5} fill="none" stroke="var(--series-1)" strokeWidth={1} opacity={0.8} />
-            )}
-            <circle
-              cx={cx}
-              cy={cy}
-              r={uncovered ? 3.5 : 3}
-              fill={uncovered ? "var(--series-1)" : "transparent"}
-              stroke={uncovered ? "none" : "var(--text-tertiary)"}
-              strokeWidth={uncovered ? 0 : 1.2}
-              onMouseEnter={(e) => {
-                const rect = svgRef.current?.getBoundingClientRect();
-                if (!rect) return;
-                setTooltip({
-                  screenX: e.clientX - rect.left,
-                  screenY: e.clientY - rect.top,
-                  text: `${s.phrase} — ${sharePct(s.latest.share)} share, velocity ${(s.latest.velocity as number).toFixed(2)}, ${s.latest.covered_by ? `watched by ${s.latest.covered_by}` : "watched by nothing"}`,
-                });
-              }}
-              onMouseLeave={() => setTooltip(null)}
+        {/* y: velocity gridlines; the zero line is the one that matters. */}
+        {yTicks.map((v) => (
+          <g key={`vy-${v}`}>
+            <line
+              x1={S_PLOT_LEFT}
+              x2={S_PLOT_LEFT + S_PLOT_WIDTH}
+              y1={y(v)}
+              y2={y(v)}
+              stroke="var(--border)"
+              opacity={v === 0 ? 1 : 0.5}
             />
-          </g>
-        );
-      })}
-      {/* Direct labels beside each mark. A simple vertical drop from the dot
-          to the label is cleaner than a polyline in a narrow column — the
-          mark and label are close enough to associate without a horizontal run. */}
-      {labelled.map((l) => {
-        const yLabel = (l as { yLabel?: number }).yLabel ?? l.yRaw;
-        const displaced = Math.abs(yLabel - l.yRaw) > 1.5;
-        const ink = l.covered ? "var(--text-tertiary)" : "var(--series-1)";
-        return (
-          <g key={`dl-${l.s.phrase}`}>
-            {displaced && (
-              <line
-                x1={l.xr + 6}
-                y1={l.yRaw}
-                x2={l.xr + 6}
-                y2={yLabel}
-                stroke={ink}
-                strokeWidth={1}
-                opacity={0.6}
-              />
-            )}
-            <text
-              x={l.xr + 9}
-              y={yLabel + 3}
-              fill={l.covered ? "var(--text-tertiary)" : "var(--text-secondary)"}
-              fontSize="9.5"
-            >
-              {l.s.phrase.length > 18 ? `${l.s.phrase.slice(0, 17)}…` : l.s.phrase}
+            <text x={S_PLOT_LEFT - 5} y={y(v) + 3} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">
+              {v > 0 ? `+${v}` : `${v}`}
             </text>
           </g>
-        );
-      })}
+        ))}
+        <text x={S_PLOT_LEFT - 5} y={S_PLOT_TOP - 5} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">
+          velocity
+        </text>
 
-      {/* The rug: measured in x (share), honest about y (nothing to plot).
-          Sits BELOW the x-axis label, start-anchored in the left gutter. */}
-      <text x={S_PLOT_LEFT} y={XLABEL_Y + 14} textAnchor="start" fill="var(--text-tertiary)" fontSize="9">
-        velocity not yet measurable · {unmeasurable.length}
-      </text>
-      {unmeasurable.slice(0, RUG_CAP).map((s) => (
-        <line
-          key={`rug-${s.phrase}`}
-          x1={x(s.latest.share)}
-          x2={x(s.latest.share)}
-          y1={XLABEL_Y + 22}
-          y2={XLABEL_Y + 22 + RUG_H}
-          stroke={s.latest.covered_by === null ? "var(--series-1)" : "var(--text-tertiary)"}
-          strokeWidth={1.5}
-          opacity={0.65}
-        >
-          <title>{`${s.phrase} — ${sharePct(s.latest.share)} share, velocity not yet measurable, ${s.latest.covered_by ? `watched by ${s.latest.covered_by}` : "watched by nothing"}`}</title>
-        </line>
-      ))}
-      {unmeasurable.length > RUG_CAP && (
+        {/* x: share ticks along the bottom, above the rug. */}
+        {xTicks.map((v) => (
+          <g key={`vx-${v}`}>
+            <line
+              x1={x(v)}
+              x2={x(v)}
+              y1={S_PLOT_TOP}
+              y2={S_PLOT_TOP + S_PLOT_H}
+              stroke="var(--border)"
+              opacity={0.35}
+            />
+            <text x={x(v)} y={XLABEL_Y - 4} textAnchor="middle" fill="var(--text-tertiary)" fontSize="9">
+              {fmtX(v)}
+            </text>
+          </g>
+        ))}
         <text
           x={S_PLOT_LEFT + S_PLOT_WIDTH}
-          y={XLABEL_Y + 22 + RUG_H - 3}
+          y={XLABEL_Y - 4}
           textAnchor="start"
+          fill="var(--text-tertiary)"
+          fontSize="9"
           dx="8"
-          fill="var(--text-tertiary)"
-          fontSize="9"
         >
-          +{unmeasurable.length - RUG_CAP} more
+          share
         </text>
-      )}
 
-      {/* The rug's loudest phrases, NAMED (ADR-0162). The strip's own header
-          says how many phrases are waiting; without this line it never says
-          which, and a phrase can be the 7th-loudest on the board while appearing
-          in no text anywhere on it. Shares travel with the names because a
-          <title> is never the only copy of a number (ADR-0126). */}
-      {unmeasurable.length > 0 && (
-        <text
-          x={S_PLOT_LEFT}
-          y={XLABEL_Y + 22 + RUG_H + 11}
-          textAnchor="start"
-          fill="var(--text-tertiary)"
-          fontSize="9"
-        >
-          {unmeasurable
-            .slice(0, RUG_NAMED)
-            .map((s) => `${s.phrase} ${sharePct(s.latest.share)}`)
-            .join("  ·  ")}
+        {measurable.length === 0 && (
+          <text
+            x={S_PLOT_LEFT + S_PLOT_WIDTH / 2}
+            y={S_PLOT_TOP + S_PLOT_H / 2}
+            textAnchor="middle"
+            fill="var(--text-tertiary)"
+            fontSize="10.5"
+          >
+            No measurable velocities yet — marks rise into this plane as each phrase
+            accrues enough observed days.
+          </text>
+        )}
+
+        {/* The plane: hollow = an anchor already watches it; filled = nothing does. */}
+        {measurable.map((s) => {
+          const uncovered = s.latest.covered_by === null;
+          const cx = x(s.latest.share);
+          const cy = y(s.latest.velocity as number);
+          return (
+            <g key={s.phrase}>
+              {s.latest.status === "emerging" && (
+                <circle cx={cx} cy={cy} r={6.5} fill="none" stroke="var(--series-1)" strokeWidth={1} opacity={0.8} />
+              )}
+              <circle
+                cx={cx}
+                cy={cy}
+                r={uncovered ? 3.5 : 3}
+                fill={uncovered ? "var(--series-1)" : "transparent"}
+                stroke={uncovered ? "none" : "var(--text-tertiary)"}
+                strokeWidth={uncovered ? 0 : 1.2}
+                onMouseEnter={(e) => {
+                  const svgRect = svgRef.current?.getBoundingClientRect();
+                  if (!svgRect) return;
+                  setTooltip({
+                    screenX: e.clientX - svgRect.left,
+                    screenY: e.clientY - svgRect.top,
+                    text: `${s.phrase} — ${sharePct(s.latest.share)} share, velocity ${(s.latest.velocity as number).toFixed(2)}, ${s.latest.covered_by ? `watched by ${s.latest.covered_by}` : "watched by nothing"}`,
+                  });
+                }}
+                onMouseLeave={() => setTooltip(null)}
+              />
+            </g>
+          );
+        })}
+        {/* Direct labels beside each mark. A simple vertical drop from the dot
+            to the label is cleaner than a polyline in a narrow column — the
+            mark and label are close enough to associate without a horizontal run. */}
+        {labelled.map((l) => {
+          const yLabel = (l as { yLabel?: number }).yLabel ?? l.yRaw;
+          const displaced = Math.abs(yLabel - l.yRaw) > 1.5;
+          const ink = l.covered ? "var(--text-tertiary)" : "var(--series-1)";
+          return (
+            <g key={`dl-${l.s.phrase}`}>
+              {displaced && (
+                <line
+                  x1={l.xr + 6}
+                  y1={l.yRaw}
+                  x2={l.xr + 6}
+                  y2={yLabel}
+                  stroke={ink}
+                  strokeWidth={1}
+                  opacity={0.6}
+                />
+              )}
+              <text
+                x={l.xr + 9}
+                y={yLabel + 3}
+                fill={l.covered ? "var(--text-tertiary)" : "var(--text-secondary)"}
+                fontSize="9.5"
+              >
+                {l.s.phrase.length > 18 ? `${l.s.phrase.slice(0, 17)}…` : l.s.phrase}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* The rug: measured in x (share), honest about y (nothing to plot).
+            Sits BELOW the x-axis label, start-anchored in the left gutter. */}
+        <text x={S_PLOT_LEFT} y={XLABEL_Y + 14} textAnchor="start" fill="var(--text-tertiary)" fontSize="9">
+          velocity not yet measurable · {unmeasurable.length}
         </text>
+        {unmeasurable.slice(0, RUG_CAP).map((s) => (
+          <line
+            key={`rug-${s.phrase}`}
+            x1={x(s.latest.share)}
+            x2={x(s.latest.share)}
+            y1={XLABEL_Y + 22}
+            y2={XLABEL_Y + 22 + RUG_H}
+            stroke={s.latest.covered_by === null ? "var(--series-1)" : "var(--text-tertiary)"}
+            strokeWidth={1.5}
+            opacity={0.65}
+          >
+            <title>{`${s.phrase} — ${sharePct(s.latest.share)} share, velocity not yet measurable, ${s.latest.covered_by ? `watched by ${s.latest.covered_by}` : "watched by nothing"}`}</title>
+          </line>
+        ))}
+        {unmeasurable.length > RUG_CAP && (
+          <text
+            x={S_PLOT_LEFT + S_PLOT_WIDTH}
+            y={XLABEL_Y + 22 + RUG_H - 3}
+            textAnchor="start"
+            dx="8"
+            fill="var(--text-tertiary)"
+            fontSize="9"
+          >
+            +{unmeasurable.length - RUG_CAP} more
+          </text>
+        )}
+
+        {/* The rug's loudest phrases, NAMED (ADR-0162). The strip's own header
+            says how many phrases are waiting; without this line it never says
+            which, and a phrase can be the 7th-loudest on the board while appearing
+            in no text anywhere on it. Shares travel with the names because a
+            <title> is never the only copy of a number (ADR-0126). */}
+        {unmeasurable.length > 0 && (
+          <text
+            x={S_PLOT_LEFT}
+            y={XLABEL_Y + 22 + RUG_H + 11}
+            textAnchor="start"
+            fill="var(--text-tertiary)"
+            fontSize="9"
+          >
+            {unmeasurable
+              .slice(0, RUG_NAMED)
+              .map((s) => `${s.phrase} ${sharePct(s.latest.share)}`)
+              .join("  ·  ")}
+          </text>
+        )}
+      </svg>
+      {/* Immediate tooltip on hover — no browser-native delay. */}
+      {tooltip && (
+        <div
+          style={{
+            position: "absolute",
+            left: tooltip.screenX + 10,
+            top: tooltip.screenY - 8,
+            whiteSpace: "nowrap",
+            backgroundColor: "var(--series-1)",
+            border: "1px solid var(--series-1)",
+            borderRadius: "6px",
+            padding: "4px 8px",
+            fontSize: "10.5px",
+            color: "#ffffff",
+            lineHeight: "1.4",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
+            pointerEvents: "none",
+            zIndex: 10,
+          }}
+        >
+          {tooltip.text}
+        </div>
       )}
-    </svg>
-    {/* Immediate tooltip on hover — no browser-native delay.
-        Positioned in screen pixels relative to the SVG. */}
-    {tooltip && (
-      <div
-        style={{
-          position: "absolute",
-          left: tooltip.screenX + 10,
-          top: tooltip.screenY - 8,
-          whiteSpace: "nowrap",
-          backgroundColor: "var(--series-1)",
-          border: "1px solid var(--series-1)",
-          borderRadius: "6px",
-          padding: "4px 8px",
-          fontSize: "10.5px",
-          color: "#ffffff",
-          lineHeight: "1.4",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
-          pointerEvents: "none",
-          zIndex: 10,
-        }}
-      >
-        {tooltip.text}
-      </div>
-    )}
     </div>
   );
 }

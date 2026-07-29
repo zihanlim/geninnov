@@ -53,15 +53,36 @@ export interface NarrativeSeries {
   latest: NarrativeRow;
 }
 
-/** Load the last `days` of narrative signals, newest run first. */
+/**
+ * Which corpus a series was counted out of (migration 057 / ADR-0153).
+ *
+ * `combined` is every un-themed source — dense (~98 docs/day) and the honest answer
+ * to "what is the news about today". `archive` is GDELT alone — sparse (~11/day) but
+ * counted out of ONE definition all the way back, which is the only thing that makes
+ * a velocity mean anything.
+ */
+export type NarrativeCorpus = "combined" | "archive";
+
+/**
+ * Load the last `days` of narrative signals for ONE corpus, newest run first.
+ *
+ * **The filter is not optional.** Two series now live in this table and a share is a
+ * fraction OF a corpus, so an unfiltered read interleaves GDELT's ~11-document days
+ * with combined ~98-document days under the same phrase — producing a chart line
+ * that swings by a factor of nine for reasons that have nothing to do with
+ * attention. Defaults to `combined`, which is what every caller wanted before the
+ * split existed.
+ */
 export async function fetchNarratives(
   days = 30,
+  corpus: NarrativeCorpus = "combined",
 ): Promise<{ rows: NarrativeRow[]; error: string | null }> {
   const { data, error } = await supabase
     .from("narrative_signals")
     .select(
       "run_date, phrase, doc_count, corpus_size, share, velocity, days_observed, first_seen, status, covered_by, methods",
     )
+    .eq("corpus", corpus)
     .order("run_date", { ascending: false })
     .limit(days * 150);
 

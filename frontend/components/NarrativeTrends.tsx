@@ -114,7 +114,7 @@ function clamp(v: number, lo: number, hi: number) {
 /** Exported for test: the geometry is the part ADR-0126's bug class lives in, and
  *  a test that cannot render the plot can only assert on source text. */
 export function TrendPlot({ series }: { series: TrendSeries[] }) {
-  const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string } | null>(null);
+  const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string; color: string } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // One shared date axis across every series, so two lines at the same x are the
@@ -243,6 +243,7 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
                       screenX: e.clientX - rect.left,
                       screenY: e.clientY - rect.top,
                       text: `${s.phrase} — ${p.run_date} — ${sharePct(p.share)} of headlines`,
+                      color,
                     });
                   }}
                   onMouseLeave={() => setTooltip(null)}
@@ -300,8 +301,8 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
             left: tooltip.screenX + 10,
             top: tooltip.screenY - 8,
             whiteSpace: "nowrap",
-            backgroundColor: "var(--series-1)",
-            border: "1px solid var(--series-1)",
+            backgroundColor: tooltip.color,
+            border: "1px solid " + tooltip.color,
             borderRadius: "6px",
             padding: "4px 8px",
             fontSize: "10.5px",
@@ -382,7 +383,7 @@ const LABEL_CAP_COVERED = 0;
 const RUG_NAMED = 3;
 
 export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
-  const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string } | null>(null);
+  const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string; color: string } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const xMax = Math.max(...series.map((s) => s.latest.share), 0.01) * 1.08;
@@ -533,10 +534,8 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
                 onMouseEnter={(e) => {
                   const svgRect = svgRef.current?.getBoundingClientRect();
                   if (!svgRect) return;
-                  setTooltip({
-                    screenX: e.clientX - svgRect.left,
-                    screenY: e.clientY - svgRect.top,
-                    text: `${s.phrase} — ${sharePct(s.latest.share)} share, velocity ${(s.latest.velocity as number).toFixed(2)}, ${s.latest.covered_by ? `watched by ${s.latest.covered_by}` : "watched by nothing"}`,
+                  setTooltip({ screenX: e.clientX - svgRect.left, screenY: e.clientY - svgRect.top, text: `${s.phrase} — ${sharePct(s.latest.share)} share, velocity ${(s.latest.velocity as number).toFixed(2)}, ${s.latest.covered_by ? `watched by ${s.latest.covered_by}` : "watched by nothing"}`,
+                    color: s.latest.covered_by ? "var(--text-tertiary)" : "var(--series-1)",
                   });
                 }}
                 onMouseLeave={() => setTooltip(null)}
@@ -636,8 +635,8 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
             left: tooltip.screenX + 10,
             top: tooltip.screenY - 8,
             whiteSpace: "nowrap",
-            backgroundColor: "var(--series-1)",
-            border: "1px solid var(--series-1)",
+            backgroundColor: tooltip.color,
+            border: "1px solid " + tooltip.color,
             borderRadius: "6px",
             padding: "4px 8px",
             fontSize: "10.5px",

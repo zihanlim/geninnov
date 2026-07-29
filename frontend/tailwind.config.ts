@@ -39,7 +39,36 @@ const config: Config = {
       // The pane arithmetic still clears BOOK_ROW_MIN_W (640px) at the new gate:
       //   viewport 1424 − 64 (lg gutter) = 1360 content (under the 1400 cap)
       //   (1360 − 24 gap) / 2            =  668 per pane, 28px of headroom.
-      screens: { wide: "1424px" },
+      //
+      // `figures` is a SECOND gate, and deliberately so — `wide` is derived from
+      // the SideRail and the two-pane book row, which are nav and book concerns.
+      // Borrowing it for the trends boards' plot ‖ figures split priced those
+      // cards at a rail's breakpoint rather than at their own table's width, and
+      // the visible cost was that a 1920px screen at Windows' default 150%
+      // scaling reports 1280 CSS px and never saw the split at all.
+      //
+      // Derived from the intrinsic width of NarrativeTrends' SEVEN-column figures
+      // table — the binding constraint of the pair, since ThemeTrends' four-column
+      // table is only 249px. Both figures MEASURED in the browser (set the wrapper
+      // to 1px, read scrollWidth), not estimated:
+      //
+      //   narrative table min-content, pr-3 gutters = 388px
+      //   narrative table min-content, pr-2 gutters = 364px  ← see SeriesTable
+      //   figures column at viewport 1248            = 371.7px, 7.7px headroom
+      //
+      // Do NOT re-derive this as (viewport − gutter − gap)/3. The chain from
+      // viewport to column runs through the lg gutter, the TerminalPane, the card's
+      // own p-4 and the 20px grid gap, and that shorthand overstates the column by
+      // ~17px — enough to place the gate where the table still scrolls. Measure it.
+      //
+      // 1248, NOT 1280, for the same scrollbar reason `wide` is 1424 and not
+      // 1440: a maximised 1280-logical window on Windows Chrome reports ~1265, so
+      // an `xl` gate would be dead on the machine this was built for. Verified
+      // 1248 splits / 1247 stacks, and 1265 clears with the table at 377px.
+      //
+      // Below this both boards stack, which is the right answer for the table —
+      // at `lg` (1024px) the figures column is 297px against that 364px.
+      screens: { wide: "1424px", figures: "1248px" },
       // Tailwind preflight defaults an uncoloured `border-b` to gray-200
       // (#e5e7eb), which is NOT in this palette. Measured on /book: 162 of 186
       // table cells carry `border-b` with no colour class, so 87% of the rules

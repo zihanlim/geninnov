@@ -574,32 +574,44 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
 
 /** The table view. ADR-0126: a tooltip is never the only copy of a number, and
  *  the two low-contrast palette slots require exactly this relief. Exported so a
- *  test can assert the relief exists, rather than trusting this comment. */
+ *  test can assert the relief exists, rather than trusting this comment.
+ *
+ *  Column gutters are `pr-2` (8px), not the `pr-3` the sibling ThemeTrendsTable
+ *  uses. Seven columns pay that gutter six times, so the 4px buys back 24px:
+ *  min-content 388px → 364px, measured. At 388 this table opened an 11px
+ *  horizontal scroller inside the 377px figures column — on the exact layout the
+ *  `figures` gate exists to enable, which is the worst place to put one.
+ *
+ *  The gutter was the only slack. Every column width is min-content over a real
+ *  value ("established", "AI Capex", "not measurable"), so the next 4px would
+ *  truncate a reading rather than tighten a rule. If a column is ever added here,
+ *  re-measure against the gate in tailwind.config.ts — it is derived from THIS
+ *  number. */
 export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-[11.5px] border-collapse">
         <thead>
           <tr className="text-text-tertiary text-left">
-            <th className="font-normal py-1 pr-3">Narrative</th>
-            <th className="font-normal py-1 pr-3">Trend</th>
-            <th className="font-normal py-1 pr-3 text-right">Share</th>
-            <th className="font-normal py-1 pr-3 text-right">Velocity</th>
-            <th className="font-normal py-1 pr-3">Status</th>
-            <th className="font-normal py-1 pr-3">Already watched by</th>
+            <th className="font-normal py-1 pr-2">Narrative</th>
+            <th className="font-normal py-1 pr-2">Trend</th>
+            <th className="font-normal py-1 pr-2 text-right">Share</th>
+            <th className="font-normal py-1 pr-2 text-right">Velocity</th>
+            <th className="font-normal py-1 pr-2">Status</th>
+            <th className="font-normal py-1 pr-2">Already watched by</th>
             <th className="font-normal py-1">Found by</th>
           </tr>
         </thead>
         <tbody>
           {series.map((s) => (
             <tr key={s.phrase} className="border-t border-border align-top">
-              <td className="py-1 pr-3">
+              <td className="py-1 pr-2">
                 <span className="text-text-primary">{s.phrase}</span>
               </td>
               {/* Own-scale mini-trend (ADR-0146): trajectory context moved here
                   from the retired top-5 line chart. Identity is the row itself,
                   so no colour slot is spent on it. */}
-              <td className="py-1 pr-3 w-[84px]">
+              <td className="py-1 pr-2 w-[84px]">
                 {s.points.length > 1 ? (
                   <Sparkline
                     points={s.points.map((p) => p.share)}
@@ -610,16 +622,16 @@ export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
                   <span className="text-text-tertiary">—</span>
                 )}
               </td>
-              <td className="py-1 pr-3 text-right num">{sharePct(s.latest.share)}</td>
-              <td className="py-1 pr-3 text-right num">
+              <td className="py-1 pr-2 text-right num">{sharePct(s.latest.share)}</td>
+              <td className="py-1 pr-2 text-right num">
                 {s.latest.velocity === null ? (
                   <span className="text-text-tertiary">not measurable</span>
                 ) : (
                   `${s.latest.velocity >= 0 ? "+" : ""}${s.latest.velocity.toFixed(2)}`
                 )}
               </td>
-              <td className="py-1 pr-3 text-text-secondary">{s.latest.status}</td>
-              <td className="py-1 pr-3 text-text-secondary">
+              <td className="py-1 pr-2 text-text-secondary">{s.latest.status}</td>
+              <td className="py-1 pr-2 text-text-secondary">
                 {s.latest.covered_by ?? (
                   <span className="text-text-tertiary">nothing</span>
                 )}
@@ -772,11 +784,16 @@ export default function NarrativeTrends() {
                 content — without it the table's `overflow-x-auto` never engages and
                 the whole card scrolls sideways instead.
 
-                Gated at `wide` (1424px) rather than `lg`. This table is SEVEN
-                columns; at a third of a narrower canvas it becomes a horizontal
-                scroller, and a scroller is how a column stops being read. Below the
-                gate the two stack exactly as they did. */}
-            <div className="grid wide:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-5 items-start [&>*]:min-w-0">
+                Gated at `figures` (1248px), not `wide` (1424px). The scroller risk
+                the old gate was written against is real — this table is SEVEN
+                columns and wants 388px — but `wide` is derived from the SideRail
+                and the two-pane book row (ADR-0084/0086), which are nav and book
+                concerns. Pricing this split at a rail's breakpoint meant a 1920px
+                screen at Windows' default 150% scaling reports 1280 CSS px and
+                never saw the split at all. `figures` is derived from THIS table's
+                measured width instead; the arithmetic is in tailwind.config.ts.
+                Below the gate the two stack exactly as they did. */}
+            <div className="grid figures:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-5 items-start [&>*]:min-w-0">
               <DetectionScatter series={series} />
 
               <div>

@@ -154,12 +154,18 @@ export default function ThemeTrends() {
             min-width:auto and refuses to shrink below its content — without it the
             table's own `overflow-x-auto` never engages and the CARD scrolls instead.
 
-            Gated at `wide` (1424px), not `lg`: the table is four columns and reads
-            fine at a third of the content width, but the plot carries direct end
-            labels, and below this the 2fr column is too narrow for them to sit
-            beside the lines rather than on top of them. Below the gate both stack
-            exactly as before. */}
-        <div className="grid wide:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-5 items-start [&>*]:min-w-0">
+            Gated at `figures` (1248px), matching the narrative board so the two
+            cards in this section split at the same width — the gate is derived from
+            THAT board's seven-column table, which is the binding constraint of the
+            pair (this table is four columns and fits in 297px).
+
+            The old `wide` gate was justified here by the plot's direct end labels,
+            but that misread the geometry: TrendPlot is a viewBox, so a narrower
+            column scales labels and lines by the SAME factor and they can never
+            collide. What narrowing costs is label SIZE — 10px of a 720-unit box
+            renders ~11px at the 765px 2fr column this gate produces. Below the gate
+            both stack as before. */}
+        <div className="grid figures:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-5 items-start [&>*]:min-w-0">
           <div>
             {error ? (
               <div className="text-[12.5px] text-text-secondary leading-[1.6]">

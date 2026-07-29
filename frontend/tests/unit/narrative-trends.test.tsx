@@ -327,12 +327,12 @@ describe("the emerging shortlist's two empties stay distinct", () => {
 
   it("branches the empty state on velocity measurability", () => {
     expect(src).toContain("velocityMeasurable ?");
-    expect(src).toContain("That is a finding");
-    expect(src).toContain("not a finding");
+    expect(src).toContain("finding, not an empty state");
+    expect(src).toContain("Velocity not measurable yet");
   });
 
   it("the unmeasurable copy refuses the finding claim and counts the unwatched", () => {
-    expect(src).toContain("Not measurable yet");
+    expect(src).toContain("Velocity not measurable yet");
     expect(src).toContain("uncoveredCount");
   });
 

@@ -33,6 +33,7 @@
 //    composition, no realtime. The machine picks the series; the reader reads it.
 
 import {
+  attentionFunnel,
   emergingUncovered,
   isCorroborated,
   sharePct,
@@ -694,6 +695,11 @@ export default function NarrativeTrends() {
 
   const top = series ? topSeries(series, SERIES_COLORS.length) : [];
   const emerging = series ? emergingUncovered(series) : [];
+  // Derived from the same series the funnel uses, so the two halves of this
+  // section cannot disagree on what "N of M attributed" means. The hook is
+  // the single source; the funnel reads it directly, this card derives its
+  // one number.
+  const funnel = series ? attentionFunnel(series) : null;
   // Distinguishes the two empties (ADR-0059 / ADR-0143): "measured, none
   // found" is a finding; "cannot measure yet" is silence. With no measurable
   // velocity anywhere, NOTHING can be classified emerging regardless of what
@@ -840,39 +846,57 @@ export default function NarrativeTrends() {
               </div>
             </div>
 
-            <div className="border-t border-border pt-3">
-              <h4 className="m-0 mb-1 text-[11px] uppercase tracking-[0.1em] text-text-secondary">
-                Emerging &middot; watched by nothing
+            {/* The Emerging block, in its tight form. Three findings live here:
+                  1. the headline "none of the attributed phrases is breaking out
+                     outside an anchor" — the chart's own load-bearing result;
+                  2. the shadow caveat, which disclaims tradeability;
+                  3. the unmeasurable fallback, which distinguishes an empty
+                     instrument from a measured negative (ADR-0059/0143).
+
+                It is moved BELOW the table rather than above, and tightened to a
+                status line — the findings are essential, the prose was not. "No
+                narrative is currently both accelerating and outside the nine
+                anchor themes" repeated the funnel's "13 of 76 phrases are
+                attributed to an anchor" line one column left; saying it once is
+                enough. And the heading "Emerging · watched by nothing" claimed
+                a positive finding ("watched by nothing") that today's data
+                disproves: 13 of 76 phrases ARE attributed, the funnel reports
+                it explicitly, and the card on its left tells the reader exactly
+                that. The finding is "none of the attributed ones is accelerating
+                OUTSIDE an anchor", which is what the new copy says.
+
+                The shadow caveat reduces to its first phrase — "Shadow signal"
+                — because the page already carries the tradeability disclaimer
+                in the funnel strip beside this card. Saying it twice was the
+                padding. */}
+            <div className="mt-3 pt-2.5 border-t border-border text-[11px] leading-[1.55]">
+              <h4 className="m-0 mb-1 text-[10.5px] uppercase tracking-[0.1em] text-text-secondary">
+                Emerging
               </h4>
               {emerging.length === 0 ? (
                 velocityMeasurable ? (
-                  <p className="m-0 text-[12px] text-text-secondary leading-[1.6]">
-                    No narrative is currently both accelerating and outside the nine
-                    anchor themes. That is a finding, not an empty state: every phrase
-                    breaking out today is one an anchor theme already asks for.
+                  <p className="m-0 text-text-secondary">
+                    None of the <span className="num">{funnel ? funnel.tracked - funnel.unwatched : 0}</span> attributed
+                    phrases are accelerating <em>outside</em> an anchor — that is a
+                    finding, not an empty state.
                   </p>
                 ) : (
-                  <p className="m-0 text-[12px] text-text-secondary leading-[1.6]">
-                    Not measurable yet. Velocity compares each phrase against its own
-                    history, and no tracked phrase has enough observed days since the
-                    corpus rebuild (ADR-0141) — so nothing <em>can</em> be classified
-                    as accelerating, whatever the market is doing. This silence is an
-                    empty instrument, not a finding:{" "}
-                    <span className="num">{uncoveredCount}</span> of the{" "}
-                    <span className="num">{series?.length ?? 0}</span> tracked phrases
-                    are watched by no anchor theme, and whether any is breaking out
-                    cannot be said until the history accrues.
+                  <p className="m-0 text-text-secondary">
+                    Velocity not measurable yet (ADR-0141): {uncoveredCount} of{" "}
+                    <span className="num">{series?.length ?? 0}</span> tracked
+                    phrases are watched by no anchor theme, and whether any is
+                    breaking out cannot be said until the history accrues.
                   </p>
                 )
               ) : (
-                <ul className="m-0 p-0 list-none flex flex-col gap-1.5">
+                <ul className="m-0 p-0 list-none flex flex-col gap-1">
                   {emerging.slice(0, 6).map((s) => (
-                    <li key={s.phrase} className="text-[12px] leading-[1.5]">
+                    <li key={s.phrase}>
                       <span className="text-text-primary">{s.phrase}</span>
                       <span className="text-text-tertiary">
                         {" "}
-                        &mdash; <span className="num">{sharePct(s.latest.share)}</span> of
-                        headlines, velocity{" "}
+                        — <span className="num">{sharePct(s.latest.share)}</span>,
+                        velocity{" "}
                         <span className="num">
                           {s.latest.velocity === null
                             ? "n/a"
@@ -885,13 +909,10 @@ export default function NarrativeTrends() {
                   ))}
                 </ul>
               )}
+              <p className="m-0 mt-1.5 text-text-tertiary">
+                Shadow signal.
+              </p>
             </div>
-
-            <p className="m-0 text-[11px] text-text-tertiary leading-[1.55]">
-              Shadow signal. Nothing here enters the theme board, sizes a position,
-              or reaches the reasoning agent &mdash; a phrase trending in the news is
-              evidence a narrative exists, not evidence it is tradeable.
-            </p>
           </div>
         )}
       </div>

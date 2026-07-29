@@ -58,12 +58,13 @@ export function ThemeTrendsTable({ series }: { series: ThemeTrendSeries[] }) {
               <td className="py-1 pr-3">
                 <span className="inline-flex items-center gap-1.5">
                   {/* Only the five plotted series get a dot; a sixth hue does
-                      not exist, so a sixth row simply has no dot. */}
-                  {i < SERIES_COLORS.length ? (
+                      not exist, so a sixth row simply has no dot. AI Capex is
+                      forced into the chart and always gets a pink dot. */}
+                  {i < SERIES_COLORS.length || s.phrase === "AI Capex" ? (
                     <span
                       aria-hidden="true"
                       className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ background: SERIES_COLORS[i] }}
+                      style={{ background: s.phrase === "AI Capex" ? "var(--series-5)" : SERIES_COLORS[i] }}
                     />
                   ) : (
                     <span className="inline-block w-2.5 h-2.5 shrink-0" aria-hidden="true" />

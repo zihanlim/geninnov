@@ -315,7 +315,7 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
 // S_WIDTH is set at roughly the NARROWEST column this card will offer, so the
 // plot scales up from 1.0 and never down: below 1.0 the labels shrink, above it
 // they grow, and only one of those directions is recoverable.
-const S_WIDTH = 550;
+const S_WIDTH = 520;
 const S_PLOT_LEFT = 40;
 /** Right gutter for the in-plane labels, which extend rightward from their own
  *  marks, plus the "share" axis caption. Smaller than TrendPlot's 148 because
@@ -418,7 +418,7 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
       // the chart reads as a blown-up detail crop. 520 caps it at ~1.37x — labels
       // 12.3px, still comfortably a chart. The plane simply stops growing and sits
       // left in a wider column, which is the cheap direction to be wrong in.
-      className="w-full max-w-[520px] h-auto"
+      className="w-full h-auto"
       role="img"
       aria-label={`Narrative detection plane: ${measurable.length} phrases with measurable velocity, ${unmeasurable.length} not yet measurable`}
     >

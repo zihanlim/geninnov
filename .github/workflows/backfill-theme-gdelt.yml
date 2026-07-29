@@ -1,0 +1,94 @@
+name: Backfill theme_news from GDELT
+
+# Manual only. This adds GDELT articles to `theme_news` per anchor theme, so the
+# themed corpus stops resting on Brave alone (ADR-0094: on 2026-07-29 Brave's quota
+# died and the nine themes collected 15 same-day documents between them).
+#
+# WHY IT RUNS HERE RATHER THAN LOCALLY. GDELT rate-limits by IP over a window longer
+# than its documented 1-request-per-5-seconds floor. After the nightly pipeline runs,
+# a developer machine on the same address gets HTTP 429 to a single well-paced
+# request — reproduced with bare urllib, outside our client, through its full
+# 15/30/60s backoff. A runner has a different address and the secrets already.
+#
+# It writes ONLY `theme_news`. `theme_signals_history` is untouched — not
+# mention_count_1d, not hype_score, not momentum — because rewriting a count beside
+# an already-published score computed from a different count would store "a number
+# that is not HypeScore in the column that says it is" (scripts/backfill_regime.py).
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Write to theme_news (unchecked = dry run, reports and writes nothing)"
+        type: boolean
+        default: false
+      lookback_days:
+        description: "Days of GDELT history per theme"
+        type: string
+        default: "45"
+      themes:
+        description: "Optional comma-separated subset, e.g. 'Fed Policy,Inflation'"
+        type: string
+        default: ""
+
+concurrency:
+  # Never two backfills at once: they would race on the same
+  # (theme_id, run_date, headline) keys and each would read the other's half-written
+  # state as "already stored".
+  group: backfill-theme-gdelt
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    name: GDELT -> theme_news
+    runs-on: ubuntu-latest
+    # Nine themes x ceil(45/7) windows x 5s pacing is ~315s of pure waiting before
+    # any retry. The per-theme budget in the client caps a slow theme; this caps the
+    # job, with room for 429 backoff on top.
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Only what this script's import graph actually needs: the Supabase client
+          # and requests for GDELT. It does not import the scoring stack.
+          pip install requests "supabase>=2.0.0" python-dotenv
+
+      - name: Fail fast without credentials
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_KEY" ]; then
+            echo "SUPABASE_URL / SUPABASE_SERVICE_KEY are not set as repo secrets."
+            echo "Without them this job would fetch from GDELT and discard the result."
+            exit 1
+          fi
+
+      - name: Backfill
+        run: |
+          ARGS="--lookback-days ${{ inputs.lookback_days }}"
+          if [ -n "${{ inputs.themes }}" ]; then
+            ARGS="$ARGS --themes '${{ inputs.themes }}'"
+          fi
+          if [ "${{ inputs.apply }}" = "true" ]; then
+            ARGS="$ARGS --apply"
+            echo "::notice::APPLY mode — writing to theme_news."
+          else
+            echo "::notice::DRY RUN — nothing will be written."
+          fi
+          echo "python -m scripts.backfill_theme_gdelt $ARGS"
+          eval "python -m scripts.backfill_theme_gdelt $ARGS"

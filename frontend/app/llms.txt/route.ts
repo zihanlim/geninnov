@@ -127,6 +127,35 @@ most change how you should read a number:
 - ADR-0149 — request-time sizing calls the same optimizer the nightly run calls.
 - ADR-0150 — a recommendation has no P&L; the held book pays for its own trading.
 
+## The method, end to end
+
+The daily theme-and-hype process is written up in full at
+docs/theme-hype-methodology.md in the repository: data gathering, processing, the
+quantification framework, and how one output serves both idea generation and risk
+monitoring. It is written against the live system with real figures and is explicit
+about what is not yet measurable.
+
+The short version:
+
+- Two corpora, deliberately. Per-theme keyword queries measure the nine named themes.
+  A SEPARATE market-wide corpus, which names no theme, feeds a frequency tracker that
+  can find narratives nobody asked about. The first is circular on its own; the second
+  is what stops it being a mirror.
+- HypeScore = 0.30 volume + 0.20 sentiment + 0.30 cross-asset correlation + 0.20
+  momentum, weights from scoring_config. Every component is an ABSOLUTE sub-score on
+  its own documented scale, never min-maxed across themes: a cross-sectional score is
+  a statement about the day's peer group, not about the theme, and cannot be compared
+  across time.
+- A missing component is DROPPED and the rest renormalised, never scored zero. With a
+  0.30 correlation weight, a zero would silently deduct 30 points and be
+  indistinguishable from a measured absence.
+- Attention alone is not a theme. The brief defines a theme as a narrative driving
+  cross-asset moves, so correlation is a term in the score and a separate gate refuses
+  to call a link real below 20 sessions.
+- Idea generation and risk monitoring read the same number differently: ranked
+  HypeScore gates which themes are in scope; percentile-within-own-history plus book
+  position flags a crowded long.
+
 ## Sizing this yourself
 
 If you run your own capital base and your own limits, do NOT use the published

@@ -112,6 +112,7 @@ All project documentation lives under `docs/`:
 | `docs/superpowers/specs/2026-07-21-andromeda-market-theme-platform-design.md` | Full design spec — architecture, scoring formulas, data model, frontend pages |
 | `docs/superpowers/plans/2026-07-21-andromeda-implementation-plan.md` | Implementation plan — task-by-task build guide |
 | `docs/adrs/` | Architecture Decision Records in im-Jarvis format |
+| `docs/theme-hype-methodology.md` | **The answer to `task.md` Q2** — the daily theme/hype process end to end: data gathering, processing, the quantification framework, and how one output serves both idea generation and risk monitoring. Written against the live system with real figures, and explicit about what is not yet measurable. Start here for "how does the theme engine work?" |
 | `docs/design-goals.md` | **Read before evaluating any UI change or outside mockup.** Eight standing design goals, each with a test, plus the non-goals and a mockup-triage checklist. ADRs record decisions taken; this records the bar a proposal must clear |
 | `docs/captures/YYYY-MM-DD/` | Playwright screenshots — **one folder per capture date**. See [Screenshot convention](#screenshot-convention). |
 | `docs/baseline/screenshots/` | Frozen pre-refactor visual baselines. Read-only — never overwrite these with fresh captures |

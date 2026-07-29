@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import ReasoningStep from "@/components/chat/ReasoningStep";
 import VerifiedProse from "@/components/chat/VerifiedProse";
 import { EmptyState } from "@/components/status/EmptyState";
+import { describeRemaining } from "@/lib/chat/quota";
 import type { AgentAnswer } from "@/lib/chat/types";
 
 interface Turn {
@@ -56,6 +57,12 @@ export default function AskConsole({
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // The LAST answered turn, not the last turn: an in-flight turn has `answer: null`, and a
+  // transport failure never reached the guard, so neither carries a reading. Taking either
+  // would blank a balance the reader was just shown.
+  const lastAnswered = [...turns].reverse().find((t) => t.answer);
+  const quotaNote = describeRemaining(lastAnswered?.answer?.remaining, Boolean(lastAnswered));
 
   useEffect(() => {
     onTurnCountChange?.(turns.length);
@@ -261,6 +268,11 @@ export default function AskConsole({
                 shares an LLM quota with the nightly book, and a reader who knows
                 that spends it more carefully than one who does not.
 
+                The BALANCE is the other half of that disclosure and went unrendered
+                until ADR-0160 — the route computed `remaining`, the Turn type carried
+                it, and no element read it. Stated as a count of questions, never as a
+                percentage meter: the guard counts questions, not tokens or dollars.
+
                 "TWO OR THREE", not "two". `agent.ts` makes one plan call and then
                 runs the answer step in a `for (attempt < 2)` loop, breaking early
                 only when the guardrail verifies. So the happy path is two calls and
@@ -271,6 +283,7 @@ export default function AskConsole({
             {compact
               ? "Two model calls per question — three if an answer needs a retry. Shares the nightly book's quota."
               : "Answers take a few seconds — two model calls per question, or three if the first answer fails its citation check, on the quota the nightly book uses."}
+            {quotaNote && <span className="block mt-1">{quotaNote}</span>}
           </span>
           <button
             type="submit"

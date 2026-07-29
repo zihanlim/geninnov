@@ -19,7 +19,22 @@
 // (ADR-0023), and `theme_news` has zero Reddit rows. "Silent" and "stale" must not render
 // alike.
 //
-// See ADR-0105.
+// THE CORPUS THE BOARD COULD NOT SEE. Until 2026-07-29 this catalogue named six sources and
+// none of them was `market_news` — the un-themed corpus behind the narrative trends board on
+// `/` and behind ADR-0143's price-link gate. Three providers write to it (`brave_market`,
+// `gdelt`, `rss`) and the page that exists to answer "what is this built on, and which of
+// those is stale?" could not answer it for any of them. ADR-0157 defines a corpus by naming
+// its providers; this is that list, on the reader's side of the wire. See ADR-0160.
+//
+// Those three are NOT interchangeable, and the board must not let them read as three
+// helpings of the same thing. Brave is a recency ranking, GDELT is an archive (ADR-0144),
+// and `rss` is **shadow**: collected daily, source-tagged, and read by no scored corpus at
+// all until there is enough parallel history to say whether it agrees with Brave (ADR-0157).
+// A shadow source with fresh rows is not `current` — `current` would claim it feeds
+// something. That is the same defect goal 2 names in a two-state verdict, so it gets its own
+// state rather than being flattened into the nearest one.
+//
+// See ADR-0105 and ADR-0160.
 
 /** Which timestamp role a table can actually answer for — ADR-0098's roles, applied here. */
 export type TimestampRole = "observed" | "published" | "retrieved";
@@ -33,6 +48,11 @@ export type SourceVerdict =
   | "silent"
   /** No credential is set, so no request is made at all. */
   | "unconfigured"
+  /**
+   * Collected and stored, but read by no scored corpus. Fresh rows that feed nothing.
+   * Distinct from `current`, which would claim the source is load-bearing.
+   */
+  | "shadow"
   /** Rows present, but the table records no observation date — age is unknowable. */
   | "age-unknowable";
 
@@ -49,6 +69,12 @@ export interface SourceSpec {
   maxAgeDays: number;
   /** Why that cadence — so the threshold is arguable rather than asserted. */
   cadence: string;
+  /**
+   * True when the source is collected but no published number reads it (ADR-0157).
+   * Declared here rather than inferred, because "nothing reads this" is a decision
+   * recorded in `daily_refresh.COMBINED_SOURCES`, not a property of the rows.
+   */
+  shadow?: boolean;
 }
 
 /**
@@ -76,6 +102,46 @@ export const SOURCES: SourceSpec[] = [
     records: ["published", "retrieved"],
     maxAgeDays: 3,
     cadence: "Fetched each run when REDDIT_CLIENT_ID is set.",
+  },
+  // ── market_news: the un-themed corpus (L1b) ────────────────────────────────────────
+  // Three providers, three different jobs. Listed separately and never merged into one
+  // "news" row: ADR-0155 is that a share is only comparable to a share of the SAME corpus,
+  // and the whole finding of ADR-0144 is that these differ in shape, not just in volume.
+  {
+    key: "brave_market",
+    label: "Brave Search (market corpus)",
+    feeds: "The un-themed market corpus behind the narrative trends board (L1b)",
+    table: "market_news",
+    records: ["published", "retrieved"],
+    maxAgeDays: 3,
+    cadence:
+      "Fetched each run. A recency RANKING, not an archive: 48% of a 45-day window falls " +
+      "in the last 7 days, and it holds nothing before its window opens (ADR-0144).",
+  },
+  {
+    key: "gdelt",
+    label: "GDELT",
+    feeds: "The same corpus's history — the only provider that has one",
+    table: "market_news",
+    records: ["published", "retrieved"],
+    // GDELT publishes with a lag, so the newest day is always the thinnest. Four days
+    // rather than three so a normal lag is not reported as staleness.
+    maxAgeDays: 4,
+    cadence:
+      "Fetched each run, keyless. An ARCHIVE: 18% of a 45-day window in the last 7 days, " +
+      "40 of 45 days populated. It publishes with a lag, so the newest day is the thinnest.",
+  },
+  {
+    key: "rss",
+    label: "RSS feeds",
+    feeds: "Collected for corroboration against Brave — no published number reads it yet",
+    table: "market_news",
+    records: ["published", "retrieved"],
+    maxAgeDays: 3,
+    shadow: true,
+    cadence:
+      "Fetched each run, keyless. A feed holds only its most recent items and there is no " +
+      "backfill, so what was not collected yesterday is gone.",
   },
   {
     key: "fred",
@@ -196,6 +262,16 @@ export function buildSourceBoard(
       note =
         `Fetched, but contributed no rows. The pipeline asked and got nothing back; ` +
         `that is a gap in the corpus, not evidence that there was nothing to find.`;
+    } else if (spec.shadow) {
+      // Checked BEFORE freshness on purpose. "How old is it" is the wrong first question
+      // about a source nothing reads, and answering `current` would assert it is load-bearing.
+      // The age still travels in the note, so declaring a source shadow hides no fact.
+      verdict = "shadow";
+      note =
+        `Collected and stored, but no scored corpus reads it — it is not counted in any ` +
+        `published share (ADR-0157). ` +
+        (ageDays !== null ? `Newest row is ${ageDays} days old. ` : "") +
+        spec.cadence;
     } else if (ageMeasuredFrom === "retrieved") {
       // The finding worth stating: we know when we asked, not when the world was in
       // this state.
@@ -220,27 +296,38 @@ export function buildSourceBoard(
 /**
  * The headline: how many sources can state when the world was in the state they describe.
  *
- * Reported as a count rather than a percentage because six is small enough that a percentage
- * would imply a precision the denominator does not support.
+ * Reported as a count rather than a percentage because the denominator is small enough that
+ * a percentage would imply a precision it does not support.
+ *
+ * `contributing` counts rows a published number actually READS, so a shadow source is
+ * excluded from it and stated separately. Counting `rows > 0` alone would have let a
+ * corpus nothing reads inflate the figure that answers "what is this book built on".
  */
 export function observabilitySummary(board: SourceRow[]): {
   total: number;
   withObservationDate: number;
   contributing: number;
+  shadow: number;
   sentence: string;
 } {
   const total = board.length;
   const withObservationDate = board.filter(
     (r) => r.ageMeasuredFrom === "observed" || r.ageMeasuredFrom === "published",
   ).length;
-  const contributing = board.filter((r) => r.rows > 0).length;
+  const contributing = board.filter((r) => r.rows > 0 && r.verdict !== "shadow").length;
+  const shadow = board.filter((r) => r.verdict === "shadow").length;
 
   return {
     total,
     withObservationDate,
     contributing,
+    shadow,
     sentence:
-      `${contributing} of ${total} sources contributed rows to this book. ` +
+      `${contributing} of ${total} sources contributed rows this book reads. ` +
+      (shadow > 0
+        ? `${shadow === 1 ? "One more is" : `${shadow} more are`} collected and read by ` +
+          `nothing, held for corroboration rather than counted. `
+        : "") +
       `${withObservationDate} of ${total} can say when the underlying data was observed or ` +
       `published; for the rest the only date recorded is when the pipeline fetched it, so ` +
       `their age is the age of our copy rather than of the reading.`,

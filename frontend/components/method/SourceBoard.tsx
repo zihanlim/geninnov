@@ -16,15 +16,24 @@ import {
 // is this FRED reading" has no answer in our schema. Printing "updated 2026-07-25" would hide
 // that behind a fresh-looking timestamp, which is the conflation ADR-0098 named.
 //
-// Five verdicts, deliberately distinct: current / stale / silent (asked, got nothing) /
-// unconfigured (never asked) / age-unknowable (rows, but no observation date). Each asks
-// something different of a reader.
+// Six verdicts, deliberately distinct: current / stale / silent (asked, got nothing) /
+// unconfigured (never asked) / shadow (collected, read by nothing) / age-unknowable (rows,
+// but no observation date). Each asks something different of a reader.
+//
+// SHADOW takes a ring rather than a second flat tertiary, for the reason StatusBadge's
+// `stale` took one: `unconfigured` already owns bare tertiary, and two states that render
+// identically are two states a reader cannot tell apart. Not a warning colour — nothing is
+// wrong with a shadow source; it is doing exactly what ADR-0157 decided it should.
 
 const VERDICT_COPY: Record<SourceVerdict, { label: string; cls: string }> = {
   current: { label: "CURRENT", cls: "text-text-secondary" },
   stale: { label: "STALE", cls: "text-warning font-semibold" },
   silent: { label: "SILENT", cls: "text-warning font-semibold" },
   unconfigured: { label: "NOT CONFIGURED", cls: "text-text-tertiary" },
+  shadow: {
+    label: "SHADOW",
+    cls: "text-text-tertiary border border-border rounded-sm px-1 py-px",
+  },
   "age-unknowable": { label: "AGE UNKNOWABLE", cls: "text-warning font-semibold" },
 };
 
@@ -34,9 +43,14 @@ async function fetchObservations(): Promise<{
   error: string | null;
 }> {
   try {
-    const [news, macro, hist, factors, book] = await Promise.all([
+    const [news, market, macro, hist, factors, book] = await Promise.all([
       supabase.from("theme_news").select("source, published_date, created_at")
         .order("published_date", { ascending: false }).limit(2000),
+      // The un-themed L1b corpus. Three providers land here and the board named none of
+      // them until ADR-0160; `source` is what separates an archive from a recency ranking
+      // from a shadow feed, so it is selected rather than counted in aggregate.
+      supabase.from("market_news").select("source, published_date, created_at")
+        .order("published_date", { ascending: false }).limit(4000),
       supabase.from("macro_indicators").select("fetched_at")
         .order("fetched_at", { ascending: false }).limit(1),
       supabase.from("macro_daily_history").select("trading_date, created_at")
@@ -47,13 +61,17 @@ async function fetchObservations(): Promise<{
         .order("run_date", { ascending: false }).limit(1),
     ]);
 
-    const firstError = [news, macro, hist, factors, book].find((r) => r.error)?.error;
+    const firstError = [news, market, macro, hist, factors, book].find((r) => r.error)?.error;
     if (firstError) return { observations: [], error: firstError.message };
 
-    const newsRows = (news.data ?? []) as Array<{
+    type NewsRow = {
       source: string | null; published_date: string | null; created_at: string | null;
-    }>;
-    const bySource = (name: string) => newsRows.filter((r) => (r.source ?? "") === name);
+    };
+    const newsRows = (news.data ?? []) as NewsRow[];
+    const marketRows = (market.data ?? []) as NewsRow[];
+    const bySourceIn = (rows: NewsRow[], name: string) =>
+      rows.filter((r) => (r.source ?? "") === name);
+    const bySource = (name: string) => bySourceIn(newsRows, name);
     const latest = (rows: Array<{ published_date: string | null; created_at: string | null }>) => ({
       published: rows.map((r) => r.published_date).filter(Boolean).sort().pop() ?? null,
       retrieved: rows.map((r) => r.created_at).filter(Boolean).sort().pop()?.slice(0, 10) ?? null,
@@ -61,6 +79,11 @@ async function fetchObservations(): Promise<{
 
     const brave = bySource("brave");
     const reddit = bySource("reddit");
+    // `market_news.source` values, spelled as `daily_refresh` writes them. `brave_market` is
+    // NOT `brave`: the same provider asked a different question, into a different corpus.
+    const braveMarket = bySourceIn(marketRows, "brave_market");
+    const gdelt = bySourceIn(marketRows, "gdelt");
+    const rss = bySourceIn(marketRows, "rss");
     const pc = (book.data?.[0] as { positioning_crowding?: { as_of?: string } } | undefined)
       ?.positioning_crowding;
 
@@ -71,6 +94,13 @@ async function fetchObservations(): Promise<{
         // Zero Reddit rows AND no credential in the deployment: reported as never asked
         // rather than as empty, because those are different facts (ADR-0094).
         { key: "reddit", rows: reddit.length, unconfigured: reddit.length === 0, ...latest(reddit) },
+        // None of these three is ever marked `unconfigured` on zero rows. GDELT and RSS are
+        // keyless, so they cannot be unconfigured at all; and Brave demonstrably HAS a key
+        // in this deployment, so an empty market corpus means the feed failed — which
+        // ADR-0156 requires be reported as a failure rather than as a quiet market.
+        { key: "brave_market", rows: braveMarket.length, ...latest(braveMarket) },
+        { key: "gdelt", rows: gdelt.length, ...latest(gdelt) },
+        { key: "rss", rows: rss.length, ...latest(rss) },
         {
           key: "fred",
           rows: (macro.data ?? []).length,

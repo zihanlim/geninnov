@@ -295,6 +295,33 @@ Run this in order. Most comps fail at 2 or 3.
 A worked example of this triage — four Stitch comps, five adoptions, five
 refusals — is recorded in `PROGRESS.md` under 2026-07-25.
 
+**Four passes in, the yield curve on outside comps is 5 → 2 → 0 → 2**, and the
+shape of it is the useful part. The first pass took two structural ideas; the
+second took the horizontal axis (2026-07-26); the third returned **zero**; the
+fourth (2026-07-29, `stitch_andromeda_systematic_trading_platform.zip`) returned
+two — and **neither was a design the comp drew.** Both were defects its screens
+exposed in what already ships: a source board that omitted an entire corpus, and
+a spend figure `/ask` computed and never rendered
+([ADR-0161](adrs/0161-a-corpus-the-board-could-not-see.md)).
+
+Two things follow for the next comp:
+
+- **Step 5's "what's left" is now usually nothing.** The styling axis is
+  exhausted — palette, typography and chip geometry have lost four times, and a
+  fifth measurement of a Material ladder against this palette is not a good use
+  of an afternoon. Say so and move on.
+- **Ask what question the comp is asking, not what it draws.** A screen that
+  invents every number on it can still be pointing at a question the real product
+  answers badly. That is where the last two adoptions came from, and it is the
+  one part of the exercise that has not stopped paying.
+
+Before concluding a comp's layout beats what ships, **measure the live pages
+first**. The 2026-07-29 pass found the comps' entire grid vocabulary — top
+stat-tile row, paired two-column sections, in-page section nav, labelled
+collapsible rail — already shipping, some of it adopted from an earlier comp and
+since forgotten. The stale "still pending" note in `PROGRESS.md` was more
+persuasive than the code, and it was wrong.
+
 ## Where the tokens and primitives live
 
 | Concern | File |

@@ -1,9 +1,10 @@
 // The source board must not flatten four different absences into one.
 //
 // A source can be: contributing and current; contributing and stale; fetched but SILENT
-// (asked, got nothing); never asked because it is UNCONFIGURED; or contributing rows whose
-// AGE IS UNKNOWABLE because its table records only when we fetched. Those are five distinct
-// facts and each asks something different of a reader — retry, wait, fix a credential, or
+// (asked, got nothing); never asked because it is UNCONFIGURED; collected but SHADOW,
+// meaning no scored corpus reads it; or contributing rows whose AGE IS UNKNOWABLE because
+// its table records only when we fetched. Those are six distinct facts and each asks
+// something different of a reader — retry, wait, fix a credential, ignore it for now, or
 // accept that the age cannot be known at all.
 //
 // The last one is the finding this board exists to state. `macro_indicators` has `fetch_date`
@@ -23,10 +24,20 @@ const NOW = new Date("2026-07-27T00:00:00Z");
 const row = (board: ReturnType<typeof buildSourceBoard>, key: string) =>
   board.find((r) => r.key === key)!;
 
-/** The live 2026-07-26 state, measured from Supabase. */
+/**
+ * The live 2026-07-26 state, measured from Supabase.
+ *
+ * The three `market_news` rows were measured on 2026-07-29 (gdelt 2,309 / brave_market 667 /
+ * rss 405) and are dated back to 2026-07-26 here so they share this file's `NOW`. Their
+ * relative shapes are the real ones — GDELT holds the most rows over the longest span
+ * because it is the only archive (ADR-0144).
+ */
 const LIVE: SourceObservation[] = [
   { key: "brave", rows: 1339, published: "2026-07-26", retrieved: "2026-07-26" },
   { key: "reddit", rows: 0, unconfigured: true },
+  { key: "brave_market", rows: 667, published: "2026-07-26", retrieved: "2026-07-26" },
+  { key: "gdelt", rows: 2309, published: "2026-07-26", retrieved: "2026-07-26" },
+  { key: "rss", rows: 405, published: "2026-07-26", retrieved: "2026-07-26" },
   { key: "fred", rows: 77, retrieved: "2026-07-25" },
   { key: "yfinance", rows: 4977, observed: "2026-07-24", retrieved: "2026-07-24" },
   { key: "kenfrench", rows: 156, retrieved: "2026-07-24" },
@@ -133,18 +144,111 @@ describe("the catalogue is honest about what each table records", () => {
 describe("the headline counts what can actually be known", () => {
   it("states both how many contributed and how many can date themselves", () => {
     const s = observabilitySummary(buildSourceBoard(LIVE, NOW));
-    expect(s.total).toBe(6);
-    // Reddit contributes nothing; the other five do.
-    expect(s.contributing).toBe(5);
-    // Only brave (published), yfinance (observed) and cftc (observed) can date themselves.
-    expect(s.withObservationDate).toBe(3);
-    expect(s.sentence).toContain("5 of 6 sources contributed");
-    expect(s.sentence).toContain("3 of 6");
+    expect(s.total).toBe(9);
+    // Reddit contributes nothing and RSS is shadow; the other seven are read.
+    expect(s.contributing).toBe(7);
+    // brave, brave_market, gdelt, rss (published) + yfinance, cftc (observed).
+    expect(s.withObservationDate).toBe(6);
+    expect(s.sentence).toContain("7 of 9 sources contributed");
+    expect(s.sentence).toContain("6 of 9");
     expect(s.sentence).toContain("age of our copy");
   });
 
   it("is a count, not a percentage", () => {
-    // Six is too small a denominator for a percentage to mean anything.
+    // Nine is too small a denominator for a percentage to mean anything.
     expect(observabilitySummary(buildSourceBoard(LIVE, NOW)).sentence).not.toMatch(/\d+%/);
+  });
+
+  it("does not let a corpus nothing reads inflate the contributing count", () => {
+    // RSS has 405 fresh rows. Counting `rows > 0` would report it as feeding the book,
+    // which is the claim ADR-0157 deliberately withheld.
+    const s = observabilitySummary(buildSourceBoard(LIVE, NOW));
+    expect(s.shadow).toBe(1);
+    expect(s.sentence).toContain("read by");
+    expect(s.sentence).toContain("nothing");
+  });
+});
+
+// ── ADR-0160: the corpus the board could not see ──────────────────────────────────────
+describe("market_news is on the board, as three providers rather than one", () => {
+  const board = buildSourceBoard(LIVE, NOW);
+
+  it("names all three providers that write to market_news", () => {
+    const market = SOURCES.filter((s) => s.table === "market_news").map((s) => s.key);
+    // Never merged into one "news" row: a share is only comparable to a share of the same
+    // corpus (ADR-0155), and these three differ in shape, not just in volume.
+    expect(market).toEqual(["brave_market", "gdelt", "rss"]);
+  });
+
+  it("keeps the themed and un-themed Brave corpora as separate sources", () => {
+    // Same provider, different question, different table. One `brave` row would have
+    // implied the theme corpus and the market corpus were the same evidence.
+    expect(row(board, "brave").table).toBe("theme_news");
+    expect(row(board, "brave_market").table).toBe("market_news");
+  });
+
+  it("distinguishes the archive from the recency ranking in its own cadence copy", () => {
+    // ADR-0144's finding, which is the reason two news rows are not redundancy.
+    expect(row(board, "gdelt").cadence).toContain("ARCHIVE");
+    expect(row(board, "brave_market").cadence).toContain("RANKING");
+  });
+
+  it("judges the two counted providers on publication date, like any dated source", () => {
+    for (const key of ["brave_market", "gdelt"]) {
+      expect(row(board, key).ageMeasuredFrom, key).toBe("published");
+      expect(row(board, key).verdict, key).toBe("current");
+    }
+  });
+});
+
+describe("a source that is collected but read by nothing is SHADOW, not current", () => {
+  const board = buildSourceBoard(LIVE, NOW);
+
+  it("does not report fresh unread rows as current", () => {
+    const r = row(board, "rss");
+    expect(r.verdict).toBe("shadow");
+    // `current` would assert the source is load-bearing. It is not.
+    expect(r.verdict).not.toBe("current");
+  });
+
+  it("says plainly that no published share counts it", () => {
+    const r = row(board, "rss");
+    expect(r.note).toContain("no scored corpus reads it");
+    expect(r.note).toContain("not counted in any published share");
+  });
+
+  it("still reports the age, so declaring a source shadow hides no fact", () => {
+    const r = row(board, "rss");
+    expect(r.ageDays).toBe(1);
+    expect(r.note).toContain("1 days old");
+  });
+
+  it("is silent, not shadow, when the feeds returned nothing", () => {
+    // Every feed failing is a different fact from a feed nobody reads, and ADR-0156 is
+    // exactly about not absorbing the first into a calmer word.
+    const b = buildSourceBoard(
+      LIVE.map((o) => (o.key === "rss" ? { key: "rss", rows: 0 } : o)),
+      NOW,
+    );
+    expect(row(b, "rss").verdict).toBe("silent");
+  });
+
+  it("marks exactly one source shadow, and it is the one COMBINED_SOURCES omits", () => {
+    // If this fails because a provider was turned on, the fix is to drop `shadow` from its
+    // spec — not to widen the assertion.
+    expect(SOURCES.filter((s) => s.shadow).map((s) => s.key)).toEqual(["rss"]);
+  });
+});
+
+describe("a keyless provider is never reported as unconfigured", () => {
+  it("gives GDELT and RSS no credential story to tell", () => {
+    // Both are keyless (ADR-0144, ADR-0157), so zero rows can only mean the fetch failed.
+    // `unconfigured` would send a reader hunting for a secret that does not exist.
+    const b = buildSourceBoard(
+      LIVE.map((o) => (["gdelt", "rss"].includes(o.key) ? { key: o.key, rows: 0 } : o)),
+      NOW,
+    );
+    expect(row(b, "gdelt").verdict).toBe("silent");
+    expect(row(b, "rss").verdict).toBe("silent");
   });
 });

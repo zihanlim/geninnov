@@ -64,12 +64,40 @@ export async function fetchThemeTrends(
 }
 
 /**
+ * The fewest same-day mentions, ACROSS ALL THEMES, that can carry a share.
+ *
+ * Not a taste call. This table reports a share to one decimal place, and a
+ * denominator where a single article moves the printed figure by more than
+ * ~5pp makes that precision a lie: 1/20 = 5.0pp, 1/10 = 10pp, 1/3 = 33pp.
+ *
+ * Observed 2026-07-29, when the Brave quota died mid-run (ADR-0156) and the
+ * day's total fell to THREE mentions across nine themes:
+ *
+ *     US Election   66.7%   2 mentions   +55.0pp
+ *     Fed Policy    33.3%   1 mention     -3.0pp
+ *     (seven themes at 0.0%)
+ *
+ * Every figure there is arithmetic on a sample of three, rendered with the same
+ * confidence as a healthy day's. Healthy days run 62-77 same-day mentions across
+ * the nine themes (measured 2026-07-27 and -28), so this floor does not bind on
+ * them — it binds exactly when the number would otherwise be invented.
+ *
+ * Same rule the discovery layer already applies to its own corpus
+ * (`narrative_tracker.MIN_DOC_COUNT`, and `backfill_narratives --min-docs`:
+ * "a share computed out of three documents is 33% by arithmetic and says
+ * nothing"), and the same rule `lib/risk/sampleAdequacy.ts` applies to risk
+ * statistics (ADR-0100).
+ */
+export const MIN_DAY_MENTIONS_FOR_SHARE = 20;
+
+/**
  * Group rows into per-theme share-of-voice series.
  *
  * Share is computed against the day's total of NON-NULL counts. A day whose
- * total is zero produces no points at all — 0/0 is not a share, and a flat
- * zero line would read as "nobody mentioned anything", which is a different
- * claim from "the fetch returned nothing" (ADR-0066).
+ * total is zero — or below MIN_DAY_MENTIONS_FOR_SHARE — produces no points at
+ * all: 0/0 is not a share, 2/3 is not a measurement, and a flat zero line would
+ * read as "nobody mentioned anything", which is a different claim from "the
+ * fetch returned nothing" (ADR-0066).
  */
 export function toThemeTrendSeries(rows: ThemeTrendRow[]): ThemeTrendSeries[] {
   const dayTotals = new Map<string, number>();
@@ -91,7 +119,9 @@ export function toThemeTrendSeries(rows: ThemeTrendRow[]): ThemeTrendSeries[] {
     let latestMentions: number | null = null;
     for (const r of [...list].sort((a, b) => a.run_date.localeCompare(b.run_date))) {
       const total = dayTotals.get(r.run_date) ?? 0;
-      if (r.mention_count_1d === null || total <= 0) continue; // gap, not zero
+      // A gap, not a zero — and a thin day is a gap for the same reason an
+      // empty one is: the share would be a statement about the sample size.
+      if (r.mention_count_1d === null || total < MIN_DAY_MENTIONS_FOR_SHARE) continue;
       points.push({ run_date: r.run_date, share: r.mention_count_1d / total });
       latestMentions = r.mention_count_1d;
     }
@@ -111,6 +141,33 @@ export function toThemeTrendSeries(rows: ThemeTrendRow[]): ThemeTrendSeries[] {
   // Loudest today first — the same ordering the top-5 colour assignment uses,
   // so colour follows the entity for the life of the page load.
   return out.sort((a, b) => (b.latest.share ?? -1) - (a.latest.share ?? -1));
+}
+
+/**
+ * The most recent run's mention total, when it is too thin to carry a share.
+ *
+ * `toThemeTrendSeries` drops such a day, which is correct and invisible — the
+ * table simply renders em dashes. An absence has to state its cause (design
+ * goal 2), and "the fetch collected three articles" is a very different fact
+ * from "attention was flat", so the caller gets the number to say it with.
+ *
+ * Returns null when the latest day clears the floor, or when there is no data.
+ */
+export function latestSampleShortfall(
+  rows: ThemeTrendRow[],
+): { run_date: string; total: number } | null {
+  const dayTotals = new Map<string, number>();
+  for (const r of rows) {
+    if (r.mention_count_1d === null) continue;
+    dayTotals.set(r.run_date, (dayTotals.get(r.run_date) ?? 0) + r.mention_count_1d);
+  }
+  let latest: string | null = null;
+  dayTotals.forEach((_total, day) => {
+    if (latest === null || day > latest) latest = day;
+  });
+  if (latest === null) return null;
+  const total = dayTotals.get(latest) ?? 0;
+  return total < MIN_DAY_MENTIONS_FOR_SHARE ? { run_date: latest, total } : null;
 }
 
 /** The five colour slots are the cap; everything else lives in the table. */

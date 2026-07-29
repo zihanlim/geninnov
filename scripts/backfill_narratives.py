@@ -105,6 +105,65 @@ def load_corpus_by_day(sb) -> dict[date, list[str]]:
     return dict(by_day)
 
 
+def replay_archive(
+    by_day: dict[date, list[str]],
+    anchors: dict[str, list[str]],
+    min_docs: int = 8,
+    on_day=None,
+) -> tuple[list[dict], list[date]]:
+    """Replay publication days forward into archive signal rows.
+
+    THE DATE FIELD IS THE WHOLE POINT (ADR-0158). A day's corpus is the documents
+    PUBLISHED that day. It is emphatically not the documents FETCHED that day: one
+    GDELT fetch returns 45 days of history in a single call, so bucketing by
+    `run_date` makes "today" 1449 documents mostly published weeks ago, against a
+    history of 21-63. Same phrase, same provider, incomparable denominators.
+
+    Forward-only. Each day is built against the days BEFORE it, never against
+    itself or the future — anything else leaks information backwards and
+    manufactures velocity.
+
+    Pure: no Supabase, no network. `on_day(d, corpus, signals)` is called per day
+    for progress reporting so the caller decides how loud to be.
+    """
+    days = sorted(by_day)
+    usable = [d for d in days if len(by_day[d]) >= min_docs]
+
+    history: dict[str, list[tuple[date, float]]] = defaultdict(list)
+    history_sizes: dict[date, int] = {}
+    rows: list[dict] = []
+
+    for d in usable:
+        corpus = daily_phrase_counts(by_day[d], d)
+        signals = build_narrative_signals(
+            corpus, dict(history), anchors, dict(history_sizes)
+        )
+        if on_day is not None:
+            on_day(d, corpus, signals)
+
+        for s in signals[:TOP_N_PERSISTED]:
+            rows.append({
+                "run_date": s.run_date.isoformat(),
+                "phrase": s.phrase,
+                "doc_count": s.doc_count,
+                "corpus_size": s.corpus_size,
+                "share": s.share,
+                "velocity": s.velocity,
+                "days_observed": s.days_observed,
+                "first_seen": s.first_seen.isoformat(),
+                "status": s.status,
+                "covered_by": s.covered_by,
+                "methods": s.methods,
+                "corpus": ARCHIVE_CORPUS,
+            })
+
+        for s in signals:
+            history[s.phrase].append((d, s.share))
+        history_sizes[d] = corpus.corpus_size
+
+    return rows, usable
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--apply", action="store_true", help="write to Supabase")
@@ -140,13 +199,6 @@ def main() -> int:
     if not usable:
         return 0
 
-    # Replay forward, accumulating history exactly as the live job sees it: each
-    # day's signals are built against the days BEFORE it, never against itself or
-    # the future. Anything else would leak information backwards and manufacture
-    # velocity.
-    history: dict[str, list[tuple[date, float]]] = defaultdict(list)
-    history_sizes: dict[date, int] = {}
-    all_rows: list[dict] = []
     first_measurable: date | None = None
 
     # `covered_by` needs the anchor keywords or it is NULL for every phrase,
@@ -165,47 +217,24 @@ def main() -> int:
     print(f"anchors: {len(anchors)} themes, judged as of TODAY")
 
     print(f"\n{'date':12} {'docs':>5} {'phrases':>8} {'w/vel':>6} {'emerging':>9}  top phrase")
-    for d in usable:
-        corpus = daily_phrase_counts(by_day[d], d)
-        # Sizes of the days already replayed, so the guard can refuse a
-        # velocity across a corpus-size break (ADR-0155).
-        signals = build_narrative_signals(
-            corpus, dict(history), anchors, dict(history_sizes)
-        )
 
+    def _report(d, corpus, signals):
+        nonlocal first_measurable
         with_vel = sum(1 for s in signals if s.velocity is not None)
         emerging = [s for s in signals if s.status == "emerging"]
         if with_vel and first_measurable is None:
             first_measurable = d
-
         top = max(signals, key=lambda s: s.share).phrase if signals else "—"
         print(
             f"{d.isoformat():12} {corpus.corpus_size:>5} {len(signals):>8} "
             f"{with_vel:>6} {len(emerging):>9}  {top[:36]}"
         )
 
-        for s in signals[:TOP_N_PERSISTED]:
-            all_rows.append({
-                "run_date": s.run_date.isoformat(),
-                "phrase": s.phrase,
-                "doc_count": s.doc_count,
-                "corpus_size": s.corpus_size,
-                "share": s.share,
-                "velocity": s.velocity,
-                "days_observed": s.days_observed,
-                "first_seen": s.first_seen.isoformat(),
-                "status": s.status,
-                "covered_by": s.covered_by,
-                "methods": s.methods,
-                # These rows ARE the archive series, and mislabelling them would
-                # put GDELT-only shares into the combined series' history.
-                "corpus": ARCHIVE_CORPUS,
-            })
-
-        # Feed today's share forward for tomorrow's comparison.
-        for s in signals:
-            history[s.phrase].append((d, s.share))
-        history_sizes[d] = corpus.corpus_size
+    # The replay itself lives in `replay_archive` so the NIGHTLY job runs the same
+    # arithmetic rather than a second copy of it (ADR-0158). A backfill and a live
+    # extension that bucket documents by different date fields is exactly how the
+    # series became incomparable with itself.
+    all_rows, _ = replay_archive(by_day, anchors, min_docs=args.min_docs, on_day=_report)
 
     measurable = sum(1 for r in all_rows if r["velocity"] is not None)
     emerging_rows = [r for r in all_rows if r["status"] == "emerging"]

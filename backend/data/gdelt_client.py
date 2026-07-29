@@ -269,15 +269,31 @@ def fetch_market_news_gdelt(
     skipped = 0
     requests_made = 0
 
-    # Oldest window first. A truncated fetch then loses the RECENT end, which the
-    # live Brave corpus already covers densely — losing old days instead would tear
-    # a hole in the only history the archive exists to provide.
+    # NEWEST window first, then the rest oldest-first (ADR-0158).
+    #
+    # ADR-0154 ordered these purely oldest-first, on the stated grounds that a
+    # truncated fetch would lose the recent end "which the live Brave corpus
+    # already covers densely at 87-94 docs/day". That premise does not hold for the
+    # consumer that needs it most: the ARCHIVE series is GDELT-only by definition
+    # (ADR-0153), so Brave covers none of it, and its recent end was therefore
+    # never covered by anything. Measured 2026-07-29 — the budget ran out with "9
+    # of 10 queries not run to completion", the newest publication days held 9-16
+    # documents against a median of 49, and ADR-0155's guard withheld velocity on
+    # every one of them for being too SMALL. A daily job whose whole purpose is to
+    # extend a series was structurally unable to extend it.
+    #
+    # Newest-first fixes that without giving up ADR-0154's protection: truncation
+    # now costs MIDDLE days, and a middle day is recoverable — GDELT is an archive,
+    # so a later run can still fetch it. The live end is not recoverable, because
+    # tomorrow it is no longer the live end.
     windows: list[tuple[datetime, datetime]] = []
     cursor = end - timedelta(days=lookback_days)
     while cursor < end:
         stop = min(cursor + timedelta(days=WINDOW_DAYS), end)
         windows.append((cursor, stop))
         cursor = stop
+    if windows:
+        windows = [windows[-1], *windows[:-1]]
 
     for index, query in enumerate(queries):
         if time.monotonic() - began > time_budget_s:

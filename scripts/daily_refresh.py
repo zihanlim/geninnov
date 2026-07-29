@@ -997,6 +997,75 @@ def persist_theme_news(run_date: date, scored: list[dict]) -> int:
 
 
 # ─── Step 5b (L1b): The un-themed corpus + narrative tracking (ADR-0128) ─────
+def extend_archive_series(run_date: date) -> int:
+    """Rebuild the archive narrative series, bucketed by PUBLICATION date.
+
+    The archive is a SERIES, and ADR-0153's rule — a series has to be counted out
+    of the same kind of corpus every day — extends to the date field it is counted
+    on (ADR-0158). Its own backfill has always bucketed by `published_date`; the
+    nightly job bucketed by `run_date`, so the live end of the series was built on
+    a different denominator from the history it was compared against.
+
+    Both paths now call `replay_archive`, so there is one implementation.
+
+    Swallows its own failures. This is a shadow layer (ADR-0128) and must never
+    take down the book.
+    """
+    try:
+        from scripts.backfill_narratives import (
+            ARCHIVE_SOURCE as _SRC,
+            load_corpus_by_day,
+            replay_archive,
+        )
+    except ImportError:  # invoked as `python scripts/daily_refresh.py`
+        from backfill_narratives import (  # type: ignore[no-redef]
+            ARCHIVE_SOURCE as _SRC,
+            load_corpus_by_day,
+            replay_archive,
+        )
+
+    try:
+        by_day = load_corpus_by_day(supabase)
+    except Exception as exc:
+        print(f"[narrative_tracker] archive read failed ({exc.__class__.__name__}); "
+              f"the comparable series is not extended today.")
+        return 0
+
+    if not by_day:
+        print(f"[{run_date}] no archive documents stored — the comparable series is "
+              f"not extended today. This is a gap in it, not a zero.")
+        return 0
+
+    rows, usable = replay_archive(by_day, coverage_keywords())
+    if not rows:
+        print(f"[{run_date}] archive replay produced no rows "
+              f"({len(by_day)} publication days, none above the min-docs floor).")
+        return 0
+
+    measurable = sum(1 for r in rows if r["velocity"] is not None)
+    emerging = sum(1 for r in rows if r["status"] == "emerging")
+    print(f"[{run_date}] archive series: {len(rows)} rows over {len(usable)} "
+          f"PUBLICATION days · {measurable} with velocity · {emerging} emerging.")
+
+    # Delete-then-insert per date. An upsert alone leaves behind phrases persisted
+    # for a date and absent from the recomputed set, making the day a union of two
+    # runs rather than that day's actual top-N — the defect ADR-0152 records.
+    try:
+        for d in sorted(by_day):
+            (supabase.table("narrative_signals")
+                .delete()
+                .eq("run_date", d.isoformat())
+                .eq("corpus", ARCHIVE_CORPUS)
+                .execute())
+        for i in range(0, len(rows), 500):
+            supabase.table("narrative_signals").insert(rows[i:i + 500]).execute()
+    except Exception as exc:
+        print(f"[narrative_tracker] archive persist failed "
+              f"({exc.__class__.__name__}): {exc}")
+        return 0
+    return len(rows)
+
+
 def persist_market_news(run_date: date, items: list[dict]) -> int:
     """Upsert the general market-news corpus into `market_news`.
 
@@ -1231,15 +1300,23 @@ def run_narrative_tracking(run_date: date) -> int:
         #
         # Neither dominates: dense-and-incomparable and sparse-but-comparable are
         # different failures. Both are stored, each labelled with what it counted.
-        archive_docs = load_market_corpus(run_date, sources=[ARCHIVE_SOURCE])
-        if archive_docs:
-            track_narratives(
-                supabase, run_date, archive_docs,
-                anchor_keywords=coverage_keywords(), corpus=ARCHIVE_CORPUS,
-            )
-        else:
-            print(f"[{run_date}] no archive documents this run — the comparable "
-                  f"series is not extended today. This is a gap in it, not a zero.")
+        # BUCKETED BY PUBLICATION DATE, NOT BY FETCH DATE (ADR-0158).
+        #
+        # This used to be `load_market_corpus(run_date, sources=[ARCHIVE_SOURCE])`,
+        # which selects on `run_date` — the day we FETCHED. One GDELT call returns
+        # 45 days of history, so every one of those documents carries today's
+        # run_date, and "today's corpus" became 1449 documents spanning 32
+        # publication days, against a history of 21-63. 26x the median, so
+        # ADR-0155's guard withheld velocity on all 128 phrases — correctly, since
+        # the two numbers were not measuring the same thing. The series was
+        # incomparable with ITSELF, which no provider or depth guard could catch
+        # because neither the provider nor the depth had changed.
+        #
+        # A day's corpus is the documents PUBLISHED that day. Replaying is not
+        # optional here: as later fetches fill in older dates, those days' shares
+        # change, and a forward-only snapshot could never incorporate them. It is
+        # pure arithmetic over stored rows — no network, no LLM.
+        extend_archive_series(run_date)
 
         # Two-method agreement (ADR-0133). Frequency found these; the monthly
         # LDA-intersect-embedding job proposed its own candidates. Where the two

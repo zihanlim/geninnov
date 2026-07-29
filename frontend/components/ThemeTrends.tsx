@@ -20,7 +20,9 @@
 import { useEffect, useState } from "react";
 import { SERIES_COLORS, TrendPlot } from "@/components/NarrativeTrends";
 import {
+  MIN_DAY_MENTIONS_FOR_SHARE,
   fetchThemeTrends,
+  latestSampleShortfall,
   themeSharePct,
   topThemeSeries,
   toThemeTrendSeries,
@@ -84,6 +86,9 @@ export function ThemeTrendsTable({ series }: { series: ThemeTrendSeries[] }) {
 export default function ThemeTrends() {
   const [series, setSeries] = useState<ThemeTrendSeries[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Why the latest day carries no share, when it carries none. Held separately
+  // from `series` because the reason is a property of the DAY, not of a theme.
+  const [thin, setThin] = useState<{ run_date: string; total: number } | null>(null);
 
   useEffect(() => {
     fetchThemeTrends().then(({ rows, error }) => {
@@ -92,6 +97,7 @@ export default function ThemeTrends() {
         return;
       }
       setSeries(toThemeTrendSeries(rows));
+      setThin(latestSampleShortfall(rows));
     });
   }, []);
 
@@ -116,6 +122,21 @@ export default function ThemeTrends() {
           its own query. Not a share of an unbiased corpus: that claim belongs to
           the narrative board above (ADR-0141). A missing day is a gap, never a zero.
         </p>
+
+        {thin && (
+          <p className="m-0 mb-3 text-[12px] text-text-secondary leading-[1.6] border-l-2 border-border pl-3">
+            The {thin.run_date} run collected{" "}
+            <span className="num">{thin.total}</span>{" "}
+            same-day {thin.total === 1 ? "mention" : "mentions"} across all nine
+            themes, below the {MIN_DAY_MENTIONS_FOR_SHARE} a share is reported
+            from. That day is a <strong>gap</strong> in the lines below, not a set
+            of zeros — at this sample one article moves a theme&rsquo;s share by{" "}
+            <span className="num">
+              {(100 / Math.max(thin.total, 1)).toFixed(0)}pp
+            </span>
+            , so the figures would describe the sample rather than the news.
+          </p>
+        )}
 
         {error ? (
           <div className="text-[12.5px] text-text-secondary leading-[1.6]">

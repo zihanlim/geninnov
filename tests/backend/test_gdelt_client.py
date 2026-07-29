@@ -155,13 +155,42 @@ class TestDateWindowing:
 
         # 28 days / 7 = 4 requests for ONE query, where the old client sent one.
         assert len(seen_ranges) == 28 // gc.WINDOW_DAYS
-        # Contiguous and non-overlapping: each window starts where the last ended,
-        # so no day is double-counted into a share and none is skipped.
-        for (_, prev_end), (next_start, _) in zip(seen_ranges, seen_ranges[1:]):
+        # Contiguous and non-overlapping: no day is double-counted into a share and
+        # none is skipped. Checked over the SORTED windows — that is the coverage
+        # property, and it is independent of the order they are requested in.
+        for (_, prev_end), (next_start, _) in zip(sorted(seen_ranges),
+                                                  sorted(seen_ranges)[1:]):
             assert prev_end == next_start
-        # Oldest first -- a truncated fetch must lose the RECENT end, which Brave
-        # already covers densely, rather than tear a hole in the only history there is.
-        assert seen_ranges == sorted(seen_ranges)
+
+    def test_the_newest_window_is_fetched_first(self):
+        """Then the rest oldest-first (ADR-0158).
+
+        ADR-0154 ordered these purely oldest-first because a truncated fetch would
+        then lose the recent end, "which the live Brave corpus already covers
+        densely". That premise fails for the ARCHIVE series, which is GDELT-only by
+        definition (ADR-0153) — Brave covers none of it. Measured 2026-07-29: the
+        budget ran out, the newest publication days held 9-16 documents against a
+        median of 49, and ADR-0155's guard withheld velocity on every one for being
+        too SMALL. The daily job could not extend the series it exists to extend.
+
+        Truncation now costs MIDDLE days, which a later run can still fetch because
+        GDELT is an archive. The live end is not recoverable — tomorrow it is no
+        longer the live end.
+        """
+        seen_ranges = []
+
+        def capture(url, params=None, **_k):
+            seen_ranges.append((params["startdatetime"], params["enddatetime"]))
+            return _Resp(_articles(_art(f"H{len(seen_ranges)}")))
+
+        with patch.object(gc.requests, "get", side_effect=capture), \
+                patch.object(gc.time, "sleep"):
+            gc.fetch_market_news_gdelt(['"a"'], lookback_days=28)
+
+        assert seen_ranges[0] == max(seen_ranges), "newest window must go first"
+        # The remainder stays oldest-first, so a mid-fetch truncation loses the
+        # most recoverable days rather than an arbitrary scatter.
+        assert seen_ranges[1:] == sorted(seen_ranges[1:])
 
     def test_a_query_that_fails_on_its_first_window_is_abandoned(self):
         """Not retried once per window.

@@ -315,15 +315,15 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
 // S_WIDTH is set at roughly the NARROWEST column this card will offer, so the
 // plot scales up from 1.0 and never down: below 1.0 the labels shrink, above it
 // they grow, and only one of those directions is recoverable.
-const S_WIDTH = 520;
+const S_WIDTH = 430;
 const S_PLOT_LEFT = 40;
 /** Right gutter for the in-plane labels, which extend rightward from their own
  *  marks, plus the "share" axis caption. Smaller than TrendPlot's 148 because
  *  those are END labels for lines that run the full width; these hang off dots. */
-const S_PLOT_RIGHT = 92;
+const S_PLOT_RIGHT = 42;
 const S_PLOT_WIDTH = S_WIDTH - S_PLOT_LEFT - S_PLOT_RIGHT;
 
-const S_HEIGHT = 225;
+const S_HEIGHT = 210;
 const S_PLOT_TOP = 16;
 const S_PLOT_H = 152;
 /** x-axis tick labels sit here — plot ends at S_PLOT_TOP+S_PLOT_H=168. */

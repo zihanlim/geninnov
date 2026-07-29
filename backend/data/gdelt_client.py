@@ -359,3 +359,61 @@ def fetch_market_news_gdelt(
               f"{skipped} of {len(queries)} queries not run to completion. The "
               f"corpus is short by those queries, not complete.")
     return out
+
+
+# ─── Per-theme fetch (L1) ───────────────────────────────────────────────────────
+
+#: Seconds of wall clock allowed per theme. Nine themes over a 45-day lookback is
+#: 9 x ceil(45/WINDOW_DAYS) = 63 requests at 1 req/5s, so ~315s of pure pacing.
+#: The per-theme cap keeps one slow theme from eating the whole budget silently.
+DEFAULT_THEME_BUDGET_S = 120.0
+
+
+def fetch_theme_news_gdelt(
+    theme_keywords: dict[str, list[str]],
+    lookback_days: int = 45,
+    theme_budget_s: float = DEFAULT_THEME_BUDGET_S,
+) -> dict[str, list[dict]]:
+    """Per-theme news from GDELT, keyed by theme name.
+
+    WHY THIS EXISTS. `theme_news` rests on ONE provider (Brave), which is a quota
+    with a recency bias: on 2026-07-29 its quota died and the nine themes collected
+    15 same-day documents between them, below the 20 a share is reported from, so
+    the trends board rendered a gap (ADR-0094, ADR-0156). GDELT is keyless and is an
+    ARCHIVE — 18% of a 45-day window in the last 7 days against Brave's 48%, 40 of 45
+    days populated (ADR-0144) — so it can answer for days Brave cannot.
+
+    ONE OR-QUERY PER THEME, not one per keyword. A theme's keywords are alternatives,
+    so `("Federal Reserve" OR FOMC OR ...)` is a single question; asking them
+    separately would be ~5x the requests and would need dedup across them anyway.
+
+    This DELEGATES to `fetch_market_news_gdelt` rather than reimplementing the
+    windowing, pacing, retry, budget and `sourcelang:english` handling — each of
+    those was learned by tripping it (ADR-0144), and a second copy is a second place
+    to get them wrong. Passing a single-element query list also makes that function's
+    dedup-across-queries a no-op, which is what preserves theme attribution: an
+    article legitimately matching two themes must be counted under both.
+
+    Returns `{theme_name: [{headline, date, url, source: "gdelt", query}, ...]}`.
+    A theme whose fetch fails or times out maps to `[]` — never to mock data, and
+    never dropped from the mapping, so a caller can tell "asked and got nothing"
+    from "never asked" (the distinction ADR-0094 turns on).
+    """
+    out: dict[str, list[dict]] = {}
+    for theme, keywords in theme_keywords.items():
+        if not keywords:
+            out[theme] = []
+            continue
+        query = " OR ".join(k.strip() for k in keywords if k.strip())
+        try:
+            items = fetch_market_news_gdelt(
+                [query],
+                lookback_days=lookback_days,
+                time_budget_s=theme_budget_s,
+            )
+        except Exception as exc:  # noqa: BLE001 - one theme must not kill the rest
+            print(f"[gdelt] theme {theme!r} raised ({exc.__class__.__name__}): {exc}")
+            items = []
+        out[theme] = items
+        print(f"[gdelt] {theme}: {len(items)} articles over {lookback_days}d")
+    return out

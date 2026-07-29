@@ -297,8 +297,8 @@ export default function AttentionFunnel() {
                 <span className="num">{basis.operator}</span> is{" "}
                 <code className="num">operator_directed</code>, and{" "}
                 <span className="num">{basis.measured}</span> is{" "}
-                <code className="num">measured_discovery</code>, the only value
-                that claims the pipeline found a theme before anyone named it.
+                <code className="num">measured_discovery</code>, the only basis
+                that records evidence arriving <em>before</em> the decision.
               </p>
             </>
           )}
@@ -306,19 +306,42 @@ export default function AttentionFunnel() {
       </div>
 
       {/* The break, stated. This is the sentence the old arrow chain was
-          implicitly denying. */}
+          implicitly denying.
+
+          Two claims were removed here on review, both wrong in ways the board
+          beside this one disproves:
+
+          1. "were never in its corpus" — false. `covered_by` exists precisely to
+             attribute a phrase to an anchor, and it does: `ai` → AI Capex, `oil`
+             → Energy Prices, `fed` → Fed Policy, in the table one column left.
+             The themes were not DERIVED from the corpus; their subject matter is
+             thoroughly in it. Provenance, not presence.
+          2. "not a surviving subset of the tracked phrases" — a category error.
+             A theme is a row in `themes`; a phrase is a row in
+             `narrative_signals`. `AI Capex` is not a member of the phrase set
+             under any provenance, so containment cannot be true OR false in
+             those terms, and defending the right claim with the wrong noun
+             weakens it.
+
+          And the zero needed a sentence of its own: read cold, `0
+          measured_discovery` says "the pipeline found nothing", which is not
+          what it counts and not what happened — the two-method job HAS produced
+          candidates, they are in `DiscoveredThemes` above, and they are in
+          shadow because promotion is an operator's act. The zero measures the
+          human gate. */}
       {funnel && basis && (
         <p className="m-0 mt-3 pt-2.5 border-t border-border text-[11px] text-text-secondary leading-[1.55]">
-          <strong>These two halves are not nested.</strong> The{" "}
-          <span className="num">{basis.total}</span> anchor themes are not a
-          surviving subset of the{" "}
-          <span className="num">{funnel.tracked}</span> tracked phrases —{" "}
-          <span className="num">{basis.prior}</span> of them predate the tracker
-          and were never in its corpus. The one link is{" "}
-          <strong>AI Capex</strong>, and even there the measurement followed the
-          decision: the tracker saw AI in 2 of 455 documents, the operator named
-          the theme, and the LDA confirmation ran afterwards. A signal that
-          prompts a question is not evidence that justified an answer.
+          <strong>Not a funnel.</strong> These themes were not derived from the
+          phrases beside them &mdash;{" "}
+          <span className="num">{basis.prior}</span> predate the tracker. Their
+          subject matter is in its corpus:{" "}
+          <span className="num">{funnel.tracked - funnel.unwatched}</span> of{" "}
+          <span className="num">{funnel.tracked}</span> phrases are attributed to
+          an anchor. This counts <strong>provenance, not coverage</strong>. And{" "}
+          <span className="num">{basis.measured}</span>{" "}
+          <code className="num">measured_discovery</code> is a fact about
+          promotion, not discovery &mdash; candidates sit in shadow under{" "}
+          <em>What the engine is discovering</em> until an operator promotes one.
         </p>
       )}
     </div>

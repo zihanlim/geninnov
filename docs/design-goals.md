@@ -48,8 +48,9 @@ needs a third state with a stated cause — `verdict: current | stale | unjudgea
 ### 3. Direction is glyph + wordmark. Green/crimson reinforce, and nothing else may borrow them
 
 Forest-green `--long` = long, crimson `--short` = short. These are semantics, not
-decoration. Interactive/emphasis is `--accent` (teal, **prototype** as of
-2026-07-29 — was crimson-pink); attention is `--warning` (orange). A proposal that
+decoration. Interactive/emphasis is `--accent` (teal since 2026-07-29 — was
+crimson-pink, [ADR-0164](adrs/0164-the-accent-and-the-short-ink-were-the-same-colour.md));
+attention is `--warning` (orange). A proposal that
 colours `LONG` the same as a hyperlink has destroyed a semantic to gain nothing —
 this is the single most common failure mode in outside mockups.
 
@@ -61,8 +62,16 @@ The hyperlink *was* the direction. Teal `#00687a` measures 32.1 / 51.8 against
 `--short` and 26.2 / 25.3 against `--long`, and clears AA with more margin than
 crimson-pink had after two darkenings. Known regression: ΔE 4.6 from `--long`
 under tritanopia (~0.01% prevalence), which the glyph-and-wordmark rule below is
-what makes survivable. Derivation and the full candidate sweep are in
-`frontend/app/globals.css`.
+what makes survivable — so this goal and ADR-0085 are now coupled, and relaxing
+the wordmark rule breaks the arithmetic that justified the accent.
+
+Note what this goal still cannot do: it is enforceable by eye against an incoming
+proposal, and `chip-contrast.test.ts` does not cover it — that test measures a
+foreground against its **background**, which is a different question from two
+**foregrounds** that mean different things. No separation floor is asserted
+anywhere, deliberately: it needs an argued threshold and a rule for which pairs
+are adjacent enough to matter. Until then this is a measurement to re-run, not a
+gate that will catch you.
 
 **Every element whose meaning is a book direction must render a `▲`/`▼` glyph or a
 `LONG`/`SHORT` wordmark beside the colour.** Hue is redundant encoding here, never

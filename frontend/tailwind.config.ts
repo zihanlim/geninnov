@@ -70,11 +70,11 @@ const config: Config = {
         // changed together or only var() call sites move.
         "text-tertiary": "#5f6672",
         // Brand / attention
-        // PROTOTYPE (2026-07-29): crimson-pink #c50c3e → teal, from the Systematic
-        // Alabaster comp set. 5.04:1 over its own 10% tint (badge-tier-anchor) where
-        // the crimson was 4.58:1, and ΔE 32.1 from --short under protanopia where the
+        // Crimson-pink #c50c3e → teal, 2026-07-29, from the Systematic Alabaster comp
+        // set. ADR-0164. 5.04:1 over its own 10% tint (badge-tier-anchor) where the
+        // crimson was 4.58:1, and ΔE 32.1 from --short under protanopia where the
         // crimson was 7.7 — below the ~10 floor at which two colours stop being
-        // separable. Full derivation in globals.css.
+        // separable, for ~6% of males. Full derivation in globals.css.
         accent: "#00687a",          // interactive / active (teal)
         // Same colour at 10%. The tint-drift test asserts this rgb matches `accent`.
         "accent-dim": "rgba(0,104,122,0.10)",

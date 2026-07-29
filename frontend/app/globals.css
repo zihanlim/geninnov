@@ -47,7 +47,7 @@
        surface swap bought margin here rather than spending it. */
     --text-tertiary: #5f6672;
     /* Brand + attention (your palette) */
-    /* PROTOTYPE (2026-07-29): crimson-pink → teal. Adopted from `primary` in the
+    /* Crimson-pink → teal, 2026-07-29. ADR-0164. Adopted from `primary` in the
        Systematic Alabaster set (stitch_andromeda_systematic_trading_platform/),
        the same comp family the surface ramp below came from.
 
@@ -92,7 +92,8 @@
        which just moves the collision onto the trends board. #00687a keeps ≥48
        from every series slot. Bluer buys one separation by selling another.
 
-       Derivation: scratchpad accent_probe.py, this session. */
+       Full derivation, including the pairings the chip test does not cover and the
+       candidates that lost, is in ADR-0164. */
     --accent: #00687a;       /* interactive / links / active nav (teal) */
     /* THE GROUND OF THE LOGO ARTWORK, AND NOTHING ELSE.
        Measured off the supplied mark (andromeda-analytics.png): 717,750 of its

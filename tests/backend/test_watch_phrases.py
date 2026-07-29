@@ -6,6 +6,8 @@ them, which is the property `test_the_watch_counts_the_way_the_tracker_counts`
 pins — a watch that assembles its own corpus answers a question the tracker never
 asked.
 """
+from datetime import date, timedelta
+
 import pytest
 
 from backend.services.narrative_tracker import (
@@ -21,13 +23,17 @@ from scripts.watch_phrases import (
     build_states,
     comparability,
     observe,
+    observe_days,
     render,
 )
+
+DAY = date(2026, 7, 28)
 
 
 def state(**over) -> TermState:
     base = dict(term="ai trade", docs=0, floor=3, tracked_days=0,
-                tracked_velocity=None, tracked_covered_by=None)
+                tracked_velocity=None, tracked_covered_by=None, day=DAY,
+                days_present=0)
     base.update(over)
     return TermState(**base)
 
@@ -79,6 +85,42 @@ class TestObserve:
     def test_a_term_absent_from_the_corpus_reads_zero_not_missing(self):
         counts, _ = observe(["Oil prices keep easing"], ("ai bubble",))
         assert counts["ai bubble"] == 0
+
+
+class TestObserveDays:
+    """The floor is applied PER DAY, so the watch must be too."""
+
+    def test_days_are_not_pooled_into_one_denominator(self):
+        # A phrase seen once on each of ten days clears nothing: no single day has it
+        # three times. Pooling would report 10 against one day's floor of 3 and call a
+        # narrative nearly-tracked that no day is close to tracking.
+        by_day = {
+            DAY - timedelta(days=i): ["Why India stock market is the inverse AI trade"]
+            for i in range(10)
+        }
+        best, sizes = observe_days(by_day, ("ai trade",))
+        day, docs, floor, present = best["ai trade"]
+        assert docs == 1, "pooled the window into a single count"
+        assert present == 10
+        assert len(sizes) == 10
+
+    def test_it_reports_the_best_day_and_that_day_own_floor(self):
+        # Two days of different sizes: the floor reported must be the floor of the day
+        # the best count came from, not of some other day.
+        big = ["AI trade rises"] * 3 + [f"unrelated story {i} about oil" for i in range(400)]
+        small = ["AI trade rises"]
+        by_day = {DAY - timedelta(days=1): small, DAY: big}
+        best, _ = observe_days(by_day, ("ai trade",))
+        day, docs, floor, present = best["ai trade"]
+        assert day == DAY
+        assert docs == 3
+        assert floor == document_floor(len(big))  # 403 docs -> ceil(4.03) = 5
+        assert present == 2
+
+    def test_a_term_in_no_day_carries_no_day(self):
+        best, _ = observe_days({DAY: ["Oil prices keep easing"]}, ("ai bubble",))
+        day, docs, floor, present = best["ai bubble"]
+        assert (day, docs, present) == (None, 0, 0)
 
 
 class TestVerdict:
@@ -174,6 +216,15 @@ class TestWatchlist:
         assert len(seen) == len(set(seen))
 
     def test_build_states_defaults_an_untracked_term_to_zero_days(self):
-        states = build_states({"ai bubble": 1}, floor=10, tracked={})
+        states = build_states({"ai bubble": (DAY, 1, 10, 1)}, tracked={})
         assert states[0].tracked_days == 0
         assert states[0].verdict == "below floor"
+        assert states[0].day == DAY
+
+    def test_build_states_carries_a_tracked_terms_history(self):
+        states = build_states(
+            {"ai trade": (DAY, 2, 3, 4)},
+            tracked={"ai trade": (9, 2.1, "AI Capex")},
+        )
+        assert states[0].verdict == "measurable"
+        assert states[0].tracked_covered_by == "AI Capex"

@@ -31,15 +31,27 @@ This script reports that pre-tracking state, so "should this be a theme?" is ans
 watching rather than by taste. It is the path AI Capex itself took (ADR-0129): the
 tracker found it, it was watched, and then it was promoted.
 
-WHY IT CALLS THE PIPELINE'S OWN LOADER
-======================================
-`load_market_corpus` is imported, not reimplemented. A watch that assembled its own
-corpus would answer a question the tracker never asked, and three ways of being wrong
-were live in the first draft of this file: `market_news` rows were read straight and
-silently truncated at PostgREST's 1000-row response cap (ADR-0154); they were grouped by
-`run_date`, which is the FETCH day and not the day a corpus is built for (ADR-0158); and
-they were not deduplicated by headline, which the loader does. Each would have moved the
-denominator, and the whole output of this script is a ratio against that denominator.
+EACH SERIES IS WATCHED THE WAY IT IS BUILT
+==========================================
+The two corpora are assembled by DIFFERENT code in the pipeline, and this script has to
+match each or its ratios are against a denominator nothing uses:
+
+    archive    `extend_archive_series` -> `load_corpus_by_day`, bucketed by
+               PUBLICATION date. One GDELT call returns 45 days of history, so every
+               one of those documents carries today's `run_date` (ADR-0158).
+    combined   `load_market_corpus(run_date)`, a 7-day window on `run_date`, deduped.
+
+Getting this wrong is not theoretical — the first draft of this file used
+`load_market_corpus` for BOTH. On the archive that returned 913 documents where the
+series counts 109, because `deepen_archive.py` had loaded 2,309 GDELT rows across two
+fetch days. It then reported an 8.4x corpus break and predicted the night's velocities
+would be withheld. Nothing was wrong with the pipeline; the watch had reproduced the
+exact bug ADR-0158 was written to fix, and its alarm was about itself.
+
+Two earlier drafts were wrong two further ways, both worth naming because they fail
+silently: rows read straight from `market_news` are truncated at PostgREST's 1000-row
+response cap (ADR-0154 — `load_corpus_by_day` pages), and headlines are not deduplicated
+unless the loader does it.
 
 The same argument covers `document_floor` and `phrases_in`, both imported from the
 tracker. "How close is this phrase to being counted" is only meaningful if `counted`
@@ -129,13 +141,18 @@ WATCHES: tuple[Watch, ...] = (
 @dataclass(frozen=True)
 class TermState:
     term: str
-    #: Documents in the corpus containing this phrase, and the bar it must clear.
+    #: The term's BEST single day: documents containing it, and that day's floor.
+    #: Best rather than summed, because the floor is applied per day — a phrase seen
+    #: once on each of five days clears nothing, and reporting 5 would imply it had.
     docs: int
     floor: int
     #: From `narrative_signals`, if the term ever cleared the floor. 0 = never has.
     tracked_days: int
     tracked_velocity: float | None
     tracked_covered_by: str | None
+    day: date | None = None
+    #: Days in the window on which the term appeared at all.
+    days_present: int = 0
 
     @property
     def verdict(self) -> str:
@@ -154,8 +171,20 @@ class TermState:
             return (f"{self.tracked_days}d observed · velocity {v} · watched by "
                     f"{self.tracked_covered_by or 'nothing'}")
         if self.docs == 0:
-            return "not in a single headline in the corpus"
-        return f"{self.docs} of {self.floor} documents needed"
+            return "not in a single headline in the window"
+        seen = f", {self.days_present}d present" if self.days_present > 1 else ""
+        return f"best {self.docs} of {self.floor} needed ({self.day}{seen})"
+
+
+def _parse_day(v) -> date | None:
+    if isinstance(v, date):
+        return v
+    if isinstance(v, str) and v:
+        try:
+            return date.fromisoformat(v[:10])
+        except ValueError:
+            return None
+    return None
 
 
 def comparability(n_docs: int, board_size: int | None, corpus: str = ARCHIVE_CORPUS) -> str | None:
@@ -187,7 +216,7 @@ def comparability(n_docs: int, board_size: int | None, corpus: str = ARCHIVE_COR
 
 
 def observe(documents: list[str], terms: tuple[str, ...]) -> tuple[dict[str, int], int]:
-    """Document frequency per term, and the corpus size it is a fraction of.
+    """Document frequency per term for ONE day, and the corpus size it is out of.
 
     Counted with `phrases_in` — the tracker's OWN tokeniser — rather than a substring
     or regex match. A regex finds "ai trade" in a headline the tracker tokenises into
@@ -209,21 +238,49 @@ def observe(documents: list[str], terms: tuple[str, ...]) -> tuple[dict[str, int
     return counts, n_docs
 
 
+def observe_days(
+    by_day: dict[date, list[str]],
+    terms: tuple[str, ...],
+) -> tuple[dict[str, tuple[date | None, int, int, int]], dict[date, int]]:
+    """Per term across days: (best day, docs that day, that day's floor, days present).
+
+    Per DAY and not pooled, because the floor is applied per day. Pooling a window
+    would let a phrase seen once on each of ten days read as ten documents against one
+    day's floor, and report a narrative as nearly-tracked that no single day is close
+    to tracking.
+    """
+    best: dict[str, tuple[date | None, int, int, int]] = {t: (None, 0, 0, 0) for t in terms}
+    sizes: dict[date, int] = {}
+    for day in sorted(by_day):
+        counts, n_docs = observe(by_day[day], terms)
+        sizes[day] = n_docs
+        floor = document_floor(n_docs)
+        for t in terms:
+            b_day, b_docs, b_floor, present = best[t]
+            if counts[t] > 0:
+                present += 1
+            if counts[t] > b_docs:
+                b_day, b_docs, b_floor = day, counts[t], floor
+            best[t] = (b_day, b_docs, b_floor, present)
+    return best, sizes
+
+
 def build_states(
-    counts: dict[str, int],
-    floor: int,
+    best: dict[str, tuple[date | None, int, int, int]],
     tracked: dict[str, tuple[int, float | None, str | None]],
 ) -> list[TermState]:
     return [
         TermState(
             term=term,
-            docs=docs,
-            floor=floor,
+            docs=obs[1],
+            floor=obs[2],
+            day=obs[0],
+            days_present=obs[3],
             tracked_days=tracked.get(term, (0, None, None))[0],
             tracked_velocity=tracked.get(term, (0, None, None))[1],
             tracked_covered_by=tracked.get(term, (0, None, None))[2],
         )
-        for term, docs in counts.items()
+        for term, obs in best.items()
     ]
 
 
@@ -255,8 +312,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Phrase watch over the un-themed corpus.")
     ap.add_argument("--corpus", choices=[ARCHIVE_CORPUS, COMBINED_CORPUS],
                     default=ARCHIVE_CORPUS)
-    ap.add_argument("--lookback", type=int, default=7,
-                    help="Days of market_news to assemble, as load_market_corpus does.")
+    ap.add_argument("--days", type=int, default=14,
+                    help="How many of the most recent days of the series to look over.")
     args = ap.parse_args()
 
     # Same pattern as `check_data_integrity`: local runs read `.env`, CI runs already
@@ -274,21 +331,28 @@ def main() -> int:
     # Imported late: `daily_refresh` builds a Supabase client at import time, so the
     # credential check above must run first to fail with a sentence rather than a
     # traceback.
-    from scripts.daily_refresh import (  # noqa: E402
-        ARCHIVE_SOURCE, COMBINED_SOURCES, load_market_corpus, supabase,
-    )
+    from scripts.backfill_narratives import load_corpus_by_day  # noqa: E402
+    from scripts.daily_refresh import load_market_corpus, supabase  # noqa: E402
 
     run_date = date.today()
-    sources = [ARCHIVE_SOURCE] if args.corpus == ARCHIVE_CORPUS else COMBINED_SOURCES
-    documents = load_market_corpus(run_date, lookback_days=args.lookback, sources=sources)
-    if not documents:
+    if args.corpus == ARCHIVE_CORPUS:
+        # PUBLICATION days — the field `extend_archive_series` buckets on (ADR-0158).
+        # `load_market_corpus` would select on `run_date`, the FETCH day, and return
+        # every publication day GDELT has ever handed us as if it were one day.
+        by_day = load_corpus_by_day(supabase)
+    else:
+        # The combined series really is a `run_date` window, so here that IS the
+        # right loader — one corpus per run, exactly as `daily_refresh` builds it.
+        by_day = {run_date: load_market_corpus(run_date)}
+
+    by_day = {d: docs for d, docs in sorted(by_day.items())[-args.days:] if docs}
+    if not by_day:
         print(f"No {args.corpus} documents. Nothing to watch against — that is a "
               f"failed read, not a quiet market (ADR-0156).")
         return 1
 
     all_terms = tuple(t for w in WATCHES for t in w.terms)
-    counts, n_docs = observe(documents, all_terms)
-    floor = document_floor(n_docs)
+    best, sizes = observe_days(by_day, all_terms)
 
     tracked_rows = (
         supabase.table("narrative_signals")
@@ -320,24 +384,45 @@ def main() -> int:
         .data
     ) or []
     board_size = int(last[0]["corpus_size"]) if last else None
-    board = f"{board_size} on {last[0]['run_date']}" if last else "none yet"
+    board_day = _parse_day(last[0]["run_date"]) if last else None
 
-    print(f"\nPhrase watch — {args.corpus} corpus, {args.lookback}-day window, "
-          f"{n_docs} documents (board's last: {board})")
-    print(f"  Floor today: {floor} documents. A phrase gets a velocity after "
-          f"{MIN_DAYS_FOR_VELOCITY} observed days and is eligible for")
-    print(f"  ADR-0143's price link after {PRICE_LINK_SESSIONS}. None of that promotes "
-          f"anything; it only earns a human's attention.")
+    days = sorted(sizes)
+    newest = days[-1]
+    print(f"\nPhrase watch — {args.corpus} corpus, {len(days)} days "
+          f"({days[0]} to {newest})")
+    if board_day and board_day in sizes:
+        print(f"  Board's last scored day: {board_day}, {board_size} documents. "
+              f"This watch reads {sizes[board_day]} there.")
+    else:
+        print(f"  Board's last scored day: "
+              f"{board_day or 'none yet'} ({board_size or 0} documents), "
+              f"outside this window.")
+    if newest != board_day:
+        print(f"  Newest day {newest} holds {sizes[newest]}. It is structurally the "
+              f"thinnest and back-fills as the")
+        print(f"  provider publishes (ADR-0159) — thin here is a lag, not a break.")
+    print(f"  A phrase gets a velocity after {MIN_DAYS_FOR_VELOCITY} observed days "
+          f"and is eligible for ADR-0143's")
+    print(f"  price link after {PRICE_LINK_SESSIONS}. None of that promotes anything; "
+          f"it only earns a human's attention.")
 
-    warning = comparability(n_docs, board_size, args.corpus)
-    if warning:
-        print()
-        print(warning)
+    # Compared on the SAME DAY the board last scored, and on no other.
+    #
+    # This check has cried wolf twice, both times by comparing two things that were
+    # not the same day. First against a `run_date` window total (913 against 109,
+    # "8.4x"), which was the ADR-0158 bug living in this file. Then against the newest
+    # PUBLICATION day (11 against 109, "0.1x"), which is ADR-0159's lesson: the newest
+    # day is always the thinnest because the provider publishes with a lag, so keying
+    # anything off it reports the lag. A corpus break is a real thing this should
+    # catch; neither of those was one.
+    if board_day and board_day in sizes:
+        warning = comparability(sizes[board_day], board_size, args.corpus)
+        if warning:
+            print()
+            print(warning)
 
     for watch in WATCHES:
-        states = build_states(
-            {t: counts[t] for t in watch.terms}, floor, tracked,
-        )
+        states = build_states({t: best[t] for t in watch.terms}, tracked)
         print(render(watch, states))
     print()
     return 0

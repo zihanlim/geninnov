@@ -16,7 +16,6 @@ import {
 import ThesisBlock from "@/components/research/ThesisBlock";
 import CollapsibleSection from "@/components/CollapsibleSection";
 import SectionNav from "@/components/SectionNav";
-import { isNext, type BookVariant } from "@/lib/book/variant";
 import AnswerCards from "@/components/book/AnswerCards";
 
 // Four anchored groups, in the order the page already rendered them. Labels are
@@ -178,14 +177,16 @@ function parsePicks(raw: Pick[] | string | null | undefined): Pick[] {
 
 
 /**
- * The book, rendered by `/book` and by the temporary `/book2` comparison surface.
+ * The book.
  *
  * Lives here rather than in `app/book/page.tsx` because a route module may only export
  * `default` plus Next's known config exports — a named export from a `page.tsx` fails
- * the build's generated route types. Same shape as `components/method/MethodBody.tsx`,
- * which two routes share for the same reason (ADR-0084).
+ * the build's generated route types. Kept after the `/book2` comparison was retired:
+ * a thin route over a component body is the same shape as
+ * `components/method/MethodBody.tsx`, and moving 1,400 lines back would be churn for
+ * no gain.
  */
-export function BookShell({ variant = "current" }: { variant?: BookVariant }) {
+export function BookShell() {
   return (
     <Suspense
       fallback={
@@ -194,12 +195,12 @@ export function BookShell({ variant = "current" }: { variant?: BookVariant }) {
         </main>
       }
     >
-      <BookPageInner variant={variant} />
+      <BookPageInner />
     </Suspense>
   );
 }
 
-function BookPageInner({ variant }: { variant: BookVariant }) {
+function BookPageInner() {
   const [rec, setRec] = useState<Recommendation | null>(null);
   const [recError, setRecError] = useState<string | null>(null);
   const [citations, setCitations] = useState<Citation[] | undefined>();
@@ -384,28 +385,6 @@ function BookPageInner({ variant }: { variant: BookVariant }) {
     [rec]
   );
 
-  /**
-   * The selected position, resolved from `openAsset` (/book2 master-detail only).
-   *
-   * `openAsset` is a `${title}-${asset}-${index}` key rather than a bare ticker,
-   * because the same asset can appear in both tables — and the key is built in
-   * `PositionSection`, so it is rebuilt here the same way rather than parsed. A
-   * split on "-" would break on any ticker containing one.
-   */
-  const selectedPosition = useMemo(() => {
-    if (!openAsset) return null;
-    for (const [title, arr] of [
-      ["Longs", longs],
-      ["Shorts", shorts],
-    ] as const) {
-      for (let i = 0; i < arr.length; i++) {
-        if (openAsset === `${title}-${arr[i].asset}-${i}`) {
-          return { pick: arr[i], rank: i + 1, title };
-        }
-      }
-    }
-    return null;
-  }, [openAsset, longs, shorts]);
 
   // Resolve the EdgeScore for every position once: position columns first, theme
   // latest as fallback (positionEdge.resolvePositionEdge). Keyed by "asset" — the
@@ -1012,7 +991,6 @@ function BookPageInner({ variant }: { variant: BookVariant }) {
                   on a 375px phone instead of letting each row's ScrollArea scroll. */}
               <div className="grid wide:grid-cols-2 gap-6 items-start [&>*]:mb-0 [&>*]:min-w-0 mb-6">
               <PositionSection
-                variant={variant}
                 title="Longs"
                 glyph="▲"
                 color="var(--long)"
@@ -1035,7 +1013,6 @@ function BookPageInner({ variant }: { variant: BookVariant }) {
                 clearedByHeldAsset={clearedByHeldAsset}
               />
               <PositionSection
-                variant={variant}
                 title="Shorts"
                 glyph="▼"
                 color="var(--short)"
@@ -1060,64 +1037,6 @@ function BookPageInner({ variant }: { variant: BookVariant }) {
               />
               </div>
 
-              {/* MASTER-DETAIL (/book2 only, temporary).
-                  The list above draws headers; the selected position's detail is
-                  drawn ONCE here rather than inline, so choosing a long no longer
-                  pushes only the left column down and desynchronises the two tables.
-
-                  A full-width panel BELOW both tables, not the comp's right-hand
-                  sidebar. The comp can afford a 1/3 sidebar because its list is one
-                  column; ours is already two (Longs ‖ Shorts), and a third column
-                  would leave each table ~440px — under BOOK_ROW_MIN_W of 640px, so
-                  every row would open its own horizontal scroller. Keeping the two
-                  tables and moving the detail below them is the version of this idea
-                  that fits the layout we have.
-
-                  Deliberately NOT sticky: a full-width block below the content has
-                  nothing useful to stick to, and pinning it would cover the tables it
-                  is meant to be read against. So there is no inner scroller here at
-                  all and the page scrolls as one document. */}
-              {isNext(variant) && selectedPosition && (
-                <aside
-                  className="mb-6 rounded-lg border border-border bg-bg-surface p-4"
-                  aria-label={`Detail for ${selectedPosition.pick.asset}`}
-                >
-                  <div className="text-[11.5px] uppercase tracking-[0.12em] text-text-tertiary mb-3">
-                    {selectedPosition.pick.asset} · #{selectedPosition.rank}{" "}
-                    {selectedPosition.title}
-                  </div>
-                  <PositionRow
-                    variant={variant}
-                    chrome="detail"
-                    open
-                    onToggle={() => setOpenAsset(null)}
-                    pick={selectedPosition.pick}
-                    rank={selectedPosition.rank}
-                    citations={citations}
-                    repl={repl}
-                    bookRunDate={rec.run_date}
-                    advisory={advisory}
-                    cap={capByAsset.get(selectedPosition.pick.asset)}
-                    bindingGroupCaps={bindingGroupCaps}
-                    edge={edgeByAsset[selectedPosition.pick.asset]}
-                    edgeWeights={edgeWeights}
-                    convictionSum={convictionSum}
-                    allPicks={allPicks}
-                    correlationPairs={correlationPairs}
-                    ideas={rec?.independent_ideas ?? null}
-                    scenarios={rec.scenario_results ?? []}
-                    clearedAlternatives={
-                      clearedByHeldAsset.get(selectedPosition.pick.asset) ?? []
-                    }
-                  />
-                </aside>
-              )}
-              {isNext(variant) && !selectedPosition && (
-                <p className="mb-6 text-[12.5px] text-text-tertiary">
-                  Select a position above to read its thesis, sizing chain and stress
-                  contribution here.
-                </p>
-              )}
 
               {/* ONCE, under both tables — not once per section. Rendered inside
                   PositionSection it repeated the identical sentence under Longs
@@ -1443,7 +1362,6 @@ function Stat({
 }
 
 function PositionSection({
-  variant,
   title,
   glyph,
   color,
@@ -1466,7 +1384,6 @@ function PositionSection({
   emptyNote,
   clearedByHeldAsset,
 }: {
-  variant: BookVariant;
   title: string;
   glyph: string;
   color: string;
@@ -1549,10 +1466,6 @@ function PositionSection({
           {picks.map((p, i) => (
             <PositionRow
               key={`${p.asset}-${i}`}
-              variant={variant}
-              // In the master-detail layout the list draws headers only; the detail
-              // for the selected row is drawn once, outside both tables.
-              chrome={isNext(variant) ? "header" : "full"}
               pick={p}
               rank={i + 1}
               open={openAsset === `${title}-${p.asset}-${i}`}

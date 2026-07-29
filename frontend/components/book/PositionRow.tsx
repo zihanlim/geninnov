@@ -16,7 +16,6 @@
 
 import Link from "next/link";
 import CitationList, { Citation } from "@/components/CitationList";
-import { isNext, type BookVariant } from "@/lib/book/variant";
 import EdgeBars from "@/components/book/EdgeBars";
 import SizingChainView from "@/components/book/SizingChainView";
 import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
@@ -94,8 +93,6 @@ function SubCard({
 }
 
 export function PositionRow({
-  variant = "current",
-  chrome = "full",
   pick,
   rank,
   open,
@@ -115,23 +112,6 @@ export function PositionRow({
   bookRunDate,
   clearedAlternatives,
 }: {
-  /** `next` is the /book2 comparison layout. Temporary — see components/book/BookBody.tsx. */
-  variant?: BookVariant;
-  /**
-   * Which halves of the row to draw.
-   *
-   * `full` is the shipped accordion: clickable header, detail panel underneath when
-   * open. `header` and `detail` split those across the master-detail layout on
-   * `/book2` — the list draws headers, a sticky pane draws the detail for whichever
-   * one is selected.
-   *
-   * Deliberately ONE component with three renderings rather than a separate detail
-   * component. A second component would need every derived local recomputed
-   * (`sizingChain`, `marginal`, `sibling`, the scenario lines, stability) — sixty
-   * lines of derivation with two places to fix each future change. Splitting the
-   * CHROME keeps one derivation and one set of content.
-   */
-  chrome?: "full" | "header" | "detail";
   pick: Pick;
   rank: number;
   open: boolean;
@@ -196,15 +176,6 @@ export function PositionRow({
   );
   const rationaleDetail = hasEdge && edge ? edgeRationale(edge) : undefined;
 
-  /**
-   * Grid cell for an expanded-panel SubCard, per variant.
-   *
-   * Written as one call per card rather than two JSX trees so the two layouts cannot
-   * drift in CONTENT — only in placement. A second copy of the panel would be a second
-   * place to fix every future thesis change, and the comparison is meant to be about
-   * layout, not about which branch someone remembered to update.
-   */
-  const cell = (current: string, next: string) => (isNext(variant) ? next : current);
 
   // The sizing derivation — conviction × inverse-vol → cap → notional.
   const sizingChain = buildSizingChain({
@@ -258,15 +229,10 @@ export function PositionRow({
     .filter((s) => s.line);
 
   return (
-    <div
-      className={
-        chrome === "detail" ? "" : "border-b border-border last:border-b-0"
-      }
-    >
+    <div className="border-b border-border last:border-b-0">
       {/* A div, not a button: the theme name is an <a>, which cannot be nested
           inside a <button>. Keyboard + ARIA are wired by hand to keep the row a
           single toggle target while the inner link stays independently focusable. */}
-      {chrome !== "detail" && (
       <div
         role="button"
         tabIndex={0}
@@ -411,19 +377,12 @@ export function PositionRow({
           )}
         </span>
         <span className="text-text-tertiary text-[12px] text-right">
-          {chrome === "header" ? (open ? "◀" : "") : open ? "−" : "+"}
+          {open ? "−" : "+"}
         </span>
       </div>
-      )}
 
-      {open && chrome !== "header" && (
-        <div
-          className={
-            chrome === "detail"
-              ? "px-0 pb-0 pt-0"
-              : "px-[18px] pb-5 pt-1 bg-bg-elevated/40"
-          }
-        >
+      {open && (
+        <div className="px-[18px] pb-5 pt-1 bg-bg-elevated/40">
           {/*
             Expanded-panel layout: a flat grid where each SubCard is placed on
             an explicit `lg:row-start-N` / `lg:col-start-N` cell.
@@ -442,17 +401,17 @@ export function PositionRow({
             mind and you will "find" holes that do not exist. (This note is here
             because that mistake was made.)
 
-            So CURRENT is a full 5x2 grid: Thesis | Edge decomposition,
-            Counter-thesis | Sizing (auto), Catalysts | Factor exposure (auto),
-            Contribution | Under stress, Risk | Also cleared.
+            ROW 1 IS THE ARGUMENT AND ITS REBUTTAL. Thesis | Counter-thesis, with
+            the EdgeScore decomposition moved down to r2c1. Taken from the Stitch
+            comp's answer layout, which renders a claim next to its offset
+            (`CAPEX RISK` | `CYCLICAL BUFFER`) rather than under it -- a rebuttal
+            you have to scroll past is a rebuttal you weigh less. Both columns are
+            the same ~310px either way, so this costs no width; only adjacency
+            changes.
 
-            NEXT (/book2) SWAPS exactly two cards -- Counter-thesis to r1c2 and
-            Edge decomposition to r2c1 -- so the thesis and its rebuttal sit side
-            by side. That is the one idea worth taking from the Stitch comp's
-            answer layout: it renders a claim next to its offset (`CAPEX RISK` |
-            `CYCLICAL BUFFER`) rather than under it, because a rebuttal you have
-            to scroll past is a rebuttal you weigh less. Nothing else moves, and
-            the two auto-flow cards keep filling what is left.
+            The full grid: Thesis | Counter-thesis, Edge decomposition | Sizing
+            (auto), Catalysts | Factor exposure (auto), Contribution | Under
+            stress, Risk | Also cleared.
           */}
           <div className="grid grid-cols-1 lg:grid-cols-2 items-stretch gap-3">
             <SubCard className="lg:row-start-1 lg:col-start-1" title="Thesis">
@@ -468,7 +427,7 @@ export function PositionRow({
               </SubCard>
 
               {showProse && pick.counter_thesis && (
-                <SubCard className={cell("lg:row-start-2 lg:col-start-1", "lg:row-start-1 lg:col-start-2")} title="Counter-thesis">
+                <SubCard className="lg:row-start-1 lg:col-start-2" title="Counter-thesis">
                   <div
                     className="rounded-md px-3 py-2.5 text-[12.5px] leading-[1.6] border"
                     style={{
@@ -531,7 +490,7 @@ export function PositionRow({
               </SubCard>
 
             <SubCard
-                className={cell("lg:row-start-1 lg:col-start-2", "lg:row-start-2 lg:col-start-1")}
+                className="lg:row-start-2 lg:col-start-1"
                 title={
                   <>Why {isLong ? "long" : "short"} — EdgeScore decomposition</>
                 }

@@ -103,7 +103,8 @@ export default function MacroCrossCurrents({ cycle, cc }: MacroCrossCurrentsProp
       className="grid gap-4 grid-cols-1 md:grid-cols-3 rounded-[12px] p-4 border border-border bg-white"
     >
       {/* ── Card 1: debasement pressure ─────────────────────────────────── */}
-      <div>
+      <div className="pr-4">
+
         <div className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
           Debasement pressure
         </div>
@@ -150,7 +151,8 @@ export default function MacroCrossCurrents({ cycle, cc }: MacroCrossCurrentsProp
       </div>
 
       {/* ── Card 2: Fed posture ─────────────────────────────────────────── */}
-      <div>
+      <div className="px-4 border-l border-border">
+
         <div className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
           Fed posture
         </div>
@@ -197,7 +199,8 @@ export default function MacroCrossCurrents({ cycle, cc }: MacroCrossCurrentsProp
       </div>
 
       {/* ── Card 3: cycle × posture ─────────────────────────────────────── */}
-      <div>
+      <div className="pl-4 border-l border-border">
+
         <div className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
           Cycle × posture
         </div>

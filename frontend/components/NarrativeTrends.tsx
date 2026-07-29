@@ -505,39 +505,29 @@ export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
           </g>
         );
       })}
-      {/* Leader lines wherever the collision pass moved a label off its own mark
-          — the rule TrendPlot already applies to its end labels, brought here
-          because this plane now carries up to ten labels instead of six and the
-          anti-collision stack routinely pushes one 50px below the dot it names.
-          An unconnected label 50px from its mark is not a weaker label; it is a
-          label pointing at the wrong mark. */}
+      {/* Direct labels beside each mark. A simple vertical drop from the dot
+          to the label is cleaner than a polyline in a narrow column — the
+          mark and label are close enough to associate without a horizontal run. */}
       {labelled.map((l) => {
         const yLabel = (l as { yLabel?: number }).yLabel ?? l.yRaw;
         const displaced = Math.abs(yLabel - l.yRaw) > 1.5;
-        // The leader carries the same payload/context ink as the mark it leaves,
-        // so following one never loses which of the two encodings you are in.
         const ink = l.covered ? "var(--text-tertiary)" : "var(--series-1)";
         return (
           <g key={`dl-${l.s.phrase}`}>
             {displaced && (
-              <polyline
-                points={[
-                  `${(l.xr + 7).toFixed(2)},${l.yRaw.toFixed(2)}`,
-                  `${(l.xr + 10).toFixed(2)},${l.yRaw.toFixed(2)}`,
-                  `${(l.xr + 10).toFixed(2)},${yLabel.toFixed(2)}`,
-                  `${(l.xr + 12).toFixed(2)},${yLabel.toFixed(2)}`,
-                ].join(" ")}
-                fill="none"
+              <line
+                x1={l.xr + 6}
+                y1={l.yRaw}
+                x2={l.xr + 6}
+                y2={yLabel}
                 stroke={ink}
                 strokeWidth={1}
-                opacity={0.55}
+                opacity={0.6}
               />
             )}
             <text
-              x={l.xr + (displaced ? 14 : 7)}
+              x={l.xr + 9}
               y={yLabel + 3}
-              // The ink carries the covered/uncovered split that the fill already
-              // carries, so naming a context mark does not promote it to payload.
               fill={l.covered ? "var(--text-tertiary)" : "var(--text-secondary)"}
               fontSize="9.5"
             >

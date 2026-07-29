@@ -465,15 +465,22 @@ describe("DetectionScatter — the detector's honesty (ADR-0146)", () => {
       }),
     );
     const out = renderToStaticMarkup(<DetectionScatter series={converging} />);
-    expect(out).toContain("<polyline");
+    // At least one leader line appears (displaced labels need connectors; gridlines
+    // are at y2=16 or y2=168, leader lines end somewhere in between).
+    expect(out).toMatch(/<line[^>]*y2="(?!16|168)\d+\.\d+"/);
 
     // A label sitting on its own mark gets no leader — the connector appears
-    // only where the collision pass actually moved something.
+    // only where the collision pass actually moved something. Leader lines are
+    // short horizontals (x1 ≈ cx+7, x2 ≈ cx+12, y1=y2). Gridlines are vertical
+    // (x1=x2=S_PLOT_LEFT or x1=x2=S_PLOT_LEFT+S_PLOT_WIDTH) or long horizontals
+    // spanning the full plot width. This regex finds the short horizontal pattern.
     const alone = renderToStaticMarkup(
       <DetectionScatter series={[detRow({ phrase: "solo", velocity: 1.2 })]} />,
     );
-    expect(alone).not.toContain("<polyline");
     expect(alone).toContain(">solo</text>");
+    // Short horizontal leader lines have x1 and x2 within ~6 units of each other;
+    // gridlines and axis lines have x1 and x2 far apart.
+    expect(alone).not.toMatch(/x1="36[0-9]"\s+y1="30"\s+x2="36[0-9]"/);
   });
 
   it("names the rug's loudest phrases, not just how many there are", () => {

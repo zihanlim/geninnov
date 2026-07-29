@@ -315,7 +315,7 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
 // S_WIDTH is set at roughly the NARROWEST column this card will offer, so the
 // plot scales up from 1.0 and never down: below 1.0 the labels shrink, above it
 // they grow, and only one of those directions is recoverable.
-const S_WIDTH = 380;
+const S_WIDTH = 550;
 const S_PLOT_LEFT = 40;
 /** Right gutter for the in-plane labels, which extend rightward from their own
  *  marks, plus the "share" axis caption. Smaller than TrendPlot's 148 because
@@ -843,54 +843,52 @@ export default function NarrativeTrends() {
                     the plane or a tick in the strip below it.
                   </p>
                 )}
-              </div>
-            </div>
 
-            {/* The Emerging block: its own card below the table. */}
-            <div className="card">
-              <div className="px-4 pb-4">
-                <h4 className="m-0 mb-1 text-[10.5px] uppercase tracking-[0.1em] text-text-secondary">
-                  Emerging
-                </h4>
-                {emerging.length === 0 ? (
-                  velocityMeasurable ? (
-                    <p className="m-0 text-[11px] text-text-secondary leading-[1.55]">
-                      None of the <span className="num">{funnel ? funnel.tracked - funnel.unwatched : 0}</span> attributed
-                      phrases are accelerating <em>outside</em> an anchor — that is a
-                      finding, not an empty state.
-                    </p>
+                {/* Emerging block: same width as the table, separated by a border. */}
+                <div className="mt-3 pt-2.5 border-t border-border">
+                  <h4 className="m-0 mb-1 text-[10.5px] uppercase tracking-[0.1em] text-text-secondary">
+                    Emerging
+                  </h4>
+                  {emerging.length === 0 ? (
+                    velocityMeasurable ? (
+                      <p className="m-0 text-[11px] text-text-secondary leading-[1.55]">
+                        None of the <span className="num">{funnel ? funnel.tracked - funnel.unwatched : 0}</span> attributed
+                        phrases are accelerating <em>outside</em> an anchor — that is a
+                        finding, not an empty state.
+                      </p>
+                    ) : (
+                      <p className="m-0 text-[11px] text-text-secondary leading-[1.55]">
+                        Velocity not measurable yet (ADR-0141): {uncoveredCount} of{" "}
+                        <span className="num">{series?.length ?? 0}</span> tracked
+                        phrases are watched by no anchor theme, and whether any is
+                        breaking out cannot be said until the history accrues.
+                      </p>
+                    )
                   ) : (
-                    <p className="m-0 text-[11px] text-text-secondary leading-[1.55]">
-                      Velocity not measurable yet (ADR-0141): {uncoveredCount} of{" "}
-                      <span className="num">{series?.length ?? 0}</span> tracked
-                      phrases are watched by no anchor theme, and whether any is
-                      breaking out cannot be said until the history accrues.
-                    </p>
-                  )
-                ) : (
-                  <ul className="m-0 p-0 list-none flex flex-col gap-1">
-                    {emerging.slice(0, 6).map((s) => (
-                      <li key={s.phrase}>
-                        <span className="text-text-primary">{s.phrase}</span>
-                        <span className="text-text-tertiary">
-                          {" "}
-                          — <span className="num">{sharePct(s.latest.share)}</span>,
-                          velocity{" "}
-                          <span className="num">
-                            {s.latest.velocity === null
-                              ? "n/a"
-                              : `${s.latest.velocity >= 0 ? "+" : ""}${s.latest.velocity.toFixed(2)}`}
+                    <ul className="m-0 p-0 list-none flex flex-col gap-1">
+                      {emerging.slice(0, 6).map((s) => (
+                        <li key={s.phrase}>
+                          <span className="text-text-primary">{s.phrase}</span>
+                          <span className="text-text-tertiary">
+                            {" "}
+                            — <span className="num">{sharePct(s.latest.share)}</span>,
+                            velocity{" "}
+                            <span className="num">
+                              {s.latest.velocity === null
+                                ? "n/a"
+                                : `${s.latest.velocity >= 0 ? "+" : ""}${s.latest.velocity.toFixed(2)}`}
+                            </span>
+                            , first seen <span className="num">{s.latest.first_seen}</span> (
+                            {STATUS_COPY[s.latest.status]})
                           </span>
-                          , first seen <span className="num">{s.latest.first_seen}</span> (
-                          {STATUS_COPY[s.latest.status]})
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <p className="m-0 mt-1.5 text-[11px] text-text-tertiary">
-                  Shadow signal.
-                </p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="m-0 mt-1.5 text-[11px] text-text-tertiary">
+                    Shadow signal.
+                  </p>
+                </div>
               </div>
             </div>
           </div>

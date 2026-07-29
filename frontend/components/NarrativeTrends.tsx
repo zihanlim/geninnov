@@ -114,7 +114,7 @@ function clamp(v: number, lo: number, hi: number) {
 /** Exported for test: the geometry is the part ADR-0126's bug class lives in, and
  *  a test that cannot render the plot can only assert on source text. */
 export function TrendPlot({ series }: { series: TrendSeries[] }) {
-  const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string; color: string } | null>(null);
+  const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string; color: string; dateX: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // One shared date axis across every series, so two lines at the same x are the
@@ -244,6 +244,7 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
                       screenY: e.clientY - rect.top,
                       text: `${s.phrase} — ${p.run_date} — ${sharePct(p.share)} of headlines`,
                       color,
+                      dateX: x(p.run_date),
                     });
                   }}
                   onMouseLeave={() => setTooltip(null)}
@@ -292,6 +293,9 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
             </g>
           );
         })}
+        {tooltip && (
+          <line x1={tooltip.dateX} x2={tooltip.dateX} y1={PLOT_TOP} y2={PLOT_TOP + PLOT_HEIGHT} stroke={tooltip.color} strokeWidth={1} opacity={0.5} pointerEvents="none" />
+        )}
       </svg>
       {/* Immediate tooltip on hover — no browser-native delay. */}
       {tooltip && (

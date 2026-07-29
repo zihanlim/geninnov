@@ -47,14 +47,53 @@
        surface swap bought margin here rather than spending it. */
     --text-tertiary: #5f6672;
     /* Brand + attention (your palette) */
-    /* #e11048 → #d40e43 (2026-07-24) → #c50c3e (2026-07-25). Same crimson-pink,
-       progressively deeper. The 2026-07-24 step fixed plain text (4.34:1 → 4.81:1
-       on paper) but `badge-tier-anchor` renders the accent over its own 10% tint,
-       where #d40e43 was 4.08:1. #c50c3e clears at 4.58:1 there. Deliberately the
-       MINIMAL darkening: the accent is only 8° of hue from --short, so what keeps
-       "interactive" distinct from "short" is the lightness gap, and every further
-       shade spent on contrast margin narrows it. */
-    --accent: #c50c3e;       /* interactive / links / active nav (crimson-pink) */
+    /* PROTOTYPE (2026-07-29): crimson-pink → teal. Adopted from `primary` in the
+       Systematic Alabaster set (stitch_andromeda_systematic_trading_platform/),
+       the same comp family the surface ramp below came from.
+
+       The crimson-pink trail was #e11048 → #d40e43 (2026-07-24) → #c50c3e
+       (2026-07-25), each step buying contrast over its own 10% tint in
+       `badge-tier-anchor` (4.08:1 → 4.58:1). Each step also narrowed the thing
+       that trail's own comment flagged: the accent was 8° of hue from --short, so
+       what kept "interactive" distinct from "short" was a lightness gap being
+       spent on contrast margin. Two floors converging on one token.
+
+       Measured, both of them clear:
+         AA (worst of --bg-primary / --bg-surface / --bg-elevated)
+           plain          5.43:1 → 5.83:1
+           over 10% tint  4.58:1 → 5.04:1   (badge-tier-anchor, lib/sourceTokens)
+           #fff on solid  6.01:1 → 6.44:1   (AskConsole's Q avatar)
+           paper on solid 5.73:1 → 6.14:1   (LensSelector active segment)
+           ring vs surface 5.43:1 → 5.83:1  (WCAG 1.4.11 non-text, floor 3:1)
+
+       So the teal is not a contrast compromise — it starts with more headroom
+       than crimson-pink ended with after two darkenings.
+
+       The real argument is goal 3. design-goals.md warns that colouring a
+       direction the same as a hyperlink is "the single most common failure mode
+       in outside mockups" — and measured under CVD, the incumbent was committing
+       it against --short:
+                              vs --short          vs --long
+                        normal protan deutan   normal protan deutan
+         #c50c3e (old)   14.9    7.7    8.6    100.4   11.4   27.8
+         #00687a (new)   84.5   32.1   51.8     28.8   26.2   25.3
+       For ~6% of males the old accent was ΔE 7.7–8.6 from SHORT — below the ~10
+       floor where two colours stop being separable — and 11.4 from LONG. The teal
+       clears 25 against both.
+
+       KNOWN REGRESSION, accepted: under tritanopia the teal is ΔE 4.6 from --long
+       (the old accent was 110.7). Tritanopia is ~0.01% prevalence against
+       deutan/protan's ~6%, so this trades a common collision for a rare one, and
+       ADR-0085's redundant encoding — every direction carries a ▲/▼ glyph or a
+       LONG/SHORT wordmark — is what makes the rare one survivable.
+
+       NOT pushed bluer. #0f6490 scores better against --long (protan 40.2), but
+       the accent's ΔE to --series-1 #2a78d6 falls 48.4 → 31.3 → 20.7 as it goes,
+       which just moves the collision onto the trends board. #00687a keeps ≥48
+       from every series slot. Bluer buys one separation by selling another.
+
+       Derivation: scratchpad accent_probe.py, this session. */
+    --accent: #00687a;       /* interactive / links / active nav (teal) */
     /* THE GROUND OF THE LOGO ARTWORK, AND NOTHING ELSE.
        Measured off the supplied mark (andromeda-analytics.png): 717,750 of its
        799,232 pixels are exactly #161b38, and the figure on it is exactly #fff.

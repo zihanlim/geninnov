@@ -48,10 +48,21 @@ needs a third state with a stated cause — `verdict: current | stale | unjudgea
 ### 3. Direction is glyph + wordmark. Green/crimson reinforce, and nothing else may borrow them
 
 Forest-green `--long` = long, crimson `--short` = short. These are semantics, not
-decoration. Interactive/emphasis is `--accent` (crimson-pink); attention is
-`--warning` (orange). A proposal that colours `LONG` the same as a hyperlink has
-destroyed a semantic to gain nothing — this is the single most common failure
-mode in outside mockups.
+decoration. Interactive/emphasis is `--accent` (teal, **prototype** as of
+2026-07-29 — was crimson-pink); attention is `--warning` (orange). A proposal that
+colours `LONG` the same as a hyperlink has destroyed a semantic to gain nothing —
+this is the single most common failure mode in outside mockups.
+
+The accent moved because this goal was failing against its own test, from the
+inside. Crimson-pink sat 8° of hue from `--short`, and measured under simulated
+CVD it was ΔE 7.7 (protanopia) and 8.6 (deuteranopia) from the SHORT ink — below
+the ~10 threshold at which two colours stop being separable, for ~6% of males.
+The hyperlink *was* the direction. Teal `#00687a` measures 32.1 / 51.8 against
+`--short` and 26.2 / 25.3 against `--long`, and clears AA with more margin than
+crimson-pink had after two darkenings. Known regression: ΔE 4.6 from `--long`
+under tritanopia (~0.01% prevalence), which the glyph-and-wordmark rule below is
+what makes survivable. Derivation and the full candidate sweep are in
+`frontend/app/globals.css`.
 
 **Every element whose meaning is a book direction must render a `▲`/`▼` glyph or a
 `LONG`/`SHORT` wordmark beside the colour.** Hue is redundant encoding here, never

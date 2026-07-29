@@ -832,7 +832,7 @@ export default function NarrativeTrends() {
             <div className="grid gap-5 items-start figures:grid-cols-[minmax(0,1fr)_340px] [&>*]:min-w-0">
               <DetectionScatter series={series} />
 
-              <div>
+              <div className="border-l border-border pl-5">
                 <SeriesTable series={top} />
 
                 {dropped > 0 && (

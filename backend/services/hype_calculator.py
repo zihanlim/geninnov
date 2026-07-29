@@ -410,6 +410,17 @@ def compute_hype_scores(raw_signals: list[dict], cfg: ScoringConfig) -> list[dic
 
     scored = []
     for r in raw_signals:
+        # A theme whose news feed never answered is NOT SCOREABLE. Its volume is
+        # 0 because we did not look, not because the market is quiet, and its
+        # sentiment and momentum are neutral defaults over an empty corpus rather
+        # than measurements. Scoring it produced exactly 28.5714 for three themes
+        # on 2026-07-29 — two placeholders scaled up by the missing-correlation
+        # renormalisation. NULL is the honest value and the one ADR-0066 already
+        # requires for anything not computable (ADR-0156).
+        if r.get("feed_error"):
+            scored.append({**r, "hype_score": None})
+            continue
+
         # ABSOLUTE sub-scores (ADR-0042). Each depends only on this theme's own
         # signal, so the number means the same thing tomorrow — which is what Q2's
         # "support risk monitoring" requires and cross-sectional min-max cannot do.

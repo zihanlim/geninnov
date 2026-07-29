@@ -6,6 +6,7 @@ import pytest
 from datetime import date, timedelta
 from unittest.mock import patch
 from backend.data.brave_client import (
+    ProviderUnavailable,
     fetch_news_for_theme,
     fetch_market_news,
     _mock_news,
@@ -95,9 +96,50 @@ class TestFetchNewsForTheme:
 
     @patch.dict("os.environ", {"ANDROMEDA_ALLOW_MOCK": "0"})
     @patch("backend.data.brave_client.subprocess.run")
-    def test_mcp_unavailable_returns_empty_when_mock_disabled(self, mock_run):
-        """Production policy: a failed feed returns [] rather than fabricating."""
+    def test_mcp_unavailable_raises_when_mock_disabled(self, mock_run):
+        """Production policy: a failed feed RAISES rather than returning [].
+
+        This test used to assert `== []`, under the heading "a failed feed returns
+        [] rather than fabricating". Returning [] is itself a fabrication by the
+        time it reaches the scorer — it asserts "no news about this theme", which
+        is a claim about the market rather than about the feed, and on 2026-07-29
+        it published a HypeScore of 28.5714 for three themes that had collected
+        zero documents. See ADR-0156.
+        """
         mock_run.side_effect = FileNotFoundError
+        with pytest.raises(ProviderUnavailable):
+            fetch_news_for_theme("Corporate Credit")
+
+    @patch.dict("os.environ", {"ANDROMEDA_ALLOW_MOCK": "0"})
+    @patch("backend.data.brave_client.subprocess.run")
+    def test_non_zero_exit_raises_and_carries_the_reason(self, mock_run):
+        """The 402 message call_brave_mcp.js already writes must reach the caller.
+
+        The bridge reported the quota exhaustion correctly all along —
+        `process.exit(1)` plus "Brave API returned status 402" on stderr. This
+        module discarded both, which is the entire root cause.
+        """
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stdout = ""
+        mock_run.return_value.stderr = (
+            "Brave API returned status 402: "
+            '{"error":{"detail":"Usage limit exceeded"}}'
+        )
+        with pytest.raises(ProviderUnavailable, match="402"):
+            fetch_news_for_theme("Fed Policy")
+
+    @patch.dict("os.environ", {"ANDROMEDA_ALLOW_MOCK": "0"})
+    @patch("backend.data.brave_client.subprocess.run")
+    def test_empty_result_from_a_HEALTHY_feed_stays_empty(self, mock_run):
+        """The other half of the distinction, and the one easy to break.
+
+        returncode 0 with no articles is a real measurement of a quiet theme. It
+        must NOT raise — otherwise the fix trades a fabricated score for a
+        fabricated outage, and a genuinely quiet theme stops being scoreable.
+        """
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "[]"
+        mock_run.return_value.stderr = ""
         assert fetch_news_for_theme("Corporate Credit") == []
 
     @patch("backend.data.brave_client.subprocess.run")

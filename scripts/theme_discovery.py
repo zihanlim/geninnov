@@ -30,7 +30,7 @@ from pathlib import Path
 # Root at the repo, not backend/, so `backend.*` resolves the same way it does
 # everywhere else in the codebase. See the note in scripts/daily_refresh.py.
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from backend.data.brave_client import fetch_news_for_theme
+from backend.data.brave_client import ProviderUnavailable, fetch_news_for_theme
 from backend.data.reddit_client import fetch_posts_for_theme
 
 THEME_SUBREDDITS = ["wallstreetbets", "investing", "stocks", "economy", "finance"]
@@ -330,13 +330,28 @@ def run_discovery(sb=None, run_date: date | None = None,
             "Fed Policy", "Inflation", "China Growth", "US Dollar",
             "Geopolitical Risk", "Corporate Credit", "Energy Prices", "US Election"
         ]
+        failed: list[str] = []
         for theme in themes_to_scan:
-            news = fetch_news_for_theme(theme, lookback_days=LOOKBACK_MONTHS * 30)
+            # A dead feed here is survivable in a way it is not in daily_refresh:
+            # discovery builds ONE pooled corpus and the MIN_DOCS_PER_THEME gate
+            # below already refuses to run on a thin one. What it must not do is
+            # treat the shortfall as "the market was quiet" — so the themes that
+            # failed are named, and the gate decides (ADR-0156).
+            try:
+                news = fetch_news_for_theme(theme, lookback_days=LOOKBACK_MONTHS * 30)
+            except ProviderUnavailable as exc:
+                news, _ = [], failed.append(theme)
+                print(f"[theme_discovery] {theme}: news feed unavailable — {exc}")
             posts = fetch_posts_for_theme(theme, lookback_days=LOOKBACK_MONTHS * 30)
             for n in news:
                 corpus.append({"text": n["headline"], "date": n.get("date", ""), "source": "brave", "theme": theme})
             for p in posts:
                 corpus.append({"text": p["title"], "date": p.get("date", ""), "source": "reddit", "theme": theme})
+
+        if failed:
+            print(f"[theme_discovery] {len(failed)}/{len(themes_to_scan)} themes "
+                  f"contributed NOTHING because their feed failed: "
+                  f"{', '.join(failed)}. The corpus below is short by that much.")
 
     if len(corpus) < MIN_DOCS_PER_THEME:
         print(f"Warning: corpus has only {len(corpus)} docs, expected >= {MIN_DOCS_PER_THEME}")

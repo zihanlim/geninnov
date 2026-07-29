@@ -9,10 +9,42 @@ import json
 from datetime import date, timedelta
 
 
+class ProviderUnavailable(RuntimeError):
+    """The news feed FAILED. Distinct from the feed returning nothing.
+
+    These are different facts about the world and the pipeline must not merge
+    them. "Brave returned zero articles about Corporate Credit" is a measurement
+    of a quiet theme; "Brave returned HTTP 402" is a measurement of our billing.
+    Both used to arrive here as ``[]``.
+
+    On 2026-07-29 the Brave quota was exhausted mid-run. `call_brave_mcp.js`
+    reported it correctly — ``process.exit(1)`` with ``Brave API returned status
+    402`` on stderr — and this module discarded both the return code and the
+    message, so three themes collected zero documents and were scored anyway:
+
+        volume   = 0.0   the only real signal
+        sentiment= 0.5   neutral default, there was no text to score
+        momentum = 0.5   neutral default
+        corr     = None  dropped, remaining weights renormalised over 0.70
+
+    which is ``100 x (0.20x0.5 + 0.20x0.5) / 0.70`` = **28.5714**, published for
+    US Dollar, Geopolitical Risk and AI Capex as though it were measured. The
+    renormalisation ADR-0036 added so a missing correlation would not be scored
+    as zero is what scaled the two placeholders up.
+
+    Raising is the point. A caller may still choose to continue past a dead
+    provider, but it has to make that choice in code that says so.
+    """
+
+
 def _mock_allowed() -> bool:
     """Whether the mock fallback may be used. Default on (for local dev + tests);
-    set ANDROMEDA_ALLOW_MOCK=0 in production so a failed feed returns [] rather
-    than fabricating data (RESIDUAL R0/R0b — prefer empty over fake)."""
+    set ANDROMEDA_ALLOW_MOCK=0 in production so a failed feed raises
+    ProviderUnavailable rather than fabricating data (RESIDUAL R0/R0b).
+
+    This used to say "returns [] rather than fabricating". Returning [] IS a
+    fabrication once it reaches the scorer — it fabricates "no news about this
+    theme", which is a claim about the market rather than about the feed."""
     return os.environ.get("ANDROMEDA_ALLOW_MOCK", "1").strip().lower() not in ("0", "false", "no")
 
 
@@ -101,13 +133,17 @@ def coverage_keywords() -> dict[str, list[str]]:
 def fetch_news_for_theme(theme: str, lookback_days: int = 7) -> list[dict]:
     """
     Fetch news for a theme using Brave Search MCP.
-    Returns list of {headline, date, url}.
-    Falls back to mock data if MCP is unavailable (for local testing without credentials).
+    Returns list of {headline, date, url} — possibly EMPTY, which means the feed
+    answered and had nothing.
+
+    Raises ``ProviderUnavailable`` when the feed did not answer. Falls back to
+    mock data instead of raising if ANDROMEDA_ALLOW_MOCK is on (local dev/tests).
     """
     keywords = THEME_KEYWORDS.get(theme, [theme])
     query = " OR ".join(f'"{k}"' for k in keywords[:3])
     date_from = (date.today() - timedelta(days=lookback_days)).isoformat()
 
+    detail = ""
     try:
         result = subprocess.run(
             ["node", "scripts/call_brave_mcp.js", query, date_from],
@@ -133,15 +169,23 @@ def fetch_news_for_theme(theme: str, lookback_days: int = 7) -> list[dict]:
                     if not _within_lookback(it, date_from):
                         continue
                 kept.append(it)
+            # returncode 0: the feed ANSWERED. An empty list here is a real
+            # measurement of a quiet theme and must stay empty.
             return kept
-    except Exception:
-        pass
+        # Non-zero exit. call_brave_mcp.js already wrote the reason to stderr
+        # ("Brave API returned status 402: ...", "BRAVE_SEARCH_API_KEY not set",
+        # "Brave request timed out"). Carrying it is the whole point — the
+        # information existed on 2026-07-29 and was thrown away here.
+        detail = (result.stderr or "").strip().splitlines()[-1:] or ["exit code "
+                                                                     f"{result.returncode}"]
+        detail = detail[0][:300]
+    except Exception as exc:
+        detail = f"{exc.__class__.__name__}: {exc}"[:300]
 
-    # Feed unavailable. In production (ANDROMEDA_ALLOW_MOCK=0) return nothing
-    # rather than fabricate; only fall back to mock for local dev / tests.
-    if not _mock_allowed():
-        return []
-    return _mock_news(theme, lookback_days)
+    # The feed FAILED. Only local dev / tests may paper over that with mock data.
+    if _mock_allowed():
+        return _mock_news(theme, lookback_days)
+    raise ProviderUnavailable(f"Brave news fetch failed for {theme!r}: {detail}")
 
 # ─── The un-themed corpus (ADR-0128) ─────────────────────────────────────────
 #

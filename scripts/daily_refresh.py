@@ -35,6 +35,7 @@ except Exception:
 
 from backend.tools.sentiment import batch_sentiment
 from backend.data.brave_client import (
+    ProviderUnavailable,
     fetch_news_for_theme,
     fetch_market_news,
     MARKET_SEED_QUERIES,
@@ -239,7 +240,21 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
 
         # Fetch news + Reddit over the correlation window (momentum uses the
         # trailing 7 days of it; the price correlation uses the full window).
-        news = fetch_news_for_theme(theme_name, lookback_days=CORR_WINDOW_DAYS)
+        #
+        # A failed feed is caught HERE, per theme, rather than aborting the run:
+        # a quota that dies mid-run (as Brave's did on 2026-07-29) leaves the
+        # earlier themes perfectly measurable, and throwing their work away would
+        # be a worse answer than scoring them and marking the rest unmeasured.
+        # What must NOT happen is the third option the code used to take —
+        # scoring the unmeasured ones anyway off neutral defaults.
+        feed_error: str | None = None
+        try:
+            news = fetch_news_for_theme(theme_name, lookback_days=CORR_WINDOW_DAYS)
+        except ProviderUnavailable as exc:
+            news, feed_error = [], str(exc)
+            print(f"[build_theme_signals] {theme_name}: NEWS FEED UNAVAILABLE — "
+                  f"{exc}. HypeScore will be NULL for this theme, not 0 and not a "
+                  f"default (ADR-0156).", flush=True)
         posts = fetch_posts_for_theme(theme_name, lookback_days=CORR_WINDOW_DAYS)
 
         # Keep the raw items so the L5 agent can reason over the actual news
@@ -382,6 +397,11 @@ def build_theme_signals(themes: list[dict], run_date: date) -> list[dict]:
             "momentum_raw": momentum_raw,
             "headlines": headlines,
             "data_source": _classify_data_source(headlines),
+            # Why this theme has no documents, when it has none. `None` means the
+            # feed answered — an empty corpus is then a real measurement of a
+            # quiet theme and IS scoreable. A string means the feed never
+            # answered, and nothing downstream may score it (ADR-0156).
+            "feed_error": feed_error,
         })
 
     return results
@@ -431,8 +451,18 @@ def compute_trade_scores(hyped: list[dict], run_date: date) -> list[dict]:
     scored = []
     missing_prior = 0
     missing_hype = 0
+    unscoreable = 0
     for r in hyped:
         theme_id = r["theme_id"]
+
+        # No HypeScore, no TradeScore. A theme whose feed never answered has a
+        # NULL hype_score (ADR-0156), and TradeScore is a function of it — deriving
+        # one anyway would launder the same missing measurement into a second
+        # published number, which is the failure this whole change exists to stop.
+        if r.get("hype_score") is None:
+            scored.append({**r, "trade_score": None, "elapsed_days": 1})
+            unscoreable += 1
+            continue
 
         # Momentum baseline: the most recent prior hype_score. A theme with no
         # usable prior falls back to today's own score, which zeroes momentum
@@ -458,6 +488,9 @@ def compute_trade_scores(hyped: list[dict], run_date: date) -> list[dict]:
         )
         scored.append({**r, "trade_score": ts, "elapsed_days": elapsed_days})
 
+    if unscoreable:
+        print(f"[compute_trade_scores] {unscoreable}/{len(hyped)} themes carry NO "
+              f"HypeScore (feed unavailable); their TradeScore is NULL too.")
     if missing_prior:
         print(f"[compute_trade_scores] WARN: no prior run_date found for "
               f"{missing_prior}/{len(hyped)} themes; defaulted elapsed_days=1.")
@@ -771,7 +804,15 @@ def persist(run_date: date, scored: list[dict]):
         # are ABSOLUTE — each a function of this theme's own signal against a
         # documented anchor — so they are computed with the same helpers
         # compute_hype_scores uses, not re-derived here.
-        vol_norm = volume_subscore(volume_base(r))
+        #
+        # That reproducibility rule is exactly why an unscoreable theme must write
+        # all FOUR as NULL alongside the NULL hype_score. Persisting
+        # sentiment_score = 0.5 and momentum_score = 0.5 next to a null score would
+        # publish the two placeholder values on their own — the same fiction in
+        # four columns instead of one, and /method would render them as measured
+        # sub-scores of a score that does not exist (ADR-0156).
+        unscoreable = r.get("hype_score") is None
+        vol_norm = None if unscoreable else volume_subscore(volume_base(r))
 
         # Update themes table. The SIGN of correlation is preserved on the
         # history row below as signed_corr + crowding for the trade/risk layer.
@@ -781,13 +822,17 @@ def persist(run_date: date, scored: list[dict]):
         # reproduces the persisted hype_score. It is None — written as SQL NULL —
         # when no mapped instrument was measurable; /method already renders a null
         # sub-score as "cannot be reproduced" rather than as a zero (ADR-0127).
-        corr_score = theme_corr_subscore(r)
+        corr_score = None if unscoreable else theme_corr_subscore(r)
         supabase.table("themes").update({
             "hype_score": r["hype_score"],
             "volume_score": vol_norm,
-            "sentiment_score": rescale_vader(r["avg_sentiment"]),
+            "sentiment_score": (
+                None if unscoreable else rescale_vader(r["avg_sentiment"])
+            ),
             "corr_score": corr_score,
-            "momentum_score": momentum_subscore(r["momentum_raw"]),
+            "momentum_score": (
+                None if unscoreable else momentum_subscore(r["momentum_raw"])
+            ),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", theme_id).execute()
 

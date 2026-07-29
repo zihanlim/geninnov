@@ -183,24 +183,31 @@ def _seendate_to_iso(seendate: str) -> str | None:
 #: On expiry the fetch returns what it has and SAYS how many queries it skipped
 #: (GOAL.md's no-silent-caps rule) — a short corpus that reports its shortfall is
 #: recoverable; one that looks complete is not.
-#: Raised from 200s on 2026-07-29, having measured what 200s actually bought.
+#: MEASURED, 2026-07-29, and left at 200s: raising it buys nothing.
 #:
-#: A single seed query takes ~30s end to end — the 6.5s pace plus GDELT's own
-#: response time for 250 records — so 10 queries need ~300s and the old budget cut
-#: the fetch off after six or seven. The archive was short by three queries on every
-#: run, and it is the ONLY source of history: Brave supplies 88% of recent documents
-#: and nothing at all before its 8-day window, so whatever GDELT misses is missing
-#: from the series permanently rather than until tomorrow.
+#: The archive looked truncated — 462 documents over 41 days (~11/day) from ten seed
+#: queries, while ONE query measured alone returns 232 over the same window. The
+#: obvious inference was that the budget cut the fetch off early, so it was raised
+#: to 420s. That inference was wrong and the measurement says so:
 #:
-#: The symptom this explains: `market_news` held 462 GDELT documents over 41 days
-#: (~11/day), while ONE query measured alone returns 232 over the same window. The
-#: corpus was not thin because GDELT is sparse; it was thin because the fetch
-#: stopped early.
+#:     1 query   ->  232 deduped articles, 41 days
+#:     4 queries ->  462 deduped articles, 41 days, median 11/day
+#:    10 queries ->  462   (what was already stored)
 #:
-#: 420s leaves margin over the ~300s the full set needs, on a nightly job that
-#: already runs ~10 minutes. The skip report below still fires if even this is not
-#: enough — a truncated archive must say so rather than look complete.
-DEFAULT_TIME_BUDGET_S = 420.0
+#: Queries five through ten add **nothing**. The seed set is broad market language
+#: and GDELT returns heavily overlapping articles for it, so dedup collapses the
+#: gain long before the clock runs out. What the run does hit is HTTP 429 — the
+#: pacing below is already at 6.5s against a 5s server limit and still gets
+#: throttled, and a query can be abandoned outright.
+#:
+#: So the binding constraint is GDELT's coverage of these terms plus its rate
+#: limiter, not this budget. ~11 documents/day is what the archive HAS. Spending
+#: more wall-clock on a nightly job to re-fetch the same articles would be paying
+#: for the appearance of thoroughness.
+#:
+#: The real lever, if the discovery layer needs a denser corpus, is a more diverse
+#: query set or a provider with genuine archival depth — not this number.
+DEFAULT_TIME_BUDGET_S = 200.0
 
 
 def fetch_market_news_gdelt(

@@ -145,6 +145,7 @@ def main() -> int:
     # the future. Anything else would leak information backwards and manufacture
     # velocity.
     history: dict[str, list[tuple[date, float]]] = defaultdict(list)
+    history_sizes: dict[date, int] = {}
     all_rows: list[dict] = []
     first_measurable: date | None = None
 
@@ -166,7 +167,11 @@ def main() -> int:
     print(f"\n{'date':12} {'docs':>5} {'phrases':>8} {'w/vel':>6} {'emerging':>9}  top phrase")
     for d in usable:
         corpus = daily_phrase_counts(by_day[d], d)
-        signals = build_narrative_signals(corpus, dict(history), anchors)
+        # Sizes of the days already replayed, so the guard can refuse a
+        # velocity across a corpus-size break (ADR-0155).
+        signals = build_narrative_signals(
+            corpus, dict(history), anchors, dict(history_sizes)
+        )
 
         with_vel = sum(1 for s in signals if s.velocity is not None)
         emerging = [s for s in signals if s.status == "emerging"]
@@ -200,6 +205,7 @@ def main() -> int:
         # Feed today's share forward for tomorrow's comparison.
         for s in signals:
             history[s.phrase].append((d, s.share))
+        history_sizes[d] = corpus.corpus_size
 
     measurable = sum(1 for r in all_rows if r["velocity"] is not None)
     emerging_rows = [r for r in all_rows if r["status"] == "emerging"]

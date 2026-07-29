@@ -448,6 +448,7 @@ def build_narrative_signals(
     today: DailyCorpus,
     history: dict[str, list[tuple[date, float]]],
     anchor_keywords: dict[str, list[str]] | None = None,
+    history_sizes: dict[date, int] | None = None,
 ) -> list[NarrativeSignal]:
     """Turn one day's counts into signals, given each phrase's own past shares.
 
@@ -463,13 +464,37 @@ def build_narrative_signals(
     anchor_keywords = anchor_keywords or {}
     signals: list[NarrativeSignal] = []
 
+    # Is today's corpus the same SIZE of thing the history was counted out of?
+    #
+    # A share is doc_count / corpus_size, so when the denominator moves every
+    # phrase's share moves with it and the z-score reports the fetch. `history_sizes`
+    # is passed in because only the caller knows what each past day was counted out
+    # of; absent it, the guard cannot run and velocity is computed as before —
+    # degrading to the old behaviour rather than silently suppressing everything.
+    comparable = True
+    reference = 0
+    if history_sizes:
+        past_sizes = sorted(history_sizes.values())
+        reference = past_sizes[len(past_sizes) // 2]  # median, not mean
+        if reference and today.corpus_size:
+            ratio = today.corpus_size / reference
+            comparable = (1 / MAX_CORPUS_SIZE_RATIO) <= ratio <= MAX_CORPUS_SIZE_RATIO
+
+    if not comparable:
+        print(
+            f"[narrative_tracker] corpus is {today.corpus_size} documents against a "
+            f"median history of {reference} — {today.corpus_size / reference:.1f}x. "
+            f"Velocity is WITHHELD for this run: a share is a fraction of the corpus, "
+            f"so a z-score across that break measures the denominator, not the news."
+        )
+
     for phrase, count in today.doc_counts.items():
         share = count / today.corpus_size if today.corpus_size else 0.0
         past = history.get(phrase, [])
         past_shares = [s for _, s in past]
 
         velocity: float | None = None
-        if len(past_shares) >= MIN_DAYS_FOR_VELOCITY - 1:
+        if len(past_shares) >= MIN_DAYS_FOR_VELOCITY - 1 and comparable:
             velocity = share_velocity(share, past_shares)
 
         first_seen = past[0][0] if past else today.run_date
@@ -583,6 +608,27 @@ HISTORY_DAYS = 60
 #:
 #: A share is a fraction OF a corpus. Comparing one to the other measures the corpus
 #: difference and calls it attention.
+#: How far today's corpus may differ in SIZE from the history it is compared
+#: against, before a velocity stops being a statement about the phrase.
+#:
+#: `share = doc_count / corpus_size`. When the denominator changes, every phrase's
+#: share moves together, and a robust z of that movement reports the fetch rather
+#: than the news. Observed on 2026-07-29, and caused by our own change: windowing
+#: the GDELT request took the day's corpus from ~20-60 documents to 868, average
+#: share fell from ~0.09 to ~0.023, and ALL 34 measurable velocities came back
+#: negative. Not one positive. That is not a market in which everything faded at
+#: once; it is a denominator.
+#:
+#: ADR-0153 stated the rule — "a series has to be counted out of the same kind of
+#: corpus every day or its differences mean nothing" — and guarded the PROVIDER
+#: mix. Corpus VOLUME is the same rule through a door that was not guarded, so it
+#: is guarded structurally here rather than left to whoever next changes a fetch.
+#:
+#: 2.5x each way is deliberately loose: day-to-day collection genuinely varies with
+#: how many articles a fetch returns, and this must not suppress an ordinary day.
+#: It is aimed at the order-of-magnitude break that only a config change produces.
+MAX_CORPUS_SIZE_RATIO = 2.5
+
 COMBINED_CORPUS = "combined"
 ARCHIVE_CORPUS = "archive"
 
@@ -609,7 +655,7 @@ def load_history(
     try:
         rows = (
             sb.table("narrative_signals")
-            .select("phrase, run_date, share")
+            .select("phrase, run_date, share, corpus_size")
             .eq("corpus", corpus)
             .gte("run_date", cutoff)
             .lt("run_date", run_date.isoformat())
@@ -632,6 +678,41 @@ def load_history(
             continue
         hist.setdefault(phrase, []).append((date.fromisoformat(str(raw_date)[:10]), float(share)))
     return hist
+
+
+def load_history_sizes(
+    sb,
+    run_date: date,
+    days: int = HISTORY_DAYS,
+    corpus: str = COMBINED_CORPUS,
+) -> dict[date, int]:
+    """Corpus size per prior day, for the comparability guard.
+
+    Separate from `load_history` because that returns per-PHRASE series while this
+    is one number per DAY, and collapsing them would make the caller reconstruct a
+    day's size from whichever phrase happened to be present.
+    """
+    cutoff = (run_date - timedelta(days=days)).isoformat()
+    try:
+        rows = (
+            sb.table("narrative_signals")
+            .select("run_date, corpus_size")
+            .eq("corpus", corpus)
+            .gte("run_date", cutoff)
+            .lt("run_date", run_date.isoformat())
+            .limit(20000)
+            .execute()
+            .data
+        )
+    except Exception:
+        return {}
+    sizes: dict[date, int] = {}
+    for r in rows or []:
+        raw, size = r.get("run_date"), r.get("corpus_size")
+        if not raw or not size:
+            continue
+        sizes[date.fromisoformat(str(raw)[:10])] = int(size)
+    return sizes
 
 
 def persist_narrative_signals(
@@ -743,7 +824,8 @@ def track_narratives(
         return []
 
     history = load_history(sb, run_date, corpus=corpus) if sb is not None else {}
-    signals = build_narrative_signals(today, history, anchor_keywords)
+    sizes = load_history_sizes(sb, run_date, corpus=corpus) if sb is not None else {}
+    signals = build_narrative_signals(today, history, anchor_keywords, sizes)
 
     print(f"[narrative_tracker] [{corpus}] {today.corpus_size} documents, "
           f"{len(today.doc_counts)} tracked phrases "

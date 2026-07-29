@@ -13,6 +13,7 @@ from backend.services.narrative_tracker import (
     anchor_for_phrase,
     build_narrative_signals,
     classify_status,
+    DailyCorpus,
     NarrativeSignal,
     daily_phrase_counts,
     emerging_narratives,
@@ -231,6 +232,63 @@ class TestEmergingNarratives:
         fresh = self._emerging("ai capex cycle", None, 3.0)
         shortlist = emerging_narratives(fresh)
         assert [s.phrase for s in shortlist] == ["ai capex cycle"]
+
+
+class TestVelocityRefusesACorpusSizeBreak:
+    """A share is doc_count / corpus_size.
+
+    When the denominator moves, every phrase's share moves with it and a z-score of
+    that movement reports the FETCH, not the news. Observed live on 2026-07-29 and
+    caused by our own change: windowing the GDELT request took a day from ~20-60
+    documents to 868, average share fell from ~0.09 to ~0.023, and all 34 measurable
+    velocities came back NEGATIVE. Not one positive.
+
+    ADR-0153 stated the rule and guarded the provider mix. Corpus VOLUME is the same
+    rule through an unguarded door.
+    """
+
+    def _corpus(self, size: int) -> DailyCorpus:
+        return DailyCorpus(
+            run_date=RUN, doc_counts={"copper squeeze": max(3, size // 20)},
+            corpus_size=size, floor=3,
+        )
+
+    def _history(self, shares):
+        return {"copper squeeze": [(RUN - timedelta(days=len(shares) - i), v)
+                                   for i, v in enumerate(shares)]}
+
+    def test_a_comparable_day_still_gets_a_velocity(self):
+        sizes = {RUN - timedelta(days=i): 50 for i in range(1, 6)}
+        out = build_narrative_signals(
+            self._corpus(60), self._history([0.05, 0.06, 0.05, 0.07]), None, sizes
+        )
+        assert out[0].velocity is not None
+
+    def test_an_80x_corpus_jump_withholds_velocity(self):
+        # The live failure, as a test. 868 against a median history of ~50.
+        sizes = {RUN - timedelta(days=i): 50 for i in range(1, 6)}
+        out = build_narrative_signals(
+            self._corpus(868), self._history([0.05, 0.06, 0.05, 0.07]), None, sizes
+        )
+        assert out[0].velocity is None, (
+            "a velocity across an 17x denominator break is a statement about the fetch"
+        )
+
+    def test_a_collapse_is_refused_too(self):
+        # Symmetric: a fetch that returns far FEWER documents inflates every share.
+        sizes = {RUN - timedelta(days=i): 800 for i in range(1, 6)}
+        out = build_narrative_signals(
+            self._corpus(20), self._history([0.01, 0.012, 0.011, 0.009]), None, sizes
+        )
+        assert out[0].velocity is None
+
+    def test_without_sizes_it_degrades_to_the_old_behaviour(self):
+        # A caller that cannot supply sizes gets what it got before, rather than
+        # having every velocity silently suppressed.
+        out = build_narrative_signals(
+            self._corpus(868), self._history([0.05, 0.06, 0.05, 0.07]), None, None
+        )
+        assert out[0].velocity is not None
 
 
 class TestTheFloorScalesWithTheCorpus:

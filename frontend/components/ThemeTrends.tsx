@@ -30,13 +30,24 @@ import {
 } from "@/lib/themeTrends";
 
 export function ThemeTrendsTable({ series }: { series: ThemeTrendSeries[] }) {
+  // The day these figures are actually FROM. When the newest run is too thin to
+  // carry a share it becomes a gap (MIN_DAY_MENTIONS_FOR_SHARE), and the table
+  // then shows the last day that qualified. Heading it "Share today" would
+  // assert a date the numbers do not have — the same mislabel ADR-0159 fixed on
+  // the narrative plane, where the header read "run 2026-07-29" over a plot of
+  // 07-27.
+  const asOf =
+    series.find((s) => s.points.length > 0)?.points.slice(-1)[0]?.run_date ?? null;
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-[11.5px] border-collapse">
         <thead>
           <tr className="text-text-tertiary text-left">
             <th className="font-normal py-1 pr-3">Theme</th>
-            <th className="font-normal py-1 pr-3 text-right">Share today</th>
+            <th className="font-normal py-1 pr-3 text-right">
+              {asOf ? <>Share &middot; <span className="num">{asOf}</span></> : "Share"}
+            </th>
             <th className="font-normal py-1 pr-3 text-right">Mentions</th>
             <th className="font-normal py-1 text-right">&Delta; vs prior run</th>
           </tr>

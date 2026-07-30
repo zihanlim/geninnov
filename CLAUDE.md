@@ -136,7 +136,7 @@ All project documentation lives under `docs/`:
 | `scripts/backfill_macro.py` | Backfill macro_daily_history to ~3 years for the credit-rates legs (FRED series only) |
 | `backend/data/macro_fetcher.py` | L0: FRED + yfinance macro snapshot |
 | `backend/data/factor_fetcher.py` | L2: Ken French FF5 + UMD factor exposures |
-| `backend/services/credit_rates_exposures.py` | L2b: per-asset duration / IG / quality betas (total + marginal), shadow |
+| `backend/services/credit_rates_exposures.py` | L2b: per-asset duration / IG / quality betas (total + marginal), shadow. `marginal_beta_ig`/`marginal_beta_qual` feed `S7_fallen_angel` (ADR-0192) only when the beta clears its own standard error at `CREDIT_BETA_T_THRESHOLD = 2.0`, tested **per leg** (ADR-0193) — residualising each leg against FF5+UMD leaves a small-variance regressor, so the raw coefficient is routinely large and imprecise, and `marginal_r2` (the joint fit's r², dominated by the equity block) cannot police it. A NULL SE or a beta that fails the gate falls through to the next tier, never a fabricated 0.0. Measured live 2026-07-30: 1 of 9 held names (GEV, via its quality-gap leg only) clears the gate; the rest fall through |
 | `backend/services/regime_classifier.py` | L3: Rule-based cycle × sentiment classifier |
 | `backend/services/book_metrics.py` | L5: value-weighted FF5+UMD book tilts, sector/geo caps, correlation matrix |
 | `backend/services/sanctions_exposure.py` | Which held names are sanctions-exposed **and on which side** — the 2026-07-25 book is net SHORT 30.2% of gross in Chinese ADRs, so escalation is a tailwind. No credential needed ([ADR-0096](docs/adrs/0096-the-book-is-net-short-sanctions-risk-and-never-said-so.md)) |

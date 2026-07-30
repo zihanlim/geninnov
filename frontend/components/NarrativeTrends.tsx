@@ -152,6 +152,7 @@ export function TrendPlot({
   plotRight = DEFAULT_PLOT_RIGHT,
   plotTop = DEFAULT_PLOT_TOP,
   plotBottom = DEFAULT_PLOT_BOTTOM,
+  yMax: yMaxProp,
 }: {
   series: TrendSeries[];
   width?: number;
@@ -160,6 +161,12 @@ export function TrendPlot({
   plotRight?: number;
   plotTop?: number;
   plotBottom?: number;
+  /** Overrides the axis's own computed max — see the geometry note above.
+   *  Already padded; passed straight to `niceTicks`. Lets a caller stacking
+   *  this beside another share axis (the narrative board's own scatter,
+   *  ADR-0177) put both on one scale, so a reader compares a line's height
+   *  to a dot's position without doing the conversion themselves. */
+  yMax?: number;
 }) {
   const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string; color: string; dateX: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -175,10 +182,12 @@ export function TrendPlot({
   if (dates.length < 2) return null;
 
   const xIndex = new Map(dates.map((d, i) => [d, i]));
-  const maxShare = Math.max(...series.flatMap((s) => s.points.map((p) => p.share)));
   // Zero is always in frame: share of voice is a proportion of a fixed whole, and
-  // a y-axis floating above zero would exaggerate every wobble.
-  const yMax = maxShare > 0 ? maxShare * 1.1 : 0.01;
+  // a y-axis floating above zero would exaggerate every wobble. `yMaxProp` skips
+  // this series' own max entirely when supplied — a shared axis means neither
+  // chart's local data may narrow it back down.
+  const maxShare = Math.max(...series.flatMap((s) => s.points.map((p) => p.share)));
+  const yMax = yMaxProp ?? (maxShare > 0 ? maxShare * 1.1 : 0.01);
   const ticks = niceTicks(0, yMax, 4);
 
   const x = (d: string) =>
@@ -438,11 +447,21 @@ const LABEL_CAP_COVERED = 0;
  *  not in the plane, not in the rug, and 7th by share against a 5-row table. */
 const RUG_NAMED = 3;
 
-export function DetectionScatter({ series }: { series: NarrativeSeries[] }) {
+export function DetectionScatter({
+  series,
+  xMax: xMaxProp,
+}: {
+  series: NarrativeSeries[];
+  /** Overrides this plane's own computed max — see TrendPlot's `yMax` prop
+   *  for why. Stacked above a "share over time" line chart on one scale, a
+   *  dot's horizontal position and a line's height become directly
+   *  comparable (ADR-0177). */
+  xMax?: number;
+}) {
   const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string; color: string } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
-  const xMax = Math.max(...series.map((s) => s.latest.share), 0.01) * 1.08;
+  const xMax = xMaxProp ?? Math.max(...series.map((s) => s.latest.share), 0.01) * 1.08;
   const x = (share: number) => S_PLOT_LEFT + clamp(share / xMax, 0, 1) * S_PLOT_WIDTH;
 
   const measurable = series.filter((s) => s.latest.velocity !== null);
@@ -848,6 +867,22 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
   const latestRun = series?.[0]?.latest.run_date ?? null;
   const corpus = series?.[0]?.latest.corpus_size ?? null;
   const dropped = series ? Math.max(0, series.length - top.length) : 0;
+  // ONE share axis for both plots (ADR-0177): the scatter's x and the trend's
+  // y are the same quantity, drawn on perpendicular axes only because the two
+  // charts ask different questions of it. Computed over the union of what
+  // EACH chart actually plots — the scatter's TODAY-only share across every
+  // tracked phrase, and the trend's HISTORICAL share across just the top 5 —
+  // so neither chart's own data can be clipped by an axis sized for the
+  // other's. A single 1.1x pad, replacing the scatter's separate 1.08x: the
+  // two numbers existed only because each axis was computed alone, not
+  // because either padding was chosen for a reason the other one wasn't.
+  const sharedShareMax = series
+    ? Math.max(
+        0.01,
+        ...series.map((s) => s.latest.share),
+        ...top.flatMap((s) => s.points.map((p) => p.share)),
+      ) * 1.1
+    : 0.01;
   // For the trend plot only — the scatter below needs no run count, it plots
   // one day. A trajectory needs at least two.
   const runs = series
@@ -1003,7 +1038,7 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                     <h4 className="m-0 mb-1.5 text-[10.5px] uppercase tracking-[0.1em] text-text-secondary">
                       Share over time
                     </h4>
-                    <TrendPlot series={top} width={S_WIDTH} height={S_HEIGHT} />
+                    <TrendPlot series={top} width={S_WIDTH} height={S_HEIGHT} yMax={sharedShareMax} />
                     <p className="m-0 mt-1 text-[11px] text-text-tertiary leading-[1.5]">
                       Top {top.length} by today&rsquo;s share, not by whether
                       they mean anything — the loudest phrase in a news corpus
@@ -1014,7 +1049,7 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                     </p>
                   </div>
                 )}
-                <DetectionScatter series={series} />
+                <DetectionScatter series={series} xMax={sharedShareMax} />
               </div>
 
               <div className="border-l border-border pl-5">

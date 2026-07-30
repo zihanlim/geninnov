@@ -176,6 +176,65 @@ describe("the plot carries a value axis (ADR-0126)", () => {
   });
 });
 
+describe("share axis overrides let two charts share one scale (ADR-0177)", () => {
+  it("TrendPlot's yMax overrides its own computed max", () => {
+    // This series' own max is 9%, so its default axis tops out at "10%" —
+    // asserts an explicit yMax reaches past that self-computed ceiling,
+    // which a caller sharing a wider axis with another chart needs.
+    const withoutOverride = renderToStaticMarkup(
+      <TrendPlot series={[series("narrow today, wide elsewhere", [0.01, 0.02, 0.09])]} />,
+    );
+    expect(withoutOverride).not.toContain(">20%<");
+    const withOverride = renderToStaticMarkup(
+      <TrendPlot
+        series={[series("narrow today, wide elsewhere", [0.01, 0.02, 0.09])]}
+        yMax={0.2}
+      />,
+    );
+    expect(withOverride).toContain(">20%<");
+  });
+
+  it("DetectionScatter's xMax overrides its own computed max", () => {
+    // latest.share of 0.05 alone would cap the x-axis around "5%"-"6%" —
+    // asserts an override reaches past that self-computed ceiling too.
+    const out = renderToStaticMarkup(
+      <DetectionScatter
+        series={[
+          {
+            phrase: "p",
+            points: [{ run_date: "2026-07-28", share: 0.05 }],
+            latest: row({ phrase: "p", share: 0.05, velocity: 1.0 }),
+          },
+        ]}
+        xMax={0.2}
+      />,
+    );
+    expect(out).toContain(">20%<");
+  });
+
+  it("the board computes one shared max over BOTH charts' own data, not either alone", () => {
+    // This series has a LOW latest share (what DetectionScatter would use
+    // alone) but a much HIGHER historical share earlier in its own history
+    // (what TrendPlot draws). The shared max must reach the historical peak,
+    // not just today's reading — otherwise "shared" would only ever narrow
+    // toward whichever chart's own number is smaller.
+    const wideHistory: NarrativeSeries = {
+      phrase: "spike then fade",
+      points: [
+        { run_date: "2026-07-01", share: 0.25 },
+        { run_date: "2026-07-02", share: 0.05 },
+      ],
+      latest: row({ phrase: "spike then fade", share: 0.05, velocity: 0.5 }),
+    };
+    const out = renderToStaticMarkup(
+      <NarrativeTrends shared={{ series: [wideHistory], asOfFallback: null, error: null }} />,
+    );
+    // 0.25 historical peak * 1.1 pad -> niceTicks tops out at 25%, not the
+    // ~5-6% either chart would land on computing its own max alone.
+    expect(out).toContain(">25%<");
+  });
+});
+
 describe("plot geometry holds at every series count and run count", () => {
   // ADR-0126's bug class was a mark centred on a coordinate that is already the
   // plot boundary — invisible at the one size the original test happened to use.
@@ -608,6 +667,14 @@ describe("DetectionScatter — the detector's honesty (ADR-0146)", () => {
     expect(src).toContain("<DetectionScatter series={series}");
   });
 
+  it("the scatter's x-axis shares the trend's own axis, not its own separate max (ADR-0177)", () => {
+    const src = readFileSync(
+      path.resolve(__dirname, "../../components/NarrativeTrends.tsx"),
+      "utf8",
+    );
+    expect(src).toContain('<DetectionScatter series={series} xMax={sharedShareMax} />');
+  });
+
   it("the trend plot is narrowed to the scatter's own box, not left at the wide default (ADR-0176)", () => {
     // Both plots render `w-full` inside the same grid column, which makes
     // them the same CSS width regardless of their viewBox numbers — but
@@ -619,7 +686,7 @@ describe("DetectionScatter — the detector's honesty (ADR-0146)", () => {
       path.resolve(__dirname, "../../components/NarrativeTrends.tsx"),
       "utf8",
     );
-    expect(src).toContain("<TrendPlot series={top} width={S_WIDTH} height={S_HEIGHT} />");
+    expect(src).toContain('<TrendPlot series={top} width={S_WIDTH} height={S_HEIGHT} yMax={sharedShareMax} />');
   });
 
   it("also renders a share-over-time trend above the plane (ADR-0175)", () => {

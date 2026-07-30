@@ -1434,6 +1434,88 @@ def refresh_factor_exposures(run_date: date, lookback_days: int = 252) -> int:
     return written
 
 
+# ─── Step 6c (L2b): Refresh credit / duration exposures (shadow) ────────────
+def refresh_credit_rates_exposures(run_date: date, lookback_days: int = 252) -> int:
+    """L2b: per-asset duration / IG / quality betas (shadow).
+
+    Sourced from the same price frame L2 already fetched and the macro
+    history L0 already wrote. Persists one row per asset to
+    `credit_rates_exposures` with status='measured' / 'insufficient_history' /
+    'degenerate'. NEVER sizes anything; sizing and scenario consumption
+    are deferred to S and B, each in their own ADR.
+    """
+    from backend.services.credit_rates_exposures import (
+        assemble_row,
+        build_credit_legs,
+        compute_marginal_betas,
+        compute_total_betas,
+        upsert_exposures,
+        FactorsUnavailable,
+    )
+    from backend.data.factor_fetcher import FactorFetcher
+
+    today_str = run_date.isoformat()
+    universe = sorted(set(SECTOR_MAP.keys()))
+
+    # Same price frame L2 already fetches — one read serves both layers.
+    price_df = fetch_price_data(universe, lookback_days=lookback_days * 2)
+    if price_df.empty:
+        print(f"[{today_str}] [L2b] No price data for the universe; skipping.")
+        return 0
+
+    try:
+        legs = build_credit_legs(supabase, lookback_days=lookback_days * 2, as_of=run_date)
+    except ValueError as exc:
+        print(f"[{today_str}] [L2b] build_credit_legs failed ({exc}); skipping.")
+        return 0
+
+    # FF5+UMD for the marginal variant. failure is partial-success, not abort.
+    factors_unavailable = False
+    try:
+        ff_fetcher = FactorFetcher(
+            SUPABASE_URL, SUPABASE_KEY,
+            data_dir=str(Path(__file__).parent.parent / "backend" / "data"),
+        )
+        factor_df = ff_fetcher.load_cached_factors()
+        if factor_df.empty:
+            factor_df = pd.DataFrame()
+            factors_unavailable = True
+        else:
+            factor_df = factor_df[factor_df.index <= pd.Timestamp(run_date)]
+    except Exception:
+        factor_df = pd.DataFrame()
+        factors_unavailable = True
+
+    rows: list[dict] = []
+    skipped: list[str] = []
+    for ticker in universe:
+        sub = price_df[price_df["ticker"] == ticker].sort_values("date")
+        if len(sub) < lookback_days + 1:
+            skipped.append(ticker)
+            continue
+        asset_returns = pd.Series(
+            sub["close"].pct_change().dropna().values,
+            index=pd.to_datetime(sub["date"].iloc[1:].values),
+        )
+        total = compute_total_betas(asset_returns, legs, lookback_days)
+        marginal: dict | None = None
+        if not factors_unavailable:
+            try:
+                marginal = compute_marginal_betas(asset_returns, legs, factor_df, lookback_days)
+            except FactorsUnavailable:
+                factors_unavailable = True  # propagate to other assets
+                marginal = None
+        rows.append(assemble_row(
+            asset=ticker, run_date=run_date, lookback_days=lookback_days,
+            total=total, marginal=marginal,
+        ))
+
+    written = upsert_exposures(supabase, rows)
+    print(f"[{today_str}] [L2b] {written} credit-rates exposures upserted "
+          f"({len(skipped)} skipped, factors_unavailable={factors_unavailable}).")
+    return written
+
+
 # ─── Step 7 (Phase 3): Load theme_assets map for ranked themes ───────────────
 def load_theme_assets_map(theme_ids: list[str], run_date: date) -> dict[str, list[str]]:
     """Load asset map for a set of themes. Most-recent run_date wins per theme."""
@@ -2620,6 +2702,35 @@ def main():
             record_pipeline_run(
                 supabase, l2_id, "failure", run_date=run_date, stage="L2",
                 duration_s=(datetime.now(timezone.utc) - l2_started).total_seconds(),
+                error=str(exc),
+            )
+        except Exception as exc2:
+            print(f"[pipeline_runs] record failed ({exc2.__class__.__name__}): {exc2}")
+
+    # ── Phase 5b: L2b — Credit / duration exposures (shadow) ──────────────
+    print(f"[{run_date}] [L2b] Refreshing credit & duration exposures...")
+    l2b_started = datetime.now(timezone.utc)
+    l2b_id = run_id_for(run_date, stage="L2b")
+    try:
+        record_pipeline_run(supabase, l2b_id, "started", run_date=run_date, stage="L2b")
+    except Exception as exc:
+        print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
+    try:
+        n_credit = refresh_credit_rates_exposures(run_date)
+        try:
+            record_pipeline_run(
+                supabase, l2b_id, "success" if n_credit else "partial",
+                run_date=run_date, stage="L2b",
+                duration_s=(datetime.now(timezone.utc) - l2b_started).total_seconds(),
+            )
+        except Exception as exc:
+            print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
+    except Exception as exc:
+        print(f"[{run_date}] [L2b] Credit-rates refresh failed ({exc.__class__.__name__}): {exc}")
+        try:
+            record_pipeline_run(
+                supabase, l2b_id, "failure", run_date=run_date, stage="L2b",
+                duration_s=(datetime.now(timezone.utc) - l2b_started).total_seconds(),
                 error=str(exc),
             )
         except Exception as exc2:

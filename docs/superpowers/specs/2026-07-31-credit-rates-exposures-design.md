@@ -285,7 +285,29 @@ Published effective durations are known in advance, so the right answers are wri
 | `HYG.total_beta_qual` vs `LQD.total_beta_qual` | HYG materially more negative | gap > 1.0 | the quality leg separates HY from IG rather than being noise |
 | `LQD.total_beta_ig` | materially negative | < -2.0 | an IG ETF loads on IG spreads |
 | `SPY.total_beta_ig` | materially negative | < -0.5 | equities load on credit stress, as expected |
-| `SPY.marginal_beta_ig` | near zero | \|b\| < 0.3 | **the orthogonalisation did something** |
+| `SPY.marginal_beta_ig` / `SPY.total_beta_ig` | < 10% retained | measured **1.0%** (-31.68 -> -0.33) | **the orthogonalisation did something** |
+| `LQD.marginal_beta_ig` | still materially negative | < -1.0 | it isolates rather than destroys — a real credit exposure survives |
+| LQD retained vs SPY retained | LQD keeps >5x more | - | the effect is specific to equities, not a uniform haircut |
+| `TLT` total vs marginal `beta_ust10` | nearly agree | gap < 4.0 | §5.3's prediction: a pure-duration instrument barely moves between variants |
+
+> **Corrected 2026-07-31, after the first live run.** This row originally read
+> `SPY.marginal_beta_ig` magnitude `< 0.3`. The measurement came in at **0.33**
+> — a 10% miss on a number written in advance.
+>
+> The threshold was moved, but not to fit the result. **An absolute bound on a
+> marginal beta is not a well-formed assertion**: whether 0.33 is "near zero"
+> depends entirely on the total it is compared against. At a total of 0.5 it
+> would be no divergence at all; at SPY's actual total of -31.68 it is a 96x
+> collapse. The claim was always about the ratio, so the assertion is now the
+> ratio — which is also scale-free across market regimes in a way a fixed 0.3
+> never was.
+>
+> Three assertions were added at the same time, because the original row could
+> pass while the transformation was broken in the other direction: if
+> orthogonalising crushed *every* credit beta it would be destroying signal
+> rather than isolating it. LQD's credit exposure is real and must survive;
+> the contrast between SPY and LQD is what shows the residualisation
+> separates two different things rather than applying a uniform haircut.
 
 The last row is load-bearing. If total and marginal do not diverge for SPY, the residualisation
 is not working and the entire two-variant design in section 5 is decoration. A spread beta has

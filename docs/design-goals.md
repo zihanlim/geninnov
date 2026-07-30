@@ -292,11 +292,15 @@ Stated so nobody re-litigates them by accident:
   section is kept because its reasoning is still the bar — only its arithmetic
   changed.** [ADR-0170](adrs/0170-the-navigation-is-the-process.md) replaced the
   four object-shaped destinations with one tab per phase of the investment process
-  (`01 Mandate · 02 Alpha · 03 Risk · 04 Construction · 05 Execution ·
+  (`01 Mandate · 02 Alpha · 03 Construction · 04 Risk · 05 Execution ·
   06 Attribution`), at the owner's direction, on the ground that **the sequence is
   what this artefact demonstrates** and a numbered strip teaches it before a reader
   has read a word. [ADR-0172](adrs/0172-every-phase-answers-its-own-question-above-the-fold.md)
-  then renamed phase 3 to `Risk`.
+  renamed phase 3 to `Risk`, and
+  [ADR-0188](adrs/0188-the-risk-phase-measures-a-book-that-does-not-exist-yet.md)
+  then swapped it with Construction: that rename made the phase BOOK-level, and
+  every figure `/risk` renders is written after `size_positions` runs. A sequence
+  is only worth teaching if it is the one the system performs.
 
   **The rule that replaces "four destinations":**
 

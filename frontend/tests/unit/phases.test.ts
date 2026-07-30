@@ -137,7 +137,7 @@ describe("phasesForRoute", () => {
     expect(phasesForRoute("/workbench")).toEqual([]);
     expect(phasesForRoute("/method")).toEqual([]);
     // /scenario is retired and redirects to /risk (ADR-0172), so it is not a
-    // process step either. /risk IS one — it is phase 3 — and is asserted above.
+    // process step either. /risk IS one — it is phase 4 — and is asserted above.
     expect(phasesForRoute("/scenario")).toEqual([]);
   });
 });

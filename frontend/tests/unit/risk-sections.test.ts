@@ -148,14 +148,20 @@ describe("the phase routes agree with the phase map", () => {
     }
   });
 
-  it("/risk is phase 3, and /scenario redirects to it", () => {
-    // ADR-0172 gave /risk back to phase 3 — its question always WAS the risk
-    // question. ADR-0170 had left this path as a pure fragment hop; that is now
-    // a real page.
-    const phase3 = PHASES.find((p) => p.n === 3);
-    expect(phase3?.id).toBe("risk");
-    expect(phase3?.route).toBe("/risk");
-    expect(phase3?.tab).toBe("Risk");
+  it("/risk is phase 4 — after the sizing it measures — and /scenario redirects to it", () => {
+    // ADR-0172 gave /risk back to the risk phase; ADR-0188 moved that phase from
+    // 3 to 4. Every figure the page renders is written by `finalise_book_analytics`,
+    // which runs AFTER `size_positions` — so phase 3 (Construction & sizing) is
+    // what produces the book this phase measures, and the nav now says so.
+    const risk = PHASES.find((p) => p.n === 4);
+    expect(risk?.id).toBe("risk");
+    expect(risk?.route).toBe("/risk");
+    expect(risk?.tab).toBe("Risk");
+    // The pair, asserted together: a swap that renumbered one and not the other
+    // would leave two phases claiming one position and nothing would catch it.
+    const sizing = PHASES.find((p) => p.n === 3);
+    expect(sizing?.id).toBe("construction");
+    expect(sizing?.route).toBe("/book");
     expect(read("app/scenario/page.tsx")).toContain('redirect("/risk")');
   });
 

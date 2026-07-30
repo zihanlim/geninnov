@@ -789,7 +789,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       {/* The answer row sits ABOVE the section nav, because it is the answer and the
           nav is a way of getting to the evidence for it. Measured before this
           existed: /risk's own headline — the six-scenario matrix — was at 2622px,
-          nearly three screens down (ADR-0172). Only phase 3 has one so far; the
+          nearly three screens down (ADR-0172). Only the risk phase has one so far; the
           other rows land in the same place as they are written. */}
       {phase === "mandate" && (
         <AnswerRow
@@ -920,7 +920,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
 
       {shows("stress") && (
       <section id="stress" aria-label="Stress scenarios">
-      {/* Stress scenarios lead the page (ADR-0172). They ARE phase 3's answer,
+      {/* Stress scenarios lead the page (ADR-0172). They ARE this phase's answer,
           and they were at 2622px below a what-if builder that explores them — a
           tool placed ahead of the finding it is for. The what-if follows, which
           also reads better: a reader now varies a shock they have already seen. */}

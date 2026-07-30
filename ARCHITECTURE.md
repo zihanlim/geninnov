@@ -187,10 +187,10 @@ flowchart TB
             NAVSRC["<b>lib/method/phases.ts — THE NAVIGATION</b><br/>01 Mandate · 02 Alpha · 03 Scenario<br/>04 Construction · 05 Execution · 06 Attribution<br/><i>TopBar, SideRail and ProcessMap all render THIS array,<br/>so the strip, the rail and the map cannot drift (ADR-0170)</i>"]
             NAVSRC -.-> SHELL
             PG_HOME["/ — Themes<br/>app/page.tsx"]
-            PG_BOOK["<b>/book — The $100M Book</b><br/>components/book/BookBody.tsx<br/><i>positions + thesis + sizing<br/>+ screening funnel</i>"]
+            PG_BOOK["<b>/book — 03 Construction &amp; Sizing</b><br/>components/book/BookBody.tsx<br/><i>positions + thesis + sizing<br/>+ screening funnel</i>"]
             PG_RISK["<s>/risk</s> — fragment-aware HOP<br/>app/risk/page.tsx<br/><i>answered 3 phases at once, so it could not be<br/>one tab. Its anchors now live on 3 routes and a<br/>server redirect cannot see a hash, so it forwards<br/>client-side: #stress → /scenario#stress (ADR-0170)</i>"]
             PG_MANDATE["<b>/mandate — 01 Mandate &amp; Limits</b><br/>app/mandate/page.tsx<br/><i>mandate + limits. The board MEASURES<br/>against the panel above it</i>"]
-            PG_SCEN["<b>/risk — 03 Risk &amp; Scenario</b><br/>app/risk/page.tsx<br/><i>stress FIRST · VaR by method · attribution ·<br/>concentration · exposure. per-position attribution is<br/>EX-ANTE, so it sits here not on the phase of the same<br/>name. /scenario redirects here (ADR-0172)</i>"]
+            PG_SCEN["<b>/risk — 04 Risk &amp; Scenario</b><br/>app/risk/page.tsx<br/><i>stress FIRST · VaR by method · attribution ·<br/>concentration · exposure. per-position attribution is<br/>EX-ANTE, so it sits here not on the phase of the same<br/>name. /scenario redirects here (ADR-0172)</i>"]
             PG_ATTR["<b>/attribution — 06 Attribution &amp; Feedback</b><br/>app/attribution/page.tsx<br/><i>realised drawdown + return path.<br/>the only backward-looking surface</i>"]
             PG_EXEC["<b>/execution — 05, and EMPTY on purpose</b><br/>app/execution/page.tsx<br/><i>no fill, borrow cost or slippage exists: the book is a<br/>recommendation (ADR-0040). A skipped tab reads as a<br/>missing page, so the boundary gets a destination</i>"]
             ANSROW["<b>components/AnswerRow.tsx</b> — the decision surface<br/><i>LABEL / FIGURE / CONSEQUENCE, consequence COMPUTED from<br/>the same row as the figure, figure links to the panel that<br/>derives it. Four cards, never five. REFUSES Sharpe / Sortino /<br/>Calmar / drawdown / TE / IR: costless series at n=6 where the<br/>sign flips net of costs (ADR-0172)</i>"]
@@ -221,10 +221,10 @@ flowchart TB
             PG_METH_BUILD --> METHBODY
             PG_METH_EV --> METHBODY
             PHASES -.->|Phase 1| PG_MANDATE
-            PHASES -.->|Phase 3| PG_SCEN
+            PHASES -.->|Phase 4| PG_SCEN
             PHASES -.->|Phase 5| PG_EXEC
             PHASES -.->|Phase 2| PG_HOME
-            PHASES -.->|Phase 4| PG_BOOK
+            PHASES -.->|Phase 3| PG_BOOK
             PHASES -.->|Phase 6| PG_ATTR
             PG_ASK["<b>/ask — interrogate the book</b><br/>app/ask/page.tsx<br/><i>a TOOL, not a fifth destination.<br/>The scrolling-document mount: Ctrl+F,<br/>deep links, long transcripts (ADR-0087)</i>"]
             ASK_DOCK["<b>Ask — floating window</b><br/>components/chat/AskWindow.tsx<br/><i>the other mount. Persistent: survives<br/>outside clicks AND navigation, and closing<br/>only HIDES it — an unsaved transcript that<br/>cost 2 LLM calls is not thrown away</i>"]

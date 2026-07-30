@@ -4,7 +4,7 @@
 //
 // `/risk` was ONE page with seven sections answering three different phases of
 // the process: the mandate a book is measured against (phase 1), the scenarios
-// that stress it (phase 3), and what it actually did (phase 6). When navigation
+// that stress it, and what it actually did (phase 6). When navigation
 // became one tab per phase, that page could no longer be one destination — a tab
 // strip cannot mark three of its own tabs current at once.
 //

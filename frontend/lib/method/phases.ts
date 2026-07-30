@@ -95,27 +95,6 @@ export const PHASES: readonly Phase[] = [
   },
   {
     n: 3,
-    // Renamed from `scenario` and given the `/risk` route (ADR-0172). Phase 3's
-    // question already WAS the risk question, so this is a label and a route rather
-    // than a new destination — the six-phase sequence is untouched.
-    //
-    // `name` and `question` widened with the tab. A tab reading `Risk` while the
-    // phase says only "Catalyst & scenario" would be a mismatch that matters
-    // mechanically, not just editorially: the answer row is generated FROM
-    // `question`, so a narrow question puts the wrong four cards above the fold.
-    id: "risk",
-    short: "Risk",
-    tab: "Risk",
-    name: "Risk & scenario",
-    question:
-      "What could go wrong, what would it cost, and what proves the thesis right?",
-    route: "/risk",
-    anchor: null,
-    coverage: "live",
-    note: "StressScenarios — the six-scenario matrix, incl. the supply shock that does not transmit through market beta.",
-  },
-  {
-    n: 4,
     id: "construction",
     short: "Sizing",
     tab: "Construction",
@@ -127,6 +106,34 @@ export const PHASES: readonly Phase[] = [
     anchor: "sizing",
     coverage: "live",
     note: "SizingProvenance — the optimizer's own account of how each weight was reached.",
+  },
+  {
+    n: 4,
+    // MOVED FROM 3 TO 4 (ADR-0188), and this is the one phase whose position was
+    // ever argued from the pipeline rather than from the workflow.
+    //
+    // Renamed from `scenario` and given the `/risk` route by ADR-0172, which said
+    // the six-phase sequence was untouched. It was — but the rename is what made
+    // this phase BOOK-level. "Catalyst & scenario" is a question about an idea and
+    // belongs before sizing; "Risk & scenario" over `scenario_results`,
+    // `risk_decomposition`, `monte_carlo_var` and `var_forecast` is a question
+    // about a sized book, and cannot be asked before one exists.
+    //
+    // The pipeline settles it in its own words: `finalise_book_analytics` "runs
+    // last, on the real book" AFTER `size_positions`, and is what `/risk` renders.
+    // The scenario pass that runs BEFORE pick selection is over the equal-weighted
+    // candidate pool, exists as LLM prompt context, and is discarded — so no figure
+    // a reader sees here predates the sizing step.
+    id: "risk",
+    short: "Risk",
+    tab: "Risk",
+    name: "Risk & scenario",
+    question:
+      "What could go wrong, what would it cost, and what proves the thesis right?",
+    route: "/risk",
+    anchor: null,
+    coverage: "live",
+    note: "StressScenarios — the six-scenario matrix, incl. the supply shock that does not transmit through market beta.",
   },
   {
     n: 5,

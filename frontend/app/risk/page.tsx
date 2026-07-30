@@ -1,13 +1,13 @@
 "use client";
 // frontend/app/risk/page.tsx
 //
-// /risk — phase 3, Risk & scenario. What could go wrong, what it would cost, and
+// /risk — phase 4, Risk & scenario. What could go wrong, what it would cost, and
 // where it is concentrated.
 //
 // This route has had three jobs in two days, and the third is the simplest.
 // ADR-0025 made it a destination answering three phases at once; ADR-0170 dissolved
 // it into /mandate, /risk-as-scenario and /attribution and left this path as a
-// fragment-aware hop; ADR-0172 gives it back to phase 3, because phase 3's question
+// fragment-aware hop; ADR-0172 gives it back to this phase, because its question
 // always WAS the risk question and naming the tab `Scenario` hid that.
 //
 // WHY THE HOP SURVIVES, MUCH SMALLER.

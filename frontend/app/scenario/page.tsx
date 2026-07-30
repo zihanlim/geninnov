@@ -1,6 +1,6 @@
 // frontend/app/scenario/page.tsx
 //
-// Retired. Phase 3 is `/risk` since ADR-0172 — its question always was the risk
+// Retired. `/risk` is the risk phase since ADR-0172 (phase 4 since ADR-0188) — its question always was the risk
 // question, and the `Scenario` label hid that from a reader scanning the tabs.
 //
 // A server redirect rather than deletion, and it is worth one line: `/scenario`

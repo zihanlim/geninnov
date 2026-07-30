@@ -2,7 +2,7 @@
 //
 // The four questions a PM arrives at /risk with, answered above the fold.
 //
-// Phase 3 asks "what could go wrong, what would it cost, and what proves the thesis
+// This phase asks "what could go wrong, what would it cost, and what proves the thesis
 // right?" and the page's own answer — the six-scenario matrix — was measured at
 // 2622px on 2026-07-30, nearly three screens below the fold, under per-position
 // attribution and the what-if builder. This row is the fix (ADR-0172).

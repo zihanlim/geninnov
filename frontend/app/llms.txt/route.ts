@@ -63,7 +63,7 @@ published.
   names what the phase would need rather than reporting figures that do not exist.
 - \`/attribution\` — realised drawdown and the return path, against the ex-ante figures.
   The only backward-looking surface.
-- \`/scenario\` — retired; redirects to \`/risk\`, which is phase 3.
+- \`/scenario\` — retired; redirects to \`/risk\`, which is phase 4.
 - \`/method\` — the process map: the six phases of the investment process (mandate,
   alpha sourcing, risk/scenario, construction, execution, attribution) and the
   surface performing each. Execution is out of scope and says why.

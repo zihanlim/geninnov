@@ -971,7 +971,30 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
   const uncoveredCount = series?.filter((s) => s.latest.covered_by === null).length ?? 0;
   const latestRun = series?.[0]?.latest.run_date ?? null;
   const corpus = series?.[0]?.latest.corpus_size ?? null;
-  const dropped = series ? Math.max(0, series.length - top.length) : 0;
+  // THE TABLE'S ROWS ARE NOT THE PLOT'S. `top` is five because `SERIES_COLORS`
+  // has five slots — a constraint of the trend plot's palette, which the table
+  // then inherited by sharing the variable. The table has no palette and no
+  // width dependence on its row COUNT (every column is min-content over its
+  // values), so the cap bought it nothing and cost it the phrases the board
+  // exists to surface: a narrative that no anchor watches is this board's
+  // payload, and "quiet" is not a reason to drop the payload.
+  //
+  // It is also what stopped the funnel card beside this one from having to
+  // list them itself. Two tables of phrases, six columns against three, with
+  // two rows identical in both and no stated relationship, is a reader's
+  // problem however correct each one is. Phrase-level rows live HERE, in the
+  // one table that has all six columns; the funnel card counts and attributes.
+  const tableRows = series
+    ? [
+        ...top,
+        ...series.filter(
+          (s) =>
+            s.latest.covered_by === null && !top.some((t) => t.phrase === s.phrase),
+        ),
+      ].sort((a, b) => b.latest.share - a.latest.share)
+    : [];
+  const extraUnwatched = tableRows.length - top.length;
+  const dropped = series ? Math.max(0, series.length - tableRows.length) : 0;
   // ONE share axis for both plots (ADR-0177): the scatter's x and the trend's
   // y are the same quantity, drawn on perpendicular axes only because the two
   // charts ask different questions of it. Computed over the union of what
@@ -1195,13 +1218,21 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                   `items-start` stays the grid default for the reason its note
                   above gives. */}
               <div className="border-l border-border pl-5 self-stretch">
-                <SeriesTable series={top} />
+                <SeriesTable series={tableRows} />
 
                 {dropped > 0 && (
                   <p className="m-0 mt-2 text-[11px] text-text-tertiary leading-[1.55]">
-                    The {top.length} loudest of{" "}
+                    The <span className="num">{top.length}</span> loudest of{" "}
                     <span className="num">{series.length}</span> tracked
-                    narratives — every one of the {series.length} is a mark in
+                    narratives
+                    {extraUnwatched > 0 ? (
+                      <>
+                        , plus <span className="num">{extraUnwatched}</span>{" "}
+                        quieter ones no anchor watches
+                      </>
+                    ) : null}
+                    . Every one of the{" "}
+                    <span className="num">{series.length}</span> is a mark in
                     the plane or a tick in the strip below it.
                   </p>
                 )}
@@ -1238,8 +1269,8 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                         watched by nothing is both <em>young</em> and
                         accelerating — that is a finding, not an empty state.
                         An older one can still be breaking out and stay{" "}
-                        <span className="num">established</span>; the funnel
-                        beside this lists them with their velocities.
+                        <span className="num">established</span>; the table
+                        above lists every one of them with its velocity.
                       </p>
                     ) : (
                       <p className="m-0 text-[11px] text-text-secondary leading-[1.55]">

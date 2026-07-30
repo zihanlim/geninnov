@@ -43,7 +43,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { attentionFunnel, isCorroborated, sharePct } from "@/lib/narratives";
+import { attentionFunnel, isCorroborated } from "@/lib/narratives";
 import { useNarrativeSeries, type NarrativeSeriesState } from "@/lib/useNarrativeSeries";
 
 /** Live values of `themes.promotion_basis` (migration 051), counted rather than
@@ -62,6 +62,23 @@ interface ThemeBasis {
    *  start a universe, not a gap in the record. */
   prior: number;
 }
+
+/** One committed theme, as the pips and the list both read it. */
+interface ThemeRow {
+  name: string;
+  promotion_basis: string | null;
+}
+
+/** Strongest claim first, so the list's order is the pips' order: a filled pip
+ *  is a theme a measurement had some part in, and those are the rows the reader
+ *  should reach first. Within a basis, alphabetical — there is no ranking among
+ *  anchor themes and inventing one would imply a priority the table does not
+ *  hold. */
+const BASIS_RANK: Record<string, number> = {
+  measured_discovery: 0,
+  operator_directed: 1,
+  practitioner_prior: 2,
+};
 
 /** One proportional bar in the observed half. `share` is against the widest
  *  stage, so the track is a real value axis and not a decoration. */
@@ -105,7 +122,7 @@ function ObservedBar({
 }
 
 export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesState }) {
-  const [basis, setBasis] = useState<ThemeBasis | null>(null);
+  const [themes, setThemes] = useState<ThemeRow[] | null>(null);
 
   // The corpus and the day rule are the hook's, not this component's. They were
   // inlined here — with `fetchNarratives()`'s `combined` default against the
@@ -134,12 +151,6 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
   // boilerplate, and the board's own loudest mark (`closes sharply lower`) is
   // what that failure mode looks like.
   const corroborated = series?.filter((s) => isCorroborated(s.latest)).length ?? 0;
-  // The unwatched, named and ordered by share. See the block that renders them.
-  const unwatched = series
-    ? series
-        .filter((s) => s.latest.covered_by === null)
-        .sort((a, b) => b.latest.share - a.latest.share)
-    : [];
   // Attribution breakdown: which themes cover which attributed phrases.
   // Shown as mini bars below the "Not a funnel" paragraph.
   const attributedPhrases = series
@@ -155,21 +166,35 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
   useEffect(() => {
     supabase
       .from("themes")
-      .select("id, promotion_basis")
+      // `name` as well as the basis now: the committed half drew nine pips and
+      // named none of them, which is the same defect the plane beside it fixed
+      // under ADR-0162 — an encoding may not also mean "anonymous". The counts
+      // are derived from these rows rather than fetched separately, so the pips
+      // and the list cannot disagree about how many there are.
+      .select("id, name, promotion_basis")
       .then(({ data, error }) => {
         if (error || !data) return;
-        const by = (v: string) =>
-          data.filter(
-            (t) => (t as { promotion_basis?: string }).promotion_basis === v,
-          ).length;
-        setBasis({
-          total: data.length,
-          measured: by("measured_discovery"),
-          operator: by("operator_directed"),
-          prior: by("practitioner_prior"),
-        });
+        setThemes(
+          (data as ThemeRow[]).slice().sort((a, b) => {
+            const ra = BASIS_RANK[a.promotion_basis ?? ""] ?? 99;
+            const rb = BASIS_RANK[b.promotion_basis ?? ""] ?? 99;
+            return ra === rb ? a.name.localeCompare(b.name) : ra - rb;
+          }),
+        );
       });
   }, []);
+
+  const basis: ThemeBasis | null = themes
+    ? {
+        total: themes.length,
+        measured: themes.filter((t) => t.promotion_basis === "measured_discovery")
+          .length,
+        operator: themes.filter((t) => t.promotion_basis === "operator_directed")
+          .length,
+        prior: themes.filter((t) => t.promotion_basis === "practitioner_prior")
+          .length,
+      }
+    : null;
 
   if (funnel === null && basis === null) return null;
 
@@ -364,6 +389,43 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
                 <code className="num">measured_discovery</code>, the only basis
                 that records evidence arriving <em>before</em> the decision.
               </p>
+              {/* The nine, named. Nine pips said how many were committed and
+                  which of them a measurement touched; they said nothing about
+                  WHAT was committed, and a reader cannot check a universe they
+                  cannot read. ADR-0162 again, applied to the half of this card
+                  that had it worse — the observed half at least reaches a table
+                  one column left, while `themes` is rendered nowhere else on
+                  this page as a list.
+
+                  This is the funnel card's own subject. Phrase rows are the
+                  board's; themes are this card's, and the division is what
+                  keeps two tables of the same shape off one screen. */}
+              {themes && themes.length > 0 && (
+                <div className="flex flex-col gap-0.5 mt-1">
+                  {themes.map((t) => (
+                    <div
+                      key={t.name}
+                      className="flex items-baseline gap-2 text-[10.5px]"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="inline-block w-1.5 h-1.5 rounded-full shrink-0"
+                        style={
+                          t.promotion_basis === "practitioner_prior"
+                            ? { border: "1px solid var(--border)" }
+                            : { background: "var(--accent)" }
+                        }
+                      />
+                      <span className="flex-1 min-w-0 truncate text-text-secondary">
+                        {t.name}
+                      </span>
+                      <span className="num text-[10px] text-text-tertiary shrink-0">
+                        {t.promotion_basis ?? "unrecorded"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -469,84 +531,20 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
                 every bar in this block ends on the same right edge too. */}
             <span aria-hidden="true" className="w-4 shrink-0" />
           </div>
-          {/* Each segment of that bar is now the HEADING of the list of its own
-              members, swatch and all. That replaces a separate key line: a key
-              whose two entries are `6 unwatched` and `5 attributed`, sitting
-              directly above a `6 unwatched` heading and a `5 attributed`
-              heading, is the same fact printed twice. */}
+          {/* The bar's two segments are the KEY, and each segment's members
+              live where that side is decomposed: the unwatched phrases in the
+              board's table one column left, the attributed ones by anchor
+              below.
 
-          {/* ── The six, named. ──────────────────────────────────────────────
-              This card's payload was a COUNT with no members. That is the
-              defect ADR-0162 fixed on the plane beside it — an encoding may
-              not also mean "anonymous", which is how `ai` came to sit at the
-              maximum of both axes and be reported as absent — and the count
-              here had exactly the same shape: "watched by nothing" is the one
-              number on this card that names a gap, and it named no phrase.
-              Two of these six reach the board's top-5 table; on today's data
-              `us` and `asian` appear in no text anywhere else on the page.
-
-              Velocity travels with each row because an unwatched phrase that
-              is ACCELERATING is the alarm the whole board exists to raise, and
-              it is not visible from the share alone. It is also why this list
-              and the empty shortlist beside it are both correct at once:
-              `asian` runs at the velocity cap with nothing watching it, and is
-              classified `established` rather than `emerging`, so the shortlist
-              — which filters on status — has nothing to report while this list
-              has six rows. */}
-          {unwatched.length > 0 && (
-            <div className="flex flex-col gap-0.5 mt-0.5">
-              <div className="flex items-baseline gap-2 text-[10px] uppercase tracking-[0.08em] text-text-tertiary">
-                <span className="flex-1 min-w-0">
-                  <span
-                    className="inline-block w-2 h-2 rounded-sm mr-1"
-                    style={{ background: "var(--border)" }}
-                  />
-                  <span className="num">{funnel.unwatched}</span> watched by nothing
-                </span>
-                <span className="w-10 text-right shrink-0">share</span>
-                <span className="w-10 text-right shrink-0">veloc.</span>
-              </div>
-              {unwatched.map((s) => (
-                <div key={s.phrase} className="flex items-baseline gap-2 text-[10.5px]">
-                  <span
-                    className="flex-1 min-w-0 truncate text-text-secondary"
-                    title={s.phrase}
-                  >
-                    {s.phrase}
-                  </span>
-                  <span className="num w-10 text-right shrink-0 text-text-tertiary">
-                    {sharePct(s.latest.share)}
-                  </span>
-                  {/* Not 0.00 (ADR-0066): a phrase with too little history has
-                      no velocity, and writing zero would place it at
-                      "measured, not moving" — a different and stronger claim
-                      than the data supports.
-
-                      And `n/a`, not an em dash. Two of these six also appear
-                      in the board's table one column left, so the SAME null on
-                      the SAME screen was rendering as `n/a` there and `—`
-                      here. That file settled on `n/a` for a reason it wrote
-                      down (ADR-0184: the prose form set the column width and
-                      pushed the table past its container); a third glyph for
-                      the state reads as a third state. The tooltip travels
-                      too, so the abbreviation is explained in both places. */}
-                  <span
-                    className="num w-10 text-right shrink-0 text-text-tertiary"
-                    title={
-                      s.latest.velocity === null
-                        ? "Velocity not yet measurable — needs more observed days"
-                        : undefined
-                    }
-                  >
-                    {s.latest.velocity === null
-                      ? "n/a"
-                      : `${s.latest.velocity >= 0 ? "+" : ""}${s.latest.velocity.toFixed(2)}`}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
+              A three-column list of unwatched phrases sat here until it was
+              measured against the board beside it: phrase / share / velocity,
+              a strict subset of that table's six columns, with two rows
+              identical in both and no stated relationship between them. Design
+              goal 7's narrowing is the rule that decides it — before adding a
+              view, check whether the content belongs where the duplicate
+              already lives. Phrase rows belong to the board, which now carries
+              every unwatched phrase rather than the loudest five; this card
+              counts, attributes, and names THEMES. */}
           {/* ── The five, by the anchor that already covers them. ─────────── */}
           <div className="flex flex-col gap-1 mt-1">
             <div className="text-[10px] uppercase tracking-[0.08em] text-text-tertiary">

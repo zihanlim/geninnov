@@ -168,15 +168,21 @@ def test_build_credit_legs_handles_partial_history_by_using_available_intersecti
 
 
 def test_compute_total_betas_recovers_a_known_duration():
-    """y = -17 * d_ust10 + noise. The total-beta_ust10 must read ~ -17
-    (the spec's published effective duration for TLT, written down
-    before the code ran)."""
+    """A synthetic TLT: 17y effective duration, built in the units the
+    PRODUCTION inputs actually arrive in, so the test cannot pass on a
+    convention the live pipeline does not use.
+
+    `legs` are BASIS POINTS (build_credit_legs -> diff() * 100).
+    `asset_returns` are DECIMAL (close.pct_change()).
+    A 100bp rise costs a 17y-duration bond 17% -> -0.17 DECIMAL.
+    So the generating process is `-17 * (leg_bp / 10000)`, and the
+    published beta must still read -17 (percent per 100bp).
+    """
     rng = np.random.default_rng(0)
     idx = pd.bdate_range("2024-01-01", periods=300)
     d_ust10 = pd.Series(rng.normal(0, 5, 300), index=idx)  # bp moves
-    # NOTE: /100 removed — d_ust10 is in bp (5-bp scale); the formula must
-    # NOT divide it again.  Signal = -17 * 100bp = -17% (strong, SNR ~17).
-    y = -17.0 * d_ust10 + rng.normal(0, 0.5, 300)
+    # Decimal return: -17% per 100bp == -17 * (bp/10000).
+    y = -17.0 * (d_ust10 / 10000.0) + rng.normal(0, 0.0005, 300)
     legs = pd.DataFrame({"d_ust10": d_ust10, "d_ig": d_ust10 * 0.0, "d_qual": d_ust10 * 0.0})
     out = cre.compute_total_betas(y, legs, lookback_days=252)
     assert out["beta_ust10"] == pytest.approx(-17.0, abs=2.0)
@@ -184,20 +190,55 @@ def test_compute_total_betas_recovers_a_known_duration():
     assert out["n_obs"] == 252
 
 
+def test_a_realistic_daily_move_produces_a_realistic_daily_return():
+    """The dimensional guard, stated as a fact about the world rather than
+    about the code: a 25bp day must cost a 17y bond roughly 4.25%, and the
+    beta recovered from such days must be -17, not -0.0017 and not -1700.
+
+    This is the regression test for the defect the plan itself carried --
+    the brief divided a bp leg by 100 (recovering -0.17) and the first fix
+    removed the division entirely (recovering -17 from a generating process
+    where a ONE basis point move cost 1700%). Both made the assertion pass.
+    Only the units make it true.
+    """
+    idx = pd.bdate_range("2024-01-01", periods=300)
+    # Every day is exactly +25bp; a 17y bond loses 17% * 0.25 = 4.25%.
+    d_ust10 = pd.Series(np.full(300, 25.0), index=idx)
+    expected_daily_decimal = -0.0425
+    y = pd.Series(np.full(300, expected_daily_decimal), index=idx)
+    legs = pd.DataFrame({"d_ust10": d_ust10, "d_ig": d_ust10 * 0.0, "d_qual": d_ust10 * 0.0})
+    out = cre.compute_total_betas(y, legs, lookback_days=252)
+    # A constant regressor is rank-deficient, so this configuration must
+    # decline to publish rather than emit a number -- which is itself the
+    # right behaviour and is asserted here.
+    assert np.isnan(out["beta_ust10"])
+
+    # With variation, the same physics must recover -17.
+    rng = np.random.default_rng(3)
+    d_ust10 = pd.Series(rng.normal(0, 25, 300), index=idx)
+    y = -17.0 * (d_ust10 / 10000.0)
+    legs = pd.DataFrame({"d_ust10": d_ust10, "d_ig": d_ust10 * 0.0, "d_qual": d_ust10 * 0.0})
+    out = cre.compute_total_betas(y, legs, lookback_days=252)
+    assert out["beta_ust10"] == pytest.approx(-17.0, abs=0.01)
+    # And the implied one-day loss on a 25bp day is ~4.25%, not 0.04% or 425%.
+    implied = out["beta_ust10"] * (25.0 / 100.0)
+    assert implied == pytest.approx(-4.25, abs=0.05)
+
+
 def test_compute_total_betas_keeps_three_legs_independent():
     """Three separate simple regressions, one per leg. Loading on d_ust10
-    must NOT leak into beta_ig or beta_qual."""
+    must NOT leak into beta_ig or beta_qual. Same unit convention as above:
+    legs in bp, returns decimal, published betas percent-per-100bp."""
     rng = np.random.default_rng(0)
     idx = pd.bdate_range("2024-01-01", periods=300)
     d_ust10 = pd.Series(rng.normal(0, 5, 300), index=idx)
     d_ig = pd.Series(rng.normal(0, 5, 300), index=idx)
     d_qual = pd.Series(rng.normal(0, 5, 300), index=idx)
-    # NOTE: /100 removed — legs are in bp; removing gives strong SNR for each.
     y = (
-        -10.0 * d_ust10
-        + -3.0 * d_ig
-        + -5.0 * d_qual
-        + rng.normal(0, 0.3, 300)
+        -10.0 * (d_ust10 / 10000.0)
+        + -3.0 * (d_ig / 10000.0)
+        + -5.0 * (d_qual / 10000.0)
+        + rng.normal(0, 0.0003, 300)
     )
     legs = pd.DataFrame({"d_ust10": d_ust10, "d_ig": d_ig, "d_qual": d_qual})
     out = cre.compute_total_betas(y, legs, lookback_days=252)

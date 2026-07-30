@@ -41,6 +41,34 @@ _MARGINAL_FACTORS: tuple[str, ...] = ("d_ust10", "d_ig", "d_qual")
 # (PostgREST's 1000-row silent cap), which we surface as insufficient_history.
 _SERIES_PAGE_CAP = 1000
 
+# ---------------------------------------------------------------------------
+# THE UNIT CONVENTION, and why it is two explicit constants rather than one
+# fudge factor.
+#
+# A published beta here must read as PERCENT RETURN PER 100BP, so that
+# `-beta_ust10` is effective duration in years: TLT at ~17y duration loses
+# ~17% when 10y yields rise 100bp.
+#
+# The two inputs arrive in different units, and neither is the one we publish:
+#   * `asset_returns` comes from `close.pct_change()` -> DECIMAL (-0.17 = -17%)
+#   * `legs` come from `build_credit_legs` -> BASIS POINTS (a 25bp day is 25.0)
+#
+# Regressing decimal-on-bp yields -17/10000 = -0.0017 for TLT, which is a
+# correct number in the wrong unit and reads as "no rate sensitivity" to
+# anyone who does not know the convention. Publishing it would be the
+# ADR-0023 fabrication failure in miniature: a real computation whose LABEL
+# lies about what it measures.
+#
+# So both sides are converted at the fit, and the conversion is named:
+#   return_pct       = return_decimal * 100
+#   leg_hundred_bp   = leg_bp / 100
+#   beta             = return_pct / leg_hundred_bp
+#
+# Do not "simplify" these into a single 10000. The whole defect this fixes
+# was a single scale factor nobody could dimension-check by reading it.
+_PCT_PER_DECIMAL = 100.0      # decimal return -> percent return
+_BP_PER_100BP = 100.0         # basis points -> hundreds of basis points
+
 
 def _series_window(sb, series_id: str, as_of: date, lookback_days: int) -> pd.Series:
     """Read `series_id` from `macro_daily_history` bounded by `as_of`. Returns
@@ -146,6 +174,9 @@ def compute_total_betas(
 
     Returns keys `beta_ust10` / `beta_ig` / `beta_qual` / `r2_*` / `n_obs`.
     Values are `float('nan')` when the fit window is too short — never 0.0.
+
+    Betas are PERCENT RETURN PER 100BP (see the unit-convention block at the
+    top of this module): `-beta_ust10` is effective duration in years.
     """
     common = asset_returns.index.intersection(legs.index)
     n_obs = len(common)
@@ -160,9 +191,12 @@ def compute_total_betas(
 
     # n_obs is the regression window, not the intersection size.
     out["n_obs"] = lookback_days
-    y = asset_returns.loc[common]
+    # Decimal returns -> percent, so the fitted coefficient is per-percent.
+    y = asset_returns.loc[common] * _PCT_PER_DECIMAL
     for leg_name in _MARGINAL_FACTORS:
-        x = legs[leg_name].loc[common]
+        # Basis points -> hundreds of basis points, so the coefficient is
+        # per-100bp. r_squared is scale-invariant and is unaffected by both.
+        x = legs[leg_name].loc[common] / _BP_PER_100BP
         # Reuse the OLS core via a one-column DataFrame — but fit on the
         # SAME window the rolling fit would use (the most recent
         # `lookback_days`), not on the whole intersection.

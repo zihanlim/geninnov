@@ -469,3 +469,47 @@ def test_assemble_row_status_degenerate_on_singular_matrix():
     # 252 obs but every leg has near-zero variance (degenerate) → 'degenerate'.
     assert row["status"] == "degenerate"
     assert row["total_beta_ust10"] is None
+
+
+class _RecordingSB:
+    def __init__(self):
+        self.last_table = None
+        self.last_payload = None
+        self.last_on_conflict = None
+
+    def table(self, name):
+        outer = self
+        class _T:
+            def upsert(self, payload, on_conflict=None):
+                outer.last_table = name
+                outer.last_payload = payload
+                outer.last_on_conflict = on_conflict
+                class _R:
+                    def __init__(self):
+                        self.data = payload
+                class _Exec:
+                    def execute(inner_self):
+                        return _R()
+                return _Exec()
+        return _T()
+
+
+def test_upsert_exposures_writes_with_unique_constraint_and_returns_count():
+    sb = _RecordingSB()
+    rows = [
+        {
+            "asset": "TLT", "run_date": "2026-01-15", "lookback_days": 252,
+            "total_beta_ust10": -17.0, "status": "measured",
+            "n_obs": 252,
+        },
+    ]
+    n = cre.upsert_exposures(sb, rows)
+    assert n == 1
+    assert sb.last_table == "credit_rates_exposures"
+    assert sb.last_on_conflict == "asset,run_date,lookback_days"
+
+
+def test_upsert_exposures_returns_zero_on_empty_input():
+    sb = _RecordingSB()
+    assert cre.upsert_exposures(sb, []) == 0
+    assert sb.last_payload is None  # never called

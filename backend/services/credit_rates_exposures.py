@@ -405,3 +405,14 @@ def assemble_row(
         "status": status,
     }
     return row
+
+
+def upsert_exposures(sb, rows: list[dict]) -> int:
+    """Upsert `rows` into credit_rates_exposures. UNIQUE(asset, run_date,
+    lookback_days) per migration 060."""
+    if not rows:
+        return 0
+    sb.table("credit_rates_exposures").upsert(
+        rows, on_conflict="asset,run_date,lookback_days"
+    ).execute()
+    return len(rows)

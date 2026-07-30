@@ -44,21 +44,26 @@ import {
 import { useNarrativeSeries, type NarrativeSeriesState } from "@/lib/useNarrativeSeries";
 import { useState, useRef } from "react";
 
-const WIDTH = 720;
-const HEIGHT = 240;
-const PLOT_LEFT = 44;
+// Defaults — ThemeTrends' full-width usage, unchanged. A narrower caller (the
+// narrative board's own "share over time" section, stacked beside
+// DetectionScatter — ADR-0176) passes its own `width`/`height` rather than
+// scaling this box down: an SVG's `w-full` scales viewBox units UNIFORMLY, so
+// squeezing a 720-wide box into a ~400px column would shrink every font by the
+// same factor a plain CSS resize would — the exact defect ADR-0168 named and
+// fixed for DetectionScatter ("narrow the viewBox, not the rendering").
+const DEFAULT_WIDTH = 720;
+const DEFAULT_HEIGHT = 240;
+const DEFAULT_PLOT_LEFT = 44;
 // Wide enough for a direct end-label PLUS the leader-line gutter that ties a
 // displaced label back to its line. The alternative is identity-by-colour-only,
 // which the contrast warning above forbids.
-const PLOT_RIGHT = 148;
+const DEFAULT_PLOT_RIGHT = 148;
 /** Horizontal run of the leader before it turns toward the label. */
 const LEADER_RUN = 14;
 /** Where label text starts, measured from the right edge of the plot. */
 const LABEL_X = LEADER_RUN + 6;
-const PLOT_TOP = 14;
-const PLOT_BOTTOM = 30;
-const PLOT_WIDTH = WIDTH - PLOT_LEFT - PLOT_RIGHT;
-const PLOT_HEIGHT = HEIGHT - PLOT_TOP - PLOT_BOTTOM;
+const DEFAULT_PLOT_TOP = 14;
+const DEFAULT_PLOT_BOTTOM = 30;
 
 /** Validated categorical slots, assigned in FIXED order and never cycled.
  *  Read as tokens, not hex: the values, their validation record and the reason
@@ -131,10 +136,35 @@ function clamp(v: number, lo: number, hi: number) {
 }
 
 /** Exported for test: the geometry is the part ADR-0126's bug class lives in, and
- *  a test that cannot render the plot can only assert on source text. */
-export function TrendPlot({ series }: { series: TrendSeries[] }) {
+ *  a test that cannot render the plot can only assert on source text.
+ *
+ *  Geometry props default to the full-width box ThemeTrends renders — passing
+ *  none reproduces today's behaviour exactly. A caller in a narrower column
+ *  passes its own `width`/`height`/`plotLeft`/`plotRight`/... so the viewBox
+ *  itself is sized near the rendered width, keeping the `w-full` scale factor
+ *  close to 1.0 rather than shrinking every label (ADR-0168's fix, applied
+ *  here to the second chart it now has to protect). */
+export function TrendPlot({
+  series,
+  width = DEFAULT_WIDTH,
+  height = DEFAULT_HEIGHT,
+  plotLeft = DEFAULT_PLOT_LEFT,
+  plotRight = DEFAULT_PLOT_RIGHT,
+  plotTop = DEFAULT_PLOT_TOP,
+  plotBottom = DEFAULT_PLOT_BOTTOM,
+}: {
+  series: TrendSeries[];
+  width?: number;
+  height?: number;
+  plotLeft?: number;
+  plotRight?: number;
+  plotTop?: number;
+  plotBottom?: number;
+}) {
   const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string; color: string; dateX: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const plotWidth = width - plotLeft - plotRight;
+  const plotHeight = height - plotTop - plotBottom;
 
   // One shared date axis across every series, so two lines at the same x are the
   // same day. Building each line against its own point count would compress a
@@ -152,9 +182,9 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
   const ticks = niceTicks(0, yMax, 4);
 
   const x = (d: string) =>
-    PLOT_LEFT + ((xIndex.get(d) ?? 0) / (dates.length - 1)) * PLOT_WIDTH;
+    plotLeft + ((xIndex.get(d) ?? 0) / (dates.length - 1)) * plotWidth;
   const y = (v: number) =>
-    PLOT_TOP + PLOT_HEIGHT - clamp(v / yMax, 0, 1) * PLOT_HEIGHT;
+    plotTop + plotHeight - clamp(v / yMax, 0, 1) * plotHeight;
 
   // Label collision: end-labels are placed at each line's last point, then pushed
   // apart top-down so two near-identical finals do not overprint. Without this the
@@ -171,7 +201,7 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
   for (const e of ends) {
     const placed = Math.max(e.yRaw, prevY + LABEL_H);
     prevY = placed;
-    (e as { yLabel?: number }).yLabel = clamp(placed, PLOT_TOP + 6, HEIGHT - 6);
+    (e as { yLabel?: number }).yLabel = clamp(placed, plotTop + 6, height - 6);
   }
   const labelY = new Map(ends.map((e) => [e.i, (e as { yLabel?: number }).yLabel ?? e.yRaw]));
 
@@ -187,7 +217,7 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
   return (
     <div ref={containerRef} className="relative inline-block w-full">
       <svg
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        viewBox={`0 0 ${width} ${height}`}
         className="w-full h-auto"
         role="img"
         aria-label={`Share of voice over ${dates.length} runs for ${series
@@ -198,15 +228,15 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
         {ticks.map((v) => (
           <g key={`t-${v}`}>
             <line
-              x1={PLOT_LEFT}
-              x2={PLOT_LEFT + PLOT_WIDTH}
+              x1={plotLeft}
+              x2={plotLeft + plotWidth}
               y1={y(v)}
               y2={y(v)}
               stroke="var(--border)"
               opacity={v === 0 ? 1 : 0.5}
             />
             <text
-              x={PLOT_LEFT - 5}
+              x={plotLeft - 5}
               y={y(v) + 3}
               textAnchor="end"
               fill="var(--text-tertiary)"
@@ -217,8 +247,8 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
           </g>
         ))}
         <text
-          x={PLOT_LEFT - 5}
-          y={PLOT_TOP - 4}
+          x={plotLeft - 5}
+          y={plotTop - 4}
           textAnchor="end"
           fill="var(--text-tertiary)"
           fontSize="9"
@@ -226,12 +256,12 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
           share
         </text>
 
-        <text x={PLOT_LEFT} y={HEIGHT - 8} fill="var(--text-tertiary)" fontSize="9" className="num">
+        <text x={plotLeft} y={height - 8} fill="var(--text-tertiary)" fontSize="9" className="num">
           {firstDate}
         </text>
         <text
-          x={PLOT_LEFT + PLOT_WIDTH}
-          y={HEIGHT - 8}
+          x={plotLeft + plotWidth}
+          y={height - 8}
           textAnchor="end"
           fill="var(--text-tertiary)"
           fontSize="9"
@@ -276,7 +306,7 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
         {/* Direct labels. Identity never depends on a colour lookup. */}
         {series.map((s, i) => {
           const color = seriesColor(s.phrase, i);
-          const yl = labelY.get(i) ?? PLOT_TOP;
+          const yl = labelY.get(i) ?? plotTop;
           const last = s.points[s.points.length - 1];
           const yEnd = y(last.share);
           // A leader line wherever the anti-collision pass moved a label off its
@@ -290,10 +320,10 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
               {displaced && (
                 <polyline
                   points={[
-                    `${PLOT_LEFT + PLOT_WIDTH},${yEnd.toFixed(2)}`,
-                    `${PLOT_LEFT + PLOT_WIDTH + LEADER_RUN * 0.4},${yEnd.toFixed(2)}`,
-                    `${PLOT_LEFT + PLOT_WIDTH + LEADER_RUN * 0.8},${yl.toFixed(2)}`,
-                    `${PLOT_LEFT + PLOT_WIDTH + LEADER_RUN},${yl.toFixed(2)}`,
+                    `${plotLeft + plotWidth},${yEnd.toFixed(2)}`,
+                    `${plotLeft + plotWidth + LEADER_RUN * 0.4},${yEnd.toFixed(2)}`,
+                    `${plotLeft + plotWidth + LEADER_RUN * 0.8},${yl.toFixed(2)}`,
+                    `${plotLeft + plotWidth + LEADER_RUN},${yl.toFixed(2)}`,
                   ].join(" ")}
                   fill="none"
                   stroke={color}
@@ -302,7 +332,7 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
                 />
               )}
               <text
-                x={PLOT_LEFT + PLOT_WIDTH + LABEL_X}
+                x={plotLeft + plotWidth + LABEL_X}
                 y={yl + 3}
                 fill={color}
                 fontSize="10"
@@ -313,7 +343,7 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
           );
         })}
         {tooltip && (
-          <line x1={tooltip.dateX} x2={tooltip.dateX} y1={PLOT_TOP} y2={PLOT_TOP + PLOT_HEIGHT} stroke={tooltip.color} strokeWidth={1} opacity={0.5} pointerEvents="none" />
+          <line x1={tooltip.dateX} x2={tooltip.dateX} y1={plotTop} y2={plotTop + plotHeight} stroke={tooltip.color} strokeWidth={1} opacity={0.5} pointerEvents="none" />
         )}
       </svg>
       {/* Immediate tooltip on hover — no browser-native delay. */}
@@ -359,12 +389,15 @@ export function TrendPlot({ series }: { series: TrendSeries[] }) {
 // The failure both halves were written against is the same one: a mark a reader
 // can see but cannot identify is a mark they report as absent.
 
-// ── Scatter geometry, DELIBERATELY NARROWER THAN TrendPlot's ────────────────
+// ── Scatter geometry, DELIBERATELY NARROWER THAN TrendPlot's DEFAULT ────────
 //
 // The detection plane draws in its own coordinate space so it can sit BESIDE
-// the figures table inside one card. `TrendPlot` keeps WIDTH = 720 — it is
-// rendered by `ThemeTrends`, which is still full width — and the two no longer
-// share a horizontal scale.
+// the figures table inside one card. `TrendPlot`'s default stays 720 wide —
+// it is what `ThemeTrends` renders, still full width — but `TrendPlot` itself
+// is no longer fixed at that size: the narrative board's own "share over
+// time" section (ADR-0176) passes narrower geometry so it can sit in the same
+// column as this scatter, at the same rendered width, without inheriting
+// DetectionScatter's dedicated S_* constants below.
 //
 // Why a narrower viewBox rather than a smaller rendering. An SVG with a viewBox
 // and `w-full` scales UNIFORMLY: squeezing the 720-wide plane into a 484px
@@ -919,40 +952,6 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
               </details>
             </div>
 
-            {/* Share over time — the trend context ABOVE the detection plane.
-                ADR-0146 retired exactly this shape (`TrendPlot series={top}`)
-                as the board's PRIMARY view: five-loudest-by-share lines had
-                charted `earnings`/`price`/`q2` — financial-writing register,
-                not narratives — while the board's actual question ("is
-                anything accelerating that nothing watches?") is a STATE
-                question a trajectory chart cannot answer. That finding does
-                not disappear here, and this is not a reversal of it: the
-                detection plane below stays the primary, and the caption
-                names the same risk explicitly rather than letting a line
-                chart imply meaning it may not have. What changed is scope —
-                a reader asking "how has today's top few moved" now has an
-                answer beside "what is accelerating unwatched", instead of
-                needing to visit `/method` or wait for tomorrow's run to see
-                a second point. Same top-N set the table beside the plane
-                already shows, so this adds no new phrase exposure — only a
-                second view of one already on screen (ADR-0175). */}
-            {runs >= 2 && top.length > 0 && (
-              <div>
-                <h4 className="m-0 mb-1.5 text-[10.5px] uppercase tracking-[0.1em] text-text-secondary">
-                  Share over time
-                </h4>
-                <TrendPlot series={top} />
-                <p className="m-0 mt-1 text-[11px] text-text-tertiary leading-[1.5]">
-                  Top {top.length} by today&rsquo;s share, not by whether they
-                  mean anything — the loudest phrase in a news corpus is
-                  routinely financial-writing register (&ldquo;earnings&rdquo;,
-                  &ldquo;price&rdquo;, &ldquo;q2&rdquo;), which is why the
-                  detection plane below judges by breakout, not by volume
-                  alone.
-                </p>
-              </div>
-            )}
-
             {/* Plane ‖ figures, in ONE card, with the plane narrowed to make
                 room rather than the pair split across cards.
 
@@ -975,7 +974,48 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                 to shrink below its content, which is what makes the table's
                 `overflow-x-auto` engage instead of the card scrolling. */}
             <div className="grid gap-5 items-start figures:grid-cols-[minmax(0,1fr)_340px] [&>*]:min-w-0">
-              <DetectionScatter series={series} />
+              {/* BOTH plots share this one column, so both render at the SAME
+                  width — `w-full` on each fills whatever this column resolves
+                  to, and the two never need to agree in advance on a pixel
+                  number. `TrendPlot` gets its own narrower geometry (S_WIDTH,
+                  S_HEIGHT — the same box DetectionScatter already uses) rather
+                  than its 720-wide default: without it, `w-full` would still
+                  make the two the same CSS width, but TrendPlot's fonts would
+                  scale down by whatever this column is narrower than 720,
+                  which at ~386px is the exact 0.54x-illegible-labels failure
+                  ADR-0168 fixed for this scatter (ADR-0176). */}
+              <div className="flex flex-col gap-4">
+                {/* ADR-0146 retired `TrendPlot series={top}` as the board's
+                    PRIMARY view: five-loudest-by-share lines had charted
+                    `earnings`/`price`/`q2` — financial-writing register, not
+                    narratives — while the board's actual question ("is
+                    anything accelerating that nothing watches?") is a STATE
+                    question a trajectory chart cannot answer. That finding
+                    does not disappear here, and this is not a reversal of it:
+                    the detection plane below stays the primary, and the
+                    caption names the same risk explicitly rather than letting
+                    a line chart imply meaning it may not have. Same top-N set
+                    the table beside the plane already shows, so this adds no
+                    new phrase exposure — only a second view of one already on
+                    screen (ADR-0175). */}
+                {runs >= 2 && top.length > 0 && (
+                  <div>
+                    <h4 className="m-0 mb-1.5 text-[10.5px] uppercase tracking-[0.1em] text-text-secondary">
+                      Share over time
+                    </h4>
+                    <TrendPlot series={top} width={S_WIDTH} height={S_HEIGHT} />
+                    <p className="m-0 mt-1 text-[11px] text-text-tertiary leading-[1.5]">
+                      Top {top.length} by today&rsquo;s share, not by whether
+                      they mean anything — the loudest phrase in a news corpus
+                      is routinely financial-writing register
+                      (&ldquo;earnings&rdquo;, &ldquo;price&rdquo;,
+                      &ldquo;q2&rdquo;), which is why the detection plane
+                      below judges by breakout, not by volume alone.
+                    </p>
+                  </div>
+                )}
+                <DetectionScatter series={series} />
+              </div>
 
               <div className="border-l border-border pl-5">
                 <SeriesTable series={top} />

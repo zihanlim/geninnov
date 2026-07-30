@@ -235,6 +235,43 @@ describe("plot geometry holds at every series count and run count", () => {
   });
 });
 
+describe("geometry props hold at a narrow width too (ADR-0176)", () => {
+  // The narrative board's own "share over time" section renders TrendPlot at
+  // the same narrow box DetectionScatter uses (S_WIDTH=430, S_HEIGHT=225),
+  // not the 720-wide default ThemeTrends renders. The plot area shrinks from
+  // 528 to 238 units at that width — the anti-collision math and viewBox
+  // bounds have to hold there too, not just at the wide default this file's
+  // other geometry tests already cover.
+  for (const runs of [2, 5, 14, 30]) {
+    for (const seriesCount of [1, 3, 5]) {
+      it(`draws nothing outside a 430x225 viewBox at ${seriesCount}x${runs}`, () => {
+        const data = Array.from({ length: seriesCount }, (_, s) =>
+          series(
+            `narrative ${s}`,
+            Array.from({ length: runs }, (_, i) => 0.01 + (i * (s + 1)) / 1000),
+          ),
+        );
+        const out = renderToStaticMarkup(
+          <TrendPlot series={data} width={430} height={225} />,
+        );
+        expect(out).toContain('viewBox="0 0 430 225"');
+        expect(marksOutsideViewBox(out)).toEqual([]);
+      });
+    }
+  }
+
+  it("omitting the geometry props reproduces the 720-wide default exactly", () => {
+    // ThemeTrends calls <TrendPlot series={top} /> with no geometry props —
+    // this pins that the defaults are unchanged, not just documented as such.
+    const data = [series("ai capex cycle", [0.01, 0.02, 0.05, 0.09])];
+    expect(renderToStaticMarkup(<TrendPlot series={data} />)).toBe(
+      renderToStaticMarkup(
+        <TrendPlot series={data} width={720} height={240} plotLeft={44} plotRight={148} plotTop={14} plotBottom={30} />,
+      ),
+    );
+  });
+});
+
 describe("the table view is the contrast relief the palette requires", () => {
   // Two validated slots (#1baf7a, #eda100) sit below 3:1 against the white card,
   // which is legal ONLY with visible labels or a table view. If this table stops
@@ -569,6 +606,20 @@ describe("DetectionScatter — the detector's honesty (ADR-0146)", () => {
       "utf8",
     );
     expect(src).toContain("<DetectionScatter series={series}");
+  });
+
+  it("the trend plot is narrowed to the scatter's own box, not left at the wide default (ADR-0176)", () => {
+    // Both plots render `w-full` inside the same grid column, which makes
+    // them the same CSS width regardless of their viewBox numbers — but
+    // TrendPlot's 720-wide DEFAULT viewBox would still scale its fonts down
+    // to illegibility at that column's ~400px, the exact failure ADR-0168
+    // fixed for DetectionScatter. Pins that the call site passes DetectionScatter's
+    // own S_WIDTH/S_HEIGHT rather than relying on the default.
+    const src = readFileSync(
+      path.resolve(__dirname, "../../components/NarrativeTrends.tsx"),
+      "utf8",
+    );
+    expect(src).toContain("<TrendPlot series={top} width={S_WIDTH} height={S_HEIGHT} />");
   });
 
   it("also renders a share-over-time trend above the plane (ADR-0175)", () => {

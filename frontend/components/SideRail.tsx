@@ -41,7 +41,7 @@ import { PHASES } from "@/lib/method/phases";
 const ICONS: Record<string, typeof Radar> = {
   mandate: Scale,
   alpha: Radar,
-  scenario: ShieldAlert,
+  risk: ShieldAlert,
   construction: BookOpen,
   execution: Ban,
   attribution: Sigma,

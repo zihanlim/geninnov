@@ -56,17 +56,16 @@ published.
 - \`/mandate\` — what this book is allowed to be: capital base, single-name/sector/geo
   caps, correlation-complex and crowded-name limits, each with its source, and the limit
   board that measures the published book against them.
-- \`/scenario\` — stress scenarios (six calibrated shocks, worst first), per-position risk
+- \`/risk\` — stress scenarios (six calibrated shocks, worst first), per-position risk
   attribution, correlation matrix, attention crowding, cap headroom, factor tilt.
 - \`/execution\` — OUT OF SCOPE, deliberately. The book is a recommendation, not a held
   position, so no fill, borrow cost or slippage exists anywhere in this system. The page
   names what the phase would need rather than reporting figures that do not exist.
 - \`/attribution\` — realised drawdown and the return path, against the ex-ante figures.
   The only backward-looking surface.
-- \`/risk\` — retired as a destination; forwards each old fragment to the phase that now
-  owns that section.
+- \`/scenario\` — retired; redirects to \`/risk\`, which is phase 3.
 - \`/method\` — the process map: the six phases of the investment process (mandate,
-  alpha sourcing, catalyst/scenario, construction, execution, attribution) and the
+  alpha sourcing, risk/scenario, construction, execution, attribution) and the
   surface performing each. Execution is out of scope and says why.
 - \`/method/build\` — how each number is built: HypeScore, TradeScore, EdgeScore, the FF5+UMD
   factor model, conviction sizing, worked examples.
@@ -77,7 +76,7 @@ published.
   the answer is adjudicated cited / quoted / unverified.
 - \`/\` — themes overview.
 
-\`/trades\`, \`/portfolio\` and \`/research\` are retired and redirect to \`/book\`.
+\`/trades\`, \`/portfolio\` and \`/research\` are retired and redirect to \`/book\`; \`/scenario\` redirects to \`/risk\`.
 
 ## Programmatic access
 
@@ -186,7 +185,7 @@ The $100M book is one instantiation of the signal under one mandate, not the ans
 
 ## The mandate
 
-The book is sized under constraints stated in full at /risk#mandate. They are read
+The book is sized under constraints stated in full at /mandate. They are read
 from the scoring_config table and mirrored in backend/services/mandate.py; a drift
 test fails the build if the two disagree.
 
@@ -218,7 +217,7 @@ on this site can change it, and none pretends to.
 - Scenario P&L figures are model estimates from historical betas, not forecasts.
 - The forward track record resolves at 21 trading days, so early runs read as pending
   rather than as a hit rate.
-- The realised return curve on /risk is GROSS OF TRANSACTION COSTS. The book
+- The realised return curve on /attribution is GROSS OF TRANSACTION COSTS. The book
   reconstitutes itself each run at 50-77% turnover, so that series is what a book
   would have earned had every rebalance been instant and free. pick_outcomes is the
   forward record that does not carry this assumption.

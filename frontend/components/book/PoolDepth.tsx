@@ -219,7 +219,7 @@ export default function PoolDepth({
       <p className="m-0 px-[18px] pt-3 pb-1 text-[12.5px] text-text-secondary leading-[1.6] max-w-[92ch]">
         Candidate counts overstate choice. Names correlated at or above &rho;&nbsp;0.70
         over 252 days are <em>one</em> bet however many tickers express it — the same
-        threshold <a href="/scenario" className="text-accent hover:underline">Scenario</a>{" "}
+        threshold <a href="/risk" className="text-accent hover:underline">Risk</a>{" "}
         uses to flag redundancy inside the book. This is what the agent was shown
         before it picked.
       </p>

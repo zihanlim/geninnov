@@ -20,56 +20,20 @@
 // rather than a replacement for it. Nothing here is a second copy of a number —
 // every value is read from the same `rec` the panels below render.
 
-import Link from "next/link";
 import type { ReactNode } from "react";
+import { Card, listOf, pctOf, usdM } from "@/components/AnswerRow";
 
-function Card({
-  label,
-  figure,
-  consequence,
-  source,
-  href,
-  tone = "default",
-}: {
-  label: string;
-  /** `null` renders an em-dash and the consequence must then say WHY (goal 2). */
-  figure: ReactNode | null;
-  consequence: ReactNode;
-  source: string;
-  href: string;
-  tone?: "default" | "warning";
-}) {
-  const figureCls =
-    tone === "warning"
-      ? "num text-[22px] font-semibold leading-[1.15] text-warning"
-      : "num text-[22px] font-semibold leading-[1.15] text-text-primary";
-  return (
-    <div className="card">
-      <div className="card-body flex flex-col gap-1">
-        <div className="text-[10px] uppercase tracking-[0.12em] text-text-tertiary">
-          {label}
-        </div>
-        {/* The figure is the drill control. A reader who doubts it goes straight
-            to the panel that derives it rather than hunting for it. */}
-        <Link
-          href={href}
-          className={`${figureCls} no-underline hover:underline decoration-border-strong underline-offset-4`}
-        >
-          {figure ?? <span className="text-text-tertiary">—</span>}
-        </Link>
-        <div className="text-[12px] text-text-secondary leading-[1.5]">
-          {consequence}
-        </div>
-        <div className="text-[10px] text-text-tertiary num mt-0.5">{source}</div>
-      </div>
-    </div>
-  );
-}
-
-const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
-const usd = (v: number) => `$${(v / 1_000_000).toFixed(1)}M`;
-const list = (xs: string[], n = 3) =>
-  xs.length <= n ? xs.join(", ") : `${xs.slice(0, n).join(", ")} +${xs.length - n}`;
+// `Card`, the grid and the formatters moved to components/AnswerRow.tsx so the five
+// other phase routes could compose their own rows against the same contract
+// (ADR-0172). This file keeps ONLY the book's four cards and the arithmetic behind
+// them — the extraction changed no rendered output on /book.
+//
+// Deliberately NOT rewritten to use <AnswerRow cards={...}>: these four cards carry
+// branching JSX in their consequences (previous === null vs identical vs changed),
+// which reads better as markup here than as an array of ReactNodes assembled above.
+const pct = pctOf;
+const usd = usdM;
+const list = listOf;
 
 export default function AnswerCards({
   current,
@@ -164,7 +128,7 @@ export default function AnswerCards({
 
       <Card
         label="What kills you"
-        href="/scenario#stress"
+        href="/risk#stress"
         source="research_recommendations.scenario_results"
         tone={worstReturn !== null && worstReturn < 0 ? "warning" : "default"}
         figure={worstReturn === null ? null : <>{pct(worstReturn)}</>}

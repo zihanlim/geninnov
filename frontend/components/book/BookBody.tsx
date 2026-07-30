@@ -1295,10 +1295,13 @@ function BookPageInner() {
           </section>
 
           <div className="mt-6 text-[12px] text-text-secondary">
-            Stress scenarios, correlation structure and cap headroom for this
-            book are on{" "}
-            <Link href="/scenario" className="text-accent hover:underline">
-              Catalyst &amp; Scenario
+            Stress scenarios and correlation structure for this book are on{" "}
+            <Link href="/risk" className="text-accent hover:underline">
+              Risk
+            </Link>
+            , and cap headroom against the mandate is on{" "}
+            <Link href="/mandate" className="text-accent hover:underline">
+              Mandate
             </Link>
             . The scoring method behind every number is on{" "}
             <Link href="/method" className="text-accent hover:underline">

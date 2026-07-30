@@ -1,48 +1,59 @@
 "use client";
 // frontend/app/risk/page.tsx
 //
-// /risk is no longer a destination. Its seven sections answered three different
-// phases of the process, and once navigation became one tab per phase (ADR-0170)
-// a single page could not be marked current for three of them. The body moved to
-// `components/risk/RiskBody.tsx` and is rendered by /mandate, /scenario and
-// /attribution, filtered by `phaseShows`.
+// /risk — phase 3, Risk & scenario. What could go wrong, what it would cost, and
+// where it is concentrated.
 //
-// This route survives to keep inbound links working, and it is NOT a plain
-// redirect. `/risk#stress` and `/risk#mandate` are cited from ADRs, PROGRESS.md
-// rows and other components, and those now live on DIFFERENT routes — so where a
-// reader lands depends on the fragment. A server redirect cannot see one: the
-// browser strips it before the request. Same constraint, and the same shape of
-// answer, as `LegacyAnchorHop` on /method.
+// This route has had three jobs in two days, and the third is the simplest.
+// ADR-0025 made it a destination answering three phases at once; ADR-0170 dissolved
+// it into /mandate, /risk-as-scenario and /attribution and left this path as a
+// fragment-aware hop; ADR-0172 gives it back to phase 3, because phase 3's question
+// always WAS the risk question and naming the tab `Scenario` hid that.
 //
-// A bare `/risk` with no fragment goes to /mandate — the first phase the old
-// page opened on, and the section that was at the top of it.
+// WHY THE HOP SURVIVES, MUCH SMALLER.
+// Most of the old anchors are native again: `/risk#stress`, `#attribution`,
+// `#exposure` and `#concentration` are all rendered by this page, so they resolve
+// with no redirect at all. Only three fragments genuinely live elsewhere now —
+// `#mandate` and `#limits` moved to /mandate, `#realised` to /attribution — and a
+// URL fragment never reaches the server, so those still have to be hopped in the
+// browser. `RISK_SECTION_PHASE` is the same map that decides what this page renders,
+// so the hop and the render cannot disagree about who owns a section.
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import RiskBody from "@/components/risk/RiskBody";
 import { RISK_SECTION_PHASE, type RiskSectionId } from "@/lib/method/phaseSections";
 
-/** Which phase route now renders each of the old page's sections. */
-const PHASE_ROUTE = {
-  mandate: "/mandate",
-  scenario: "/scenario",
-  attribution: "/attribution",
-} as const;
+/** Where a section lives, for the sections this page does NOT render. */
+const ELSEWHERE = { mandate: "/mandate", attribution: "/attribution" } as const;
 
-export default function RiskRedirect() {
+export default function RiskPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const id = decodeURIComponent(window.location.hash.slice(1));
-    const phase = RISK_SECTION_PHASE[id as RiskSectionId];
-    // An unknown fragment falls back to /mandate rather than being preserved
-    // onto a route that may not render it — a fragment we do not recognise is
-    // one no phase claims, and guessing would strand the reader mid-page.
-    router.replace(phase ? `${PHASE_ROUTE[phase]}#${id}` : "/mandate");
+    const hop = () => {
+      const id = decodeURIComponent(window.location.hash.slice(1));
+      if (!id) return;
+      const owner = RISK_SECTION_PHASE[id as RiskSectionId];
+      // Rendered here, or unknown to us: leave the reader alone. Guessing a
+      // destination for an id we do not recognise would strand them mid-page, and
+      // hopping one we DO render would be a redirect loop.
+      if (!owner || owner === "risk") return;
+      router.replace(`${ELSEWHERE[owner]}#${id}`);
+    };
+    hop();
+    // `hashchange`, not mount alone — the same listener `LegacyAnchorHop` carries
+    // and for the same reason. Changing only the fragment is a SAME-DOCUMENT
+    // navigation: the component never remounts, so a mount-only effect cannot see
+    // it. The live case is a reader already on this page clicking an in-page link
+    // to `#limits`, which now lives on /mandate; without this they would sit on
+    // /risk#limits looking at a fragment nothing here renders.
+    //
+    // Found by a verification loop that walked fragments on one path and reported
+    // every hop as "native" — the artefact was measuring the bug.
+    window.addEventListener("hashchange", hop);
+    return () => window.removeEventListener("hashchange", hop);
   }, [router]);
 
-  return (
-    <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-7 pb-20">
-      <div className="skeleton h-[180px]" />
-    </main>
-  );
+  return <RiskBody phase="risk" />;
 }

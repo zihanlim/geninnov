@@ -2,7 +2,7 @@
 //
 // L6 risk surface, filtered by PHASE.
 //
-// ONE body, ONE fetch — /mandate, /scenario and /attribution all render this
+// ONE body, ONE fetch — /mandate, /risk and /attribution all render this
 // component and pick their sections with `phaseShows`. That mirrors MethodBody
 // (ADR-0084) deliberately: three routes with their own useEffects are three
 // chances to describe different vintages of the same run, which is the
@@ -106,14 +106,18 @@ const PHASE_COPY: Record<RiskPhase, { title: string; lede: string }> = {
       "scoring_config where one exists and named as a code default where it does " +
       "not — a cap with no traceable source says so rather than looking chosen.",
   },
-  scenario: {
-    title: "Catalyst & Scenario",
+  risk: {
+    title: "Risk & Scenario",
     lede:
       "What could go wrong, how much it would cost, and where the damage is " +
       "concentrated. Six calibrated shocks worst-first, per-position risk " +
-      "attribution, correlation and attention crowding, cap headroom and factor " +
-      "tilt. Persisted figures are read from pipeline artefacts; the what-if is a " +
-      "browser-side estimate, labelled as one.",
+      "attribution, correlation and attention crowding, and factor tilt. Every " +
+      "figure here is EX-ANTE: it is a pure function of the recommended weights " +
+      "and a 252-day covariance estimate, so it answers what this book would risk " +
+      "if held, not what running the strategy has cost. Cap headroom moved to " +
+      "Mandate, which is where the limits it measures against live. Persisted " +
+      "figures are read from pipeline artefacts; the what-if is a browser-side " +
+      "estimate, labelled as one.",
   },
   attribution: {
     title: "Attribution & Feedback",

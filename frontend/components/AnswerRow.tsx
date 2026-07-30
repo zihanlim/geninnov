@@ -1,0 +1,111 @@
+// frontend/components/AnswerRow.tsx
+//
+// The answer row: the questions a PM arrives with, answered above the fold.
+//
+// EXTRACTED FROM `components/book/AnswerCards.tsx`, WHERE IT WAS PROVEN.
+// That component's own header records the diagnosis this shape fixes: "the measured
+// defect this fixes is PLACEMENT, not paint. On the shipped page 'what changed since
+// yesterday' sat three screens down inside the turnover panel, and 'what is binding'
+// was on a different route entirely — so the two facts a reader most needs in their
+// first ninety seconds were the two furthest from where they land."
+//
+// It was solving that for ONE page. Measured 2026-07-30, five of the six phase
+// routes had no equivalent, and blocks sat on the tab whose question they did not
+// answer — `/risk` asks "what could go wrong and what would it cost" and its stress
+// scenarios were at 2622px, nearly three screens down. So the shape moves here and
+// every phase composes its own row.
+//
+// THE CONTRACT, and each clause is load-bearing:
+//
+//   LABEL / FIGURE / CONSEQUENCE. A figure with a label is a KPI tile, which is a
+//   number with no parent — the exact inverse of this product's claim. The
+//   consequence says what the figure MEANS, and it is COMPUTED from the same row the
+//   figure came from. A canned consequence string is a naked number delivered in a
+//   confident authorial voice, which is strictly worse than a naked number.
+//
+//   The figure is a LINK into the panel that derives it, so a card is an index into
+//   the evidence rather than a replacement for it. Nothing here may be a second copy
+//   of a number — every value is read from the same row the panels below render.
+//
+//   `source` names the `table.column` (design goal 1). `figure={null}` renders an
+//   em-dash and the consequence must then say WHY (goal 2) — "no data" and "zero"
+//   are different claims.
+//
+// WHAT MAY NOT GO ON A CARD: Sharpe, Sortino, Calmar, max drawdown, realised beta,
+// tracking error, information ratio. Those are computed from `portfolio_returns`,
+// which is costless on a book measured at 92.7% mean daily turnover — `CostDrag`
+// measured the sign flipping, +0.76% gross against -0.72% net — and on 6 sessions
+// against minimums of 30-252. They are wrong on BOTH sample and basis, and this row
+// is the worst possible place for a wrong number. `sampleAdequacy` already suppresses
+// them on the panels; do not smuggle them up here.
+//
+// Ex-ante figures (VaR, CVaR, factor tilts, HHI, scenario stress, cap utilisation)
+// ARE valid on a recommendation — they are pure functions of weights and covariance,
+// and need no holding history. Those are what the rows use.
+
+import Link from "next/link";
+import type { ReactNode } from "react";
+
+export interface AnswerCard {
+  label: string;
+  /** `null` renders an em-dash; the consequence must then say WHY (goal 2). */
+  figure: ReactNode | null;
+  consequence: ReactNode;
+  /** `table.column` the figure was read from (goal 1). */
+  source: string;
+  /** Anchor or route the figure drills into. Must resolve on the page that renders
+   *  this row — `answer-rows.test.tsx` asserts every href has a target, after
+   *  `phases.test.ts` passed on an anchor that existed only as a `data-testid`. */
+  href: string;
+  tone?: "default" | "warning";
+}
+
+export function Card({ label, figure, consequence, source, href, tone = "default" }: AnswerCard) {
+  const figureCls =
+    tone === "warning"
+      ? "num text-[22px] font-semibold leading-[1.15] text-warning"
+      : "num text-[22px] font-semibold leading-[1.15] text-text-primary";
+  return (
+    <div className="card">
+      <div className="card-body flex flex-col gap-1">
+        <div className="text-[10px] uppercase tracking-[0.12em] text-text-tertiary">
+          {label}
+        </div>
+        {/* The figure is the drill control. A reader who doubts it goes straight
+            to the panel that derives it rather than hunting for it. */}
+        <Link
+          href={href}
+          className={`${figureCls} no-underline hover:underline decoration-border-strong underline-offset-4`}
+        >
+          {figure ?? <span className="text-text-tertiary">—</span>}
+        </Link>
+        <div className="text-[12px] text-text-secondary leading-[1.5]">
+          {consequence}
+        </div>
+        <div className="text-[10px] text-text-tertiary num mt-0.5">{source}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The four-up grid. Four is not arbitrary: it is one screen-width of cards at
+ * `wide`, and a fifth would push the evidence below it further down — which is the
+ * defect this component exists to remove, reintroduced by its own growth.
+ */
+export default function AnswerRow({ cards }: { cards: AnswerCard[] }) {
+  if (cards.length === 0) return null;
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 wide:grid-cols-4 gap-3 mb-6">
+      {cards.map((c) => (
+        <Card key={c.label} {...c} />
+      ))}
+    </div>
+  );
+}
+
+/** Shared formatters, so four rows cannot each round differently. */
+export const pctOf = (v: number, dp = 1) => `${(v * 100).toFixed(dp)}%`;
+export const usdM = (v: number) => `$${(v / 1_000_000).toFixed(1)}M`;
+export const listOf = (xs: string[], n = 3) =>
+  xs.length <= n ? xs.join(", ") : `${xs.slice(0, n).join(", ")} +${xs.length - n}`;

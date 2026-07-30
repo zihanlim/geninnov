@@ -27,7 +27,7 @@ const read = (rel: string) =>
   readFileSync(path.resolve(__dirname, "../..", rel), "utf8");
 const body = read("components/risk/RiskBody.tsx");
 
-const PHASE_LIST: RiskPhase[] = ["mandate", "scenario", "attribution"];
+const PHASE_LIST: RiskPhase[] = ["mandate", "risk", "attribution"];
 
 describe("RISK_SECTION_PHASE", () => {
   it("keeps every section the old page rendered", () => {
@@ -99,7 +99,7 @@ describe("RiskBody gates what it renders", () => {
   });
 
   it("is what each phase route renders, rather than owning a query itself", () => {
-    for (const r of ["mandate", "scenario", "attribution"]) {
+    for (const r of ["mandate", "risk", "attribution"]) {
       const route = read(`app/${r}/page.tsx`);
       expect(route).toContain("RiskBody");
       expect(route, `/${r} fetches on its own`).not.toContain("supabase");
@@ -116,12 +116,31 @@ describe("the phase routes agree with the phase map", () => {
     }
   });
 
-  it("/risk is no longer a phase destination, but still resolves", () => {
-    expect(PHASES.some((p) => p.route === "/risk")).toBe(false);
-    // It hops by fragment rather than redirecting, because its old anchors now
-    // live on three different routes and a server redirect cannot see a hash.
-    const legacy = read("app/risk/page.tsx");
-    expect(legacy).toContain("RISK_SECTION_PHASE");
-    expect(legacy).toContain("router.replace");
+  it("/risk is phase 3, and /scenario redirects to it", () => {
+    // ADR-0172 gave /risk back to phase 3 — its question always WAS the risk
+    // question. ADR-0170 had left this path as a pure fragment hop; that is now
+    // a real page.
+    const phase3 = PHASES.find((p) => p.n === 3);
+    expect(phase3?.id).toBe("risk");
+    expect(phase3?.route).toBe("/risk");
+    expect(phase3?.tab).toBe("Risk");
+    expect(read("app/scenario/page.tsx")).toContain('redirect("/risk")');
+  });
+
+  it("hops ONLY the fragments /risk no longer owns", () => {
+    // The hop shrank rather than disappearing. #stress / #attribution / #exposure /
+    // #concentration are rendered here and must resolve natively — hopping one this
+    // page renders would be a redirect loop. #mandate / #limits / #realised moved.
+    const src = read("app/risk/page.tsx");
+    expect(src).toContain("RISK_SECTION_PHASE");
+    expect(src).toContain("router.replace");
+    // The guard that makes it a no-op for its own sections.
+    expect(src).toMatch(/owner === "risk"/);
+    for (const own of ["stress", "attribution", "exposure", "concentration"]) {
+      expect(phaseShows("risk", own), `${own} must be rendered by /risk`).toBe(true);
+    }
+    for (const moved of ["mandate", "limits", "realised"]) {
+      expect(phaseShows("risk", moved), `${moved} must NOT be on /risk`).toBe(false);
+    }
   });
 });

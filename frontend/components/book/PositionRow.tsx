@@ -599,7 +599,7 @@ export function PositionRow({
                   <code className="num">
                     research_recommendations.scenario_results
                   </code>
-                  ; see <Link href="/scenario#stress" className="text-accent">Scenario</Link>.
+                  ; see <Link href="/risk#stress" className="text-accent">Risk</Link>.
                 </p>
               )}
               </SubCard>

@@ -1,14 +1,20 @@
 // frontend/app/scenario/page.tsx
 //
-// Phase route over the shared risk body — see lib/method/phaseSections.ts for
-// which sections this phase renders and why they sit here rather than elsewhere.
+// Retired. Phase 3 is `/risk` since ADR-0172 — its question always was the risk
+// question, and the `Scenario` label hid that from a reader scanning the tabs.
 //
-// One component, one fetch, filtered by `phaseShows`. This route does NOT own a
-// query: three phase routes with their own useEffects are three chances to
-// describe different vintages of the same run (ADR-0084).
+// A server redirect rather than deletion, and it is worth one line: `/scenario`
+// existed for a few hours on 2026-07-30, and ADR-0170's own text, this session's
+// PROGRESS row and several in-repo links all cite it. A dead link inside the record
+// of a decision is a small thing that makes the record harder to trust — the same
+// reasoning that kept `/trades`, `/portfolio` and `/research` alive as redirects.
+//
+// Unlike the fragment hop on `/risk`, this needs no fragment handling: every anchor
+// `/scenario` ever rendered is rendered by `/risk` too, so a fragment survives the
+// redirect on the client and lands on a section that exists.
 
-import RiskBody from "@/components/risk/RiskBody";
+import { redirect } from "next/navigation";
 
-export default function ScenarioPage() {
-  return <RiskBody phase="scenario" />;
+export default function ScenarioRedirect() {
+  redirect("/risk");
 }

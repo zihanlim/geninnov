@@ -17,7 +17,7 @@
 //
 // WHAT THAT COST, RECORDED HONESTLY.
 // `/risk` answered three phases at once and could not survive as one
-// destination; it is split across /mandate, /scenario and /attribution by
+// destination; it is split across /mandate, /risk and /attribution by
 // `lib/method/phaseSections.ts`. The three routes still share ONE fetch through
 // `RiskBody`, because three useEffects are three chances to describe different
 // vintages of the same run. `/method` and `/risk` remain as routes and leave the
@@ -95,12 +95,21 @@ export const PHASES: readonly Phase[] = [
   },
   {
     n: 3,
-    id: "scenario",
-    short: "Scenario",
-    tab: "Scenario",
-    name: "Catalyst & scenario",
-    question: "What proves the thesis right, and what do the other paths cost?",
-    route: "/scenario",
+    // Renamed from `scenario` and given the `/risk` route (ADR-0172). Phase 3's
+    // question already WAS the risk question, so this is a label and a route rather
+    // than a new destination — the six-phase sequence is untouched.
+    //
+    // `name` and `question` widened with the tab. A tab reading `Risk` while the
+    // phase says only "Catalyst & scenario" would be a mismatch that matters
+    // mechanically, not just editorially: the answer row is generated FROM
+    // `question`, so a narrow question puts the wrong four cards above the fold.
+    id: "risk",
+    short: "Risk",
+    tab: "Risk",
+    name: "Risk & scenario",
+    question:
+      "What could go wrong, what would it cost, and what proves the thesis right?",
+    route: "/risk",
     anchor: null,
     coverage: "live",
     note: "StressScenarios — the six-scenario matrix, incl. the supply shock that does not transmit through market beta.",

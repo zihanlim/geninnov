@@ -120,7 +120,7 @@ describe("phasesForRoute", () => {
   it("gives every phase its OWN route, so a tab can be marked current", () => {
     // ADR-0170's load-bearing property. /risk used to serve phases 1 and 3, and
     // a tab strip cannot mark two of its own tabs current — which is why that
-    // page was split across /mandate, /scenario and /attribution.
+    // page was split across /mandate, /risk and /attribution.
     const routes = PHASES.map((p) => p.route);
     expect(new Set(routes).size, `two phases share a route: ${routes}`).toBe(
       PHASES.length,
@@ -136,7 +136,9 @@ describe("phasesForRoute", () => {
     expect(phasesForRoute("/ask")).toEqual([]);
     expect(phasesForRoute("/workbench")).toEqual([]);
     expect(phasesForRoute("/method")).toEqual([]);
-    expect(phasesForRoute("/risk")).toEqual([]);
+    // /scenario is retired and redirects to /risk (ADR-0172), so it is not a
+    // process step either. /risk IS one — it is phase 3 — and is asserted above.
+    expect(phasesForRoute("/scenario")).toEqual([]);
   });
 });
 

@@ -20,13 +20,13 @@
 // retired into /book, and ADR-0084 refused to reopen.
 
 /** The phases that render part of the risk body. */
-export type RiskPhase = "mandate" | "scenario" | "attribution";
+export type RiskPhase = "mandate" | "risk" | "attribution";
 
 /**
  * Section id → the phase route that renders it.
  *
  *   mandate     — "what is this book allowed to be, and is it inside that?"
- *   scenario    — "what could go wrong, and where is it concentrated?"
+ *   risk        — "what could go wrong, and where is it concentrated?"
  *   attribution — "what did it actually do?"
  *
  * `limits` sits with the mandate rather than with stress: the limit board
@@ -34,18 +34,18 @@ export type RiskPhase = "mandate" | "scenario" | "attribution";
  * constraint from the reading of that constraint is what made the caps
  * unreadable before MandatePanel existed.
  *
- * `attribution` (per-position risk decomposition) sits with SCENARIO, not with
- * the phase of the same name. It is ex-ante — which position would hurt most if
+ * `attribution` (per-position risk decomposition) sits with RISK, not with the
+ * phase of the same name. It is ex-ante — which position would hurt most if
  * something happened — and phase 6 is ex-post. Two different questions that the
  * shared word disguises.
  */
 export const RISK_SECTION_PHASE = {
   mandate: "mandate",
   limits: "mandate",
-  stress: "scenario",
-  concentration: "scenario",
-  exposure: "scenario",
-  attribution: "scenario",
+  stress: "risk",
+  concentration: "risk",
+  exposure: "risk",
+  attribution: "risk",
   realised: "attribution",
 } as const satisfies Record<string, RiskPhase>;
 
@@ -66,7 +66,7 @@ export const PHASE_SECTION_NAV: Record<
     { id: "mandate", label: "Mandate" },
     { id: "limits", label: "Limits" },
   ],
-  scenario: [
+  risk: [
     { id: "stress", label: "Stress" },
     { id: "attribution", label: "Attribution" },
     { id: "concentration", label: "Concentration" },

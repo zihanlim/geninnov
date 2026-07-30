@@ -464,6 +464,8 @@ class Q1State(dict):
     macro_snapshot: dict[str, dict]          # {series_id: {name, value, unit}}
     theme_scores: list[dict]                # [{theme_id, name, hype_score, trade_score, avg_sentiment}]
     factor_exposures: dict[str, dict]        # {asset: {beta_mkt, beta_smb, ...}}
+    credit_betas: dict[str, dict]            # {asset: {marginal_beta_ig, marginal_beta_qual}}
+                                              # — status='measured' only, this run_date (ADR-0192)
     regime: dict                              # {cycle, sentiment, yield_curve_slope, ...}
     risk_metrics: dict[str, Any]              # {total_capital, var_95, sharpe, beta, cvar_95, concentration_hhi}
     news_headlines: list[dict]                # [{text, date}] — raw L1 collected
@@ -601,6 +603,56 @@ def _load_edge_ic(sb: Client) -> tuple[IcReading | None, str | None]:
     return reading, None
 
 
+def _load_credit_betas(sb: Client, run_date: str) -> dict[str, dict]:
+    """This run's measured credit betas, for `S7_fallen_angel` (ADR-0192).
+
+    `credit_rates_exposures` (L2b, ADR-0190) is keyed on `(asset, run_date, lookback_days)`.
+    We take THIS run_date only — not "most recent per asset" the way `factor_exposures` reads
+    above — because L2b computes once per pipeline run and a stale beta from a prior run_date
+    would silently mix calibrations across a scenario that shocks the same run's book.
+
+    Only `status='measured'` rows, and only when BOTH marginal betas are non-NULL: a
+    `degenerate`/`insufficient_history` row or a partial fit (FF5+UMD unavailable, so
+    `marginal_beta_*` is NULL even though `status='measured'`) must fall through to
+    `_resolve_shock`'s sector/factor tiers exactly as an absent row would, never enter as a
+    guessed number. The `status='measured'` filter is applied BOTH server-side (`.eq`) and
+    again here on the returned rows — a query change or a test double that forgets the
+    filter must not leak a `degenerate` beta into a scenario as if it were measured.
+
+    Returns `{}` (never raises) when the table is empty for this date or unreachable — S7 then
+    degrades to its factor-and-override-only behaviour, which is the required fallback, not an
+    error.
+    """
+    try:
+        rows = (
+            sb.table("credit_rates_exposures")
+            .select("asset, marginal_beta_ig, marginal_beta_qual, status")
+            .eq("run_date", run_date)
+            .eq("status", "measured")
+            .execute()
+            .data
+        ) or []
+    except Exception as exc:  # noqa: BLE001 — an overlay must never cost the run
+        print(f"[credit_betas] credit_rates_exposures unavailable ({exc.__class__.__name__}): {exc}")
+        return {}
+
+    out: dict[str, dict] = {}
+    for r in rows:
+        if r.get("status") != "measured":
+            continue
+        beta_ig = r.get("marginal_beta_ig")
+        beta_qual = r.get("marginal_beta_qual")
+        if beta_ig is None or beta_qual is None:
+            continue
+        out[r["asset"]] = {
+            "marginal_beta_ig": float(beta_ig),
+            "marginal_beta_qual": float(beta_qual),
+        }
+    print(f"[credit_betas] {len(out)} of {len(rows)} measured rows have both marginal betas "
+          f"for run_date={run_date}")
+    return out
+
+
 def aggregate_context(state: Q1State) -> Q1State:
     """
     Pull L0-L4 outputs from Supabase into state.
@@ -690,6 +742,11 @@ def aggregate_context(state: Q1State) -> Q1State:
     # happens off the LLM's critical path. `size_positions` tightens caps from it and
     # `_positioning_row` explains those caps from the same object (ADR-0110).
     state["cot_readings"] = _fetch_cot_readings(state.get("candidates") or [])
+
+    # L2b: measured credit/duration betas for S7_fallen_angel (ADR-0192). `{}` when the
+    # table has no measured rows for this run_date — the scenario then degrades to its
+    # factor-and-override-only behaviour, which is the required fallback, not an error.
+    state["credit_betas"] = _load_credit_betas(sb, state["run_date"])
 
     state["theme_scores"] = theme_scores
     state["factor_exposures"] = factor_exposures
@@ -1045,7 +1102,7 @@ def compute_book_metrics_node(state: Q1State) -> Q1State:
 
 def run_scenario_analysis_node(state: Q1State) -> Q1State:
     """
-    Run four stress scenarios against the candidate pool.
+    Run the stress battery (7 scenarios, ADR-0192) against the candidate pool.
     Runs on candidates (pre-pick) to give the LLM scenario context.
     """
     picks_for_analysis = state.get("candidates", [])
@@ -1076,6 +1133,7 @@ def run_scenario_analysis_node(state: Q1State) -> Q1State:
         total_capital=total_capital,
         factor_exposures=state.get("factor_exposures") or {},
         chokepoint_signal=state["chokepoint_signal"],
+        credit_betas=state.get("credit_betas"),
     )
 
     state["scenario_table"] = format_scenario_table(results)
@@ -3032,6 +3090,11 @@ def finalise_book_analytics(state: Q1State) -> Q1State:
         total_capital=total_capital,
         factor_exposures=factor_exp,
         chokepoint_signal=scenario_signal,
+        # ADR-0192: S7_fallen_angel transmits through this run's measured credit betas.
+        # Reuses the SAME read `aggregate_context` froze on state — never a second fetch —
+        # so the book cannot be stressed by one snapshot of `credit_rates_exposures` while a
+        # second, later read produced a different one.
+        credit_betas=state.get("credit_betas"),
     )
 
     state["book_metrics_final"] = book_metrics_to_dict(bm)

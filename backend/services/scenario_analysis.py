@@ -4,13 +4,14 @@ Scenario analysis — quant book construction layer.
 Standard macro stress scenarios run against the portfolio to answer:
 "what happens to this book if [X]?" — required for any professional pitch book.
 
-Six scenarios:
+Seven scenarios:
   S1: VIX spike        — VIX > 30 (systematic deleveraging)
   S2: Rate shock       — 10y Treasury +50bps (duration pain)
   S3: USD strength     — DXY +5% (EM/commodity headwind)
   S4: Credit widening  — HY OAS +150bps (risk-off credit selloff)
   S5: Melt-up          — SPX +10% (the risk-ON tail; see ADR-0074)
   S6: Supply shock     — maritime chokepoint closure (the PHYSICAL tail)
+  S7: Fallen angel     — IG issuer downgraded to HY (the MEASURED-BETA tail; see ADR-0192)
 
 S1-S5 all transmit through the same channel: a factor beta scaled by a market
 shock. That makes them differ in sign and size but not in SHAPE, and it means a
@@ -26,6 +27,18 @@ other scenario reproduces:
   * positions that are implicitly SHORT geopolitical risk — short gold, short
     defense — surface as losses. Nothing in S1-S5 reveals them, because their
     market betas are unremarkable.
+
+S7 transmits through a THIRD channel: a MEASURED per-asset credit beta
+(`backend/services/credit_rates_exposures.py`, L2b, ADR-0190) rather than a
+hand-set sector bucket. Where S6 generalises "which sector" without anyone
+having to enumerate tickers, S7 generalises "how sensitive is THIS asset to
+credit" without anyone having to hand-calibrate a shock per name — the same
+SECTOR_MAP-style generalisation claim S6 already demonstrated, now over a
+regression instead of a lookup table. It is the first consumer of L2b's
+shadow signal (S is the opt-in ADR-0190 named in advance). Only the MARGINAL
+variant may drive it: `marginal_beta_*` is orthogonalised against FF5+UMD, so
+it does not double-count with the `mkt` factor shock this scenario also
+declares; `total_beta_*` would.
 
 Each scenario returns an estimated P&L impact on the book in % and $M,
 computed from factor tilts and historical beta regressions.
@@ -113,6 +126,12 @@ class Scenario:
     # behaves unlike its bucket keeps an override: SVXY is filed under "Rates" but
     # is short-vol, and inherits nothing sensible from a rates shock.
     sector_shocks: dict[str, float] = field(default_factory=dict)
+    # {"d_ig": bp, "d_qual": bp} — the credit-leg shock this scenario transmits
+    # through MEASURED per-asset betas (ADR-0192). Empty (the default) means this
+    # scenario does not use the measured-beta tier at all, so `_resolve_shock`
+    # behaves exactly as it did before the tier existed: base_asset_shocks, then
+    # sector_shocks, then the factor path. Only S7_fallen_angel sets this today.
+    credit_leg_shocks: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -298,6 +317,38 @@ SCENARIOS: list[Scenario] = [
             "Healthcare":           -0.02,   # defensive
         },
     ),
+    Scenario(
+        name="S7_fallen_angel",
+        label="Fallen Angel (IG → HY downgrade)",
+        description="A large IG issuer is downgraded to HY. IG-mandated holders are forced "
+                    "sellers regardless of view; IG spreads widen modestly on the general "
+                    "risk-off tone, and the HY/IG quality gap widens sharply as the forced "
+                    "supply concentrates in the newly-HY name and its comparables. Transmits "
+                    "through MEASURED per-asset credit betas (ADR-0192), not a hand-set "
+                    "per-asset shock — the point is that the credit leg does the work, with "
+                    "the equity factor shock (mkt -5%) real but secondary.",
+        # A real but secondary equity component. Deliberately small relative to the credit
+        # legs below: the point of this scenario is that the credit leg carries the loss,
+        # not market beta — a larger mkt shock here would collapse S7 into a smaller S1/S4.
+        factor_shocks={"mkt": -0.05},
+        # The credit legs this scenario shocks, in bp (see credit_rates_exposures.py's unit
+        # convention: legs in bp, betas in percent-return-per-100bp). d_ig +60bp is "IG
+        # spreads widen modestly"; d_qual +140bp (so HY OAS +200bp total) is the sharp
+        # quality-gap blowout a downgrade actually causes.
+        credit_leg_shocks={"d_ig": 60.0, "d_qual": 140.0},
+        # Deliberately MINIMAL. The whole demonstration is that measured credit betas cover
+        # the book — a long override list here would substitute the old hand-set-shock
+        # design back in and defeat the point. SVXY is the one recurring exception across
+        # every scenario in this file (S1/S4/S6): it is a leveraged short-vol product whose
+        # measured sensitivity to two credit-OAS legs does not capture the vol spike that
+        # accompanies a forced-selling event, and its documented sign history (ADR-0114)
+        # makes silence here the wrong default. Scaled below S4's -15% (broad credit
+        # widening) because a single-issuer downgrade is more contained than a systemic
+        # credit selloff.
+        base_asset_shocks={
+            "SVXY": -0.10,
+        },
+    ),
 ]
 
 
@@ -305,12 +356,58 @@ SCENARIOS: list[Scenario] = [
 # P&L estimation engine
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _resolve_shock(scenario: Scenario, asset: str) -> tuple[Optional[float], str]:
+def _measured_credit_shock(
+    scenario: Scenario, asset: str, credit_betas: dict[str, dict] | None
+) -> Optional[float]:
+    """The MEASURED-beta shock for `asset` under this scenario's credit legs, or None.
+
+    None whenever the scenario declares no `credit_leg_shocks`, `credit_betas` was not
+    passed, this asset has no row, or either beta is missing — never a guess and never
+    0.0 standing in for "not measured" (the same discipline `credit_rates_exposures.py`
+    itself follows: NULL, not zero, on a failed fit).
+
+    Uses ONLY `marginal_beta_ig` / `marginal_beta_qual` — see the module docstring and
+    ADR-0190/ADR-0192 for why `total_beta_*` must never drive a scenario: this scenario
+    also shocks `mkt`, and the total variant includes whatever that factor would already
+    explain, so using it here would double-count the loss.
+
+    Arithmetic (legs in bp, betas in percent-return-per-100bp):
+        shock_decimal = (beta_ig * (d_ig_bp / 100) + beta_qual * (d_qual_bp / 100)) / 100
+    The trailing /100 converts the percent result to the decimal every other shock in
+    this module is expressed in.
+    """
+    if not scenario.credit_leg_shocks or not credit_betas:
+        return None
+    betas = credit_betas.get(asset)
+    if not betas:
+        return None
+    beta_ig = betas.get("marginal_beta_ig")
+    beta_qual = betas.get("marginal_beta_qual")
+    if beta_ig is None or beta_qual is None:
+        return None
+    d_ig = scenario.credit_leg_shocks.get("d_ig", 0.0)
+    d_qual = scenario.credit_leg_shocks.get("d_qual", 0.0)
+    return (beta_ig * (d_ig / 100.0) + beta_qual * (d_qual / 100.0)) / 100.0
+
+
+def _resolve_shock(
+    scenario: Scenario,
+    asset: str,
+    credit_betas: dict[str, dict] | None = None,
+) -> tuple[Optional[float], str]:
     """The direct shock for one asset, and where it came from.
 
-    Ticker beats sector: ``base_asset_shocks`` is the override list for names that do
-    not behave like their bucket. Returns ``(None, "")`` when the scenario calibrates
-    neither, which is what the factor path is for.
+    Resolution order (ADR-0192 inserted the second tier):
+      1. ``base_asset_shocks``   — a deliberate ticker override; still wins, unchanged
+      2. measured credit beta    — only when the scenario declares `credit_leg_shocks`
+         AND this asset has a measured, non-null beta pair (`_measured_credit_shock`)
+      3. ``sector_shocks``       — the SECTOR_MAP bucket
+      4. ``(None, "")``          — nothing calibrated; the caller falls back to the
+         factor path
+
+    A scenario that declares no `credit_leg_shocks` (all six pre-existing scenarios)
+    never reaches tier 2, so this is bit-identical to the pre-ADR-0192 function for
+    them regardless of what `credit_betas` is passed.
 
     Both the P&L loop and the ``covered_frac`` gate call this. They used to be able to
     disagree about what "covered" meant, and a gate that counts an asset the P&L loop
@@ -318,10 +415,35 @@ def _resolve_shock(scenario: Scenario, asset: str) -> tuple[Optional[float], str
     """
     if asset in scenario.base_asset_shocks:
         return scenario.base_asset_shocks[asset], ""
+    measured = _measured_credit_shock(scenario, asset, credit_betas)
+    if measured is not None:
+        return measured, " via measured credit beta"
     sector = SECTOR_MAP.get(asset)
     if sector is not None and sector in scenario.sector_shocks:
         return scenario.sector_shocks[sector], f" via {sector}"
     return None, ""
+
+
+def _coverage_tier(
+    scenario: Scenario, asset: str, credit_betas: dict[str, dict] | None
+) -> Optional[str]:
+    """Which tier of `_resolve_shock`'s precedence produced this asset's shock.
+
+    Re-derives the classification from the SAME two checks `_resolve_shock` itself
+    makes (ticker membership, then the measured-beta helper) rather than duplicating
+    its arithmetic, so this and the P&L loop cannot disagree about what "measured"
+    means (ADR-0097's coverage-first doctrine, applied to a new signal).
+
+    Returns "override" / "measured" / "sector" / None (unresolved — the factor path).
+    """
+    if asset in scenario.base_asset_shocks:
+        return "override"
+    if _measured_credit_shock(scenario, asset, credit_betas) is not None:
+        return "measured"
+    sector = SECTOR_MAP.get(asset)
+    if sector is not None and sector in scenario.sector_shocks:
+        return "sector"
+    return None
 
 
 def _fmt_shock(shock: float) -> str:
@@ -352,6 +474,7 @@ def estimate_scenario_pnl(
     book_metrics,          # BookMetrics from book_metrics.py
     total_capital: float = 100_000_000.0,
     factor_exposures: dict[str, dict] | None = None,
+    credit_betas: dict[str, dict] | None = None,
 ) -> ScenarioResult:
     """
     Estimate book P&L under a stress scenario.
@@ -442,7 +565,7 @@ def estimate_scenario_pnl(
         # Direction sign: short positions flip the P&L direction
         sign = 1.0 if p.get("direction") == "long" else -1.0
 
-        shock, origin = _resolve_shock(scenario, asset)
+        shock, origin = _resolve_shock(scenario, asset, credit_betas)
         if shock is not None:
             pnl = sign * w * shock
             direct_pnl += pnl
@@ -466,7 +589,7 @@ def estimate_scenario_pnl(
     covered_weight = sum(
         abs(p.get("weight", 0.0))
         for p in picks
-        if _resolve_shock(scenario, p.get("asset", ""))[0] is not None
+        if _resolve_shock(scenario, p.get("asset", ""), credit_betas)[0] is not None
     )
     gross = max(book_metrics.gross_exposure, 0.01)
     covered_frac = covered_weight / gross if gross > 0 else 0.0
@@ -492,6 +615,30 @@ def estimate_scenario_pnl(
             contributions.append(
                 f"  {factor.upper()} shock {shock:+.0%} × book β {bb:+.2f} = {shock * bb:+.2%}"
             )
+
+    # Coverage must be reported, not assumed (ADR-0097's doctrine, applied to a new
+    # signal): a scenario that silently covered 3 of 10 names would read as
+    # authoritative. Gated on `credit_leg_shocks` so the six pre-existing scenarios —
+    # which never set it — get no new line and stay bit-identical.
+    if scenario.credit_leg_shocks:
+        tier_counts: dict[Optional[str], int] = {"override": 0, "measured": 0, "sector": 0, None: 0}
+        tier_weight: dict[Optional[str], float] = {"override": 0.0, "measured": 0.0, "sector": 0.0, None: 0.0}
+        for p in picks:
+            w = p.get("weight", 0.0)
+            if w <= 0:
+                continue
+            tier = _coverage_tier(scenario, p.get("asset", ""), credit_betas)
+            tier_counts[tier] += 1
+            tier_weight[tier] += abs(w)
+        n_held = sum(tier_counts.values())
+        gross_for_coverage = max(book_metrics.gross_exposure, 0.01)
+        measured_frac = tier_weight["measured"] / gross_for_coverage if gross_for_coverage > 0 else 0.0
+        contributions.insert(
+            0,
+            f"  Credit-beta coverage: {tier_counts['measured']} of {n_held} held names "
+            f"measured ({measured_frac:.0%} of gross); {tier_counts['override']} override, "
+            f"{tier_counts['sector']} via sector, {tier_counts[None]} unresolved (factor path)"
+        )
 
     dollar_pnl = best_estimate * total_capital / 1_000_000  # convert to $M
 
@@ -572,6 +719,7 @@ def run_scenario_analysis(
     total_capital: float = 100_000_000.0,
     factor_exposures: dict[str, dict] | None = None,
     chokepoint_signal=None,
+    credit_betas: dict[str, dict] | None = None,
 ) -> list[ScenarioResult]:
     """
     Run the stress battery against the portfolio.
@@ -580,11 +728,16 @@ def run_scenario_analysis(
     `chokepoint_signal` (a `chokepoint_signal.ChokepointSignal`, optional) scales S6 by
     measured maritime disruption. Omitted or unmeasured, S6 runs on its documented ADR-0088
     calibration — which is what every caller did before ADR-0095 and remains the default.
+
+    `credit_betas` (ADR-0192, optional) is `{asset: {"marginal_beta_ig", "marginal_beta_qual"}}`
+    for `status='measured'` rows only. S7_fallen_angel transmits through it; every other
+    scenario ignores it entirely. Omitted or empty, S7 degrades to its factor-and-override-only
+    behaviour — never an error, never a fabricated beta.
     """
     results: list[ScenarioResult] = []
     for scenario in scenarios_for_run(chokepoint_signal):
         result = estimate_scenario_pnl(
-            scenario, picks, book_metrics, total_capital, factor_exposures
+            scenario, picks, book_metrics, total_capital, factor_exposures, credit_betas
         )
         results.append(result)
 
@@ -599,16 +752,19 @@ def run_scenario_analysis_with_scenarios(
     total_capital: float = 100_000_000.0,
     factor_exposures: dict[str, dict] | None = None,
     chokepoint_signal=None,
+    credit_betas: dict[str, dict] | None = None,
 ) -> tuple[list[ScenarioResult], list[Scenario]]:
     """`run_scenario_analysis`, plus the scenario objects it actually used.
 
     Exists so a caller can hand the same list to `scenario_results_to_dict` and persist a
     description that matches the shocks the P&L was computed from. Without it, a scaled run
     silently persists the unscaled story.
+
+    `credit_betas` — see `run_scenario_analysis`.
     """
     scenarios = scenarios_for_run(chokepoint_signal)
     results: list[ScenarioResult] = [
-        estimate_scenario_pnl(s, picks, book_metrics, total_capital, factor_exposures)
+        estimate_scenario_pnl(s, picks, book_metrics, total_capital, factor_exposures, credit_betas)
         for s in scenarios
     ]
     results.sort(key=lambda r: abs(r.estimated_book_return), reverse=True)
@@ -650,6 +806,9 @@ def scenario_results_to_dict(
             # factor_shocks would render a near-empty chip row under a material P&L —
             # a number on the page with its cause left off (design goal 1).
             "sector_shocks": dict(scenario.sector_shocks) if scenario else {},
+            # ADR-0192: the credit legs S7_fallen_angel transmits through. Empty for the
+            # six scenarios that don't declare any, same reasoning as sector_shocks above.
+            "credit_leg_shocks": dict(scenario.credit_leg_shocks) if scenario else {},
             "estimated_book_return": r.estimated_book_return,
             "estimated_dollar_pnl": r.estimated_dollar_pnl,
             "severity": r.severity,

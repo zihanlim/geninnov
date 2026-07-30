@@ -52,11 +52,14 @@ def _pick(asset, direction, weight):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_six_scenarios_defined_covering_both_tails():
-    assert len(SCENARIOS) == 6
+    # ADR-0192 added S7_fallen_angel: 6 became 7, name unchanged (both tails is still
+    # about S1-S6; S7 is a third TRANSMISSION channel, not a third tail).
+    assert len(SCENARIOS) == 7
     names = {s.name for s in SCENARIOS}
     assert names == {
         "S1_vix_spike", "S2_rate_shock", "S3_usd_strength",
         "S4_credit_widening", "S5_melt_up", "S6_supply_shock",
+        "S7_fallen_angel",
     }
     # Both tails: at least one risk-off (mkt down) and one risk-on (mkt up) shock, so a
     # net-short book cannot escape stress the way it did when all four were risk-off.
@@ -135,7 +138,7 @@ def test_module_imports_without_backend_on_sys_path():
     combined = proc.stdout + proc.stderr
     assert "ModuleNotFoundError" not in combined, combined
     assert proc.returncode == 0, combined
-    assert "OK 6" in proc.stdout, combined
+    assert "OK 7" in proc.stdout, combined
 
 
 def test_sibling_imports_are_relative_or_fully_qualified():
@@ -489,7 +492,7 @@ def test_run_all_scenarios():
     picks = [_pick("SPY", "long", 0.10)]
     bm = _bm(gross=0.10, beta_mkt=1.0)
     results = run_scenario_analysis(picks, bm, 100_000_000.0)
-    assert len(results) == 6
+    assert len(results) == 7   # ADR-0192 added S7_fallen_angel
 
 
 def test_run_scenario_analysis_sorts_by_severity():
@@ -779,7 +782,7 @@ def test_short_vol_loses_in_every_risk_off_scenario():
 
     by_name = {s.name: s for s in SCENARIOS}
     risk_off = ["S1_vix_spike", "S2_rate_shock", "S3_usd_strength",
-                "S4_credit_widening", "S6_supply_shock"]
+                "S4_credit_widening", "S6_supply_shock", "S7_fallen_angel"]
 
     for name in risk_off:
         scenario = by_name.get(name)

@@ -165,3 +165,56 @@ def test_build_credit_legs_handles_partial_history_by_using_available_intersecti
     assert not legs.empty
     # The earliest leg date must be on or after 2024-02-15 (the IG/HY start).
     assert legs.index[0] >= pd.Timestamp("2024-02-15")
+
+
+def test_compute_total_betas_recovers_a_known_duration():
+    """y = -17 * d_ust10 + noise. The total-beta_ust10 must read ~ -17
+    (the spec's published effective duration for TLT, written down
+    before the code ran)."""
+    rng = np.random.default_rng(0)
+    idx = pd.bdate_range("2024-01-01", periods=300)
+    d_ust10 = pd.Series(rng.normal(0, 5, 300), index=idx)  # bp moves
+    # NOTE: /100 removed — d_ust10 is in bp (5-bp scale); the formula must
+    # NOT divide it again.  Signal = -17 * 100bp = -17% (strong, SNR ~17).
+    y = -17.0 * d_ust10 + rng.normal(0, 0.5, 300)
+    legs = pd.DataFrame({"d_ust10": d_ust10, "d_ig": d_ust10 * 0.0, "d_qual": d_ust10 * 0.0})
+    out = cre.compute_total_betas(y, legs, lookback_days=252)
+    assert out["beta_ust10"] == pytest.approx(-17.0, abs=2.0)
+    assert out["r2_ust10"] > 0.9
+    assert out["n_obs"] == 252
+
+
+def test_compute_total_betas_keeps_three_legs_independent():
+    """Three separate simple regressions, one per leg. Loading on d_ust10
+    must NOT leak into beta_ig or beta_qual."""
+    rng = np.random.default_rng(0)
+    idx = pd.bdate_range("2024-01-01", periods=300)
+    d_ust10 = pd.Series(rng.normal(0, 5, 300), index=idx)
+    d_ig = pd.Series(rng.normal(0, 5, 300), index=idx)
+    d_qual = pd.Series(rng.normal(0, 5, 300), index=idx)
+    # NOTE: /100 removed — legs are in bp; removing gives strong SNR for each.
+    y = (
+        -10.0 * d_ust10
+        + -3.0 * d_ig
+        + -5.0 * d_qual
+        + rng.normal(0, 0.3, 300)
+    )
+    legs = pd.DataFrame({"d_ust10": d_ust10, "d_ig": d_ig, "d_qual": d_qual})
+    out = cre.compute_total_betas(y, legs, lookback_days=252)
+    assert out["beta_ust10"] == pytest.approx(-10.0, abs=1.5)
+    assert out["beta_ig"] == pytest.approx(-3.0, abs=1.5)
+    assert out["beta_qual"] == pytest.approx(-5.0, abs=1.5)
+
+
+def test_compute_total_betas_returns_nan_when_history_is_too_short():
+    """Below the floor the function returns NaN, NOT 0.0 — a zero beta is
+    the claim 'this asset is insensitive to rates' and is false for the
+    very assets most likely to fail estimation."""
+    rng = np.random.default_rng(0)
+    idx = pd.bdate_range("2024-01-01", periods=100)
+    legs = pd.DataFrame({"d_ust10": rng.normal(0, 5, 100)}, index=idx)
+    y = pd.Series(rng.normal(0, 0.01, 100), index=idx)
+    out = cre.compute_total_betas(y, legs, lookback_days=252)
+    for k in ("beta_ust10", "beta_ig", "beta_qual", "r2_ust10", "r2_ig", "r2_qual"):
+        assert np.isnan(out[k])
+    assert out["n_obs"] < 252

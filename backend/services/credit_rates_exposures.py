@@ -25,6 +25,8 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
+from backend.data._ols_core import ols_window as _ols_window
+
 # Series the legs require. Lifted from macro_fetcher.FRED_SERIES — kept as a
 # module-level constant rather than an import so this file is testable
 # without booting the macro fetcher.
@@ -125,4 +127,51 @@ def build_credit_legs(
     ).dropna()
     if out.empty:
         raise ValueError("credit legs are empty after differencing")
+    return out
+
+
+def compute_total_betas(
+    asset_returns: pd.Series,
+    legs: pd.DataFrame,
+    lookback_days: int,
+) -> dict[str, float]:
+    """Three univariate OLS fits, one per leg.
+
+    Each fit is `r_asset = alpha + beta_leg * leg + epsilon` over the most
+    recent `lookback_days` of intersection between asset_returns and legs.
+    The returned betas are interpretable (the spec's "total" variant) but
+    include whatever the equity factors would also have explained — a
+    scenario that shocks both equity and spreads while using total betas
+    double-counts. They MUST NEVER drive a scenario.
+
+    Returns keys `beta_ust10` / `beta_ig` / `beta_qual` / `r2_*` / `n_obs`.
+    Values are `float('nan')` when the fit window is too short — never 0.0.
+    """
+    common = asset_returns.index.intersection(legs.index)
+    n_obs = len(common)
+    nan = float("nan")
+    out: dict[str, float] = {
+        "beta_ust10": nan, "beta_ig": nan, "beta_qual": nan,
+        "r2_ust10": nan, "r2_ig": nan, "r2_qual": nan,
+        "n_obs": n_obs,
+    }
+    if n_obs < lookback_days:
+        return out
+
+    # n_obs is the regression window, not the intersection size.
+    out["n_obs"] = lookback_days
+    y = asset_returns.loc[common]
+    for leg_name in _MARGINAL_FACTORS:
+        x = legs[leg_name].loc[common]
+        # Reuse the OLS core via a one-column DataFrame — but fit on the
+        # SAME window the rolling fit would use (the most recent
+        # `lookback_days`), not on the whole intersection.
+        y_win = y.iloc[-lookback_days:]
+        x_win = x.iloc[-lookback_days:]
+        result = _ols_window(y_win, pd.DataFrame({leg_name: x_win}))
+        if result is None:
+            # Singular or NaN; leave NaN rather than guess.
+            continue
+        out[f"beta_{leg_name[2:]}"] = result[leg_name]
+        out[f"r2_{leg_name[2:]}"] = result["r_squared"]
     return out

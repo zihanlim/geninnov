@@ -1199,7 +1199,21 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                       ))}
                     </ul>
                   )}
-                  <p className="m-0 mt-1.5 text-[11px] text-text-tertiary">
+                  {funnel ? (
+                    <p className="m-0 mt-1.5 text-[11px] text-text-tertiary leading-[1.55]">
+                      <span className="num">{funnel.tracked}</span> tracked
+                      {funnel.unwatched > 0 ? (
+                        <span>{" · "}{funnel.unwatched} unwatched</span>
+                      ) : null}
+                      {funnel.emerging > 0 ? (
+                        <span>{" · "}{funnel.emerging} emerging</span>
+                      ) : null}
+                      {!funnel.velocityMeasurable ? (
+                        <span> · velocity not yet measurable</span>
+                      ) : null}
+                    </p>
+                  ) : null}
+                  <p className="m-0 text-[11px] text-text-tertiary">
                     Shadow signal.
                   </p>
                 </div>

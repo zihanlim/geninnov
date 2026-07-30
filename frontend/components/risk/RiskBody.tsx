@@ -86,6 +86,7 @@ import {
 import { fetchThemeHistories } from "@/lib/themeSignals";
 import SectionNav from "@/components/SectionNav";
 import AnswerRow from "@/components/AnswerRow";
+import PageHeader from "@/components/PageHeader";
 import { riskAnswerCards } from "@/components/risk/RiskAnswerCards";
 import { mandateAnswerCards } from "@/components/risk/MandateAnswerCards";
 import { attributionAnswerCards } from "@/components/risk/AttributionAnswerCards";
@@ -675,34 +676,22 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
 
   return (
     <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-7 pb-20">
-      <div className="flex justify-between items-end mb-7 gap-6 flex-wrap">
-        <div>
-          {/* Title and lede come from the PHASE, not from the page. This body is
-              three destinations now, and a shared "Book Risk" heading on all of
-              them would make the tab a reader clicked indistinguishable from the
-              two they did not. */}
-          <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
-            {PHASE_COPY[phase].title}
-          </h1>
-          <p className="m-0 text-text-secondary text-[13px] max-w-[80ch]">
-            {PHASE_COPY[phase].lede}
-          </p>
-        </div>
-        <div className="text-right text-text-secondary text-[12px]">
-          <div>
-            <span className="text-text-tertiary mr-1.5">RUN DATE</span>
-            <span className="num text-text-primary">
-              {data.loading ? "…" : (data.runDate ?? "—")}
-            </span>
-          </div>
-          <div className="mt-1">
-            <span className="text-text-tertiary mr-1.5">LENS</span>
-            <span className="num">
-              {data.loading ? "…" : (data.lens ?? "not recorded")}
-            </span>
-          </div>
-        </div>
-      </div>
+      {/* Title and lede come from the PHASE, not from the page. This body is
+          three destinations now, and a shared "Book Risk" heading on all of
+          them would make the tab a reader clicked indistinguishable from the
+          two they did not. */}
+      <PageHeader
+        title={PHASE_COPY[phase].title}
+        lede={PHASE_COPY[phase].lede}
+        meta={[
+          { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
+          {
+            label: "Lens",
+            value: data.loading ? "…" : (data.lens ?? "not recorded"),
+            capitalize: true,
+          },
+        ]}
+      />
 
       {/* Every number below is computed on portfolio_positions. When that table has
           not been reconciled to the published book, they describe a portfolio nobody

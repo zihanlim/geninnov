@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import CitationList, { Citation } from "@/components/CitationList";
+import PageHeader from "@/components/PageHeader";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
 import {
   DEFAULT_EDGE_WEIGHTS,
@@ -513,6 +514,40 @@ function BookPageInner() {
     );
   }, [rec]);
 
+  /**
+   * The book's SHAPE — what the header strip reports since ADR-0189 replaced the
+   * four cells the answer row already stated.
+   *
+   * Every field is null rather than 0 when its input is absent, because the strip
+   * renders "—" for null and a bare 0 would read as "this book spans no sectors"
+   * rather than "book_metrics did not say" (goal 2). Nothing here queries: picks
+   * and book_metrics are both already on state.
+   */
+  const bookShape = useMemo(() => {
+    const picks = rec?.picks ?? [];
+    const themeIds = new Set(
+      picks.map((p) => p.theme_id).filter((x): x is string => Boolean(x)),
+    );
+    const sectorKeys = bm?.sector_weights ? Object.keys(bm.sector_weights) : null;
+    const geoKeys = bm?.geo_weights ? Object.keys(bm.geo_weights) : null;
+
+    let largest: { asset: string; weight: number } | null = null;
+    for (const p of picks) {
+      const w = typeof p.weight === "number" && Number.isFinite(p.weight)
+        ? Math.abs(p.weight)
+        : null;
+      if (w === null) continue;
+      if (!largest || w > largest.weight) largest = { asset: p.asset, weight: w };
+    }
+
+    return {
+      themes: themeIds.size > 0 ? themeIds.size : null,
+      sectors: sectorKeys && sectorKeys.length > 0 ? sectorKeys.length : null,
+      geos: geoKeys && geoKeys.length > 0 ? geoKeys.length : null,
+      largest,
+    };
+  }, [rec, bm]);
+
   // Per-asset worst-case, parsed from the scenario contribution breakdowns.
   const capByAsset = useMemo(() => {
     const m = new Map<string, CapRow>();
@@ -652,42 +687,26 @@ function BookPageInner() {
           promoting them. The rule spans the summary block only, so the title clears
           it, and the paragraphs drop their 62ch cap to fill the width — at 1400px a
           62ch column left the summary wrapping early against empty space. */}
-      <div className="mb-7">
-        <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
-          The $100M Book
-        </h1>
-        <div className="flex items-start gap-6 flex-wrap">
-          <div className="min-w-0 flex-1">
-            <p className="m-0 text-text-primary text-[14.5px] leading-[1.55]">
-              {plainSummary}
-            </p>
-            <p className="m-0 mt-2 text-text-tertiary text-[12px] leading-[1.5]">
-              Each side is the sign of its <span className="num">EdgeScore</span>; each
-              size is conviction (<span className="num">|Edge| / vol</span>) capped by
-              position, sector and geography limits. Expand any position for the full
-              derivation.
-            </p>
-          </div>
-          {/* self-stretch is what makes the rule span the paragraph block rather than
-              hug the two lines of text. Below sm: the block wraps under the summary
-              and the border would be a stray vertical line, so it starts at sm:. */}
-          <div className="shrink-0 self-stretch text-right text-text-secondary text-[12px] sm:border-l sm:border-border sm:pl-5">
-            <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-medium leading-none">
-              RUN DATE
-            </div>
-            <div
-              className="num mt-1"
-              style={staleness.stale ? { color: "var(--warning)" } : undefined}
-            >
-              {rec?.run_date ?? "—"}
-            </div>
-            <div className="mt-2.5 text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-medium leading-none">
-              LENS
-            </div>
-            <div className="num mt-1 capitalize">{rec?.lens ?? "—"}</div>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="The $100M Book"
+        lede={plainSummary}
+        fine={
+          <>
+            Each side is the sign of its <span className="num">EdgeScore</span>; each
+            size is conviction (<span className="num">|Edge| / vol</span>) capped by
+            position, sector and geography limits. Expand any position for the full
+            derivation.
+          </>
+        }
+        meta={[
+          {
+            label: "Run date",
+            value: rec?.run_date ?? "—",
+            warn: staleness.stale,
+          },
+          { label: "Lens", value: rec?.lens ?? "—", capitalize: true },
+        ]}
+      />
 
       {/* A dead run is invisible otherwise: the page keeps rendering the last book
           it has, with a date nobody reads as a warning. On 2026-07-24 the pipeline
@@ -844,13 +863,26 @@ function BookPageInner() {
           {/* Now a single inline strip (MarketBar-style), not six cards. The
               strip is the structural counterpart to the AnswerCards below: that
               one answers the PM questions (with consequences and drill controls),
-              this one is the bare balance sheet of the book. The two read as
-              DIFFERENT instruments because they answer different questions, even
-              though some figures appear in both: the AnswerCards line says what
-              the figure MEANS for the book, this strip says what the figure IS.
-              Six cells of a single grid carry vertical dividers on lg, horizontal
-              on smaller widths; the dividers visually carry the grouping the
-              standalone cards used to provide. */}
+              this one is the bare balance sheet of the book. Six cells of a
+              single grid carry vertical dividers on lg, horizontal on smaller
+              widths; the dividers visually carry the grouping the standalone
+              cards used to provide.
+
+              WHAT IT NO LONGER SHOWS, AND WHY (ADR-0189). The original six were
+              Positions · Longs/Shorts · Gross · Net · Deployed · Worst scenario,
+              defended on the ground that the cards say what a figure MEANS and
+              the strip says what it IS. Four of the six were the same figures
+              the answer row states 200px below — gross, net, deployed and the
+              worst stress — and "same number, different framing" is a thinner
+              distinction than it reads: a reader who has just been told 78.7%
+              gross with its consequence does not need 78.7% gross without one.
+
+              So the four were replaced rather than deleted. The strip is now the
+              book's SHAPE, which the answer row does not describe anywhere: how
+              many bets, which way, across how many ideas, spread over how many
+              sectors and geographies, and how big the largest single one is.
+              Every cell derives from `picks` and `book_metrics`, both already
+              read — no query moved. */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 bg-bg-surface border border-border rounded-[8px] mb-6 overflow-hidden divide-y md:divide-y-0 md:divide-x divide-border">
             <Stat
               label="Positions"
@@ -865,45 +897,46 @@ function BookPageInner() {
               warnHint="A long-only book is not a long-short book"
             />
             <Stat
-              label="Gross"
-              value={fmtPct(bm?.gross_exposure)}
-              hint="Long + short — total capital at risk"
-              tag="LIVE"
+              label="Themes"
+              value={
+                bookShape.themes === null ? "—" : String(bookShape.themes)
+              }
+              hint={
+                bookShape.themes === null
+                  ? "No pick carries a theme_id"
+                  : `Distinct ideas behind ${rec.picks.length} names`
+              }
             />
             <Stat
-              label="Net"
+              label="Sectors"
+              value={bookShape.sectors === null ? "—" : String(bookShape.sectors)}
+              hint={
+                bookShape.sectors === null
+                  ? "book_metrics.sector_weights is absent"
+                  : "Groups the 30% sector cap applies to"
+              }
+            />
+            <Stat
+              label="Geographies"
+              value={bookShape.geos === null ? "—" : String(bookShape.geos)}
+              hint={
+                bookShape.geos === null
+                  ? "book_metrics.geo_weights is absent"
+                  : "Groups the 35% geography cap applies to"
+              }
+            />
+            <Stat
+              label="Largest position"
               value={
-                bm?.net_exposure === undefined
+                bookShape.largest === null
                   ? "—"
-                  : `${bm.net_exposure >= 0 ? "+" : ""}${fmtPct(bm.net_exposure)}`
+                  : `${(bookShape.largest.weight * 100).toFixed(1)}%`
               }
-              hint="Long − short — directional tilt"
-              tag="LIVE"
-            />
-            <Stat
-              label="Deployed"
-              value={fmtUSD(
-                rec.picks.reduce((s, p) => s + (p.notional ?? 0), 0)
-              )}
-              hint={(() => {
-                const dep = rec.picks.reduce((s, p) => s + (p.notional ?? 0), 0);
-                const cash = TOTAL_CAPITAL - dep;
-                return cash > 500_000
-                  ? `of ${fmtUSD(TOTAL_CAPITAL)} — ${fmtUSD(cash)} in cash, held back by position limits`
-                  : `Capital allocated of ${fmtUSD(TOTAL_CAPITAL)}`;
-              })()}
-              tag="EST"
-            />
-            <Stat
-              label="Worst scenario"
-              value={
-                worstScenario
-                  ? `${(worstScenario.estimated_book_return * 100).toFixed(1)}%`
-                  : "—"
+              hint={
+                bookShape.largest === null
+                  ? "No pick carries a weight"
+                  : `${bookShape.largest.asset} — the single-name cap is the binding one at 20%`
               }
-              hint={worstScenario?.label}
-              color={worstScenario ? "var(--short)" : undefined}
-              tag="EST"
             />
           </div>
 

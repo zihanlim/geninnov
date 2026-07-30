@@ -23,6 +23,7 @@ import { NewsFeed } from "@/components/news/NewsFeed";
 import { NewsRibbon } from "@/components/news/NewsRibbon";
 import { fetchLatestNews, type NewsItem } from "@/lib/news";
 import { StatusBadge } from "@/components/status/StatusBadge";
+import PageHeader from "@/components/PageHeader";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
 import { resolveRunDates, ageSeconds } from "@/lib/homeFreshness";
 import { formatSlopeBps } from "@/lib/regimeUnits";
@@ -468,50 +469,56 @@ function ConvictionPageInner() {
     // page that scrolls once, shows the same material without cutting any of it —
     // which is design goal 7's original position, restored.
     <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-4 pb-20">
-      <div className="flex justify-between items-end mb-4 gap-4 flex-wrap shrink-0">
-        <div>
-          <h1 className="text-[19px] font-semibold tracking-[-0.01em] m-0">
-            What we&apos;re watching
-          </h1>
-          <p className="m-0 text-text-secondary text-[12.5px]">
-            Theme attention, macro regime, and book tilt.{" "}
-            <span className="text-text-tertiary text-[12px]">
-              Click any theme for its score derivation.
-            </span>
-          </p>
-        </div>
-        <div className="text-right text-text-secondary text-[12px]">
-          {/* `LiveNewsDock` used to sit here, beside the status. It is now a TopBar
-              control next to `Ask`, at the owner's direction: both are tools for
-              reading the site rather than things the site publishes, so they belong
-              in the same cluster, and the streams are no more specific to `/` than
-              the chat is. Its "off by default, and off means no third-party request"
-              property is a property of the component and travels with it. */}
-          <div className="flex items-center justify-end gap-3 mb-1">
-            <StatusBadge status={dashboardStatus} />
-          </div>
-          <div className="mt-1">
-            <span className="text-text-tertiary mr-1.5">RUN DATE</span>
-            <span className="num">{fmtDate(runDate)}</span>
-            {Number.isFinite(observed_age_seconds) && (
-              <span className="ml-2" data-testid="updated-label">
-                <FreshnessLabel
-                  observed_age_seconds={observed_age_seconds}
-                  // pipelineFinishedAt, not runDate — for the reason spelled out
-                  // where observed_age_seconds is computed above. The timestamp
-                  // behind the label must be the one the age was measured from,
-                  // or the tooltip contradicts the words next to it.
-                  observed_at={pipelineFinishedAt}
-                />
-              </span>
-            )}
-          </div>
-          <div className="mt-1">
-            <span className="text-text-tertiary mr-1.5">LAST PIPELINE RUN</span>
-            <span className="num">{fmtDate(lastPipelineRun)}</span>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="What we're watching"
+        // Eleven words became a paragraph when the shared header gave this page
+        // the same 14.5px lede every other route already had (ADR-0189). Phase 2
+        // is where an idea ENTERS the process, and the two things a reader most
+        // needs before reading a score are what it is made of and what it does
+        // not claim — both were only available further down, inside the answer
+        // cards, which is after the board they qualify.
+        lede={
+          <>
+            Where an idea enters the process. Themes scored on attention, sentiment,
+            market correlation and momentum; the narratives the daily tracker
+            surfaced without being told to look for them; and the macro regime and
+            factor tilt the book is built into. A high score means a theme is{" "}
+            <em>loud</em>, not that it is right — nothing on this page is a position.
+          </>
+        }
+        fine={
+          <>
+            Click any theme for its score derivation. The narrative board below is a
+            detector rather than a book: it sizes nothing, and a phrase on it is a
+            candidate for a theme, not a trade (ADR-0128).
+          </>
+        }
+        aside={<StatusBadge status={dashboardStatus} />}
+        meta={[
+          {
+            label: "Run date",
+            value: (
+              <>
+                {fmtDate(runDate)}
+                {Number.isFinite(observed_age_seconds) && (
+                  <span className="ml-2" data-testid="updated-label">
+                    <FreshnessLabel
+                      observed_age_seconds={observed_age_seconds}
+                      // pipelineFinishedAt, not runDate — for the reason spelled
+                      // out where observed_age_seconds is computed above. The
+                      // timestamp behind the label must be the one the age was
+                      // measured from, or the tooltip contradicts the words next
+                      // to it.
+                      observed_at={pipelineFinishedAt}
+                    />
+                  </span>
+                )}
+              </>
+            ),
+          },
+          { label: "Last pipeline run", value: fmtDate(lastPipelineRun) },
+        ]}
+      />
 
       {loading ? (
         <div className="space-y-4">

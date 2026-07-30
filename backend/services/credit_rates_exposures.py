@@ -209,3 +209,145 @@ def compute_total_betas(
         out[f"beta_{leg_name[2:]}"] = result[leg_name]
         out[f"r2_{leg_name[2:]}"] = result["r_squared"]
     return out
+
+
+class FactorsUnavailable(Exception):
+    """FF5+UMD could not be loaded, so the MARGINAL variant cannot be
+    computed. The TOTAL variant may still be computed and the row written
+    with status='measured' and the marginal columns NULL.
+
+    A typed signal rather than a returned sentinel, because the caller has
+    to distinguish "the equity factors were missing" (partial success, a
+    row is still worth writing) from "this asset has too little history"
+    (insufficient_history) and from "the design matrix is singular"
+    (degenerate). A None or a NaN collapses those three into one.
+    """
+
+
+def _ff5umd_columns(factor_df: pd.DataFrame) -> list[str]:
+    """The FF5+UMD regressors present in `factor_df`, excluding RF.
+
+    RF is not a factor; it is the funding rate subtracted from the asset's
+    return to form the excess return, exactly as `rolling_regression` does.
+    Including it as a regressor would fit the risk-free rate as if it were
+    a risk premium.
+    """
+    return [c for c in factor_df.columns
+            if c in ("Mkt-RF", "SMB", "HML", "RMW", "CMA", "UMD")]
+
+
+def _residualise(leg: pd.Series, factor_df: pd.DataFrame) -> pd.Series:
+    """Regress `leg` on the FF5+UMD columns of `factor_df`; return the residual.
+
+    The residual is by construction orthogonal to every factor it was
+    regressed on — it is the part of the credit or rate move that the equity
+    factors do NOT explain. This is what lets the marginal variant enter a
+    joint regression alongside FF5+UMD without the multicollinearity that
+    raw delta-OAS would introduce, and — the reason it matters here — it is
+    why the published `factor_exposures` betas do not move: the joint fit
+    adds no new information to the equity block, so nothing in that block
+    is re-estimated (ADR-0093 obligation avoided rather than discharged).
+
+    Raises FactorsUnavailable when the factors cannot support a fit.
+    """
+    cols = _ff5umd_columns(factor_df)
+    if not cols:
+        raise FactorsUnavailable("no FF5/UMD columns in factor_df")
+    common = leg.index.intersection(factor_df.index)
+    if len(common) < 30:
+        raise FactorsUnavailable(
+            f"FF5/UMD factor intersection is {len(common)} sessions, needs 30")
+    y = leg.loc[common].dropna()
+    X = factor_df.loc[common, cols].dropna().reindex(y.index)
+    if X.empty or y.empty or X.isna().any(axis=None):
+        raise FactorsUnavailable("FF5/UMD residualisation input is empty")
+    result = _ols_window(y, X)
+    if result is None:
+        raise FactorsUnavailable("FF5/UMD residualisation produced a singular matrix")
+    fitted = X.values @ np.array([result[c] for c in cols]) + result["alpha"]
+    resid = pd.Series(y.values - fitted, index=y.index)
+    # Re-attach on the full original index; NaN outside the intersection so
+    # the joint fit's own dropna decides the window rather than this helper.
+    return resid.reindex(leg.index)
+
+
+def compute_marginal_betas(
+    asset_returns: pd.Series,
+    legs: pd.DataFrame,
+    factor_df: pd.DataFrame,
+    lookback_days: int,
+) -> dict[str, float]:
+    """Marginal (orthogonalised, joint) variant.
+
+    Each leg is residualised on FF5+UMD; the three residuals then enter ONE
+    joint regression alongside the six equity factors. Two properties follow
+    and both are the point: the estimates are stable because the residuals
+    carry no equity-factor collinearity, and the published FF5+UMD betas in
+    `factor_exposures` are untouched because this regression adds no new
+    factor to that block.
+
+    This is the variant S will transmit shocks through. The TOTAL variant
+    must never drive a scenario — it double-counts with `beta_mkt`.
+
+    Same unit convention as `compute_total_betas`: percent return per 100bp
+    (see the block at the top of this module).
+
+    Returns NaN-valued betas on insufficient history or a singular fit.
+    Raises FactorsUnavailable when the equity factors are missing entirely,
+    so the caller can record partial success rather than a failed row.
+    """
+    nan = float("nan")
+    out: dict[str, float] = {
+        "beta_ust10": nan, "beta_ig": nan, "beta_qual": nan,
+        "r2_marginal": nan, "n_obs": 0,
+    }
+
+    # Raised before the history check: "the factors are missing" and "this
+    # asset is too new" are different states and the caller writes a
+    # different status for each.
+    if not _ff5umd_columns(factor_df):
+        raise FactorsUnavailable("no FF5/UMD columns in factor_df")
+
+    common = asset_returns.index.intersection(legs.index).intersection(factor_df.index)
+    out["n_obs"] = len(common)
+    if len(common) < lookback_days:
+        return out
+
+    # Residualise in the leg's own units, then convert at the fit — the
+    # residual of a bp series is still a bp series.
+    resid = pd.DataFrame({
+        leg: _residualise(legs[leg].loc[common], factor_df.loc[common])
+        for leg in _MARGINAL_FACTORS
+    }) / _BP_PER_100BP
+
+    ff5_cols = _ff5umd_columns(factor_df)
+    fit_df = pd.concat([factor_df.loc[common, ff5_cols], resid], axis=1).dropna()
+    if fit_df.empty:
+        return out
+
+    # Excess return, in percent. RF is subtracted BEFORE the percent
+    # conversion because both are decimals at that point.
+    y = asset_returns.loc[fit_df.index]
+    if "RF" in factor_df.columns:
+        y = y - factor_df.loc[fit_df.index, "RF"]
+    y = y * _PCT_PER_DECIMAL
+
+    # The equity factors are decimals too, and must be scaled with the
+    # return so their own betas keep their conventional magnitude.
+    fit_df = fit_df.copy()
+    for c in ff5_cols:
+        fit_df[c] = fit_df[c] * _PCT_PER_DECIMAL
+
+    # Most recent window, matching factor_fetcher's rolling convention: the
+    # figure is current sensitivity, not an average over all history.
+    y_win = y.iloc[-lookback_days:]
+    x_win = fit_df.iloc[-lookback_days:]
+    result = _ols_window(y_win, x_win)
+    if result is None:
+        return out
+
+    out["beta_ust10"] = result["d_ust10"]
+    out["beta_ig"] = result["d_ig"]
+    out["beta_qual"] = result["d_qual"]
+    out["r2_marginal"] = result["r_squared"]
+    return out

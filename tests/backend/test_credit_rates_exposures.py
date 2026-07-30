@@ -259,3 +259,140 @@ def test_compute_total_betas_returns_nan_when_history_is_too_short():
     for k in ("beta_ust10", "beta_ig", "beta_qual", "r2_ust10", "r2_ig", "r2_qual"):
         assert np.isnan(out[k])
     assert out["n_obs"] < 252
+
+
+def _ff5umd(n: int = 400, seed: int = 0) -> pd.DataFrame:
+    """The canonical synthetic FF5+UMD frame, in decimals like the real one."""
+    rng = np.random.default_rng(seed)
+    idx = pd.bdate_range("2024-01-01", periods=n)
+    return pd.DataFrame(
+        {
+            "Mkt-RF": rng.normal(0.0004, 0.010, n),
+            "SMB":    rng.normal(0.0, 0.004, n),
+            "HML":    rng.normal(0.0, 0.004, n),
+            "RMW":    rng.normal(0.0, 0.003, n),
+            "CMA":    rng.normal(0.0, 0.003, n),
+            "UMD":    rng.normal(0.0, 0.005, n),
+            "RF":     np.full(n, 0.00012),
+        },
+        index=idx,
+    )
+
+
+def test_a_leg_explained_by_equity_factors_has_no_marginal_beta():
+    """The SPY property, and the whole justification for storing two variants.
+
+    The asset here is purely market-driven. Each leg is the market PLUS its
+    own independent noise, which is what a real credit leg looks like -- it
+    co-moves with equities without being them.
+
+    TOTAL beta is large: the leg correlates with the market and so does the
+    asset. MARGINAL beta is ~0: once the equity factors are residualised
+    out, what remains of the leg is noise the asset has no exposure to.
+
+    If these two did NOT diverge, the orthogonalisation would be doing
+    nothing and spec section 5's two-variant design would be decoration.
+    """
+    f = _ff5umd()
+    rng = np.random.default_rng(5)
+    n = len(f)
+    # Each leg: the market (in bp) plus independent idiosyncratic noise.
+    legs = pd.DataFrame(
+        {
+            "d_ust10": f["Mkt-RF"] * 10000.0 + rng.normal(0, 20, n),
+            "d_ig":    f["Mkt-RF"] * 10000.0 + rng.normal(0, 20, n),
+            "d_qual":  f["Mkt-RF"] * 10000.0 + rng.normal(0, 20, n),
+        },
+        index=f.index,
+    )
+    y = f["RF"] + f["Mkt-RF"]  # purely market-driven
+
+    marginal = cre.compute_marginal_betas(y, legs, f, lookback_days=252)
+    assert marginal["n_obs"] == n
+    for k in ("beta_ust10", "beta_ig", "beta_qual"):
+        assert not np.isnan(marginal[k]), f"{k} should be estimable"
+        assert abs(marginal[k]) < 0.5, f"{k}={marginal[k]}; asset has no exposure to the residual"
+
+    # The contrast that makes the point: TOTAL is emphatically not zero.
+    total = cre.compute_total_betas(y, legs, lookback_days=252)
+    assert abs(total["beta_ust10"]) > 0.5, (
+        f"total={total['beta_ust10']}; if this is also ~0 the test proves nothing"
+    )
+
+
+def test_three_identical_legs_decline_to_publish():
+    """Three legs that are the same series residualise to three ~zero
+    columns -- a rank-deficient design matrix. The fit must return NaN
+    rather than emit coefficients from a singular solve."""
+    f = _ff5umd()
+    bp = f["Mkt-RF"] * 10000.0
+    legs = pd.DataFrame({"d_ust10": bp, "d_ig": bp, "d_qual": bp}, index=f.index)
+    y = f["RF"] + f["Mkt-RF"]
+    out = cre.compute_marginal_betas(y, legs, f, lookback_days=252)
+    for k in ("beta_ust10", "beta_ig", "beta_qual", "r2_marginal"):
+        assert np.isnan(out[k])
+
+
+def test_a_spread_signal_survives_orthogonalisation():
+    """A leg NOT explained by the equity factors keeps its beta on the
+    residual. This is what makes the marginal variant usable by S.
+
+    Units: `shock` is a decimal daily move; the leg is `shock * 10000` bp.
+    A -3% per 100bp loading means the asset's decimal return carries
+    -0.03 per 100bp-unit, and a 100bp-unit is `shock * 100`, so the
+    contribution is `-3.0 * shock`.
+    """
+    f = _ff5umd()
+    rng = np.random.default_rng(11)
+    shock = pd.Series(rng.normal(0, 0.0008, len(f)), index=f.index)  # decimal
+    # d_ig needs its OWN independent component. Giving it `shock` plus a
+    # market term would residualise to `shock` as well, making it collinear
+    # with d_qual and turning the joint fit singular -- which is real
+    # behaviour, but not what this test is trying to observe.
+    ig_shock = pd.Series(rng.normal(0, 0.0008, len(f)), index=f.index)
+    legs = pd.DataFrame(
+        {
+            "d_ust10": f["Mkt-RF"] * 10000.0 + rng.normal(0, 20, len(f)),
+            "d_ig":    (ig_shock + 0.2 * f["Mkt-RF"]) * 10000.0,
+            "d_qual":  shock * 10000.0,
+        },
+        index=f.index,
+    )
+    y = f["RF"] + f["Mkt-RF"] - 3.0 * shock
+    out = cre.compute_marginal_betas(y, legs, f, lookback_days=252)
+    assert out["beta_qual"] == pytest.approx(-3.0, abs=1.0)
+    # The other legs carry no signal and must not absorb one.
+    assert abs(out["beta_ig"]) < 1.0
+
+
+def test_missing_factors_raise_rather_than_returning_zeros():
+    """FF5+UMD unavailable is a DIFFERENT state from 'too little history'
+    and from 'singular'. A typed exception keeps the caller able to write
+    a partial row (total populated, marginal NULL, status='measured')
+    instead of discarding a real measurement."""
+    idx = pd.bdate_range("2024-01-01", periods=300)
+    rng = np.random.default_rng(0)
+    legs = pd.DataFrame({
+        "d_ust10": rng.normal(0, 5, 300),
+        "d_ig": rng.normal(0, 5, 300),
+        "d_qual": rng.normal(0, 5, 300),
+    }, index=idx)
+    y = pd.Series(rng.normal(0, 0.01, 300), index=idx)
+    with pytest.raises(cre.FactorsUnavailable):
+        cre.compute_marginal_betas(y, legs, pd.DataFrame(), lookback_days=252)
+
+
+def test_short_history_returns_nan_not_an_exception():
+    """Too little history is NOT FactorsUnavailable — the factors are fine,
+    the asset is new. NaN betas with the observation count preserved."""
+    f = _ff5umd(n=100)
+    legs = pd.DataFrame({
+        "d_ust10": f["Mkt-RF"] * 10000.0,
+        "d_ig": f["SMB"] * 10000.0,
+        "d_qual": f["HML"] * 10000.0,
+    }, index=f.index)
+    y = f["RF"] + f["Mkt-RF"]
+    out = cre.compute_marginal_betas(y, legs, f, lookback_days=252)
+    assert out["n_obs"] == 100
+    for k in ("beta_ust10", "beta_ig", "beta_qual", "r2_marginal"):
+        assert np.isnan(out[k])

@@ -16,13 +16,24 @@
 // 280px window. That is the trade RiskBody's own pairing notes call goal 7's
 // failure rather than a fix for it.
 //
-// So the row is stacked instead: label + status, then value / limit / headroom
-// as a three-up micro-grid, then the utilisation bar, then the note and the
-// limit's source. Nothing was dropped — every column of the old table is still
-// on screen, and each figure keeps a word naming what it is, because a bare
-// "62.4% 100% +37.6%" with no column heading above it is three naked numbers
-// (goal 1). One rendering, at every width: the same list serves the quarter
-// column here and a phone, where the 820px table was already scrolling.
+// So the row is stacked instead: label + status, then `value / limit` and the
+// headroom on one line, then the utilisation bar, then where the value was read
+// from and where the limit came from. One rendering, at every width: the same
+// list serves the quarter column here and a phone, where the 820px table was
+// already scrolling.
+//
+// WHY THE PROSE NOTE IS NOT IN THE ROW (ADR-0180)
+// -----------------------------------------------
+// The first stacked draft kept `row.note` and came out 2250px tall — taller than
+// the mandate panel beside it, of which the notes were 33–66px per row. That
+// prose is the "what it means" line, and `MandatePanel` — 24px to the left, in
+// the card whose entire job is meaning — already carries one for every limit on
+// this board. So it moved to the row's `title` and the card's intro points at
+// the panel. What did NOT move is the SOURCE: the mandate panel says where a
+// LIMIT came from, never where the value measured against it came from, so
+// `LimitDef.source` became its own field and renders under every row (goal 1).
+// The `value / limit` pair reads as a pair because the intro says so — the same
+// idiom, and the same justification, as the CapUtilisation bars beside it.
 
 "use client";
 import {
@@ -118,17 +129,19 @@ export function RiskLimitBoard({
         <div className="skeleton m-[18px] h-[260px]" aria-hidden="true" />
       ) : (
         <>
-          <p className="m-0 px-[18px] pt-3.5 text-[12px] text-text-secondary leading-[1.6] max-w-[92ch]">
-            Every governing limit, breached-first, with the fraction consumed and the
-            remaining headroom. A limit reads from{" "}
-            <Ident>scoring_config</Ident> where a row exists; otherwise it is a house
-            default, marked as such — a default is a convention, not a hard rule. The{" "}
-            {(NEAR_LIMIT_FRACTION * 100).toFixed(0)}% tick is where a limit starts to
-            bind.
+          <p className="m-0 px-[18px] pt-3 text-[12px] text-text-secondary leading-[1.55] max-w-[92ch]">
+            Every governing limit, breached-first. Each row reads{" "}
+            <span className="num">value / limit</span>, the headroom left, and the
+            fraction consumed — the {(NEAR_LIMIT_FRACTION * 100).toFixed(0)}% tick is
+            where a limit starts to bind. What each limit MEANS is in{" "}
+            <a href="#mandate" className="text-accent hover:underline">
+              The mandate
+            </a>
+            ; the line under each row is where its value was read from.
           </p>
 
           <ul
-            className="m-0 mt-3 list-none p-0 border-t border-border-strong"
+            className="m-0 mt-2.5 list-none p-0 border-t border-border-strong"
             aria-label="Risk limits with current value, limit, utilisation, headroom and status, sorted with breaches first."
           >
             {rows.map((row) => {
@@ -136,29 +149,27 @@ export function RiskLimitBoard({
               return (
                 <li
                   key={row.key}
-                  className="px-[18px] py-3 border-b border-border hover:bg-bg-elevated"
+                  className="px-[18px] py-2.5 border-b border-border hover:bg-bg-elevated"
+                  // The prose that used to render here. It is on the mandate panel
+                  // beside this card, so it is not lost — but a reader hovering one
+                  // row should not have to go looking. See ADR-0180.
+                  title={row.note}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-[13px] text-text-primary font-medium">
+                    <span className="text-[13px] text-text-primary font-medium leading-tight">
                       {row.label}
                     </span>
                     <span className={`badge ${meta.cls} shrink-0`}>{meta.label}</span>
                   </div>
 
-                  {/* Value / Limit / Headroom, each under the word that names it.
-                      These were three headed columns; a heading per figure is what
-                      replaces the <thead> a list does not have. */}
-                  {/* max-w so the three stay a cluster below `xl`, where this card
-                      is full width — at 960px an uncapped 3-col grid puts 320px
-                      between a value and the word naming it. It does not bind in
-                      the 280px column, which is the width it was shaped for. */}
-                  <dl className="m-0 mt-2 grid grid-cols-3 gap-x-2 max-w-[520px]">
-                    <div>
-                      <dt className="text-[9.5px] uppercase tracking-[0.08em] text-text-tertiary">
-                        Value
-                      </dt>
-                      <dd
-                        className={`m-0 num text-[12px] ${
+                  {/* `value / limit` then the headroom, on one line. The pair reads
+                      as a pair because the card's own intro says so — the same
+                      idiom, and the same justification, as CapUtilisation's
+                      `15.92% / 20.00% (80%)` bars directly beside it. */}
+                  <div className="mt-1.5 flex items-baseline justify-between gap-2">
+                    <span className="num text-[12.5px]">
+                      <span
+                        className={
                           row.status === "breached"
                             ? "text-warning-deep"
                             : row.status === "near"
@@ -166,28 +177,22 @@ export function RiskLimitBoard({
                               : row.value === null
                                 ? "text-text-tertiary"
                                 : "text-text-primary"
-                        }`}
+                        }
                       >
                         {fmtByUnit(row.value, row.unit)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-[9.5px] uppercase tracking-[0.08em] text-text-tertiary">
-                        Limit
-                      </dt>
-                      <dd className="m-0 num text-[12px] text-text-secondary">
+                      </span>
+                      <span className="text-text-tertiary">
+                        {" / "}
                         {fmtByUnit(row.limit, row.unit)}
-                      </dd>
-                    </div>
-                    <div className="text-right">
-                      <dt className="text-[9.5px] uppercase tracking-[0.08em] text-text-tertiary">
-                        Headroom
-                      </dt>
-                      <dd
-                        className={`m-0 num text-[12px] ${
+                      </span>
+                    </span>
+                    <span className="text-[10.5px] text-text-tertiary whitespace-nowrap">
+                      headroom{" "}
+                      <span
+                        className={`num ${
                           // Not the signed-value exemption: headroom < 0 IS the
                           // breach, restated as a negative number, so it must match
-                          // the value above. Leaving it crimson would put two
+                          // the value beside it. Leaving it crimson would put two
                           // different hues on one breached row.
                           row.headroom === null
                             ? "text-text-tertiary"
@@ -197,11 +202,11 @@ export function RiskLimitBoard({
                         }`}
                       >
                         {fmtHeadroom(row.headroom, row.unit)}
-                      </dd>
-                    </div>
-                  </dl>
+                      </span>
+                    </span>
+                  </div>
 
-                  <div className="mt-2 flex items-center gap-2">
+                  <div className="mt-1.5 flex items-center gap-2">
                     <UtilBar row={row} />
                     <span className="num text-[11px] text-text-tertiary whitespace-nowrap w-[42px] text-right">
                       {row.utilisation === null
@@ -210,21 +215,24 @@ export function RiskLimitBoard({
                     </span>
                   </div>
 
-                  <p className="m-0 mt-2 text-[11px] text-text-tertiary leading-[1.5] max-w-[80ch]">
-                    {row.note}
-                  </p>
-                  <span
-                    className="inline-block mt-1 text-[10px] uppercase tracking-[0.08em] text-text-tertiary"
-                    title={
-                      row.limitSource === "scoring_config"
-                        ? "Limit read live from scoring_config"
-                        : "No scoring_config row — house default"
-                    }
-                  >
-                    {row.limitSource === "scoring_config"
-                      ? "limit · scoring_config"
-                      : "limit · house default"}
-                  </span>
+                  {/* Where the VALUE came from, then where the LIMIT came from —
+                      two different facts, which is why both are here and neither
+                      stands in for the other. */}
+                  <div className="mt-1.5 text-[10px] leading-[1.4] text-text-tertiary [overflow-wrap:anywhere]">
+                    <span className="num">{row.source}</span>
+                    <span
+                      title={
+                        row.limitSource === "scoring_config"
+                          ? "Limit read live from scoring_config"
+                          : "No scoring_config row — house default"
+                      }
+                    >
+                      {" · limit "}
+                      {row.limitSource === "scoring_config"
+                        ? "scoring_config"
+                        : "house default"}
+                    </span>
+                  </div>
                 </li>
               );
             })}

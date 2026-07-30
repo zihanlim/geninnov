@@ -202,7 +202,14 @@ export function CapUtilisation({
     (data?.geo?.length ?? 0);
 
   return (
-    <details className="card mb-6 group" aria-labelledby="risk-caps-heading">
+    // `open`: the caps are one of the four cards /mandate opens with since it
+    // became a single row, and a card whose whole content is behind a summary bar
+    // spends a quarter of that row on a 58px header. Design goal 7's own 2026-07-30
+    // narrowing is the standing direction here — every card stays visible on
+    // arrival — so this is that rule reaching an existing <details> rather than a
+    // new one being added. The disclosure itself is kept: a reader who wants the
+    // limit board beside it without 19 bars can still close it.
+    <details open className="card mb-6 group" aria-labelledby="risk-caps-heading">
       <summary className="card-header cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
         <h2 id="risk-caps-heading" className="card-title m-0">
           Cap utilisation

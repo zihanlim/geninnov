@@ -127,6 +127,19 @@ export interface LimitDef {
   limitSource: "scoring_config" | "house_default";
   /** Human note on what the limit governs and why the default is what it is. */
   note: string;
+  /**
+   * Where the observed VALUE is read from — `table.column`, not prose.
+   *
+   * Split out of `note` in 2026-07-30 (ADR-0180). The board sits in a quarter
+   * column beside `MandatePanel`, which already carries a "What it means" line
+   * for every one of these limits, so the prose became the card's largest
+   * single cost (33–66px per row) for content duplicated 24px to the left. The
+   * SOURCE is not duplicated anywhere — the mandate panel says where a LIMIT
+   * came from, never where the value measured against it came from — so it is
+   * the half that had to survive as its own field rather than a sentence a
+   * reader has to finish to reach it (goal 1).
+   */
+  source: string;
 }
 
 export interface LimitRow extends LimitDef {
@@ -394,6 +407,7 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         unit: "pct_of_capital",
         limitSource: "house_default",
         note: "1-day 95% parametric VaR as a share of capital. From portfolio_risk.var_95 / total_capital.",
+        source: "portfolio_risk.var_95 / total_capital",
       },
     },
     {
@@ -405,6 +419,7 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         unit: "pct_of_capital",
         limitSource: "house_default",
         note: "Expected loss in the worst 5% of days, as a share of capital. From portfolio_risk.cvar_95.",
+        source: "portfolio_risk.cvar_95 / total_capital",
       },
     },
     {
@@ -416,6 +431,7 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         unit: "pct_of_capital",
         limitSource: "house_default",
         note: "Worst realised peak-to-trough on portfolio_returns to date. Backward-looking, not a forecast.",
+        source: "portfolio_returns.cumulative_return",
       },
     },
     {
@@ -427,6 +443,7 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         unit: "pct_of_capital",
         limitSource: "house_default",
         note: "|long − short| as a share of capital. From book_metrics.net_exposure.",
+        source: "book_metrics.net_exposure",
       },
     },
     {
@@ -438,6 +455,7 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         unit: "pct_of_capital",
         limitSource: "house_default",
         note: "long + short as a share of capital — the leverage ceiling. From book_metrics.gross_exposure.",
+        source: "book_metrics.gross_exposure",
       },
     },
     {
@@ -449,6 +467,7 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         unit: "ratio",
         limitSource: "house_default",
         note: "Absolute market beta. A long-short mandate targets near-neutral; large |β| is directional drift. From portfolio_risk.beta.",
+        source: "portfolio_risk.beta",
       },
     },
     {
@@ -460,6 +479,7 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         unit: "score",
         limitSource: "house_default",
         note: "Herfindahl–Hirschman index of position weights on the 0–10 000 (DOJ) scale: 10 000/N is fully diversified, 10 000 is a single name; the 2 000 ceiling ≈ five equal names. From portfolio_risk.concentration_hhi.",
+        source: "portfolio_risk.concentration_hhi",
       },
     },
     {
@@ -471,6 +491,7 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         unit: "pct_weight",
         limitSource: "scoring_config",
         note: "Largest single-name book weight vs the cap. From cap_utilisation.single_name.",
+        source: "cap_utilisation.single_name",
       },
     },
     {
@@ -482,6 +503,7 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         unit: "pct_weight",
         limitSource: "scoring_config",
         note: "Largest sector book weight vs the cap. From cap_utilisation.sector.",
+        source: "cap_utilisation.sector",
       },
     },
     {
@@ -493,6 +515,7 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         unit: "pct_weight",
         limitSource: "scoring_config",
         note: "Largest geography book weight vs the cap. From cap_utilisation.geo.",
+        source: "cap_utilisation.geo",
       },
     },
     {
@@ -504,6 +527,7 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         unit: "pct_of_capital",
         limitSource: "scoring_config",
         note: "Distance from yesterday's published book, signed weights summed absolute. From optimizer_result.realised_turnover. Null (not 0) with no prior book — the FIRST run this cap was live for.",
+        source: "optimizer_result.realised_turnover",
       },
     },
   ];

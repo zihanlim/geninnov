@@ -563,13 +563,42 @@ describe("DetectionScatter — the detector's honesty (ADR-0146)", () => {
     expect(out).toContain("+10 more");
   });
 
-  it("the default board renders the scatter, not the retired top-5 lines", () => {
+  it("the default board renders the scatter as the primary detector", () => {
     const src = readFileSync(
       path.resolve(__dirname, "../../components/NarrativeTrends.tsx"),
       "utf8",
     );
     expect(src).toContain("<DetectionScatter series={series}");
-    expect(src).not.toMatch(/<TrendPlot series=\{top\}/);
+  });
+
+  it("also renders a share-over-time trend above the plane (ADR-0175)", () => {
+    // ADR-0146 retired `TrendPlot series={top}` as this board's PRIMARY view —
+    // the top-5-by-share set had charted financial-writing register
+    // ("earnings", "price", "q2"), not narratives, and the board's actual
+    // question is a STATE question a trajectory chart cannot answer. ADR-0175
+    // reintroduced it as SECONDARY trend context above the still-primary
+    // scatter, on the same top-N set the figures table already shows — so this
+    // asserts the addition landed and carries its own honesty caption, not
+    // that the retirement never happened.
+    const twoRunSeries: NarrativeSeries = series("ai capex cycle", [0.02, 0.06]);
+    const out = renderToStaticMarkup(
+      <NarrativeTrends shared={{ series: [twoRunSeries], asOfFallback: null, error: null }} />,
+    );
+    expect(out).toContain("Share over time");
+    expect(out).toContain("financial-writing register");
+    // Both charts present: the scatter (still primary) and the trend (new).
+    expect(out).toContain("Narrative detection plane");
+  });
+
+  it("the trend needs two runs and draws nothing from one", () => {
+    // TrendPlot itself renders "" from a single point (pinned above); the
+    // board must not print the "Share over time" heading over a chart that
+    // cannot exist.
+    const oneRunSeries: NarrativeSeries = series("solo narrative", [0.03]);
+    const out = renderToStaticMarkup(
+      <NarrativeTrends shared={{ series: [oneRunSeries], asOfFallback: null, error: null }} />,
+    );
+    expect(out).not.toContain("Share over time");
   });
 });
 

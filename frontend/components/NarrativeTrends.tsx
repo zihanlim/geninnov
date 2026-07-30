@@ -815,6 +815,11 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
   const latestRun = series?.[0]?.latest.run_date ?? null;
   const corpus = series?.[0]?.latest.corpus_size ?? null;
   const dropped = series ? Math.max(0, series.length - top.length) : 0;
+  // For the trend plot only — the scatter below needs no run count, it plots
+  // one day. A trajectory needs at least two.
+  const runs = series
+    ? new Set(series.flatMap((s) => s.points.map((p) => p.run_date))).size
+    : 0;
 
   return (
     <div className="card flex flex-col flex-1">
@@ -913,6 +918,40 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                 </p>
               </details>
             </div>
+
+            {/* Share over time — the trend context ABOVE the detection plane.
+                ADR-0146 retired exactly this shape (`TrendPlot series={top}`)
+                as the board's PRIMARY view: five-loudest-by-share lines had
+                charted `earnings`/`price`/`q2` — financial-writing register,
+                not narratives — while the board's actual question ("is
+                anything accelerating that nothing watches?") is a STATE
+                question a trajectory chart cannot answer. That finding does
+                not disappear here, and this is not a reversal of it: the
+                detection plane below stays the primary, and the caption
+                names the same risk explicitly rather than letting a line
+                chart imply meaning it may not have. What changed is scope —
+                a reader asking "how has today's top few moved" now has an
+                answer beside "what is accelerating unwatched", instead of
+                needing to visit `/method` or wait for tomorrow's run to see
+                a second point. Same top-N set the table beside the plane
+                already shows, so this adds no new phrase exposure — only a
+                second view of one already on screen (ADR-0175). */}
+            {runs >= 2 && top.length > 0 && (
+              <div>
+                <h4 className="m-0 mb-1.5 text-[10.5px] uppercase tracking-[0.1em] text-text-secondary">
+                  Share over time
+                </h4>
+                <TrendPlot series={top} />
+                <p className="m-0 mt-1 text-[11px] text-text-tertiary leading-[1.5]">
+                  Top {top.length} by today&rsquo;s share, not by whether they
+                  mean anything — the loudest phrase in a news corpus is
+                  routinely financial-writing register (&ldquo;earnings&rdquo;,
+                  &ldquo;price&rdquo;, &ldquo;q2&rdquo;), which is why the
+                  detection plane below judges by breakout, not by volume
+                  alone.
+                </p>
+              </div>
+            )}
 
             {/* Plane ‖ figures, in ONE card, with the plane narrowed to make
                 room rather than the pair split across cards.

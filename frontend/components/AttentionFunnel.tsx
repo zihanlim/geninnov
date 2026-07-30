@@ -118,6 +118,10 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
   const own = useNarrativeSeries(30, { skip: shared !== undefined });
   const { series, asOfFallback } = shared ?? own;
   const funnel = series ? attentionFunnel(series) : null;
+  // Corpus size and velocity count — available from the same series read,
+  // surfaced here so the observed bars have their denominators stated.
+  const corpusSize = series?.[0]?.latest.corpus_size ?? null;
+  const velocityCount = series?.filter((s) => s.latest.velocity !== null).length ?? 0;
 
   useEffect(() => {
     supabase
@@ -227,6 +231,20 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
                   unmeasured rather than empty.
                 </p>
               )}
+              {/* Velocity fraction and corpus size — the denominators behind the bars. */}
+              <p className="m-0 mt-0.5 text-[10.5px] text-text-tertiary leading-[1.45]">
+                {velocityCount > 0 ? (
+                  <>
+                    <span className="num">{velocityCount}</span> of{" "}
+                    <span className="num">{series?.length}</span> phrases have velocity
+                  </>
+                ) : (
+                  <>No tracked phrase has velocity yet</>
+                )}
+                {corpusSize ? (
+                  <> · ~<span className="num">{corpusSize}</span> archive headlines/day</>
+                ) : null}
+              </p>
             </>
           )}
         </div>

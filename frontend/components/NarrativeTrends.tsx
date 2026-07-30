@@ -1213,10 +1213,33 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                   </h4>
                   {emerging.length === 0 ? (
                     velocityMeasurable ? (
+                      /* The denominator is the UNWATCHED phrases, not the
+                         attributed ones. `emergingUncovered` filters
+                         `covered_by === null`, so an empty shortlist is a
+                         statement about what nothing is watching — and the
+                         previous wording, "none of the 5 attributed phrases
+                         are accelerating outside an anchor", both counted the
+                         wrong side of the split and asserted a contradiction:
+                         an attributed phrase is inside an anchor by
+                         definition, so it could not be accelerating outside
+                         one whatever it did.
+
+                         BOTH halves of `emerging` are stated, because the
+                         status is `velocity >= material AND age <= window` and
+                         "none of them is accelerating" is the stronger claim
+                         the filter does not make. The funnel card beside this
+                         one now names the unwatched phrases with their
+                         velocities, and on today's data one of them runs at
+                         the cap while sitting at `established` — so the loose
+                         wording would have been visibly contradicted one
+                         column to the right. */
                       <p className="m-0 text-[11px] text-text-secondary leading-[1.55]">
-                        None of the <span className="num">{funnel ? funnel.tracked - funnel.unwatched : 0}</span> attributed
-                        phrases are accelerating <em>outside</em> an anchor — that is a
-                        finding, not an empty state.
+                        None of the <span className="num">{funnel ? funnel.unwatched : 0}</span> phrases
+                        watched by nothing is both <em>young</em> and
+                        accelerating — that is a finding, not an empty state.
+                        An older one can still be breaking out and stay{" "}
+                        <span className="num">established</span>; the funnel
+                        beside this lists them with their velocities.
                       </p>
                     ) : (
                       <p className="m-0 text-[11px] text-text-secondary leading-[1.55]">

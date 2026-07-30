@@ -43,7 +43,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { attentionFunnel } from "@/lib/narratives";
+import { attentionFunnel, isCorroborated, sharePct } from "@/lib/narratives";
 import { useNarrativeSeries, type NarrativeSeriesState } from "@/lib/useNarrativeSeries";
 
 /** Live values of `themes.promotion_basis` (migration 051), counted rather than
@@ -122,6 +122,21 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
   // surfaced here so the observed bars have their denominators stated.
   const corpusSize = series?.[0]?.latest.corpus_size ?? null;
   const velocityCount = series?.filter((s) => s.latest.velocity !== null).length ?? 0;
+  // How many tracked phrases a SECOND method also found (ADR-0133). The
+  // observed half's provenance caveat, and the exact counterpart of the
+  // committed half's `0 measured_discovery` below: one says the monthly
+  // LDA∩embedding job has confirmed none of these phrases, the other says no
+  // theme was promoted on measurement. Live today: 0 of 11 — every phrase on
+  // this board rests on document frequency alone, which is fooled by repeated
+  // boilerplate, and the board's own loudest mark (`closes sharply lower`) is
+  // what that failure mode looks like.
+  const corroborated = series?.filter((s) => isCorroborated(s.latest)).length ?? 0;
+  // The unwatched, named and ordered by share. See the block that renders them.
+  const unwatched = series
+    ? series
+        .filter((s) => s.latest.covered_by === null)
+        .sort((a, b) => b.latest.share - a.latest.share)
+    : [];
   // Attribution breakdown: which themes cover which attributed phrases.
   // Shown as mini bars below the "Not a funnel" paragraph.
   const attributedPhrases = series
@@ -255,6 +270,20 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
                 {corpusSize ? (
                   <> · ~<span className="num">{corpusSize}</span> archive headlines/day</>
                 ) : null}
+              </p>
+              {/* Corroboration (ADR-0133). Stated here rather than left to the
+                  board's per-row "found by" column, because one phrase being
+                  frequency-only is a detail and ALL of them being frequency-only
+                  is a property of the signal. Zero is the live reading and the
+                  sentence has to survive it: the monthly job is monthly, so a
+                  zero here is as much a statement about cadence as about
+                  agreement, and it must not read as "the second method looked
+                  and disagreed". */}
+              <p className="m-0 text-[10.5px] text-text-tertiary leading-[1.45]">
+                <span className="num">{corroborated}</span> of{" "}
+                <span className="num">{series?.length ?? 0}</span> corroborated by
+                the monthly discovery job
+                {corroborated === 0 ? " — this board is document frequency alone" : ""}
               </p>
             </>
           )}
@@ -409,46 +438,101 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
                 every bar in this block ends on the same right edge too. */}
             <span aria-hidden="true" className="w-4 shrink-0" />
           </div>
-          {/* The key on its own line rather than crowded into the row above.
-              Inline, it was ~150px of `shrink-0` beside a `flex-1` track, so
-              the bar the key describes got barely half the column it had to
-              divide. */}
-          <div className="flex items-center gap-2">
-            <span aria-hidden="true" className="w-24 shrink-0" />
-            <div className="flex-1 flex gap-3 text-[10px] text-text-tertiary">
-              <span>
-                <span className="inline-block w-2 h-2 rounded-sm mr-1" style={{ background: "var(--border)" }} />
-                <span className="num">{funnel.unwatched}</span> unwatched
-              </span>
-              <span>
-                <span className="inline-block w-2 h-2 rounded-sm mr-1" style={{ background: "var(--series-1)", opacity: 0.75 }} />
-                <span className="num">{funnel.tracked - funnel.unwatched}</span> attributed
-              </span>
-            </div>
-          </div>
-          {/* Mini bars: attributed phrases broken down by which theme covers them. */}
-          {Object.entries(attributedPhrases)
-            .sort((a, b) => b[1] - a[1])
-            .map(([theme, count]) => (
-              <div key={theme} className="flex items-center gap-2">
-                <span className="text-[10px] text-text-tertiary w-24 text-right shrink-0 truncate" title={theme}>
-                  {theme}
-                </span>
-                <div className="flex-1 h-2 rounded-sm overflow-hidden bg-border/30">
-                  <div
-                    className={`h-full${count === funnel.tracked - funnel.unwatched ? " rounded-sm" : " rounded-r-sm"}`}
-                    style={{
-                      width: `${(count / (funnel.tracked - funnel.unwatched)) * 100}%`,
-                      background: "var(--series-1)",
-                      opacity: 0.6,
-                    }}
+          {/* Each segment of that bar is now the HEADING of the list of its own
+              members, swatch and all. That replaces a separate key line: a key
+              whose two entries are `6 unwatched` and `5 attributed`, sitting
+              directly above a `6 unwatched` heading and a `5 attributed`
+              heading, is the same fact printed twice. */}
+
+          {/* ── The six, named. ──────────────────────────────────────────────
+              This card's payload was a COUNT with no members. That is the
+              defect ADR-0162 fixed on the plane beside it — an encoding may
+              not also mean "anonymous", which is how `ai` came to sit at the
+              maximum of both axes and be reported as absent — and the count
+              here had exactly the same shape: "watched by nothing" is the one
+              number on this card that names a gap, and it named no phrase.
+              Two of these six reach the board's top-5 table; on today's data
+              `us` and `asian` appear in no text anywhere else on the page.
+
+              Velocity travels with each row because an unwatched phrase that
+              is ACCELERATING is the alarm the whole board exists to raise, and
+              it is not visible from the share alone. It is also why this list
+              and the empty shortlist beside it are both correct at once:
+              `asian` runs at the velocity cap with nothing watching it, and is
+              classified `established` rather than `emerging`, so the shortlist
+              — which filters on status — has nothing to report while this list
+              has six rows. */}
+          {unwatched.length > 0 && (
+            <div className="flex flex-col gap-0.5 mt-0.5">
+              <div className="flex items-baseline gap-2 text-[10px] uppercase tracking-[0.08em] text-text-tertiary">
+                <span className="flex-1 min-w-0">
+                  <span
+                    className="inline-block w-2 h-2 rounded-sm mr-1"
+                    style={{ background: "var(--border)" }}
                   />
-                </div>
-                <span className="num text-[10px] text-text-tertiary w-4 text-right shrink-0">
-                  {count}
+                  <span className="num">{funnel.unwatched}</span> watched by nothing
                 </span>
+                <span className="w-10 text-right shrink-0">share</span>
+                <span className="w-10 text-right shrink-0">veloc.</span>
               </div>
-            ))}
+              {unwatched.map((s) => (
+                <div key={s.phrase} className="flex items-baseline gap-2 text-[10.5px]">
+                  <span
+                    className="flex-1 min-w-0 truncate text-text-secondary"
+                    title={s.phrase}
+                  >
+                    {s.phrase}
+                  </span>
+                  <span className="num w-10 text-right shrink-0 text-text-tertiary">
+                    {sharePct(s.latest.share)}
+                  </span>
+                  {/* An em dash, not 0.00 (ADR-0066). A phrase with too little
+                      history has no velocity; writing zero would place it at
+                      "measured, not moving", which is a different and stronger
+                      claim than the data supports. */}
+                  <span className="num w-10 text-right shrink-0 text-text-tertiary">
+                    {s.latest.velocity === null
+                      ? "—"
+                      : `${s.latest.velocity >= 0 ? "+" : ""}${s.latest.velocity.toFixed(2)}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── The five, by the anchor that already covers them. ─────────── */}
+          <div className="flex flex-col gap-1 mt-1">
+            <div className="text-[10px] uppercase tracking-[0.08em] text-text-tertiary">
+              <span
+                className="inline-block w-2 h-2 rounded-sm mr-1"
+                style={{ background: "var(--series-1)", opacity: 0.75 }}
+              />
+              <span className="num">{funnel.tracked - funnel.unwatched}</span> attributed
+              to an anchor
+            </div>
+            {Object.entries(attributedPhrases)
+              .sort((a, b) => b[1] - a[1])
+              .map(([theme, count]) => (
+                <div key={theme} className="flex items-center gap-2">
+                  <span className="text-[10px] text-text-tertiary w-24 text-right shrink-0 truncate" title={theme}>
+                    {theme}
+                  </span>
+                  <div className="flex-1 h-2 rounded-sm overflow-hidden bg-border/30">
+                    <div
+                      className={`h-full${count === funnel.tracked - funnel.unwatched ? " rounded-sm" : " rounded-r-sm"}`}
+                      style={{
+                        width: `${(count / (funnel.tracked - funnel.unwatched)) * 100}%`,
+                        background: "var(--series-1)",
+                        opacity: 0.6,
+                      }}
+                    />
+                  </div>
+                  <span className="num text-[10px] text-text-tertiary w-4 text-right shrink-0">
+                    {count}
+                  </span>
+                </div>
+              ))}
+          </div>
         </div>
       )}
     </div>

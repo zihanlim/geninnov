@@ -42,7 +42,7 @@ import {
   type NarrativeStatus,
 } from "@/lib/narratives";
 import { useNarrativeSeries, type NarrativeSeriesState } from "@/lib/useNarrativeSeries";
-import { useState, useRef } from "react";
+import { useState, useRef, type ReactNode } from "react";
 
 // Defaults — ThemeTrends' full-width usage, unchanged. A narrower caller (the
 // narrative board's own "share over time" section, stacked beside
@@ -904,6 +904,35 @@ export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
   );
 }
 
+/** One line of `a · b · c`, where the separators are counted from the items
+ *  that actually render.
+ *
+ *  Written because the status line below decided its own trailing separator
+ *  from the status NAME — `sc.status !== "fading" ? " · " : ""` — so a board
+ *  with no fading phrase printed `4 news · 7 established ·`, a separator with
+ *  nothing after it. A separator belongs to the GAP between two items, never
+ *  to one item, and no per-item rule can know whether a later sibling survives
+ *  its own filter. Filtering first and joining is the only form that cannot
+ *  get this wrong.
+ *
+ *  Items are nodes rather than strings so the figures inside them keep their
+ *  `.num` face (ADR-0126) — a `.join(" · ")` over strings would flatten them
+ *  into body type. */
+function StatRun({ items, className = "" }: { items: ReactNode[]; className?: string }) {
+  const shown = items.filter(Boolean);
+  if (shown.length === 0) return null;
+  return (
+    <p className={`m-0 text-[11px] text-text-tertiary leading-[1.5] ${className}`}>
+      {shown.map((item, i) => (
+        <span key={i}>
+          {i > 0 ? " · " : null}
+          {item}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesState }) {
   // The archive corpus and the last-measured-day rule both live in the hook now
   // (see its header). They were inlined here, and `AttentionFunnel` inlined its
@@ -1154,7 +1183,18 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                 <DetectionScatter series={series} xMax={sharedShareMax} colors={topColors} />
               </div>
 
-              <div className="border-l border-border pl-5">
+              {/* `self-stretch` opts this ONE column out of the grid's
+                  `items-start`. The rule is this column's left edge, so with
+                  the column sized to its content it stopped where the Emerging
+                  block ended — ~200px above the scatter beside it — and the
+                  section's two halves came apart at the bottom. Stretching
+                  changes no content position (everything here is still
+                  top-aligned inside the column); it only lets the divider run
+                  the full height, so the space under the shorter column reads
+                  as the column's room rather than as the layout giving up.
+                  `items-start` stays the grid default for the reason its note
+                  above gives. */}
+              <div className="border-l border-border pl-5 self-stretch">
                 <SeriesTable series={top} />
 
                 {dropped > 0 && (
@@ -1213,44 +1253,64 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                       ))}
                     </ul>
                   )}
-                  {funnel ? (
-                    <p className="m-0 mt-1.5 text-[11px] text-text-tertiary leading-[1.55]">
-                      <span className="num">{funnel.tracked}</span> tracked
-                      {funnel.unwatched > 0 ? (
-                        <span>{" · "}{funnel.unwatched} unwatched</span>
-                      ) : null}
-                      {funnel.emerging > 0 ? (
-                        <span>{" · "}{funnel.emerging} emerging</span>
-                      ) : null}
-                      {!funnel.velocityMeasurable ? (
-                        <span> · velocity not yet measurable</span>
-                      ) : null}
-                    </p>
-                  ) : null}
-                  {statusCounts.length > 0 && (
-                    <p className="m-0 mt-1 text-[11px] text-text-tertiary leading-[1.55]">
-                      {statusCounts.map((sc) => (
-                        <span key={sc.status}>
-                          {sc.count > 0 ? (
-                            <span>
-                              <span className="num">{sc.count}</span>{" "}
-                              {sc.status}
-                              {sc.count > 1 && sc.status !== "established" ? "s" : ""}
-                              {sc.status !== "fading" ? " · " : ""}
-                            </span>
-                          ) : null}
-                        </span>
+                  {/* Three lines, not four loose paragraphs with three
+                      different top margins. Each is one PARTITION of the same
+                      tracked set — coverage, then status — and the last pairs
+                      the corpus denominator with the standing caveat, which
+                      never needed a line of its own.
+
+                      The statuses are adjectives, so they do NOT pluralise:
+                      the old rule appended an "s" to every count above one
+                      except `established`, which is how a live board came to
+                      report `4 news` for four phrases whose status is `new`,
+                      and would have said `emergings` and `fadings` given the
+                      chance. */}
+                  <StatRun
+                    className="mt-1.5"
+                    items={
+                      funnel
+                        ? [
+                            <>
+                              <span className="num">{funnel.tracked}</span> tracked
+                            </>,
+                            funnel.unwatched > 0 ? (
+                              <>
+                                <span className="num">{funnel.unwatched}</span> unwatched
+                              </>
+                            ) : null,
+                            funnel.emerging > 0 ? (
+                              <>
+                                <span className="num">{funnel.emerging}</span> emerging
+                              </>
+                            ) : null,
+                            !funnel.velocityMeasurable ? (
+                              <>velocity not yet measurable</>
+                            ) : null,
+                          ]
+                        : []
+                    }
+                  />
+                  <StatRun
+                    className="mt-0.5"
+                    items={statusCounts
+                      .filter((sc) => sc.count > 0)
+                      .map((sc) => (
+                        <>
+                          <span className="num">{sc.count}</span> {sc.status}
+                        </>
                       ))}
-                    </p>
-                  )}
-                  {corpus ? (
-                    <p className="m-0 text-[11px] text-text-tertiary">
-                      ~<span className="num">{corpus}</span> archive headlines/day
-                    </p>
-                  ) : null}
-                  <p className="m-0 text-[11px] text-text-tertiary">
-                    Shadow signal.
-                  </p>
+                  />
+                  <StatRun
+                    className="mt-0.5"
+                    items={[
+                      corpus ? (
+                        <>
+                          ~<span className="num">{corpus}</span> archive headlines/day
+                        </>
+                      ) : null,
+                      <>shadow signal &mdash; sizes nothing</>,
+                    ]}
+                  />
                 </div>
               </div>
             </div>

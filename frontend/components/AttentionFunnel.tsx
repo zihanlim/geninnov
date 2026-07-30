@@ -333,8 +333,20 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
           candidates, they are in `DiscoveredThemes` above, and they are in
           shadow because promotion is an operator's act. The zero measures the
           human gate. */}
+      {/* `mt-auto` on BOTH this paragraph and the attribution block below it,
+          not on one of them. This card is stretched to the narrative board's
+          height by the paired-pane rule in `page.tsx` (`self-stretch` +
+          `lg:h-full`, deliberate: the two must share an edge), and the board is
+          ~260px taller than anything this card has to say. Flexbox splits free
+          space EQUALLY across every auto margin on the main axis, so two
+          absorbers turn one conspicuous 260px hole into two ~130px section
+          gaps, each sitting on a rule that already separated something. One
+          absorber — or none, which left the void trailing under the last bar —
+          reads as a card that ran out; two read as a card with air in it.
+          Below `lg` there is no free space, the autos collapse to zero, and the
+          `pt-3` is the whole separation, which is why it is not `pt-2.5`. */}
       {funnel && basis && (
-        <p className="m-0 mt-3 pt-2.5 border-t border-border text-[11px] text-text-secondary leading-[1.55]">
+        <p className="m-0 mt-auto pt-3 border-t border-border text-[11px] text-text-secondary leading-[1.55]">
           <strong>Not a funnel.</strong> These themes were not derived from the
           phrases beside them &mdash;{" "}
           <span className="num">{basis.prior}</span> predate the tracker. Their
@@ -351,9 +363,22 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
       {/* Attribution graphic: proportional bar (unwatched | attributed) and
           mini bars by theme — the visual answer to "not a funnel". */}
       {funnel && Object.keys(attributedPhrases).length > 0 && (
-        <div className="mt-3 pt-2.5 border-t border-border flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-text-tertiary w-9 text-right shrink-0">
+        /* `mt-auto`: this card sits in a `lg:h-full` grid row beside the
+           narrative board, which is roughly 260px taller, so the card is
+           stretched whatever its content does. Top-aligning every section left
+           that stretch as one trailing void below the last bar — the card read
+           as cut short rather than as full. Anchoring the attribution summary
+           to the bottom spends the same pixels as one gap ABOVE a footer, which
+           is a layout, and the rule already drawn here reads as its top edge. */
+        <div className="mt-auto pt-3 flex flex-col gap-2">
+          {/* Label column is `w-24` — the SAME width as the per-theme labels
+              below — so the total bar and the theme bars it decomposes share
+              one left edge and are read against each other. At `w-9` (36px)
+              the word "attribution" was 16px wider than its own box, and
+              `text-right` spilled the overflow leftward past the card's
+              padding. */}
+          <div className="flex items-center gap-2 pt-2.5 border-t border-border">
+            <span className="text-[10px] uppercase tracking-[0.08em] text-text-tertiary w-24 text-right shrink-0">
               attribution
             </span>
             {/* Proportional bar: unwatched | attributed, one shared axis. */}
@@ -380,13 +405,23 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
                 />
               )}
             </div>
-            <div className="flex gap-2 text-[10px] text-text-tertiary shrink-0">
-              <span title="unwatched">
-                <span className="inline-block w-2 h-2 rounded-sm mr-0.5" style={{ background: "var(--border)" }} />
+            {/* Spacer, matching the count column of the theme rows below, so
+                every bar in this block ends on the same right edge too. */}
+            <span aria-hidden="true" className="w-4 shrink-0" />
+          </div>
+          {/* The key on its own line rather than crowded into the row above.
+              Inline, it was ~150px of `shrink-0` beside a `flex-1` track, so
+              the bar the key describes got barely half the column it had to
+              divide. */}
+          <div className="flex items-center gap-2">
+            <span aria-hidden="true" className="w-24 shrink-0" />
+            <div className="flex-1 flex gap-3 text-[10px] text-text-tertiary">
+              <span>
+                <span className="inline-block w-2 h-2 rounded-sm mr-1" style={{ background: "var(--border)" }} />
                 <span className="num">{funnel.unwatched}</span> unwatched
               </span>
-              <span title="attributed">
-                <span className="inline-block w-2 h-2 rounded-sm mr-0.5" style={{ background: "var(--series-1)", opacity: 0.75 }} />
+              <span>
+                <span className="inline-block w-2 h-2 rounded-sm mr-1" style={{ background: "var(--series-1)", opacity: 0.75 }} />
                 <span className="num">{funnel.tracked - funnel.unwatched}</span> attributed
               </span>
             </div>
@@ -396,7 +431,7 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
             .sort((a, b) => b[1] - a[1])
             .map(([theme, count]) => (
               <div key={theme} className="flex items-center gap-2">
-                <span className="text-[10px] text-text-tertiary w-9 text-right shrink-0 truncate" title={theme}>
+                <span className="text-[10px] text-text-tertiary w-24 text-right shrink-0 truncate" title={theme}>
                   {theme}
                 </span>
                 <div className="flex-1 h-2 rounded-sm overflow-hidden bg-border/30">

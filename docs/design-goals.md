@@ -175,6 +175,15 @@ single fact they came for. Two consequences:
   is too long is **first check whether its content belongs there**; a disclosure
   is what you reach for when it does. Existing `<details>` are untouched — this
   narrows the rule, it does not reverse it.
+
+  **NARROWED AGAIN, later the same day ([ADR-0183](adrs/0183-a-disclosure-that-buys-no-space.md)):
+  one existing `<details>` WAS removed** — `CapUtilisation` on `/mandate` is now
+  a plain card. The exception is bounded and testable: **a disclosure that buys
+  no space is not a disclosure.** That card owns a whole column of a
+  three-column row whose height is set by the two cards beside it, so collapsing
+  it freed nothing and left a stretched empty box. Everywhere a collapsed block
+  actually shortens the page — every other `<details>` in the tree — the rule
+  above is unchanged. Ask what closing it gives back before you reach for one.
 - **Never trap a page in an inner scroller.** Viewport-locked shells
   (`h-screen` + `overflow-y-auto` on the content) photograph well and break
   Ctrl+F, deep links, and long candidate tables. Full-page scroll always wins.

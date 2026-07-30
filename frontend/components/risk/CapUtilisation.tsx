@@ -6,7 +6,6 @@
 
 "use client";
 
-import { DisclosureChevron } from "@/components/DisclosureChevron";
 import {
   CAP_WARN_UTILISATION,
   capBarColor,
@@ -202,47 +201,37 @@ export function CapUtilisation({
     (data?.geo?.length ?? 0);
 
   return (
-    // `open`: the caps are one of the four cards /mandate opens with since it
-    // became a single row, and a card whose whole content is behind a summary bar
-    // spends a quarter of that row on a 58px header. Design goal 7's own 2026-07-30
-    // narrowing is the standing direction here — every card stays visible on
-    // arrival — so this is that rule reaching an existing <details> rather than a
-    // new one being added. The disclosure itself is kept: a reader who wants the
-    // limit board beside it without 19 bars can still close it.
+    // A PLAIN SECTION, not a <details> (owner's direction, ADR-0183).
     //
-    // `open:h-full`, not `h-full`: the mandate row aligns its three cards top AND
-    // bottom (ADR-0181), and this card owns its column again now the risk-metric
-    // tiles have left it (ADR-0182). Gated on `[open]` because a COLLAPSED card
-    // stretched to the row height is a 1600px empty bordered box — the disclosure
-    // would still work and would still look broken.
+    // It was a disclosure, then a disclosure forced `open` by default (ADR-0180),
+    // which is two states where the page only ever wanted one. The argument for
+    // keeping the toggle was that a reader might want the limit board beside it
+    // without nineteen bars — but this card now OWNS the mandate row's last
+    // column, so collapsing it buys no space for anything: the row's height is
+    // set by the two cards beside it and closing this one left a stretched empty
+    // box, which is why it needed an `[open]`-gated `h-full` at all.
     //
-    // The `[&::details-content]` half is not decoration. Chrome wraps a
-    // <details>'s non-summary content in a UA `::details-content` box, so
-    // `flex-col` on the element makes THAT box the flex item and the card body
-    // inside it is not one — measured: the body stopped at 1068px inside a 1546px
-    // slot, and the closing note floated with 400px of blank beneath it. Both
-    // paths are kept: Firefox and Safari have no such box and flex the children
-    // directly, where the rule is simply ignored.
-    <details
-      open
-      className="card mb-6 group open:h-full open:flex open:flex-col open:[&::details-content]:h-full open:[&::details-content]:flex open:[&::details-content]:flex-col"
+    // Deleting the disclosure deletes that whole apparatus: `open:h-full`, the
+    // `open:flex` pair, and the `[&::details-content]` rule that existed only
+    // because Chrome wraps a <details>'s content in a UA box the flex column
+    // cannot reach through. A <section> flexes its own children, so the closing
+    // note pins to the baseline with no browser-specific rule at all.
+    <section
+      className="card mb-6 h-full flex flex-col"
       aria-labelledby="risk-caps-heading"
     >
-      <summary className="card-header cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+      <div className="card-header">
         <h2 id="risk-caps-heading" className="card-title m-0">
           Cap utilisation
         </h2>
-        <span className="flex items-center gap-2">
-          <span className="text-[11px] text-text-tertiary num">
-            {state.status === "ok"
-              ? `${totalRows} limit${totalRows === 1 ? "" : "s"} monitored · ${breaches.length} breach${
-                  breaches.length === 1 ? "" : "es"
-                }`
-              : "Single name · sector · geography"}
-          </span>
-          <DisclosureChevron className="text-text-tertiary" />
+        <span className="text-[11px] text-text-tertiary num">
+          {state.status === "ok"
+            ? `${totalRows} limit${totalRows === 1 ? "" : "s"} monitored · ${breaches.length} breach${
+                breaches.length === 1 ? "" : "es"
+              }`
+            : "Single name · sector · geography"}
         </span>
-      </summary>
+      </div>
 
       {state.status === "loading" ? (
         <SectionSkeleton height={240} />
@@ -294,6 +283,6 @@ export function CapUtilisation({
           </p>
         </div>
       )}
-    </details>
+    </section>
   );
 }

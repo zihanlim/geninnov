@@ -15,6 +15,7 @@ import {
   type AnalyticsState,
   type CapRow,
   type CapUtilisation as CapUtilisationData,
+  type CorrelationSummary,
 } from "@/lib/risk/analytics";
 import {
   breachedCapRows,
@@ -183,80 +184,251 @@ function CapGroupBlock({
   );
 }
 
-function ComplexCap({ sizing }: { sizing: ComplexSizing | null | undefined }) {
+/**
+ * How close the book is to forming a complex, drawn rather than described.
+ *
+ * The scale is a CORRELATION (0…1), not a weight against a cap, so it is not a
+ * `CapBar`: the fill is the book's most correlated held pair, the tick is the
+ * threshold at which two names become one idea, and the caret under the track is
+ * the mean across every pair. Both the value AND the threshold are read from
+ * `book_metrics.correlation_summary` — including `flag_threshold`, which is why
+ * 0.70 is no longer a number written into this component's prose (the drift
+ * ADR-0185 left open).
+ */
+function CorrelationMeter({
+  label,
+  corr,
+  threshold,
+  mean,
+  pairCount,
+}: {
+  label: string;
+  corr: number;
+  threshold: number;
+  mean: number | null;
+  pairCount: number | null;
+}) {
+  const clamp01 = (v: number) => Math.min(Math.max(v, 0), 1);
+  const crossed = corr >= threshold;
+  const fill = clamp01(corr) * 100;
+  const tick = clamp01(threshold) * 100;
+  const meanPct = isNum(mean) ? clamp01(mean) * 100 : null;
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="num text-[12px] text-text-primary truncate" title={label}>
+          {label}
+        </span>
+        <span className="num text-[11px] whitespace-nowrap">
+          <span className={crossed ? "text-warning" : "text-text-primary"}>
+            {corr.toFixed(3)}
+          </span>
+          <span className="text-text-tertiary"> / {threshold.toFixed(2)}</span>
+        </span>
+      </div>
+
+      <div
+        className="relative h-2 mt-1 rounded-sm bg-bg-elevated border border-border overflow-hidden"
+        role="img"
+        aria-label={
+          `The book's most correlated pair, ${label}, at ${corr.toFixed(3)} against a ` +
+          `${threshold.toFixed(2)} threshold — ${crossed ? "at or above it" : "below it"}` +
+          (isNum(mean) ? `, with a mean absolute correlation of ${mean.toFixed(3)}` : "") +
+          "."
+        }
+      >
+        <div
+          className="absolute left-0 top-0 bottom-0 rounded-sm"
+          style={{ width: `${fill}%`, background: crossed ? "var(--warning)" : "var(--accent)" }}
+        />
+        {/* Drawn AFTER the fill so it stays visible once the bar passes it — the
+            one position on this track a reader has to be able to find. */}
+        <div
+          className="absolute top-0 bottom-0 w-px bg-border-strong"
+          style={{ left: `${tick}%` }}
+          aria-hidden="true"
+        />
+      </div>
+
+      {meanPct !== null && (
+        <div className="relative h-[9px]" aria-hidden="true">
+          <div
+            className="absolute top-0 w-px h-[4px] bg-text-tertiary"
+            style={{ left: `${meanPct}%` }}
+          />
+        </div>
+      )}
+
+      <p className="m-0 mt-0.5 text-[10.5px] text-text-tertiary leading-[1.45]">
+        Bar: the book&rsquo;s most correlated held pair. Tick:{" "}
+        <span className="num">{threshold.toFixed(2)}</span>, where names become one
+        idea.
+        {isNum(mean) && (
+          <>
+            {" "}
+            Mark below: mean <span className="num">|ρ| {mean.toFixed(3)}</span>
+            {isNum(pairCount) ? (
+              <>
+                {" "}
+                across <span className="num">{pairCount}</span> pairs
+              </>
+            ) : null}
+            .
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
+function ComplexCap({
+  sizing,
+  summary,
+  singleName,
+}: {
+  sizing: ComplexSizing | null | undefined;
+  summary: CorrelationSummary | null | undefined;
+  singleName: CapRow[] | null | undefined;
+}) {
   const mu = sizing?.mu_signal_equalised ?? null;
   const complexes = mu?.complexes ?? [];
   const skipped = mu?.skipped ?? [];
   const riskMultiple = sizing?.risk_cap_multiple_of_single_name;
+
+  const cap = ENFORCED.complex_pct.value;
+  const weightOf = (asset: string): number | null => {
+    const hit = (singleName ?? []).find((r) => r.key === asset);
+    return hit && isNum(hit.weight) ? hit.weight : null;
+  };
+  /** Σ weight over a complex's members. Null if ANY member is unpriced — a
+   *  partial sum measured against a whole-group cap understates utilisation. */
+  const groupWeight = (members: string[]): number | null => {
+    if (members.length === 0) return null;
+    let total = 0;
+    for (const m of members) {
+      const w = weightOf(m);
+      if (w === null) return null;
+      total += w;
+    }
+    return total;
+  };
+
+  const top = summary?.max_abs_pair ?? null;
+  const threshold = summary?.flag_threshold;
+  const topCorr = top?.corr;
+  const pair =
+    top?.asset_a && top?.asset_b ? [top.asset_a, top.asset_b] : null;
+  const pairWeight = pair ? groupWeight(pair) : null;
 
   return (
     <div className="mt-5 pt-4 border-t border-border">
       <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
         <h3 className="card-title m-0">Correlation complex</h3>
         <span className="text-[11px] text-text-tertiary num">
-          limit {fmtPct(ENFORCED.complex_pct.value)} · {ENFORCED.complex_pct.configKey}
+          limit {fmtPct(cap)} · {ENFORCED.complex_pct.configKey}
         </span>
       </div>
 
-      {!sizing ? (
-        <InlineGap>
-          No <Ident>optimizer_result.complex_sizing</Ident> on this run, so whether any
-          held names were treated as one idea is unrecorded — not the same claim as
-          none having been.
-        </InlineGap>
+      {/* Formed complexes ARE cap rows — same bar, same cap, same reading as the
+          three groups above, because that is exactly what they are: a group of
+          names sharing one allowance. */}
+      {complexes.length > 0 && (
+        <ul className="m-0 p-0 list-none mb-3">
+          {complexes.map((c, i) => {
+            const members = c.members ?? [];
+            const w = groupWeight(members);
+            return (
+              <CapBar
+                key={c.id ?? `complex-${i}`}
+                row={{
+                  key: members.join(" + ") || (c.id ?? "complex"),
+                  weight: w,
+                  cap,
+                  utilisation: w !== null && cap !== 0 ? w / cap : null,
+                  breached: false,
+                } as CapRow}
+              />
+            );
+          })}
+        </ul>
+      )}
+
+      {isNum(topCorr) && isNum(threshold) && pair ? (
+        <CorrelationMeter
+          label={pair.join(" + ")}
+          corr={topCorr}
+          threshold={threshold}
+          mean={isNum(summary?.mean_abs_corr) ? summary!.mean_abs_corr! : null}
+          pairCount={isNum(summary?.pair_count) ? summary!.pair_count! : null}
+        />
       ) : (
-        <>
-          <p className="m-0 text-[12px] text-text-secondary leading-[1.6]">
-            {complexes.length > 0 ? (
+        <InlineGap>
+          No <Ident>book_metrics.correlation_summary</Ident> on this run, so how close
+          the book sits to forming a complex is unmeasured — not the same claim as it
+          being far from one.
+        </InlineGap>
+      )}
+
+      <p className="m-0 mt-2 text-[11.5px] text-text-secondary leading-[1.55]">
+        {complexes.length > 0 ? (
+          <>
+            <span className="num">{complexes.length}</span> complex
+            {complexes.length === 1 ? "" : "es"} formed. Members share one signal and
+            one name&rsquo;s allowance — without it a 5% expected-return gap corners the
+            book on whichever member scores highest (ADR-0116).
+          </>
+        ) : (
+          <>
+            No complex formed, so this cap constrained nothing on this run.
+            {isNum(topCorr) && isNum(threshold) && pair && (
               <>
-                <span className="num">{complexes.length}</span> complex
-                {complexes.length === 1 ? "" : "es"} formed:{" "}
-                <span className="num">
-                  {complexes
-                    .map((c) => (c.members ?? []).join(" + "))
-                    .filter(Boolean)
-                    .join("; ")}
-                </span>
-                . Members above 0.70 correlation are one idea, so they share one signal
-                and one name&rsquo;s allowance — without it a 5% expected-return gap
-                corners the book on whichever member scores highest (ADR-0116).
-              </>
-            ) : (
-              <>
-                No complex formed on this run: no held names were grouped above the 0.70
-                correlation threshold, so this cap constrained nothing. It is listed
-                because the mandate enforces it, not because it bound.
+                {" "}
+                The closest pair sits{" "}
+                <span className="num">{(threshold - topCorr).toFixed(3)}</span> below the
+                line
+                {pairWeight !== null && (
+                  <>
+                    ; <span className="num">{pair.join(" + ")}</span> hold{" "}
+                    <span className="num">{fmtPct(pairWeight)}</span> between them, which
+                    a crossing would measure against{" "}
+                    <span className="num">{fmtPct(cap)}</span> instead of two separate
+                    single-name caps
+                  </>
+                )}
+                .
               </>
             )}
-          </p>
+          </>
+        )}
+      </p>
 
-          {skipped.length > 0 && (
-            <p className="m-0 mt-1.5 text-[11.5px] text-text-tertiary leading-[1.55]">
-              <span className="num">{skipped.length}</span> group
-              {skipped.length === 1 ? "" : "s"} left untouched:{" "}
-              {skipped
-                .map(
-                  (x) =>
-                    `${(x.members ?? []).join(" + ")} — ${x.reason ?? "no reason recorded"}`,
-                )
-                .join("; ")}
-              .
-            </p>
-          )}
-
-          {isNum(riskMultiple) && (
-            <p className="m-0 mt-1.5 text-[11.5px] text-text-tertiary leading-[1.55]">
-              A complex&rsquo;s RISK budget is <span className="num">×{riskMultiple}</span>{" "}
-              one name&rsquo;s. That budget can bind while the capital bars above still
-              show headroom, so slack here is not slack there (ADR-0118).
-            </p>
-          )}
-
-          <p className="m-0 mt-1.5 text-[10.5px] text-text-tertiary leading-[1.5]">
-            Source: <Ident>optimizer_result.complex_sizing</Ident>
-          </p>
-        </>
+      {skipped.length > 0 && (
+        <p className="m-0 mt-1.5 text-[11.5px] text-text-tertiary leading-[1.55]">
+          <span className="num">{skipped.length}</span> group
+          {skipped.length === 1 ? "" : "s"} left untouched:{" "}
+          {skipped
+            .map(
+              (x) =>
+                `${(x.members ?? []).join(" + ")} — ${x.reason ?? "no reason recorded"}`,
+            )
+            .join("; ")}
+          .
+        </p>
       )}
+
+      {isNum(riskMultiple) && (
+        <p className="m-0 mt-1.5 text-[11px] text-text-tertiary leading-[1.5]">
+          A complex&rsquo;s RISK budget is <span className="num">×{riskMultiple}</span> one
+          name&rsquo;s, and can bind while the capital bars above still show headroom
+          (ADR-0118).
+        </p>
+      )}
+
+      <p className="m-0 mt-1.5 text-[10.5px] text-text-tertiary leading-[1.5]">
+        Source: <Ident>optimizer_result.complex_sizing</Ident> ·{" "}
+        <Ident>book_metrics.correlation_summary</Ident>
+      </p>
     </div>
   );
 }
@@ -265,12 +437,15 @@ export function CapUtilisation({
   state,
   complexSizing,
   grossExposure,
+  correlationSummary,
 }: {
   state: AnalyticsState<CapUtilisationData>;
   /** ADR-0116/0118 complex machinery, from the same run's optimizer_result. */
   complexSizing?: ComplexSizing | null;
   /** book_metrics.gross_exposure — what each grouping's rows should add up to. */
   grossExposure?: number | null;
+  /** book_metrics.correlation_summary — the measured distance to a complex. */
+  correlationSummary?: CorrelationSummary | null;
 }) {
   const gap = explainGap(state, {
     column: "cap_utilisation",
@@ -369,7 +544,11 @@ export function CapUtilisation({
                 limit={data.limits?.[group.id]}
               />
             ))}
-            <ComplexCap sizing={complexSizing} />
+            <ComplexCap
+              sizing={complexSizing}
+              summary={correlationSummary}
+              singleName={data.single_name}
+            />
           </div>
 
           <p className="m-0 mt-4 pt-3.5 border-t border-border text-[11px] text-text-tertiary leading-[1.6] max-w-[90ch]">

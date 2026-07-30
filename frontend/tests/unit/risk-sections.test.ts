@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
+  PHASES_WITHOUT_SECTION_NAV,
   PHASE_SECTION_NAV,
   RISK_SECTION_PHASE,
   phaseShows,
@@ -77,11 +78,38 @@ describe("RISK_SECTION_PHASE", () => {
 
   it("navigates to every section the phase renders, so none is unreachable", () => {
     for (const p of PHASE_LIST) {
+      // A phase whose sections are columns of ONE row is exempt: nothing is out
+      // of reach, so a jump strip has nowhere to jump (ADR-0186). The exemption
+      // is a list, not a special case buried in the assertion — a phase that
+      // grows a second screen has to be taken off it deliberately.
+      if (PHASES_WITHOUT_SECTION_NAV.includes(p)) continue;
       const owned = Object.keys(RISK_SECTION_PHASE)
         .filter((id) => phaseShows(p, id))
         .sort();
       const navved = PHASE_SECTION_NAV[p].map((i) => i.id).sort();
       expect(navved, `${p} renders a section its nav never names`).toEqual(owned);
+    }
+  });
+
+  it("gives an exempt phase no nav at all, rather than a partial one", () => {
+    // Half a jump strip is worse than none: it says the sections it omits are
+    // somewhere else.
+    for (const p of PHASES_WITHOUT_SECTION_NAV) {
+      expect(PHASE_SECTION_NAV[p], `${p} is exempt but still renders tabs`).toEqual([]);
+    }
+  });
+
+  it("still renders the exempt phase's sections, and their ids still exist", () => {
+    // The strip went; the anchors did not. /risk hops #mandate and #limits to
+    // this phase as fragments, so dropping the ids would break those links.
+    for (const p of PHASES_WITHOUT_SECTION_NAV) {
+      const owned = Object.keys(RISK_SECTION_PHASE).filter((id) => phaseShows(p, id));
+      expect(owned.length, `${p} is exempt AND renders nothing`).toBeGreaterThan(0);
+      for (const id of owned) {
+        expect(body, `${id} is in the map but never gated in RiskBody`).toContain(
+          `shows("${id}")`,
+        );
+      }
     }
   });
 });

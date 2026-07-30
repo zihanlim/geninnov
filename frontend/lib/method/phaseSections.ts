@@ -62,14 +62,28 @@ export function phaseShows(phase: RiskPhase, id: string): boolean {
 
 /** Section-nav items per phase route. Labels are nouns and carry no figure —
  *  `SectionNav` is asserted to contain no digits. */
+/**
+ * Phases whose sections all render in ONE row, on ONE screen — so a jump strip
+ * has nowhere to jump.
+ *
+ * `mandate` earned this by measurement, not taste. Since ADR-0179/0181 its two
+ * sections are columns of a single row: `#mandate` and `#limits` both begin at
+ * y=474 and both end at y=2062. Two tabs that scroll to the same pixel are two
+ * tabs a reader has to test to learn are the same, and `SectionNav` picks the
+ * FIRST visible id in document order, so "Limits" could never win the active
+ * state either — it was a control that could not be right.
+ *
+ * The section IDS stay. `/risk` still hops `#mandate` and `#limits` here as
+ * fragments, and `llms.txt` and any external deep link resolve against them.
+ * Only the strip is dropped.
+ */
+export const PHASES_WITHOUT_SECTION_NAV: RiskPhase[] = ["mandate"];
+
 export const PHASE_SECTION_NAV: Record<
   RiskPhase,
   Array<{ id: string; label: string }>
 > = {
-  mandate: [
-    { id: "mandate", label: "Mandate" },
-    { id: "limits", label: "Limits" },
-  ],
+  mandate: [],
   risk: [
     { id: "stress", label: "Stress" },
     { id: "var-methods", label: "Value at risk" },

@@ -909,6 +909,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
             // to against gross — a cap only binds on weight it can see.
             complexSizing={data.analyticsRow?.optimizer_result?.complex_sizing ?? null}
             grossExposure={bookMetrics?.gross_exposure ?? null}
+            correlationSummary={bookMetrics?.correlation_summary ?? null}
           />
         </div>
         </>

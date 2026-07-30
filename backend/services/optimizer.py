@@ -259,6 +259,13 @@ class OptimizationResult:
     # None when no cap applied — either the mandate carries none, or there was no
     # prior book to measure against.
     turnover_cap: float | None = None
+    # The share of `realised_turnover` that came from names held YESTERDAY but not
+    # among today's candidates at all — a full exit the solver never had as a
+    # decision variable, so no constraint on `w` could have prevented it. Live
+    # evidence it can dominate: on the 2026-07-30 run this was 34.5 of 94.5 points.
+    # Named separately because folding it into `realised_turnover` silently would
+    # repeat the exact defect this field exists to fix (ADR-0174).
+    forced_exit_turnover: float | None = None
     binding_constraints: list[str] = field(default_factory=list)
     zeroed: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -279,6 +286,7 @@ class OptimizationResult:
             "turnover": self.turnover,
             "realised_turnover": self.realised_turnover,
             "turnover_cap": self.turnover_cap,
+            "forced_exit_turnover": self.forced_exit_turnover,
             "binding_constraints": list(self.binding_constraints),
             "zeroed": list(self.zeroed),
             "warnings": list(self.warnings),
@@ -638,8 +646,37 @@ def optimize(
         if inputs.weights_held is not None
         else None
     )
+    # A name held YESTERDAY that is not among TODAY's candidates at all is not a
+    # decision `w` can make — it is not a variable in this problem, so no constraint
+    # on `w` can see it exiting. `cp.norm1(w - w_held)` over `assets` alone is
+    # exactly "iterating one side's keys", the trap `held_book.weight_delta`'s own
+    # docstring names: it prices every entry and reweight but misses every exit of a
+    # name the candidate screen dropped. Live evidence: the 2026-07-30 run's solver
+    # bound itself to exactly 60.0% over `assets` while five prior holdings it never
+    # saw (TLT/VRT/GDX/PDD/NOC) added another 34.5 points the constraint could not
+    # have prevented — `book_holdings_performance.turnover` measured 94.5% (ADR-0174).
+    #
+    # Fixed by treating those exits as a FORCED, non-negotiable cost paid before the
+    # solver gets a budget: it is not a choice `w` makes, so it is subtracted from
+    # `max_turnover` up front rather than added to the constraint on `w`, which has
+    # no term that could represent it.
+    assets_set = set(assets)
+    forced_exit_turnover = (
+        float(sum(
+            abs(v) for a, v in (inputs.weights_held or {}).items() if a not in assets_set
+        ))
+        if inputs.weights_held is not None
+        else None
+    )
     if c.max_turnover is not None and w_held is not None:
-        cons.append(cp.norm1(w - w_held) <= float(c.max_turnover))
+        remaining_budget = max(0.0, float(c.max_turnover) - (forced_exit_turnover or 0.0))
+        cons.append(cp.norm1(w - w_held) <= remaining_budget)
+        if (forced_exit_turnover or 0.0) > float(c.max_turnover) + 1e-9:
+            warnings.append(
+                f"turnover budget already exhausted by candidate exits alone "
+                f"({forced_exit_turnover:.1%} vs a {float(c.max_turnover):.1%} cap) — "
+                "the solver was left 0% remaining, not a negative budget"
+            )
 
     # ── Objective ────────────────────────────────────────────────────────────────
     if objective == "mean_variance":
@@ -754,9 +791,12 @@ def optimize(
     turnover = float(sum(abs(d) for d in delta.values()))
     # Day-over-day, against yesterday's PUBLISHED book — see the field docstring on
     # OptimizationResult. None (not 0.0) when there was no prior book to measure
-    # from; the two are different claims.
+    # from; the two are different claims. Includes `forced_exit_turnover` so this
+    # matches what `book_holdings_performance.turnover` independently measures over
+    # the FULL union of yesterday's and today's names — not just what `w` could see.
     realised_turnover = (
         float(sum(abs(weights[a] - w_held[i]) for i, a in enumerate(assets)))
+        + (forced_exit_turnover or 0.0)
         if w_held is not None
         else None
     )
@@ -808,8 +848,21 @@ def optimize(
     # itself binds `w - w_held`, so this must test the same quantity it constrains.
     # Testing `turnover` (vs weights0/conviction) here would report the wrong
     # distance as "at cap" whenever the two diverge, which they routinely do.
-    if turnover_cap is not None and realised_turnover is not None and abs(realised_turnover - turnover_cap) < 1e-4:
-        binding.append("turnover at cap")
+    #
+    # Two distinct outcomes, not one: the solver can land exactly on its (possibly
+    # reduced) remaining budget, which is an ordinary bind; or forced exits alone can
+    # already exceed the cap before the solver made a single choice, which is a
+    # breach the turnover constraint had no power to prevent and must not be
+    # reported as merely "at cap" — that phrase claims control that was not there.
+    if turnover_cap is not None and realised_turnover is not None:
+        if abs(realised_turnover - turnover_cap) < 1e-4:
+            binding.append("turnover at cap")
+        elif realised_turnover > turnover_cap + 1e-4:
+            binding.append(
+                f"turnover cap breached by candidate exits alone "
+                f"({(forced_exit_turnover or 0.0):.1%} of a {turnover_cap:.1%} budget, "
+                "before any solver choice)"
+            )
 
     # A name the optimizer declined. ADR-0058: an empty slot owes an explanation, so
     # this travels with the result rather than being inferred from a zero downstream.
@@ -829,6 +882,7 @@ def optimize(
         turnover=turnover,
         realised_turnover=realised_turnover,
         turnover_cap=turnover_cap,
+        forced_exit_turnover=forced_exit_turnover,
         binding_constraints=binding,
         zeroed=zeroed,
         warnings=warnings,

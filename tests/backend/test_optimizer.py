@@ -225,6 +225,64 @@ def test_no_prior_book_means_no_turnover_constraint():
     assert "turnover at cap" not in result.binding_constraints
 
 
+def test_forced_exit_of_a_dropped_candidate_still_counts_as_turnover():
+    """ADR-0174. A name held YESTERDAY that is not among TODAY's candidates is not a
+    variable `w` can represent, so `cp.norm1(w - w_held)` over `assets` alone cannot
+    see it exit — the exact "iterate one side's keys" trap `held_book.weight_delta`'s
+    own docstring warns about, one layer upstream. Live evidence: the 2026-07-30 run's
+    solver reported 60.0% (exactly its cap) while the published book actually turned
+    over 94.5%, because five prior holdings dropped from the candidate screen were
+    invisible to the constraint entirely."""
+    directions = {"A": "long", "B": "long", "C": "long"}
+    # "Z" was held at 20% yesterday and is not in today's candidate set at all.
+    held = {"A": 0.05, "B": 0.05, "Z": 0.20}
+    result = optimize(
+        _inputs(directions, {a: 0.10 for a in directions}, weights_held=held),
+        "mean_variance",
+        OptimizerConstraints(max_turnover=0.50, risk_aversion=0.01),
+    )
+    assert result.feasible, result.reason
+    assert result.forced_exit_turnover == pytest.approx(0.20)
+    # realised_turnover must include the forced exit, not just what `w` could see.
+    solver_visible = result.realised_turnover - result.forced_exit_turnover
+    assert solver_visible >= -1e-9
+    assert result.realised_turnover <= 0.50 + 1e-5, (
+        "the total, including the forced exit, must still respect the cap"
+    )
+    # The solver's own freedom was reduced by exactly the forced exit (0.50 - 0.20 =
+    # 0.30 remaining), not left at the full 0.50 as if "Z" had never existed.
+    assert solver_visible <= 0.30 + 1e-5
+
+
+def test_forced_exits_alone_can_breach_the_cap_and_say_so():
+    """When yesterday's exits from names no longer screened already exceed the
+    mandate's turnover budget, no choice of `w` can fix that — it is a breach the
+    constraint had no power to prevent, and reporting it as "turnover at cap" would
+    claim control that was never there. The solver is left a 0% remaining budget
+    (not a negative one) and freezes every name it does still see."""
+    directions = {"A": "long", "B": "long"}
+    # Y and Z together were 60% of the book yesterday and are gone from the screen;
+    # A continues at 5%. The 10% cap cannot absorb 60% of forced exits.
+    held = {"A": 0.05, "Y": 0.30, "Z": 0.30}
+    result = optimize(
+        _inputs(directions, {a: 0.10 for a in directions}, weights_held=held),
+        "mean_variance",
+        OptimizerConstraints(max_turnover=0.10, risk_aversion=0.01),
+    )
+    assert result.feasible, result.reason
+    assert result.forced_exit_turnover == pytest.approx(0.60)
+    assert result.turnover_cap == pytest.approx(0.10)
+    assert result.realised_turnover > result.turnover_cap
+    assert "turnover at cap" not in result.binding_constraints
+    assert any(
+        "breached by candidate exits alone" in b for b in result.binding_constraints
+    ), result.binding_constraints
+    # Zero remaining budget: A (the one continuing name the solver can still see)
+    # must sit exactly where it was held, and B (never held) gets nothing new.
+    assert result.signed_weights.get("A", 0.0) == pytest.approx(0.05, abs=1e-4)
+    assert result.signed_weights.get("B", 0.0) == pytest.approx(0.0, abs=1e-4)
+
+
 # ─── Correctness against a closed form ───────────────────────────────────────
 
 

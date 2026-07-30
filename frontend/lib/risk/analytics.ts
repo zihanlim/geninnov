@@ -9,6 +9,8 @@
 // is expected to render an explicit unavailable state naming the missing
 // table.column.
 
+import type { OptimizerResult } from "@/lib/book/sizingProvenance";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Persisted shapes
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,6 +135,10 @@ export interface ResearchAnalyticsRow {
    *  knowing this window, and there is no rebalancing or cost. The forward record is
    *  `pick_outcomes` (ADR-0090). */
   weights_backtest?: WeightsBacktestRow | null;
+  /** Migration 047 (ADR-0107), ADR-0173 adds realised_turnover / turnover_cap /
+   *  cov_shrinkage_intensity. Typed in full at lib/book/sizingProvenance.ts — that
+   *  is the single source, imported rather than restated so the two cannot drift. */
+  optimizer_result?: OptimizerResult | null;
 }
 
 /** `research_recommendations.weights_backtest` (migration 048). */

@@ -25,8 +25,11 @@
 //     (`covariance_from_returns` feeds both the optimizer and the VaR/MC path), so
 //     minimising w'Σw under a noisy estimate selects the directions where Σ
 //     understates true covariance — the reported vol is a LOWER BOUND;
-//   * μ is shrunk 50% toward zero (ADR-0033) while Σ is not shrunk at all, so the
-//     return side is treated as untrustworthy and the risk side as exact.
+//   * μ is shrunk 50% toward zero (ADR-0033); Σ is now ALSO shrunk, toward constant
+//     correlation, at a fixed 25% intensity (ADR-0173) — which narrows the bias
+//     above without removing it. `covShrinkageIntensity` carries the ACTUAL figure
+//     for the run being read, because a row predating ADR-0173 was genuinely
+//     unshrunk and this card must not claim otherwise about history it cannot see.
 //
 // No realised statistic may appear on this row — no Sharpe, Sortino, Calmar,
 // drawdown, realised beta, tracking error or IR. See the refusal list in
@@ -94,6 +97,7 @@ export function riskAnswerCards({
   attribution,
   positionCount,
   factorCoverage,
+  covShrinkageIntensity,
 }: {
   scenarioState: AnalyticsState<ScenarioResult[]>;
   correlationState: AnalyticsState<CorrelationPair[]>;
@@ -101,6 +105,9 @@ export function riskAnswerCards({
   positionCount: number;
   /** Positions with a factor regression behind them — the ex-ante model's reach. */
   factorCoverage: number;
+  /** `optimizer_result.cov_shrinkage_intensity`. undefined/null on a run that
+   *  predates ADR-0173 — genuinely unshrunk, not merely unrecorded. */
+  covShrinkageIntensity?: number | null;
 }): AnswerCard[] {
   const scenarios = scenarioState.status === "ok" ? scenarioState.value : null;
   const pairs = correlationState.status === "ok" ? correlationState.value : null;
@@ -219,7 +226,16 @@ export function riskAnswerCards({
   // ── 4. What this cannot see ───────────────────────────────────────────────
   // The card that makes the basis explicit. Every other figure on this page is a
   // pure function of weights and a sample Σ; a reader is owed the reach of that
-  // model and the direction of its bias before they act on the three cards above.
+  // model and the direction of its residual bias before they act on the three
+  // cards above.
+  //
+  // ADR-0173 shrinks Σ toward constant correlation before EITHER this book is
+  // sized or its risk is reported (`optimizer.covariance_from_returns`), which
+  // narrows the bias this card originally disclosed without eliminating it — a
+  // FIXED intensity is not the same claim as "unbiased". `covShrinkageIntensity`
+  // is read from the persisted run rather than assumed, because a run that
+  // predates ADR-0173 genuinely was unshrunk and this card must not claim
+  // otherwise about history it cannot see.
   const uncovered = positionCount - factorCoverage;
   const cannotSee: AnswerCard = {
     label: "What this cannot see",
@@ -245,8 +261,23 @@ export function riskAnswerCards({
           ) : null}
           Every figure here is <strong>ex-ante</strong>: a function of the recommended
           weights and a 252-day sample covariance. The same estimate sized the book, so
-          the reported volatility is a <strong>lower bound</strong> — and μ is shrunk
-          50% while Σ is not shrunk at all.
+          the reported volatility is still a <strong>lower bound</strong>
+          {covShrinkageIntensity === null || covShrinkageIntensity === undefined ? (
+            <>
+              {" "}
+              — and this run predates the covariance shrinkage that narrows that gap,
+              so it applies with its full original severity.
+            </>
+          ) : covShrinkageIntensity > 0 ? (
+            <>
+              , narrowed but not removed: Σ is shrunk {pctOf(covShrinkageIntensity, 0)}{" "}
+              toward constant correlation before either the sizing or this report reads
+              it, while μ is shrunk 50%. A fixed, stated intensity — not a claim of no
+              bias.
+            </>
+          ) : (
+            <> — this run applied no shrinkage, so it holds with its full severity.</>
+          )}
         </>
       ),
   };

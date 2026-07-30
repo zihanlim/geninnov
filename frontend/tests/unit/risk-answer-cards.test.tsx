@@ -63,6 +63,9 @@ const base = {
   attribution: [attrib()],
   positionCount: 9,
   factorCoverage: 9,
+  // A run that HAS shrinkage, so the base fixture matches current behaviour;
+  // individual tests override this to exercise the pre-ADR-0173 (null) branch.
+  covShrinkageIntensity: 0.25 as number | null,
 };
 
 const render = (over: Partial<typeof base> = {}) =>
@@ -164,11 +167,27 @@ describe("what this cannot see", () => {
   it("always discloses that the sizing covariance is the reporting covariance", () => {
     // The bias this card exists for: minimising w'Sigma w under a noisy sample
     // estimate selects the directions where Sigma understates covariance, so the
-    // reported vol is a lower bound. mu is shrunk 50% (ADR-0033); Sigma is not.
+    // reported vol is a lower bound regardless of which branch below fires.
     const out = render();
     expect(out).toContain("The same estimate sized the book");
     expect(out).toContain("lower bound");
-    expect(out).toContain("is not shrunk at all");
+  });
+
+  it("says a pre-ADR-0173 run was genuinely unshrunk, not merely unrecorded", () => {
+    // covShrinkageIntensity undefined/null means the run predates the shrinkage,
+    // and the card must not claim a mitigation that did not exist for it.
+    const out = render({ covShrinkageIntensity: null });
+    expect(out).toContain("predates the covariance shrinkage");
+    expect(out).not.toContain("narrowed but not removed");
+  });
+
+  it("quotes the actual shrinkage intensity when the run applied one", () => {
+    // ADR-0173: shrunk toward constant correlation, not to zero bias — the copy
+    // must say "narrowed", never "removed" or "unbiased".
+    const out = render({ covShrinkageIntensity: 0.25 });
+    expect(out).toContain("Σ is shrunk 25%");
+    expect(out).toContain("narrowed but not removed");
+    expect(out).not.toContain("predates the covariance shrinkage");
   });
 
   it("counts the positions the factor model cannot reach", () => {

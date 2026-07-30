@@ -170,6 +170,10 @@ export const DEFAULT_LIMITS = {
   single_name_pct: ENFORCED.single_name_pct.value,
   sector_pct: ENFORCED.sector_pct.value,
   geo_pct: ENFORCED.geo_pct.value,
+  // ADR-0173. Day-over-day against yesterday's published book — the ONLY limit
+  // on this board that is a claim about the STRATEGY rather than about today's
+  // snapshot. Every row above it is computed from today's weights alone.
+  turnover_pct: ENFORCED.turnover_pct.value,
 };
 
 /**
@@ -190,6 +194,7 @@ export const ENFORCED_LIMIT_KEYS: ReadonlySet<keyof typeof DEFAULT_LIMITS> = new
   "sector_pct",
   "geo_pct",
   "gross_exposure_pct",
+  "turnover_pct",
 ] as const);
 
 export function isEnforcedLimit(key: keyof typeof DEFAULT_LIMITS): boolean {
@@ -214,6 +219,7 @@ const CONFIG_KEYS: Record<keyof typeof DEFAULT_LIMITS, string> = {
   single_name_pct: ENFORCED.single_name_pct.configKey,
   sector_pct: ENFORCED.sector_pct.configKey,
   geo_pct: ENFORCED.geo_pct.configKey,
+  turnover_pct: ENFORCED.turnover_pct.configKey,
 };
 
 function resolveLimit(
@@ -315,6 +321,16 @@ export interface LimitBoardInputs {
    * because it reads as a risk check that passed.
    */
   returnSessions?: number | null;
+  /**
+   * Day-over-day distance from yesterday's published book, signed weights, summed
+   * absolute (`research_recommendations.optimizer_result.realised_turnover`).
+   *
+   * NOT gated by `returnSessions` / MIN_SESSIONS below — it needs no history at
+   * all, the same reason cap/exposure rows do not: it is a function of today's
+   * weights and yesterday's, not a statistical estimate over a return series.
+   * null (not 0) when no prior book existed to measure against (ADR-0173).
+   */
+  realisedTurnover?: number | null;
 }
 
 /**
@@ -477,6 +493,17 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         unit: "pct_weight",
         limitSource: "scoring_config",
         note: "Largest geography book weight vs the cap. From cap_utilisation.geo.",
+      },
+    },
+    {
+      value: isNum(inp.realisedTurnover) ? inp.realisedTurnover : null,
+      limitKey: "turnover_pct",
+      def: {
+        key: "turnover",
+        label: "Turnover (day-over-day)",
+        unit: "pct_of_capital",
+        limitSource: "scoring_config",
+        note: "Distance from yesterday's published book, signed weights summed absolute. From optimizer_result.realised_turnover. Null (not 0) with no prior book — the FIRST run this cap was live for.",
       },
     },
   ];

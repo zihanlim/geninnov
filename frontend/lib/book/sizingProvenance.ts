@@ -22,7 +22,20 @@ export interface OptimizerResult {
   gross?: number | null;
   net?: number | null;
   cash?: number | null;
+  /** Intra-run: this solve vs the CONVICTION book (weights0) — what the optimizer
+   *  changed relative to its own starting point. Not day-over-day churn. */
   turnover?: number | null;
+  /** Day-over-day: this solve vs YESTERDAY'S PUBLISHED book. null means no prior
+   *  book existed to measure against — a different claim from 0 (ADR-0173). */
+  realised_turnover?: number | null;
+  /** The mandate's max_turnover as it applied to THIS solve, echoed so a reader
+   *  never has to cross-reference the mandate to know whether it was constrained.
+   *  null when no cap applied (no prior book, even if the mandate carries one). */
+  turnover_cap?: number | null;
+  /** Fixed shrinkage intensity applied to the sample covariance before EITHER the
+   *  solve or the VaR/MC report read it — see optimizer.COV_SHRINKAGE_INTENSITY.
+   *  Reported so a shrunk Sigma does not read as an unshrunk one (ADR-0173). */
+  cov_shrinkage_intensity?: number | null;
   binding_constraints?: string[];
   zeroed?: string[];
   warnings?: string[];

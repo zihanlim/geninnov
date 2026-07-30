@@ -49,6 +49,7 @@ describe("the mandate agrees across the language boundary", () => {
     expect(ENFORCED.gross_exposure_pct.value).toBe(pyNum("MAX_GROSS"));
     expect(ENFORCED.complex_pct.value).toBe(pyNum("MAX_COMPLEX_WEIGHT"));
     expect(ENFORCED.crowded_multiplier.value).toBe(pyNum("CROWDED_CAP_MULTIPLIER"));
+    expect(ENFORCED.turnover_pct.value).toBe(pyNum("MAX_TURNOVER"));
   });
 
   it("mirrors the book shape and the lens vocabulary", () => {

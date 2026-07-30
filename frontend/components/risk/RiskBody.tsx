@@ -133,7 +133,9 @@ const PHASE_COPY: Record<RiskPhase, { title: string; lede: string }> = {
 const ANALYTICS_COLUMNS =
   // picks: the published book, so this page can check that the positions it computes
   // risk on are the names the book actually holds (ADR-0040).
-  "run_date, lens, scenario_results, correlation_pairs, cap_utilisation, book_metrics, picks, sanctions_exposure, positioning_crowding, risk_decomposition, monte_carlo_var, var_forecast, weights_backtest";
+  // optimizer_result: ADR-0173's realised_turnover / turnover_cap for the mandate
+  // limit board, and cov_shrinkage_intensity for the Risk answer row's disclosure.
+  "run_date, lens, scenario_results, correlation_pairs, cap_utilisation, book_metrics, picks, sanctions_exposure, positioning_crowding, risk_decomposition, monte_carlo_var, var_forecast, weights_backtest, optimizer_result";
 const BASE_COLUMNS = "run_date, lens";
 const RISK_COLUMNS =
   "run_date, updated_at, total_capital, var_95, cvar_95, sharpe, beta, concentration_hhi, numeric_derivations, var_95_historical, es_95_historical, sortino, max_drawdown, calmar, tracking_error, information_ratio, benchmark_comparison, conditional_vol";
@@ -599,9 +601,13 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       // them, instead of stamping OK on a number the metrics tile refuses to
       // publish.
       returnSessions: data.returns.length,
+      // ADR-0173. null (not 0) when no prior book existed to measure against —
+      // needs NO history, unlike VaR/CVaR/beta above: it is a function of today's
+      // weights and yesterday's, not a statistical estimate.
+      realisedTurnover: data.analyticsRow?.optimizer_result?.realised_turnover ?? null,
     };
     return buildLimitBoard(inputs);
-  }, [cfgMap, data.risk, data.returns.length, bookMetrics, drawdown, capData]);
+  }, [cfgMap, data.risk, data.returns.length, bookMetrics, drawdown, capData, data.analyticsRow]);
 
   const limitCoverageNote = useMemo(() => {
     const missing: string[] = [];
@@ -818,6 +824,8 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
             factorCoverage: data.positions.filter(
               (p) => p.asset && factorMap[p.asset],
             ).length,
+            covShrinkageIntensity:
+              data.analyticsRow?.optimizer_result?.cov_shrinkage_intensity ?? null,
           })}
         />
       )}

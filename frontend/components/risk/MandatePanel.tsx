@@ -121,6 +121,13 @@ const ENFORCED_ROWS: Row[] = [
     value: ENFORCED.crowded_multiplier.value,
     configKey: ENFORCED.crowded_multiplier.configKey,
   },
+  {
+    key: "turnover_pct",
+    label: "Turnover (day-over-day)",
+    note: "Distance from yesterday's published book. Applies only when a prior book exists — a first day is not a breach of stillness.",
+    value: ENFORCED.turnover_pct.value,
+    configKey: ENFORCED.turnover_pct.configKey,
+  },
 ];
 
 const MONITORED_ROWS: Row[] = [

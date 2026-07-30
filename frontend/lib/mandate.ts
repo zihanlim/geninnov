@@ -77,6 +77,15 @@ export const ENFORCED = {
   complex_pct: enforced(0.2, "max_complex_weight"),
   /** A crowded name's single-name cap is halved (ADR-0110). Only ever tightens. */
   crowded_multiplier: enforced(0.5, "crowded_cap_multiplier"),
+  /**
+   * Day-over-day, against yesterday's PUBLISHED book — distinct from the intra-run
+   * figure (this same solve vs the conviction book), which nothing constrains.
+   * ADR-0107 carried this field since the optimizer shipped and nothing ever set
+   * it; ADR-0173 is the first value. A first cut, not a fitted optimum — chosen
+   * above the typical 30–58% band so an ordinary day is unaffected, and well below
+   * the 72–200% band the two worst observed days sat in.
+   */
+  turnover_pct: enforced(0.6, "max_turnover"),
 } as const;
 
 /**

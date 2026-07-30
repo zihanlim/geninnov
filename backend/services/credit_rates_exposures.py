@@ -360,7 +360,6 @@ def assemble_row(
     lookback_days: int,
     total: dict,
     marginal: dict | None,
-    factors_unavailable: bool,
 ) -> dict:
     """Combine total and marginal into a row for credit_rates_exposures.
 
@@ -370,6 +369,13 @@ def assemble_row(
       - otherwise -> 'measured' (even when FF5 unavailable; partial success)
 
     Betas are stored as float or None; NaN inputs become None on the wire.
+
+    There is deliberately NO `factors_unavailable` argument. The partial-
+    success case — FF5+UMD missing, so the total variant is stored and the
+    marginal columns are NULL — is fully expressed by `marginal=None` plus
+    `status='measured'`, which is exactly what spec section 6 asks for. A
+    flag that no column records and no branch reads is one a caller can
+    pass wrongly and never find out.
     """
     n_obs = total.get("n_obs", 0)
     if n_obs < lookback_days:

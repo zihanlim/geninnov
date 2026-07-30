@@ -407,7 +407,6 @@ def test_assemble_row_measured_when_total_and_marginal_both_succeed():
                "r2_ust10": 0.85, "r2_ig": 0.3, "r2_qual": 0.2, "n_obs": 252},
         marginal={"beta_ust10": -10.0, "beta_ig": -1.5, "beta_qual": -0.8,
                   "r2_marginal": 0.7, "n_obs": 252},
-        factors_unavailable=False,
     )
     assert row["asset"] == "TLT"
     assert row["run_date"] == "2026-01-15"
@@ -426,7 +425,6 @@ def test_assemble_row_status_insufficient_history_below_floor():
                "r2_ust10": float("nan"), "r2_ig": float("nan"), "r2_qual": float("nan"),
                "n_obs": 100},
         marginal=None,
-        factors_unavailable=False,
     )
     assert row["status"] == "insufficient_history"
     # NULL never 0.0
@@ -444,7 +442,6 @@ def test_assemble_row_status_measured_with_partial_ff5_failure():
         total={"beta_ust10": -7.5, "beta_ig": -2.0, "beta_qual": -1.5,
                "r2_ust10": 0.6, "r2_ig": 0.4, "r2_qual": 0.3, "n_obs": 252},
         marginal=None,  # partial: marginal columns will be NULL
-        factors_unavailable=True,
     )
     assert row["status"] == "measured"
     assert row["total_beta_ust10"] == -7.5
@@ -464,7 +461,6 @@ def test_assemble_row_status_degenerate_on_singular_matrix():
                "r2_ust10": float("nan"), "r2_ig": float("nan"), "r2_qual": float("nan"),
                "n_obs": 252},
         marginal=None,
-        factors_unavailable=False,
     )
     # 252 obs but every leg has near-zero variance (degenerate) → 'degenerate'.
     assert row["status"] == "degenerate"

@@ -80,17 +80,25 @@ function CapBar({ row }: { row: CapRow }) {
   const color = capBarColor({ ...row, utilisation: util ?? 0, breached });
 
   return (
-    // Two columns on a phone, three on a desktop. At 375px the three-column form
-    // needs 96 + 120 + ~110 + gaps ≈ 350px inside a 260px card body, and the card
-    // clips overflow rather than scrolling it — so the utilisation percentage, the
-    // one number this panel exists to show, was invisible on mobile with nothing to
-    // suggest it had been cut. Below `sm` the bar drops to its own full-width row.
-    <li className="grid grid-cols-[minmax(72px,1fr)_auto] sm:grid-cols-[minmax(96px,1fr)_minmax(120px,3fr)_auto] items-center gap-x-3 gap-y-1 py-1.5">
+    // Two columns on a phone, three on a desktop, two again at `xl`. At 375px the
+    // three-column form needs 96 + 120 + ~110 + gaps ≈ 350px inside a 260px card
+    // body, and the card clips overflow rather than scrolling it — so the
+    // utilisation percentage, the one number this panel exists to show, was
+    // invisible on mobile with nothing to suggest it had been cut. Below `sm` the
+    // bar drops to its own full-width row.
+    //
+    // It drops BACK at `xl` for the same arithmetic at the other end: that is the
+    // breakpoint where /mandate puts this card in the last of four columns
+    // (1336 content − 3×24 gap, /4 = 316px, ~280px of card body), which is under
+    // the 350px the three-column form needs. The gate is the layout's breakpoint,
+    // not a guess — the card is full width below `xl` and a quarter of it above,
+    // so each form is used exactly where its width exists.
+    <li className="grid grid-cols-[minmax(72px,1fr)_auto] sm:grid-cols-[minmax(96px,1fr)_minmax(120px,3fr)_auto] xl:grid-cols-[minmax(72px,1fr)_auto] items-center gap-x-3 gap-y-1 py-1.5">
       <span className="num text-[12px] text-text-primary truncate order-1" title={row.key}>
         {row.key || "—"}
       </span>
 
-      <div className="flex items-center gap-1.5 order-3 col-span-2 sm:order-2 sm:col-span-1">
+      <div className="flex items-center gap-1.5 order-3 col-span-2 sm:order-2 sm:col-span-1 xl:order-3 xl:col-span-2">
         <div
           className="relative h-2 flex-1 rounded-sm bg-bg-elevated border border-border overflow-hidden"
           role="img"
@@ -123,7 +131,7 @@ function CapBar({ row }: { row: CapRow }) {
         )}
       </div>
 
-      <span className="num text-[11px] text-right whitespace-nowrap order-2 sm:order-3">
+      <span className="num text-[11px] text-right whitespace-nowrap order-2 sm:order-3 xl:order-2">
         <span className={breached ? "text-short" : warning ? "text-warning" : "text-text-primary"}>
           {fmtPct(row.weight)}
         </span>

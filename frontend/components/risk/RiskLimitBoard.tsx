@@ -6,6 +6,23 @@
 // source is shown so a limit is never mistaken for a hard rule when it is a
 // convention. A row with no measurable value renders "—" and status "unknown",
 // never a green "ok" it did not earn.
+//
+// WHY THIS IS A LIST AND NOT A TABLE (2026-07-30)
+// ----------------------------------------------
+// It was a six-column table with `min-w-[820px]`, which was correct while this
+// card owned the full canvas. The owner's mandate-row direction gives it ONE
+// QUARTER of it — 1336 content − 3×24 gap, /4 = 316px, ~280px inside the card —
+// so the table could only have survived as a 3× horizontal scroller inside a
+// 280px window. That is the trade RiskBody's own pairing notes call goal 7's
+// failure rather than a fix for it.
+//
+// So the row is stacked instead: label + status, then value / limit / headroom
+// as a three-up micro-grid, then the utilisation bar, then the note and the
+// limit's source. Nothing was dropped — every column of the old table is still
+// on screen, and each figure keeps a word naming what it is, because a bare
+// "62.4% 100% +37.6%" with no column heading above it is three naked numbers
+// (goal 1). One rendering, at every width: the same list serves the quarter
+// column here and a phone, where the 820px table was already scrolling.
 
 "use client";
 import {
@@ -110,57 +127,38 @@ export function RiskLimitBoard({
             bind.
           </p>
 
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[13px] min-w-[820px]">
-              <caption className="sr-only">
-                Risk limits with current value, limit, utilisation, headroom and
-                status, sorted with breaches first.
-              </caption>
-              <thead>
-                <tr>
-                  {["Limit", "Value", "Limit", "Utilisation", "Headroom", "Status"].map(
-                    (h, i) => (
-                      <th
-                        // Keyed by index, not by label: column 1 is the limit's NAME
-                        // and column 3 is its THRESHOLD, and both are headed "Limit",
-                        // so `key={h}` collided and React warned on every render.
-                        key={`${h}-${i}`}
-                        scope="col"
-                        className={`px-[16px] py-[7px] text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-y border-border-strong bg-bg-elevated ${
-                          i === 0 ? "text-left" : i === 3 ? "text-left" : "text-right"
-                        }`}
-                      >
-                        {h}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => {
-                  const meta = LIMIT_STATUS_CHIPS[row.status];
-                  return (
-                    <tr key={row.key} className="hover:bg-bg-elevated align-top">
-                      <td className="px-[16px] py-3 border-b border-border">
-                        <div className="text-text-primary font-medium">{row.label}</div>
-                        <div className="text-[11px] text-text-tertiary leading-[1.5] mt-0.5 max-w-[42ch]">
-                          {row.note}
-                        </div>
-                        <span
-                          className="inline-block mt-1 text-[10px] uppercase tracking-[0.08em] text-text-tertiary"
-                          title={
-                            row.limitSource === "scoring_config"
-                              ? "Limit read live from scoring_config"
-                              : "No scoring_config row — house default"
-                          }
-                        >
-                          {row.limitSource === "scoring_config"
-                            ? "limit · scoring_config"
-                            : "limit · house default"}
-                        </span>
-                      </td>
-                      <td
-                        className={`px-[14px] py-3 border-b border-border text-right num ${
+          <ul
+            className="m-0 mt-3 list-none p-0 border-t border-border-strong"
+            aria-label="Risk limits with current value, limit, utilisation, headroom and status, sorted with breaches first."
+          >
+            {rows.map((row) => {
+              const meta = LIMIT_STATUS_CHIPS[row.status];
+              return (
+                <li
+                  key={row.key}
+                  className="px-[18px] py-3 border-b border-border hover:bg-bg-elevated"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-[13px] text-text-primary font-medium">
+                      {row.label}
+                    </span>
+                    <span className={`badge ${meta.cls} shrink-0`}>{meta.label}</span>
+                  </div>
+
+                  {/* Value / Limit / Headroom, each under the word that names it.
+                      These were three headed columns; a heading per figure is what
+                      replaces the <thead> a list does not have. */}
+                  {/* max-w so the three stay a cluster below `xl`, where this card
+                      is full width — at 960px an uncapped 3-col grid puts 320px
+                      between a value and the word naming it. It does not bind in
+                      the 280px column, which is the width it was shaped for. */}
+                  <dl className="m-0 mt-2 grid grid-cols-3 gap-x-2 max-w-[520px]">
+                    <div>
+                      <dt className="text-[9.5px] uppercase tracking-[0.08em] text-text-tertiary">
+                        Value
+                      </dt>
+                      <dd
+                        className={`m-0 num text-[12px] ${
                           row.status === "breached"
                             ? "text-warning-deep"
                             : row.status === "near"
@@ -171,25 +169,25 @@ export function RiskLimitBoard({
                         }`}
                       >
                         {fmtByUnit(row.value, row.unit)}
-                      </td>
-                      <td className="px-[14px] py-3 border-b border-border text-right num text-text-secondary">
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[9.5px] uppercase tracking-[0.08em] text-text-tertiary">
+                        Limit
+                      </dt>
+                      <dd className="m-0 num text-[12px] text-text-secondary">
                         {fmtByUnit(row.limit, row.unit)}
-                      </td>
-                      <td className="px-[14px] py-3 border-b border-border">
-                        <div className="flex items-center gap-2">
-                          <UtilBar row={row} />
-                          <span className="num text-[11px] text-text-tertiary whitespace-nowrap w-[42px] text-right">
-                            {row.utilisation === null
-                              ? "—"
-                              : `${(row.utilisation * 100).toFixed(0)}%`}
-                          </span>
-                        </div>
-                      </td>
-                      <td
-                        className={`px-[14px] py-3 border-b border-border text-right num ${
+                      </dd>
+                    </div>
+                    <div className="text-right">
+                      <dt className="text-[9.5px] uppercase tracking-[0.08em] text-text-tertiary">
+                        Headroom
+                      </dt>
+                      <dd
+                        className={`m-0 num text-[12px] ${
                           // Not the signed-value exemption: headroom < 0 IS the
                           // breach, restated as a negative number, so it must match
-                          // the value cell above. Leaving it crimson would put two
+                          // the value above. Leaving it crimson would put two
                           // different hues on one breached row.
                           row.headroom === null
                             ? "text-text-tertiary"
@@ -199,16 +197,38 @@ export function RiskLimitBoard({
                         }`}
                       >
                         {fmtHeadroom(row.headroom, row.unit)}
-                      </td>
-                      <td className="px-[16px] py-3 border-b border-border text-right">
-                        <span className={`badge ${meta.cls}`}>{meta.label}</span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div className="mt-2 flex items-center gap-2">
+                    <UtilBar row={row} />
+                    <span className="num text-[11px] text-text-tertiary whitespace-nowrap w-[42px] text-right">
+                      {row.utilisation === null
+                        ? "—"
+                        : `${(row.utilisation * 100).toFixed(0)}%`}
+                    </span>
+                  </div>
+
+                  <p className="m-0 mt-2 text-[11px] text-text-tertiary leading-[1.5] max-w-[80ch]">
+                    {row.note}
+                  </p>
+                  <span
+                    className="inline-block mt-1 text-[10px] uppercase tracking-[0.08em] text-text-tertiary"
+                    title={
+                      row.limitSource === "scoring_config"
+                        ? "Limit read live from scoring_config"
+                        : "No scoring_config row — house default"
+                    }
+                  >
+                    {row.limitSource === "scoring_config"
+                      ? "limit · scoring_config"
+                      : "limit · house default"}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
 
           <p className="m-0 px-[18px] py-3 text-[11px] text-text-tertiary leading-[1.6] max-w-[92ch]">
             {coverageNote ? <>{coverageNote} </> : null}

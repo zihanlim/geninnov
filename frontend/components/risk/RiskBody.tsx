@@ -840,27 +840,62 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           carried id="mandate" and the section nav tabs by section id, so being
           nested left the tab strip unable to name the one thing on this page a
           reader most often arrives asking for. */}
-      {shows("mandate") && (
-      <section aria-label="The mandate">
-        <MandatePanel config={data.config} lens={data.lens} />
-      </section>
+      {/* Phase 1 as ONE row (owner's direction, 2026-07-30): the mandate across
+          half the canvas, and the two READINGS of that mandate at a quarter each.
+          The limit board and the cap bars both answer "is the published book
+          inside it?", so at `xl` they sit beside the constraint they measure
+          rather than ~1100px below it — which is the same argument that put the
+          mandate panel above them in the first place, applied one axis further.
+
+          Both cells are gated on `shows()` and both ids belong to the `mandate`
+          phase, so this row is whole or absent; it is not a place a section can
+          leak into another phase. The trade the owner accepted with it: the two
+          section-nav tabs (#mandate, #limits) now start at the same y, so
+          "Limits" will rarely win SectionNav's active state — the anchors still
+          resolve, the highlight is what degrades.
+
+          Column arithmetic, so the two narrow cards were shaped against a real
+          width rather than a hope: max-w-[1400px] − 64 lg gutter = 1336 content,
+          less 3×24 gap, /4 = 316px per column (~280 inside a card). That is why
+          RiskLimitBoard is no longer an 820px table and why CapUtilisation's bar
+          row drops back to its two-column form at `xl`. Below `xl` nothing
+          changes: one column, full width, as before. */}
+      {(shows("mandate") || shows("limits")) && (
+      <div className="grid xl:grid-cols-4 gap-6 mb-6 items-start [&>*]:min-w-0 [&_.card]:mb-0">
+        {shows("mandate") && (
+        <section aria-label="The mandate" className="xl:col-span-2">
+          <MandatePanel config={data.config} lens={data.lens} />
+        </section>
+        )}
+
+        {shows("limits") && (
+        <>
+        <section id="limits" aria-label="Limits">
+          <RiskLimitBoard
+            loading={data.loading}
+            rows={limitBoard}
+            coverageNote={limitCoverageNote}
+          />
+        </section>
+
+        {/* Cap headroom, moved from the risk page (ADR-0172). "Am I inside my limits"
+            is the MANDATE's question, and the board beside it states the limits this
+            measures against — separating a constraint from the reading of that
+            constraint is what made the caps unreadable before MandatePanel existed. */}
+        <div>
+          <CapUtilisation state={capState} />
+        </div>
+        </>
+        )}
+      </div>
       )}
 
       {shows("limits") && (
-      <section id="limits" aria-label="Limits and headline risk">
-      <RiskLimitBoard
-        loading={data.loading}
-        rows={limitBoard}
-        coverageNote={limitCoverageNote}
-      />
-
-      {/* Cap headroom, moved from the risk page (ADR-0172). "Am I inside my limits"
-          is the MANDATE's question, and the board directly above states the limits
-          this measures against — separating a constraint from the reading of that
-          constraint is what made the caps unreadable before MandatePanel existed. */}
-      <CapUtilisation state={capState} />
-
-      {/* 2 — Risk metrics (always rendered) + prior-run deltas. */}
+      <section aria-label="Headline risk metrics">
+      {/* 2 — Risk metrics (always rendered) + prior-run deltas. Full width, below
+          the row: five tiles across four 316px columns would wrap to one tile per
+          line, and the grid's whole point is that the five headline figures read
+          across in one line. */}
       <RiskMetricsGrid
         loading={data.loading}
         risk={data.risk}
@@ -870,10 +905,6 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         prevRunDate={prevRunDate}
         sessions={data.returns.length}
       />
-
-
-
-      {/* 3 — Per-position risk attribution: "which trade to cut". */}
       </section>
       )}
 

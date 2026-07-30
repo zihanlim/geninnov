@@ -123,6 +123,54 @@ def _fetch_series(sb: Client, series_id: str, lo: date, hi: date) -> list[dict]:
     return rows
 
 
+def keep_requested_series(
+    fred_df: "pd.DataFrame", series_ids: tuple[str, ...]
+) -> tuple["pd.DataFrame", list[str]]:
+    """Narrow a wide FRED frame to `trading_date` plus the requested series.
+
+    `MacroFetcher.fetch_fred_batch()` returns the FULL `FRED_SERIES` catalog
+    merged into one wide frame regardless of what was asked for, and
+    `persist_daily_history` writes every column it is handed. Without this,
+    `--series DGS10` would quietly write all twelve series — a backfill that
+    does more than its own flag says it does.
+
+    Returns the narrowed frame and the requested ids that FRED had no column
+    for, so the caller can report them rather than silently dropping them.
+    """
+    keep = [c for c in series_ids if c in fred_df.columns]
+    missing = [c for c in series_ids if c not in fred_df.columns]
+    return fred_df[["trading_date"] + keep], missing
+
+
+def mask_already_published(
+    fred_df: "pd.DataFrame",
+    series_ids: tuple[str, ...],
+    existing_by_series: dict[str, set],
+) -> "pd.DataFrame":
+    """NULL out cells whose (series, date) already has a published row.
+
+    This is the `--overwrite` guard, and it is a MASK rather than a branch on
+    purpose: `persist_daily_history` upserts unconditionally, so the only way
+    to leave an existing row untouched is to hand it nothing for that cell.
+    Nulling lets that function's own `pd.isna` skip do the work instead of
+    reimplementing the skip here, where the two could drift.
+
+    The rule this enforces is the repo's, not this script's: existing rows are
+    the PUBLISHED record produced by live runs, and a backfill must not quietly
+    restate them (`backfill_regime.py` carries the same guard for the same
+    reason).
+    """
+    out = fred_df.copy()
+    for series_id in series_ids:
+        if series_id not in out.columns:
+            continue
+        already = existing_by_series.get(series_id, set())
+        if not already:
+            continue
+        out.loc[out["trading_date"].isin(already), series_id] = pd.NA
+    return out
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     args = _parse_args(argv)
 
@@ -164,29 +212,13 @@ def main(argv: Optional[list[str]] = None) -> int:
               "(check FRED_API_KEY).")
         return 0
 
-    # Keep only the requested series' columns. fetch_fred_batch() returns the
-    # FULL FRED_SERIES catalog merged into one wide frame; persist_daily_history
-    # would otherwise write every one of those columns, not just the three
-    # this script was asked for.
-    keep_cols = ["trading_date"] + [c for c in series_ids if c in fred_df.columns]
-    missing = [c for c in series_ids if c not in fred_df.columns]
+    fred_df, missing = keep_requested_series(fred_df, series_ids)
     if missing:
         print(f"[backfill_macro] WARNING: FRED returned no data at all for {missing} "
               f"in [{lo}, {hi}] — not in FRED_SERIES, or the request failed.")
-    fred_df = fred_df[keep_cols]
 
     if not args.overwrite:
-        # Null out cells for dates that already have a row for that series so
-        # persist_daily_history's own pd.isna skip — not a copy of it — leaves
-        # the published value untouched.
-        for series_id in series_ids:
-            if series_id not in fred_df.columns:
-                continue
-            already = existing_by_series.get(series_id, set())
-            if not already:
-                continue
-            mask = fred_df["trading_date"].isin(already)
-            fred_df.loc[mask, series_id] = pd.NA
+        fred_df = mask_already_published(fred_df, series_ids, existing_by_series)
 
     written = mf.persist_daily_history(fred_df, pd.DataFrame())
     print(f"[backfill_macro] wrote {written} row(s) across {len(series_ids)} series in [{lo}, {hi}].")

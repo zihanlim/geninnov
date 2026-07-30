@@ -396,3 +396,76 @@ def test_short_history_returns_nan_not_an_exception():
     assert out["n_obs"] == 100
     for k in ("beta_ust10", "beta_ig", "beta_qual", "r2_marginal"):
         assert np.isnan(out[k])
+
+
+def test_assemble_row_measured_when_total_and_marginal_both_succeed():
+    row = cre.assemble_row(
+        asset="TLT",
+        run_date=date(2026, 1, 15),
+        lookback_days=252,
+        total={"beta_ust10": -17.0, "beta_ig": -2.0, "beta_qual": -1.0,
+               "r2_ust10": 0.85, "r2_ig": 0.3, "r2_qual": 0.2, "n_obs": 252},
+        marginal={"beta_ust10": -10.0, "beta_ig": -1.5, "beta_qual": -0.8,
+                  "r2_marginal": 0.7, "n_obs": 252},
+        factors_unavailable=False,
+    )
+    assert row["asset"] == "TLT"
+    assert row["run_date"] == "2026-01-15"
+    assert row["lookback_days"] == 252
+    assert row["status"] == "measured"
+    assert row["total_beta_ust10"] == -17.0
+    assert row["marginal_beta_ust10"] == -10.0
+
+
+def test_assemble_row_status_insufficient_history_below_floor():
+    row = cre.assemble_row(
+        asset="NEW",
+        run_date=date(2026, 1, 15),
+        lookback_days=252,
+        total={"beta_ust10": float("nan"), "beta_ig": float("nan"), "beta_qual": float("nan"),
+               "r2_ust10": float("nan"), "r2_ig": float("nan"), "r2_qual": float("nan"),
+               "n_obs": 100},
+        marginal=None,
+        factors_unavailable=False,
+    )
+    assert row["status"] == "insufficient_history"
+    # NULL never 0.0
+    assert row["total_beta_ust10"] is None
+    assert row["marginal_beta_ust10"] is None
+
+
+def test_assemble_row_status_measured_with_partial_ff5_failure():
+    """FF5 unavailable: marginal columns NULL, status still 'measured' —
+    partial success recorded, not discarded."""
+    row = cre.assemble_row(
+        asset="LQD",
+        run_date=date(2026, 1, 15),
+        lookback_days=252,
+        total={"beta_ust10": -7.5, "beta_ig": -2.0, "beta_qual": -1.5,
+               "r2_ust10": 0.6, "r2_ig": 0.4, "r2_qual": 0.3, "n_obs": 252},
+        marginal=None,  # partial: marginal columns will be NULL
+        factors_unavailable=True,
+    )
+    assert row["status"] == "measured"
+    assert row["total_beta_ust10"] == -7.5
+    assert row["total_beta_ig"] == -2.0
+    assert row["marginal_beta_ust10"] is None
+    assert row["marginal_beta_ig"] is None
+    assert row["marginal_beta_qual"] is None
+    assert row["marginal_r2"] is None
+
+
+def test_assemble_row_status_degenerate_on_singular_matrix():
+    row = cre.assemble_row(
+        asset="CONST",
+        run_date=date(2026, 1, 15),
+        lookback_days=252,
+        total={"beta_ust10": float("nan"), "beta_ig": float("nan"), "beta_qual": float("nan"),
+               "r2_ust10": float("nan"), "r2_ig": float("nan"), "r2_qual": float("nan"),
+               "n_obs": 252},
+        marginal=None,
+        factors_unavailable=False,
+    )
+    # 252 obs but every leg has near-zero variance (degenerate) → 'degenerate'.
+    assert row["status"] == "degenerate"
+    assert row["total_beta_ust10"] is None

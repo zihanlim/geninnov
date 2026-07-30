@@ -351,3 +351,57 @@ def compute_marginal_betas(
     out["beta_qual"] = result["d_qual"]
     out["r2_marginal"] = result["r_squared"]
     return out
+
+
+def assemble_row(
+    *,
+    asset: str,
+    run_date: date,
+    lookback_days: int,
+    total: dict,
+    marginal: dict | None,
+    factors_unavailable: bool,
+) -> dict:
+    """Combine total and marginal into a row for credit_rates_exposures.
+
+    Status rules (spec §6):
+      - n_obs < lookback_days -> 'insufficient_history'
+      - any leg's design matrix is rank-deficient (NaN r^2) -> 'degenerate'
+      - otherwise -> 'measured' (even when FF5 unavailable; partial success)
+
+    Betas are stored as float or None; NaN inputs become None on the wire.
+    """
+    n_obs = total.get("n_obs", 0)
+    if n_obs < lookback_days:
+        status = "insufficient_history"
+    elif any(
+        v != v  # NaN check
+        for v in (
+            total.get("r2_ust10"), total.get("r2_ig"), total.get("r2_qual"),
+        )
+    ):
+        status = "degenerate"
+    else:
+        status = "measured"
+
+    def _f(v):
+        return None if v is None or (isinstance(v, float) and v != v) else float(v)
+
+    row = {
+        "asset": asset,
+        "run_date": run_date.isoformat(),
+        "lookback_days": lookback_days,
+        "total_beta_ust10": _f(total.get("beta_ust10")),
+        "total_beta_ig":    _f(total.get("beta_ig")),
+        "total_beta_qual":  _f(total.get("beta_qual")),
+        "total_r2_ust10":   _f(total.get("r2_ust10")),
+        "total_r2_ig":      _f(total.get("r2_ig")),
+        "total_r2_qual":    _f(total.get("r2_qual")),
+        "marginal_beta_ust10": _f(marginal.get("beta_ust10")) if marginal else None,
+        "marginal_beta_ig":    _f(marginal.get("beta_ig"))    if marginal else None,
+        "marginal_beta_qual":  _f(marginal.get("beta_qual"))  if marginal else None,
+        "marginal_r2":         _f(marginal.get("r2_marginal")) if marginal else None,
+        "n_obs": int(n_obs),
+        "status": status,
+    }
+    return row

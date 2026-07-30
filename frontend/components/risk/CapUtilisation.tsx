@@ -209,6 +209,12 @@ export function CapUtilisation({
     // arrival — so this is that rule reaching an existing <details> rather than a
     // new one being added. The disclosure itself is kept: a reader who wants the
     // limit board beside it without 19 bars can still close it.
+    //
+    // It carries NO `h-full`, unlike the other two cards in that row (ADR-0181):
+    // it does not own its column, it shares it with the five risk-metric tiles
+    // stacked beneath it. The COLUMN is what aligns to the row's height; this
+    // card is content-height at the top of it, and a stretched card here would
+    // push the tiles out of the row entirely.
     <details open className="card mb-6 group" aria-labelledby="risk-caps-heading">
       <summary className="card-header cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
         <h2 id="risk-caps-heading" className="card-title m-0">

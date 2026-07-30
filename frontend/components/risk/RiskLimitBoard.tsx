@@ -111,7 +111,15 @@ export function RiskLimitBoard({
   const anyConfig = rows.some((r) => r.limitSource === "scoring_config");
 
   return (
-    <section className="card mb-6" aria-labelledby="risk-limits-heading">
+    // h-full + flex column: the mandate row aligns its three cards top and
+    // bottom (ADR-0181), so this card fills the cell it is given, and the
+    // closing note is pinned to the BOTTOM of it rather than floating wherever
+    // the eleven rows happen to end. Outside that row the cell is content-height
+    // and both are no-ops.
+    <section
+      className="card mb-6 h-full flex flex-col"
+      aria-labelledby="risk-limits-heading"
+    >
       <div className="card-header">
         <h2 id="risk-limits-heading" className="card-title m-0">
           Risk-limit board
@@ -238,7 +246,7 @@ export function RiskLimitBoard({
             })}
           </ul>
 
-          <p className="m-0 px-[18px] py-3 text-[11px] text-text-tertiary leading-[1.6] max-w-[92ch]">
+          <p className="m-0 mt-auto px-[18px] py-3 text-[11px] text-text-tertiary leading-[1.6] max-w-[92ch]">
             {coverageNote ? <>{coverageNote} </> : null}
             {anyConfig ? (
               <>

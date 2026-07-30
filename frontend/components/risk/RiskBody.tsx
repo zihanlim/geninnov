@@ -859,9 +859,19 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           less 3×24 gap, /4 = 316px per column (~280 inside a card). That is why
           RiskLimitBoard is no longer an 820px table and why CapUtilisation's bar
           row drops back to its two-column form at `xl`. Below `xl` nothing
-          changes: one column, full width, as before. */}
+          changes: one column, full width, as before.
+
+          No `items-start` on the grid, unlike every other paired grid on this
+          page: the three cards align top AND bottom, so the cells stretch to the
+          tallest. Each card carries its own `h-full` to fill the cell it was
+          given — a stretched WRAPPER with a content-height card inside it aligns
+          nothing. CapUtilisation's is `open:h-full`, because stretching a
+          COLLAPSED disclosure would draw a 1600px empty box (ADR-0181).
+          (This note sits ABOVE the guard, not between `&& (` and the element:
+          that position expects an expression and a JSX comment there is a syntax
+          error — the same trap the var-methods block below records.) */}
       {(shows("mandate") || shows("limits")) && (
-      <div className="grid xl:grid-cols-4 gap-6 mb-6 items-start [&>*]:min-w-0 [&_.card]:mb-0">
+      <div className="grid xl:grid-cols-4 gap-6 mb-6 [&>*]:min-w-0 [&_.card]:mb-0">
         {shows("mandate") && (
         <section aria-label="The mandate" className="xl:col-span-2">
           <MandatePanel config={data.config} lens={data.lens} />
@@ -878,34 +888,39 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           />
         </section>
 
-        {/* Cap headroom, moved from the risk page (ADR-0172). "Am I inside my limits"
-            is the MANDATE's question, and the board beside it states the limits this
-            measures against — separating a constraint from the reading of that
-            constraint is what made the caps unreadable before MandatePanel existed. */}
-        <div>
+        {/* The last column is a STACK, not a card: cap headroom, then the five
+            risk-metric tiles one below another (owner's direction). Both are
+            readings of the same book against the same mandate, and at 316px the
+            tiles' own `md:grid-cols-5` would have given each one 52px, so the
+            column is the only place they can go five-deep instead of five-across.
+
+            This column is also what the other two align to — it is the tallest of
+            the three, so `h-full` on the mandate and the board stretches them to
+            its bottom edge. The caps card deliberately carries no `h-full`: it
+            shares this column rather than owning it. */}
+        <div className="flex flex-col gap-6">
+          {/* Cap headroom, moved from the risk page (ADR-0172). "Am I inside my limits"
+              is the MANDATE's question, and the board beside it states the limits this
+              measures against — separating a constraint from the reading of that
+              constraint is what made the caps unreadable before MandatePanel existed. */}
           <CapUtilisation state={capState} />
+
+          {/* 2 — Risk metrics (always rendered) + prior-run deltas. */}
+          <section aria-label="Headline risk metrics">
+            <RiskMetricsGrid
+              loading={data.loading}
+              risk={data.risk}
+              failure={data.riskFailure}
+              orderingNote={data.riskOrderingNote}
+              deltas={riskDeltas}
+              prevRunDate={prevRunDate}
+              sessions={data.returns.length}
+            />
+          </section>
         </div>
         </>
         )}
       </div>
-      )}
-
-      {shows("limits") && (
-      <section aria-label="Headline risk metrics">
-      {/* 2 — Risk metrics (always rendered) + prior-run deltas. Full width, below
-          the row: five tiles across four 316px columns would wrap to one tile per
-          line, and the grid's whole point is that the five headline figures read
-          across in one line. */}
-      <RiskMetricsGrid
-        loading={data.loading}
-        risk={data.risk}
-        failure={data.riskFailure}
-        orderingNote={data.riskOrderingNote}
-        deltas={riskDeltas}
-        prevRunDate={prevRunDate}
-        sessions={data.returns.length}
-      />
-      </section>
       )}
 
 

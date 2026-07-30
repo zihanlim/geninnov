@@ -228,7 +228,11 @@ export function MandatePanel({
     present.has(configKey) ? "scoring_config" : "code_default";
 
   return (
-    <section className="card mb-6" id="mandate">
+    // h-full so this card fills its cell when the mandate row stretches its three
+    // cards to one height (ADR-0181). It is the tallest of the three today, so
+    // this is a no-op — until the day it is not, which is exactly when a card
+    // that ignores its cell stops aligning.
+    <section className="card mb-6 h-full flex flex-col" id="mandate">
       <div className="card-header">
         <span className="card-title">The mandate</span>
         <span className="text-[11px] text-text-tertiary">
@@ -236,7 +240,7 @@ export function MandatePanel({
         </span>
       </div>
 
-      <div className="card-body">
+      <div className="card-body flex-1 flex flex-col">
         <p className="m-0 mb-4 text-[12.5px] text-text-secondary leading-[1.6] max-w-[92ch]">
           Every figure on <span className="num">/book</span> is produced under these
           constraints. The board below measures the published book against them.
@@ -300,7 +304,7 @@ export function MandatePanel({
         </div>
 
         {/* Design goal 5, stated rather than implied by the absence of a button. */}
-        <p className="m-0 mt-4 pt-3 border-t border-border text-[11.5px] text-text-tertiary leading-[1.6] max-w-[92ch]">
+        <p className="m-0 mt-auto pt-3 border-t border-border text-[11.5px] text-text-tertiary leading-[1.6] max-w-[92ch]">
           <span className="font-semibold text-text-secondary">
             This page cannot change any of these.
           </span>{" "}

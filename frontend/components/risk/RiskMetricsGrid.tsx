@@ -350,8 +350,18 @@ export function RiskMetricsGrid({
     };
   };
 
+  // Two up on a phone, five ACROSS from `md`, and one per line again at `xl`.
+  // The last step is the layout, not a preference: from `xl` these five sit under
+  // the cap-utilisation card in the mandate row's last column (ADR-0181), 318px
+  // wide, where `grid-cols-5` would give each tile 52px. Same DOM at every width,
+  // so no figure on this page is rendered twice.
+  //
+  // No `mb-6` on the section either: its spacing is the parent stack's `gap-6` at
+  // every width, and a margin as well would double it.
+  const gridCls = "grid grid-cols-2 md:grid-cols-5 xl:grid-cols-1 gap-3";
+
   return (
-    <section className="mb-6" aria-labelledby="risk-metrics-heading">
+    <section aria-labelledby="risk-metrics-heading">
       <div className="flex items-baseline justify-between gap-4 mb-3 flex-wrap">
         <h2 id="risk-metrics-heading" className="card-title m-0">
           Risk metrics
@@ -368,14 +378,14 @@ export function RiskMetricsGrid({
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className={gridCls}>
           {Array.from({ length: METRICS.length }).map((_, i) => (
             <div key={i} className="skeleton h-[104px]" aria-hidden="true" />
           ))}
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className={gridCls}>
             {METRICS.map((def) => {
               const derivation = buildDerivation(def);
               const value =

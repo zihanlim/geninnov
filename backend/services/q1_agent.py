@@ -83,6 +83,14 @@ from .optimizer import (
     portfolio_point,
 )
 from .cost_model import estimate_portfolio_costs
+# Relative, like every sibling above. A bare `from services.editorial_vetoes ...`
+# resolves under pytest (which puts backend/ on sys.path) and fails in the nightly
+# run, which imports this as `backend.services.q1_agent`.
+from .editorial_vetoes import (
+    apply_vetoes,
+    fetch_active_vetoes,
+    funnel_stage,
+)
 from .monte_carlo import monte_carlo_var
 from .var_forecast import compute_var_forecast
 
@@ -466,6 +474,7 @@ class Q1State(dict):
     verified: bool
     retries: int
     input_snapshot: dict[str, Any]             # frozen L0-L4 at run time
+    editorial_vetoes: list                     # ADR-0171 human refusals in force
     error: str | None
     # v2: book construction
     book_metrics_summary: str               # formatted string of computed factor tilts
@@ -803,6 +812,39 @@ def screen_candidates(state: Q1State) -> Q1State:
             seen[key] = c
 
     candidate_pool = list(seen.values())
+
+    # ── Editorial veto (ADR-0171) ────────────────────────────────────────────
+    # The one filter in this node that is not a rule. Every gate above encodes a
+    # measurable property — lens membership, regression history, HypeScore — and
+    # none of them can say "the attention on this name is one news cycle, not a
+    # signal". That is a judgement about whether a measurement means what it looks
+    # like it means, and it enters here with a reason and an author attached.
+    #
+    # BEFORE the cap-30, deliberately: a refused name must not occupy a slot in the
+    # LLM's context window. Applying it after the truncation would let a veto push a
+    # good candidate out of the pool by proxy.
+    #
+    # AFTER the rule-based filters, equally deliberately: the rules decide what is
+    # ELIGIBLE and the human then declines from that set, so the funnel reads as
+    # eligibility-then-judgement. It also keeps the veto count honest — vetoing a
+    # name the R^2 filter had already dropped would report attrition twice.
+    # Read from state, NOT fetched here. `run_q1_agent` does the Supabase read and
+    # this node stays pure — which is how `test_q1_agent.py` exercises it, with a
+    # state carrying no credentials at all. A network call in here made the node
+    # untestable and would have coupled the cap-30 ordering tests to a live table.
+    #
+    # Absent key => no vetoes, same degradation as an unreachable table: a book
+    # still publishes. The cost is that a veto can fail to apply silently, which is
+    # why `fetch_active_vetoes` prints the table name when it cannot read it.
+    vetoes = state.get("editorial_vetoes") or []
+    veto_result = apply_vetoes(candidate_pool, vetoes)
+    candidate_pool = veto_result.kept
+    for c, v in veto_result.dropped:
+        print(
+            f"[screen_candidates] editorial veto — {c.get('asset')} "
+            f"{c.get('direction')}: {v.reason} ({v.decided_by})"
+        )
+
     # Order by CONVICTION, not attention (ADR-0046). This list is truncated to 30 for
     # the LLM context window, so whatever it is sorted by decides what gets thrown
     # away — and sorting by hype_score meant the cap re-imposed the attention gate one
@@ -873,10 +915,15 @@ def screen_candidates(state: Q1State) -> Q1State:
         },
         {
             "stage": "dedupe (asset, direction)",
-            "remaining": len(candidate_pool),
+            "remaining": len(candidate_pool) + veto_result.n_dropped,
             "removed": deduped,
             "reason": "Same asset reached via multiple themes; highest HypeScore kept.",
         },
+        # Rendered even when it removed nothing — see `funnel_stage`. A funnel that
+        # lists only the stages which fired implies the others do not exist, and a
+        # reader should be able to see that editorial judgment was available and
+        # declined to act.
+        funnel_stage(veto_result, len(vetoes)),
         {
             "stage": "candidate pool (cap 30)",
             "remaining": len(state["candidates"]),
@@ -3915,10 +3962,19 @@ def run_q1_agent(
         for c, _, _ in candidates
     ]
 
+    # Editorial vetoes (ADR-0171) — read HERE rather than inside screen_candidates,
+    # so that node stays pure and testable with no credentials. Degrades to an empty
+    # list on any read failure: an unreachable veto table must not stop a book being
+    # published, and the opposite default would empty the book on a network blip.
+    editorial_vetoes = fetch_active_vetoes(supabase_url, supabase_key, run_date)
+    if editorial_vetoes:
+        print(f"[run_q1_agent] {len(editorial_vetoes)} editorial veto(es) in force.")
+
     state: Q1State = Q1State({
         "run_date": run_date.isoformat(),
         "supabase_url": supabase_url,
         "supabase_key": supabase_key,
+        "editorial_vetoes": editorial_vetoes,
         "macro_snapshot": macro_snapshot,
         "regime": regime_dict,
         "candidates": candidate_dicts,

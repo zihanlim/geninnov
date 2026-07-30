@@ -82,21 +82,40 @@ export function Card({ label, figure, consequence, source, href, tone = "default
         <div className="text-[12px] text-text-secondary leading-[1.5]">
           {consequence}
         </div>
-        <div className="text-[10px] text-text-tertiary num mt-0.5">{source}</div>
+        {/* [overflow-wrap:anywhere] because these are table.column identifiers with
+            no spaces to break on, and `.card` CLIPS rather than scrolls: measured at
+            1440, `research_recommendations.book_metrics.gross_exposure` is 312px
+            inside a 288px body, so its tail was cut with nothing to say it had been.
+            The same remedy `Ident` in SectionGap.tsx already carries, for the same
+            reason — a source a reader cannot finish reading is not a source (goal 1).
+            Predates the column narrowing; that just made it wider of the mark. */}
+        <div className="text-[10px] text-text-tertiary num mt-0.5 [overflow-wrap:anywhere]">
+          {source}
+        </div>
       </div>
     </div>
   );
 }
 
 /**
- * The four-up grid. Four is not arbitrary: it is one screen-width of cards at
- * `wide`, and a fifth would push the evidence below it further down — which is the
- * defect this component exists to remove, reintroduced by its own growth.
+ * The four-up grid. Four is not arbitrary: it is one screen-width of cards, and a
+ * fifth would push the evidence below it further down — which is the defect this
+ * component exists to remove, reintroduced by its own growth.
+ *
+ * `xl:grid-cols-4 gap-6`, and BOTH halves of that are the evidence grid's, not
+ * this component's own taste (ADR-0187). An answer row sits directly above the
+ * cards that justify it, so at any viewport where the two disagree the reader
+ * sees two rulers: measured at 1440 the answer cards ran 76/403 · 415/742 ·
+ * 754/1081 · 1093/1420 against a mandate row of 76/736 · 760/1078 · 1102/1420 —
+ * every internal boundary 6–9px out, with only the page gutters agreeing. The gap
+ * was 12px against 24, and the four-up gate was `wide` (1424) against the row's
+ * `xl` (1280), so between those two widths the page also drew four evidence
+ * columns under two answer columns.
  */
 export default function AnswerRow({ cards }: { cards: AnswerCard[] }) {
   if (cards.length === 0) return null;
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 wide:grid-cols-4 gap-3 mb-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
       {cards.map((c) => (
         <Card key={c.label} {...c} />
       ))}

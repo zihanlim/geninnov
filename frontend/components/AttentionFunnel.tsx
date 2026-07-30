@@ -44,7 +44,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { attentionFunnel } from "@/lib/narratives";
-import { useNarrativeSeries } from "@/lib/useNarrativeSeries";
+import { useNarrativeSeries, type NarrativeSeriesState } from "@/lib/useNarrativeSeries";
 
 /** Live values of `themes.promotion_basis` (migration 051), counted rather than
  *  assumed. `measured_discovery` is the only value that claims the system found
@@ -104,7 +104,7 @@ function ObservedBar({
   );
 }
 
-export default function AttentionFunnel() {
+export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesState }) {
   const [basis, setBasis] = useState<ThemeBasis | null>(null);
 
   // The corpus and the day rule are the hook's, not this component's. They were
@@ -113,7 +113,10 @@ export default function AttentionFunnel() {
   // "velocity not measurable yet" beneath a chart reading 76 with velocities to
   // +2.27. Aligning the two call sites by hand fixed that instance and left the
   // next one available; the choice lives in one place now.
-  const { series, asOfFallback } = useNarrativeSeries();
+  // See NarrativeTrends: the page may own the read so `/` queries
+  // narrative_signals once instead of twice.
+  const own = useNarrativeSeries(30, { skip: shared !== undefined });
+  const { series, asOfFallback } = shared ?? own;
   const funnel = series ? attentionFunnel(series) : null;
 
   useEffect(() => {

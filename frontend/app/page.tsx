@@ -12,6 +12,9 @@ import TerminalPane from "@/components/home/TerminalPane";
 import DiscoveredThemes from "@/components/DiscoveredThemes";
 import AttentionFunnel from "@/components/AttentionFunnel";
 import NarrativeTrends from "@/components/NarrativeTrends";
+import AnswerRow from "@/components/AnswerRow";
+import { alphaAnswerCards } from "@/components/home/AlphaAnswerCards";
+import { useNarrativeSeries } from "@/lib/useNarrativeSeries";
 import ThemeTrends from "@/components/ThemeTrends";
 import PredictionMarkets from "@/components/PredictionMarkets";
 import MarketBar from "@/components/MarketBar";
@@ -173,6 +176,13 @@ function ConvictionPageInner() {
   const [topHeadlineByTheme, setTopHeadlineByTheme] = useState<
     Record<string, NewsItem>
   >({});
+  // One read of narrative_signals for the whole page. `NarrativeTrends` and
+  // `AttentionFunnel` each called `useNarrativeSeries` themselves, so this route
+  // queried the table TWICE and the two cards could still land on different rows —
+  // ADR-0168 unified which corpus they ask for and left the double read in place.
+  // The answer row needs the same series, which would have made it three.
+  const narratives = useNarrativeSeries();
+
   const [abstainThreshold, setAbstainThreshold] = useState<number>(
     DEFAULT_EDGE_WEIGHTS.abstainThreshold
   );
@@ -514,6 +524,20 @@ function ConvictionPageInner() {
         </div>
       ) : (
         <>
+          {/* The four questions phase 2 asks, before the 420 numerals below them
+              (ADR-0172). ABOVE MarketBar and the ribbon deliberately: those are
+              context a reader glances at, and this is the page's own answer. */}
+          <AnswerRow
+            cards={alphaAnswerCards({
+              themes,
+              series: narratives.series,
+              seriesError: narratives.error,
+              aboveThreshold: loading ? null : counts.aboveThreshold,
+              totalThemes: loading ? null : counts.total,
+              hypeGate: counts.threshold,
+            })}
+          />
+
           <div className="shrink-0">
             <MarketBar />
           </div>
@@ -904,7 +928,7 @@ function ConvictionPageInner() {
             bare
             className="lg:col-span-2 lg:col-start-1 lg:row-start-4 lg:row-span-1 lg:h-full"
           >
-            <NarrativeTrends />
+            <NarrativeTrends shared={narratives} />
           </TerminalPane>
 
           <TerminalPane
@@ -913,7 +937,7 @@ function ConvictionPageInner() {
             bare
             className="lg:col-start-3 lg:row-start-4 lg:row-span-1 lg:h-full"
           >
-            <AttentionFunnel />
+            <AttentionFunnel shared={narratives} />
           </TerminalPane>
 
           <TerminalPane

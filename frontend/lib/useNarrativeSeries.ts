@@ -58,7 +58,18 @@ export interface NarrativeSeriesState {
   error: string | null;
 }
 
-export function useNarrativeSeries(days = 30): NarrativeSeriesState {
+/**
+ * `skip` exists because a React hook cannot be called conditionally, so a component
+ * that accepts a caller-supplied series still RUNS this hook — and therefore still
+ * fетched. Measured on `/` after lifting the read to the page: requests to
+ * narrative_signals went UP, because the page's call was added to the two the board
+ * and the funnel were already making rather than replacing them. The flag is what
+ * actually removes a read; the prop alone only chooses which result is displayed.
+ */
+export function useNarrativeSeries(
+  days = 30,
+  { skip = false }: { skip?: boolean } = {},
+): NarrativeSeriesState {
   const [state, setState] = useState<NarrativeSeriesState>({
     series: null,
     asOfFallback: null,
@@ -66,6 +77,7 @@ export function useNarrativeSeries(days = 30): NarrativeSeriesState {
   });
 
   useEffect(() => {
+    if (skip) return;
     let live = true;
     fetchNarratives(days, "archive").then(({ rows, error }) => {
       if (!live) return;
@@ -85,7 +97,7 @@ export function useNarrativeSeries(days = 30): NarrativeSeriesState {
     return () => {
       live = false;
     };
-  }, [days]);
+  }, [days, skip]);
 
   return state;
 }

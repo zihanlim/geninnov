@@ -41,7 +41,7 @@ import {
   type NarrativeSeries,
   type NarrativeStatus,
 } from "@/lib/narratives";
-import { useNarrativeSeries } from "@/lib/useNarrativeSeries";
+import { useNarrativeSeries, type NarrativeSeriesState } from "@/lib/useNarrativeSeries";
 import { useState, useRef } from "react";
 
 const WIDTH = 720;
@@ -784,12 +784,20 @@ export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
   );
 }
 
-export default function NarrativeTrends() {
+export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesState }) {
   // The archive corpus and the last-measured-day rule both live in the hook now
   // (see its header). They were inlined here, and `AttentionFunnel` inlined its
   // own copy with a different corpus argument — which is how the two cards came
   // to disagree on the same screen. One choice, one place.
-  const { series, asOfFallback, error } = useNarrativeSeries();
+  //
+  // `shared` goes one step further, because one CHOICE in one place still left two
+  // READS: this board and the funnel each called the hook, so `/` fetched
+  // narrative_signals twice and the two could still land on different rows. When the
+  // page owns the read it passes it down, and the hook below is the fallback for any
+  // other mount. The conditional call is safe: `shared` never changes identity
+  // within a mount, so the hook order is stable.
+  const own = useNarrativeSeries(30, { skip: shared !== undefined });
+  const { series, asOfFallback, error } = shared ?? own;
 
   const top = series ? topSeries(series, SERIES_COLORS.length) : [];
   const emerging = series ? emergingUncovered(series) : [];

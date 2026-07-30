@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -63,8 +63,65 @@ function formatTime(iso: string | null): string {
   });
 }
 
+/** Width of the fade at each end, in px. Wide enough to read as "continues"
+ *  rather than as a rendering artefact; narrow enough not to swallow a label. */
+const FADE = 24;
+
+/**
+ * The mask for a horizontally scrollable strip: fade whichever end has content
+ * beyond it, and return null when nothing is clipped.
+ *
+ * Pure and exported for test — the interesting cases are the boundaries (no
+ * overflow at all, scrolled hard to either end) and they are the ones a browser
+ * check is least likely to catch by eye.
+ */
+export function scrollFadeMask(
+  scrollLeft: number,
+  clientWidth: number,
+  scrollWidth: number,
+): string | null {
+  // 1px of slack: fractional layout widths mean scrollWidth can exceed
+  // clientWidth by a sub-pixel on a strip that visually fits, which would fade
+  // an edge with nothing behind it.
+  const overflowing = scrollWidth - clientWidth > 1;
+  if (!overflowing) return null;
+  const atStart = scrollLeft <= 1;
+  const atEnd = scrollLeft + clientWidth >= scrollWidth - 1;
+  if (atStart && atEnd) return null;
+  const from = atStart ? "black 0" : `transparent 0, black ${FADE}px`;
+  const to = atEnd ? "black 100%" : `black calc(100% - ${FADE}px), transparent 100%`;
+  return `linear-gradient(to right, ${from}, ${to})`;
+}
+
 export default function TopBar() {
   const pathname = usePathname();
+  const navRef = useRef<HTMLElement | null>(null);
+  const [fadeMask, setFadeMask] = useState<string | null>(null);
+
+  const syncFades = useCallback(() => {
+    const el = navRef.current;
+    if (!el) return;
+    setFadeMask(scrollFadeMask(el.scrollLeft, el.clientWidth, el.scrollWidth));
+  }, []);
+
+  // Measured after mount, never during render: it needs layout, and computing it
+  // on the server would produce a mask the client immediately disagrees with —
+  // the hydration-mismatch class this file already documents for clock values.
+  //
+  // ResizeObserver rather than a window resize listener: the nav is a grid track
+  // whose width changes when the TOOL CLUSTER beside it grows — `Next run 21:30
+  // UTC` appears at md, and the run-state cell widens once data loads — with no
+  // window resize involved at all.
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    syncFades();
+    const ro = new ResizeObserver(syncFades);
+    ro.observe(el);
+    for (const child of Array.from(el.children)) ro.observe(child);
+    return () => ro.disconnect();
+  }, [syncFades]);
+
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   // The run the book currently reflects, for the LiveNewsDock caveat. Read from
   // `pipeline_runs.run_date` and NOT from the `themes.updated_at` already fetched
@@ -164,6 +221,8 @@ export default function TopBar() {
           row still cannot show all four at 375, but nothing overlaps and nothing is
           painted off the left edge. */}
       <nav
+        ref={navRef}
+        onScroll={syncFades}
         // NOT `justify-self-center` (on the grid item): that sizes the item to its
         // CONTENT and centres it in the track, so it can never shrink -- `min-w-0`
         // and `overflow-x-auto` were both inert and the items overflowed the track
@@ -174,6 +233,23 @@ export default function TopBar() {
         // it left-aligned and scrollable.
         className="flex wide:hidden gap-0.5 sm:gap-1 items-center min-w-0 overflow-x-auto scrollbar-none"
         aria-label="Primary"
+        // The strip became six items at ADR-0170 and stops fitting well before
+        // `wide`: at 900px two phases sit outside the track with nothing to say
+        // so, which reads as a nav that HAS four items rather than one showing
+        // four of six. The fade is that signal.
+        //
+        // `mask-image`, not an overlay gradient. The header is
+        // `bg-bg-primary/85 backdrop-blur-md`, so a gradient would have to fake a
+        // translucent blurred backdrop and would be wrong over any scrolled
+        // content; a mask fades the CONTENT to transparent and needs to know
+        // nothing about what is behind it.
+        //
+        // Conditional on ACTUAL overflow and scroll position, never static. A
+        // permanent right fade dims `06 Attribution` at every width where all six
+        // already fit, which reads as disabled rather than as continued -- worse
+        // than the problem. Both edges, because once scrolled right the items
+        // hidden are on the LEFT.
+        style={{ maskImage: fadeMask ?? undefined, WebkitMaskImage: fadeMask ?? undefined }}
       >
         {NAV_ITEMS.map((item) => {
           const isActive =

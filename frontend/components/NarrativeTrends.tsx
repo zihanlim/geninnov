@@ -926,6 +926,14 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
   // the single source; the funnel reads it directly, this card derives its
   // one number.
   const funnel = series ? attentionFunnel(series) : null;
+  // Status breakdown across all tracked phrases — shown below the funnel stats
+  // so "Shadow signal" has the full distribution to refer to.
+  const statusCounts = series
+    ? (["new", "emerging", "established", "fading"] as const).map((s) => ({
+        status: s,
+        count: series.filter((r) => r.latest.status === s).length,
+      }))
+    : [];
   // Distinguishes the two empties (ADR-0059 / ADR-0143): "measured, none
   // found" is a finding; "cannot measure yet" is silence. With no measurable
   // velocity anywhere, NOTHING can be classified emerging regardless of what
@@ -1217,6 +1225,27 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                       {!funnel.velocityMeasurable ? (
                         <span> · velocity not yet measurable</span>
                       ) : null}
+                    </p>
+                  ) : null}
+                  {statusCounts.length > 0 && (
+                    <p className="m-0 mt-1 text-[11px] text-text-tertiary leading-[1.55]">
+                      {statusCounts.map((sc) => (
+                        <span key={sc.status}>
+                          {sc.count > 0 ? (
+                            <span>
+                              <span className="num">{sc.count}</span>{" "}
+                              {sc.status}
+                              {sc.count > 1 && sc.status !== "established" ? "s" : ""}
+                              {sc.status !== "fading" ? " · " : ""}
+                            </span>
+                          ) : null}
+                        </span>
+                      ))}
+                    </p>
+                  )}
+                  {corpus ? (
+                    <p className="m-0 text-[11px] text-text-tertiary">
+                      ~<span className="num">{corpus}</span> archive headlines/day
                     </p>
                   ) : null}
                   <p className="m-0 text-[11px] text-text-tertiary">

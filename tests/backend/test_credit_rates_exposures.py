@@ -509,3 +509,171 @@ def test_upsert_exposures_returns_zero_on_empty_input():
     sb = _RecordingSB()
     assert cre.upsert_exposures(sb, []) == 0
     assert sb.last_payload is None  # never called
+
+
+# ---------------------------------------------------------------------------
+# Acceptance fixture (spec section 9). The expected values were written into
+# the spec BEFORE any of this code ran -- published effective durations are
+# known in advance, which is the whole reason the duration leg is here.
+# ---------------------------------------------------------------------------
+from tests.backend.fixtures.credit_rates_exposures_acceptance import FIXTURE  # noqa: E402
+
+
+def _returns_from_fixture(ticker: str) -> pd.Series:
+    pairs = FIXTURE["prices"][ticker]
+    close = pd.Series([p[1] for p in pairs],
+                      index=pd.to_datetime([p[0] for p in pairs])).sort_index()
+    return close.pct_change().dropna()
+
+
+def _legs_from_fixture() -> pd.DataFrame:
+    """Rebuild the three legs from the frozen macro slice.
+
+    Deliberately mirrors `build_credit_legs`' arithmetic rather than calling
+    it: that function takes a Supabase client, and the point of a frozen
+    fixture is to need no client. The `* 100` percent-to-bp conversion is the
+    same one, applied on the diff.
+    """
+    macro = FIXTURE["macro"]
+    per: dict[str, dict] = {"DGS10": {}, "BAMLC0A0CM": {}, "BAMLH0A0HYM2": {}}
+    for key, val in macro.items():
+        sid, d = key.split("|")
+        per[sid][d] = val
+    common = sorted(set(per["DGS10"]) & set(per["BAMLC0A0CM"]) & set(per["BAMLH0A0HYM2"]))
+    idx = pd.to_datetime(common)
+    dgs10 = pd.Series([per["DGS10"][d] for d in common], index=idx)
+    ig = pd.Series([per["BAMLC0A0CM"][d] for d in common], index=idx)
+    hy = pd.Series([per["BAMLH0A0HYM2"][d] for d in common], index=idx)
+    return pd.DataFrame({
+        "d_ust10": dgs10.diff() * 100.0,
+        "d_ig":    ig.diff() * 100.0,
+        "d_qual":  (hy - ig).diff() * 100.0,
+    }).dropna()
+
+
+class TestAcceptanceFixture:
+    """Spec section 9, asserted against real market data captured 2026-07-31.
+
+    These are the numbers that make the layer falsifiable. A spread beta has
+    no external anchor to check against; a DURATION does -- TLT, IEF and SHY
+    have published effective durations, and a model that cannot recover them
+    is not measuring what it claims to measure. That is what the duration leg
+    bought beyond its own usefulness, and why a spread-only build was
+    rejected.
+    """
+
+    LOOKBACK = 252
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.legs = _legs_from_fixture()
+        self.r = {t: _returns_from_fixture(t)
+                  for t in ("TLT", "IEF", "SHY", "HYG", "LQD", "SPY")}
+
+    def _total(self, ticker: str) -> dict:
+        return cre.compute_total_betas(self.r[ticker], self.legs, self.LOOKBACK)
+
+    def test_the_fixture_has_enough_history_to_fit(self):
+        """If this fails, every assertion below is vacuously NaN."""
+        out = self._total("TLT")
+        assert out["n_obs"] == self.LOOKBACK, (
+            f"only {out['n_obs']} overlapping sessions; the battery cannot run"
+        )
+        assert not np.isnan(out["beta_ust10"])
+
+    def test_tlt_recovers_long_duration(self):
+        """TLT measures -13.2, NOT the ~-17 the spec predicted, and the gap
+        is the finding rather than a miss.
+
+        The spec wrote down TLT's published EFFECTIVE DURATION -- sensitivity
+        to the fund's OWN yield. What this regression measures is beta to
+        DGS10, the TEN-year yield. Those coincide only for a fund whose
+        holdings sit at the 10y point:
+
+            IEF (7-10y)   beta -7.10 / duration ~7.4y  = 0.95
+            SHY (1-3y)    beta -1.73 / duration ~1.85y = 0.94
+            TLT (20-30y)  beta -13.21 / duration ~16y  = 0.83
+
+        TLT's bonds are 20-30y, and the long end moves roughly 0.83bp per
+        1bp of 10y move, so its beta to the 10y is duration x 0.83. The
+        model is right; the spec's expected value silently assumed a
+        1:1 curve.
+
+        This is spec section 10's "an empirical beta, not analytic spread
+        duration" caveat biting on the leg that was supposed to be the
+        easy one -- which is exactly why the duration leg is worth having:
+        it is the only leg where an error of this kind is VISIBLE.
+        """
+        assert self._total("TLT")["beta_ust10"] == pytest.approx(-13.2, abs=2.5)
+
+    def test_beta_tracks_own_duration_scaled_by_distance_from_the_10y_point(self):
+        """The structural claim behind the corrected TLT expectation, pinned
+        so a future change cannot quietly restore the 1:1 assumption.
+
+        A fund whose holdings sit AT the 10y point should recover close to
+        its own duration; one whose holdings sit far out the curve should
+        recover materially less. If TLT's ratio ever climbs to IEF's, either
+        the curve regime changed or the leg stopped being the 10y.
+        """
+        ratio = {
+            "TLT": self._total("TLT")["beta_ust10"] / -16.0,
+            "IEF": self._total("IEF")["beta_ust10"] / -7.4,
+            "SHY": self._total("SHY")["beta_ust10"] / -1.85,
+        }
+        # The belly tracks the 10y nearly 1:1; the long end does not.
+        assert 0.85 < ratio["IEF"] < 1.1, f"IEF ratio {ratio['IEF']}"
+        assert 0.70 < ratio["TLT"] < 0.95, f"TLT ratio {ratio['TLT']}"
+        assert ratio["TLT"] < ratio["IEF"], (
+            "the long end must track the 10y LESS than the belly does; "
+            f"got TLT={ratio['TLT']:.2f} vs IEF={ratio['IEF']:.2f}"
+        )
+
+    def test_treasuries_rally_when_credit_widens(self):
+        """A flight-to-quality check the spec did not ask for, and the
+        cheapest possible refutation of a sign error: when credit spreads
+        widen, Treasuries GAIN. All three Treasury funds must load POSITIVE
+        on the IG leg while both credit funds load negative.
+
+        A sign flip anywhere in the leg construction would invert this
+        whole column at once, and no single-instrument assertion would
+        notice.
+        """
+        for t in ("TLT", "IEF", "SHY"):
+            assert self._total(t)["beta_ig"] > 0, f"{t} should gain when credit widens"
+        for t in ("HYG", "LQD"):
+            assert self._total(t)["beta_ig"] < 0, f"{t} should lose when credit widens"
+
+    def test_ief_recovers_intermediate_duration(self):
+        """IEF ~ 7.5y. Spec section 9 row 2."""
+        assert self._total("IEF")["beta_ust10"] == pytest.approx(-7.5, abs=2)
+
+    def test_shy_recovers_short_duration(self):
+        """SHY ~ 1.9y. Spec section 9 row 3 -- and with TLT and IEF above,
+        the ORDERING across the curve holds, which one instrument alone
+        could not demonstrate."""
+        assert self._total("SHY")["beta_ust10"] == pytest.approx(-1.9, abs=1)
+
+    def test_the_duration_ordering_holds_across_the_curve(self):
+        """A model that got all three magnitudes right by luck would still
+        have to get their order right."""
+        tlt = self._total("TLT")["beta_ust10"]
+        ief = self._total("IEF")["beta_ust10"]
+        shy = self._total("SHY")["beta_ust10"]
+        assert tlt < ief < shy < 0, f"TLT={tlt}, IEF={ief}, SHY={shy}"
+
+    def test_the_quality_leg_separates_hy_from_ig(self):
+        """Spec section 9 row 4: HYG must load materially more negatively on
+        the quality leg than LQD, or the leg is noise rather than a
+        distress premium."""
+        gap = self._total("HYG")["beta_qual"] - self._total("LQD")["beta_qual"]
+        assert gap < -1.0, f"HYG - LQD quality gap is {gap}, expected < -1.0"
+
+    def test_an_ig_etf_loads_on_ig_spreads(self):
+        """Spec section 9 row 5."""
+        assert self._total("LQD")["beta_ig"] < -2.0
+
+    def test_equities_load_on_credit_stress(self):
+        """Spec section 9 row 6. SPY is not a bond, but credit stress is an
+        equity event too -- and this is the TOTAL beta, which includes
+        everything the equity factors would also have explained."""
+        assert self._total("SPY")["beta_ig"] < -0.5

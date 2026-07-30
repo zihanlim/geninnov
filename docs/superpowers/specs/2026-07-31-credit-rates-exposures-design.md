@@ -254,11 +254,34 @@ inside a scenario loss the reader has already been shown.
 Published effective durations are known in advance, so the right answers are written down
 **before** the code runs, in the manner of the L5 acceptance battery (ADR-0055).
 
+> **Corrected 2026-07-31, after the first live run.** The three duration rows
+> below originally read -17 / -7.5 / -1.9, taken from each fund's published
+> **effective duration**. That was wrong for TLT, and the reason is worth
+> keeping: effective duration is sensitivity to the fund's OWN yield, while
+> this regression measures beta to **DGS10, the ten-year**. The two coincide
+> only where the holdings sit at the 10y point.
+>
+> | Fund | measured beta | own duration | ratio |
+> |---|---|---|---|
+> | IEF (7-10y) | -7.10 | ~7.4y | 0.95 |
+> | SHY (1-3y) | -1.73 | ~1.85y | 0.94 |
+> | TLT (20-30y) | -13.21 | ~16y | **0.83** |
+>
+> TLT's bonds are 20-30y and the long end moves ~0.83bp per 1bp of 10y move,
+> so its beta is duration x 0.83. The model was right and the spec was wrong.
+> This is section 10's "an empirical beta, not analytic spread duration"
+> caveat biting on the leg that was supposed to be the easy one -- which is
+> the argument FOR the duration leg, not against it: it is the only leg where
+> an error of this kind is visible at all.
+
 | Assertion | Expected | Tolerance | What it proves |
 |---|---|---|---|
-| `TLT.total_beta_ust10` | ~ -17 | +/- 3 | duration recovered on a long-duration instrument |
-| `IEF.total_beta_ust10` | ~ -7.5 | +/- 2 | recovered at intermediate duration |
-| `SHY.total_beta_ust10` | ~ -1.9 | +/- 1 | recovered at short duration; sign and magnitude ordering holds |
+| `TLT.total_beta_ust10` | ~ -13.2 | +/- 2.5 | duration recovered on a long-duration instrument, scaled by the long end's own beta to the 10y |
+| `IEF.total_beta_ust10` | ~ -7.1 | +/- 2 | recovered at intermediate duration, where beta ~ duration because the holdings ARE the 10y point |
+| `SHY.total_beta_ust10` | ~ -1.7 | +/- 1 | recovered at short duration; sign and magnitude ordering holds |
+| ordering | `TLT < IEF < SHY < 0` | - | the curve is recovered in order, not just three magnitudes that happen to be right |
+| ratio structure | `TLT/16 < IEF/7.4` | - | the long end tracks the 10y LESS than the belly; pins the correction above so a future change cannot restore the 1:1 assumption |
+| flight to quality | `TLT, IEF, SHY` all `beta_ig > 0`; `HYG, LQD < 0` | - | Treasuries GAIN when credit widens. A sign error in leg construction inverts this whole column at once, and no single-instrument assertion would notice |
 | `HYG.total_beta_qual` vs `LQD.total_beta_qual` | HYG materially more negative | gap > 1.0 | the quality leg separates HY from IG rather than being noise |
 | `LQD.total_beta_ig` | materially negative | < -2.0 | an IG ETF loads on IG spreads |
 | `SPY.total_beta_ig` | materially negative | < -0.5 | equities load on credit stress, as expected |

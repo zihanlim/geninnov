@@ -237,17 +237,21 @@ def rolling_regression(
     factor_df: pd.DataFrame,
     lookback_days: int = 252,
 ) -> dict[str, float]:
-    """
-    Run rolling OLS: r_asset_t = alpha + beta_MKT*MKT_t + ... + epsilon_t
+    """Run rolling OLS: r_asset_t = alpha + beta_MKT*MKT_t + ... + epsilon_t
 
     Both asset_returns and factor_df must have aligned daily DatetimeIndex.
     Returns {beta_mkt, beta_smb, beta_hml, beta_rmw, beta_cma, beta_umd, r_squared, alpha}.
-    """
-    factors = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
-    if "UMD" in factor_df.columns:
-        factors.append("UMD")
 
-    # Align
+    Behaviour-preserving wrapper over `_ols_core.rolling_ols`: the public
+    output shape (the legacy `beta_*` keys, RF subtraction, half-window
+    guard, the most-recent-window choice) is unchanged. The generic core
+    is also used by `credit_rates_exposures` (L2b), which adds columns not
+    listed here.
+    """
+    from backend.data._ols_core import rolling_ols
+
+    # Match the legacy convention: subtract RF from y before fitting, then
+    # drop RF from the regressor columns.
     common = asset_returns.index.intersection(factor_df.index)
     if len(common) < lookback_days // 2:
         return {}
@@ -255,52 +259,44 @@ def rolling_regression(
     y = asset_returns.loc[common].dropna()
     X = factor_df.loc[common].dropna()
     X = X.reindex(y.index)
-    # Subtract RF from asset excess return
     if "RF" in X.columns:
         excess = y - X["RF"]
     else:
         excess = y
 
-    # Rolling window
-    betas = {}
-    n = len(excess)
-    if n < lookback_days:
+    factor_columns = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
+    if "UMD" in X.columns:
+        factor_columns.append("UMD")
+
+    generic = rolling_ols(
+        excess,
+        X[factor_columns + (["RF"] if "RF" in X.columns else [])],
+        lookback_days=lookback_days,
+    )
+    if not generic:
         return {}
 
-    windows = []
-    for i in range(lookback_days, n + 1):
-        y_win = excess.iloc[i - lookback_days:i]
-        x_win = X[factors].iloc[i - lookback_days:i]
-        if y_win.isna().any() or x_win.isna().any(axis=None):
-            continue
-        try:
-            # OLS via np.linalg
-            X_mat = np.column_stack([np.ones(len(x_win)), x_win.values])
-            coeffs, residuals, rank, s = np.linalg.lstsq(X_mat, y_win.values, rcond=None)
-            y_pred = X_mat @ coeffs
-            ss_res = np.sum((y_win.values - y_pred) ** 2)
-            ss_tot = np.sum((y_win.values - np.mean(y_win.values)) ** 2)
-            r2 = 1 - ss_res / ss_tot if ss_tot != 0 else 0
-            window_result = {
-                "alpha": float(coeffs[0]),
-                "beta_mkt": float(coeffs[1]),
-                "beta_smb": float(coeffs[2]),
-                "beta_hml": float(coeffs[3]),
-                "beta_rmw": float(coeffs[4]),
-                "beta_cma": float(coeffs[5]),
-                "r_squared": float(r2),
-            }
-            if "UMD" in factors and len(coeffs) > 6:
-                window_result["beta_umd"] = float(coeffs[6])
-            windows.append(window_result)
-        except Exception:
-            continue
-
-    if not windows:
-        return {}
-
-    # Return the most recent window's betas
-    return windows[-1]
+    # Map generic keys to the legacy beta_<name> shape. Order matters for
+    # `coeffs[1..6]` parity with the deleted implementation — but since
+    # rolling_ols returns a dict keyed by column name, the order is now
+    # declared by factor_columns, not by a positional list. The golden
+    # bit-identical test below pins that.
+    out: dict[str, float] = {
+        "alpha": generic["alpha"],
+        "r_squared": generic["r_squared"],
+    }
+    legacy_key_for = {
+        "Mkt-RF": "beta_mkt",
+        "SMB": "beta_smb",
+        "HML": "beta_hml",
+        "RMW": "beta_rmw",
+        "CMA": "beta_cma",
+        "UMD": "beta_umd",
+    }
+    for col, key in legacy_key_for.items():
+        if col in generic:
+            out[key] = generic[col]
+    return out
 
 
 class FactorFetcher:

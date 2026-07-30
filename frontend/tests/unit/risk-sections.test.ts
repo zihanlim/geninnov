@@ -32,7 +32,10 @@ const PHASE_LIST: RiskPhase[] = ["mandate", "risk", "attribution"];
 describe("RISK_SECTION_PHASE", () => {
   it("keeps every section the old page rendered", () => {
     // Hardcoded: the point is to catch a section being LOST in the split, which
-    // a derived list could never notice.
+    // a derived list could never notice. It grew by one deliberately —
+    // `var-methods` was carved out of `limits` when ADR-0172 moved the four-way
+    // VaR comparison to the risk page, because five instruments in `stress` would
+    // have buried the scenario matrix again.
     expect(Object.keys(RISK_SECTION_PHASE).sort()).toEqual(
       [
         "attribution",
@@ -42,6 +45,7 @@ describe("RISK_SECTION_PHASE", () => {
         "mandate",
         "realised",
         "stress",
+        "var-methods",
       ].sort(),
     );
   });

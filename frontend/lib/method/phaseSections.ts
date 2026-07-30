@@ -43,6 +43,10 @@ export const RISK_SECTION_PHASE = {
   mandate: "mandate",
   limits: "mandate",
   stress: "risk",
+  // ADR-0172: moved off /mandate. The mandate LISTS a VaR limit and the metric
+  // grid reports the one published figure; the four-way comparison is a risk
+  // analysis, not a limits check.
+  "var-methods": "risk",
   concentration: "risk",
   exposure: "risk",
   attribution: "risk",
@@ -68,6 +72,7 @@ export const PHASE_SECTION_NAV: Record<
   ],
   risk: [
     { id: "stress", label: "Stress" },
+    { id: "var-methods", label: "Value at risk" },
     { id: "attribution", label: "Attribution" },
     { id: "concentration", label: "Concentration" },
     { id: "exposure", label: "Exposure" },

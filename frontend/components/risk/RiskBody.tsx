@@ -798,6 +798,12 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         coverageNote={limitCoverageNote}
       />
 
+      {/* Cap headroom, moved from the risk page (ADR-0172). "Am I inside my limits"
+          is the MANDATE's question, and the board directly above states the limits
+          this measures against — separating a constraint from the reading of that
+          constraint is what made the caps unreadable before MandatePanel existed. */}
+      <CapUtilisation state={capState} />
+
       {/* 2 — Risk metrics (always rendered) + prior-run deltas. */}
       <RiskMetricsGrid
         loading={data.loading}
@@ -809,6 +815,57 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         sessions={data.returns.length}
       />
 
+
+
+      {/* 3 — Per-position risk attribution: "which trade to cut". */}
+      </section>
+      )}
+
+
+      {shows("stress") && (
+      <section id="stress" aria-label="Stress scenarios">
+      {/* Stress scenarios lead the page (ADR-0172). They ARE phase 3's answer,
+          and they were at 2622px below a what-if builder that explores them — a
+          tool placed ahead of the finding it is for. The what-if follows, which
+          also reads better: a reader now varies a shock they have already seen. */}
+      <StressScenarios state={scenarioState} />
+
+
+      {/* Browser-side estimate, labelled as one — after the persisted matrix. */}
+      <WhatIfScenario
+        loading={data.loading}
+        positions={data.positions}
+        factors={factorMap}
+        totalCapital={data.risk?.total_capital ?? null}
+        dataFailure={
+          data.positionsFailure
+            ? `portfolio_positions read failed: ${data.positionsFailure}`
+            : data.factorsFailure
+              ? `factor_exposures read failed: ${data.factorsFailure}`
+              : null
+        }
+      />
+
+      {/* 6b — Sanctions exposure, beside the stress table because it is the same kind of
+          claim: what the book does under a shock it did not choose. ADR-0096. */}
+      <SanctionsExposure state={sanctionsState} />
+      <PositioningCrowding state={positioningState} />
+      </section>
+      )}
+
+      {/* VaR by method — moved off /mandate (ADR-0172). The mandate LISTS a VaR
+          limit and the metric grid beside it reports the one published figure; the
+          four-way comparison is a risk analysis, not a limits check, and belongs on
+          the page whose question is what could go wrong. Its own section, because
+          five instruments in `stress` would bury the scenario matrix again — which
+          is the defect this whole reorganisation exists to fix. */}
+      {/* No `id` on the wrapper below: `VarMethods` already renders
+          `id="var-methods"` itself, and two elements sharing an id makes the anchor
+          ambiguous — the nav entry targets the component's own heading. (This note
+          sits ABOVE the guard, not between `&& (` and the element: that position
+          expects an expression and a JSX comment there is a syntax error.) */}
+      {shows("var-methods") && (
+      <section aria-label="Value at risk by method">
       {/* 2b — The four VaRs, together, each with its horizon and basis.
               The tile above publishes ONE of them. Three more sit in the database:
               `risk_decomposition` since migration 038 with its render recorded as
@@ -824,37 +881,15 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           sessions={data.returns.length}
         />
       </div>
-
-      {/* 2c ‖ 2d — the two backward-looking readings, side by side.
-              2c is "versus what?" answered with numbers rather than a second chart
-              line (ADR-0094 built the benchmark series; down-capture is the field
-              that actually tests this book's claim to be short the market). 2d is
-              the path statistics ex-ante cannot produce and a three-session book
-              cannot either — explicitly NOT a track record (ADR-0112), with its
-              caveats above the numbers rather than below them.
-
-              THESE TWO PAIR AND THE FOUR INSTRUMENTS ABOVE CANNOT, and the reason
-              is measured rather than aesthetic. `main` is `max-w-[1400px]`, so at a
-              1440 viewport a two-column row gives each side (1344-24)/2 = 660px.
-              The limit board needs 820px before its table opens a horizontal
-              scroller, per-position attribution 860, stress scenarios and external
-              positioning 720 each — so halving any of them trades vertical space
-              for an inner scrollbar, which is goal 7's failure, not a fix for it.
-              These two need 676 and fit. Pairing is gated on the measurement, name
-              by name; it is not a rule the page applies to whatever is adjacent. */}
-      <div className="mt-6 grid lg:grid-cols-2 gap-6 items-start [&>*]:min-w-0">
-        <BenchmarkComparison
-          comparison={data.risk?.benchmark_comparison ?? null}
-          conditionalVol={data.risk?.conditional_vol ?? null}
-          sessions={data.returns.length}
-        />
-        <WeightsBacktest data={data.analyticsRow?.weights_backtest ?? null} />
-      </div>
-
-      {/* 3 — Per-position risk attribution: "which trade to cut". */}
       </section>
       )}
 
+      {/* Per-position attribution renders AFTER stress and VaR (ADR-0172), because
+          DOM order is what a reader experiences and PHASE_SECTION_NAV already listed
+          Stress first. This block was above them in the markup, which put ~2000px of
+          charts between the page and its own answer — #stress measured 2281px on
+          /risk even after the answer row landed. The nav saying one order while the
+          markup does another is the defect, not the nav. */}
       {shows("attribution") && (
       <section id="attribution" aria-label="Per-position and per-theme attribution">
       <div className="grid xl:grid-cols-2 gap-6 items-start [&>*]:min-w-0">
@@ -894,52 +929,23 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       </section>
       )}
 
-      {shows("stress") && (
-      <section id="stress" aria-label="Stress scenarios">
-      <WhatIfScenario
-        loading={data.loading}
-        positions={data.positions}
-        factors={factorMap}
-        totalCapital={data.risk?.total_capital ?? null}
-        dataFailure={
-          data.positionsFailure
-            ? `portfolio_positions read failed: ${data.positionsFailure}`
-            : data.factorsFailure
-              ? `factor_exposures read failed: ${data.factorsFailure}`
-              : null
-        }
-      />
-
-      {/* 6 — Stress scenarios (persisted). */}
-      <StressScenarios state={scenarioState} />
-
-      {/* 6b — Sanctions exposure, beside the stress table because it is the same kind of
-          claim: what the book does under a shock it did not choose. ADR-0096. */}
-      <SanctionsExposure state={sanctionsState} />
-      <PositioningCrowding state={positioningState} />
-      </section>
-      )}
-
       {shows("concentration") && (
       <section id="concentration" aria-label="Concentration">
 
-      {/* 7 + 8 — The two concentration views, paired: which names move together,
-          and how much room each cap has left. Both are collapsed <details>, so
-          stacking them full-width spent two full rows of the page on two summary
-          bars. `items-start` keeps an expanded panel from stretching its
-          neighbour into a tall empty box, and `[&>*]:mb-0` neutralises the
-          mb-6 each card carries for the stacked case so the grid gap is the only
-          spacing. Gated at xl, not lg: CorrelationMatrix's heatmap has a
-          min-w-[560px] table, which needs a ~600px column to avoid landing in
-          its own horizontal scroller on arrival. */}
-      <div className="grid xl:grid-cols-2 gap-6 mb-6 items-start [&>*]:mb-0">
-        <CorrelationMatrix
-          state={correlationState}
-          summary={bookMetrics?.correlation_summary ?? null}
-          matrix={bookMetrics?.correlation_matrix ?? null}
-        />
-        <CapUtilisation state={capState} />
-      </div>
+      {/* Which names move together. Full-width since ADR-0172 moved cap headroom to
+          /mandate: this was a measured PAIR, and the measurement that justified it
+          ("both are collapsed <details>, so stacking them full-width spent two rows
+          on two summary bars") stops applying when there is one card. A 2-col grid
+          with one cell does not fill the width, it halves what survived — the
+          orphaned-cell failure the pairing existed to avoid.
+
+          Full width also buys the heatmap its min-w-[560px] table without an inner
+          horizontal scroller, which is why the pair was gated at xl rather than lg. */}
+      <CorrelationMatrix
+        state={correlationState}
+        summary={bookMetrics?.correlation_summary ?? null}
+        matrix={bookMetrics?.correlation_matrix ?? null}
+      />
 
       {/* 9 — Book factor tilt (persisted). Stays full-width: the tilt bars are a
           diverging scale with a labelled −2.00 … +2.00 axis, and halving the
@@ -960,6 +966,41 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           against the other was previously a scroll. */}
       {shows("realised") && (
       <section id="realised" aria-label="Realised performance">
+      {/* Moved off /mandate (ADR-0172). Both are BACKWARD-LOOKING, which is phase
+          6's question and not phase 1's — a mandate says what the book is allowed to
+          be, not what it did. They were at 4093px on a page whose own answer is at
+          284px, while /attribution was the thinnest page in the app.
+
+          The pairing comment below is kept because its measurement still holds: these
+          two need 676px each and fit a two-column row, where the limit board (820),
+          per-position attribution (860) and stress scenarios (720) do not. Pairing is
+          gated on the measurement name by name, not applied to whatever is adjacent. */}
+      {/* 2c ‖ 2d — the two backward-looking readings, side by side.
+              2c is "versus what?" answered with numbers rather than a second chart
+              line (ADR-0094 built the benchmark series; down-capture is the field
+              that actually tests this book's claim to be short the market). 2d is
+              the path statistics ex-ante cannot produce and a three-session book
+              cannot either — explicitly NOT a track record (ADR-0112), with its
+              caveats above the numbers rather than below them.
+
+              THESE TWO PAIR AND THE FOUR INSTRUMENTS ABOVE CANNOT, and the reason
+              is measured rather than aesthetic. `main` is `max-w-[1400px]`, so at a
+              1440 viewport a two-column row gives each side (1344-24)/2 = 660px.
+              The limit board needs 820px before its table opens a horizontal
+              scroller, per-position attribution 860, stress scenarios and external
+              positioning 720 each — so halving any of them trades vertical space
+              for an inner scrollbar, which is goal 7's failure, not a fix for it.
+              These two need 676 and fit. Pairing is gated on the measurement, name
+              by name; it is not a rule the page applies to whatever is adjacent. */}
+      <div className="mt-6 grid lg:grid-cols-2 gap-6 items-start [&>*]:min-w-0">
+        <BenchmarkComparison
+          comparison={data.risk?.benchmark_comparison ?? null}
+          conditionalVol={data.risk?.conditional_vol ?? null}
+          sessions={data.returns.length}
+        />
+        <WeightsBacktest data={data.analyticsRow?.weights_backtest ?? null} />
+      </div>
+
       {/* Stated before the curve, not after it. Both panels below draw a shape a
           reader recognises as a track record, and at the current observation
           count that shape is asserting far more than the data supports. The n is

@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { riskAnswerCards } from "@/components/risk/RiskAnswerCards";
 import AnswerRow from "@/components/AnswerRow";
-import type { AnalyticsState } from "@/lib/risk/analytics";
+import type { AnalyticsState, CorrelationPair } from "@/lib/risk/analytics";
 
 const ok = <T,>(value: T): AnalyticsState<T> => ({
   status: "ok",
@@ -57,7 +57,9 @@ const attrib = (over: Record<string, unknown> = {}) =>
 
 const base = {
   scenarioState: ok(SCENARIOS),
-  correlationState: ok([{ asset_a: "GDX", asset_b: "GLD", corr: 0.82 }]) as never,
+  correlationState: ok([{ asset_a: "GDX", asset_b: "GLD", corr: 0.82 }]) as AnalyticsState<
+    CorrelationPair[]
+  >,
   attribution: [attrib()],
   positionCount: 9,
   factorCoverage: 9,

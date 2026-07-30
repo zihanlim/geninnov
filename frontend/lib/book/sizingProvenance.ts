@@ -39,9 +39,36 @@ export interface OptimizerResult {
   binding_constraints?: string[];
   zeroed?: string[];
   warnings?: string[];
+  /** ADR-0116/0118. Rendered by `CapUtilisation` on /mandate — the only enforced
+   *  mandate cap with no other measurement anywhere on the site. */
+  complex_sizing?: ComplexSizing | null;
   unpriced_assets?: string[];
   ic?: { value?: number; raw?: number; shrinkage?: number; as_of?: string | null };
   crowding?: CrowdingBlock | null;
+}
+
+/**
+ * `optimizer_result.complex_sizing` — ADR-0116's shared-signal rule and ADR-0118's
+ * risk budget, as the pipeline records them.
+ *
+ * Rendered by `CapUtilisation` on /mandate and nowhere else, because until now it was rendered nowhere at
+ * all: `The mandate` beside this card lists `complex_pct` / `max_complex_weight`
+ * as an ENFORCED cap, the limit board has no row for it and this card had no
+ * group, so the page published a constraint it never checked. Every other
+ * unrendered field of `optimizer_result` — `binding_constraints`, `crowding`,
+ * `zeroed` — is already on /book in `SizingProvenance`, and pulling those across
+ * to fill space would be the duplication ADR-0182 just removed.
+ */
+export interface ComplexSizing {
+  mu_signal_equalised?: {
+    applied?: boolean;
+    complexes?: { id?: string; members?: string[]; shared_signal?: number }[];
+    skipped?: { id?: string; members?: string[]; reason?: string }[];
+  } | null;
+  /** A complex's RISK budget as a multiple of one name's. ADR-0118: this can bind
+   *  while the capital cap above still shows headroom, which is why the number is
+   *  stated rather than left implied by the weight bars. */
+  risk_cap_multiple_of_single_name?: number | null;
 }
 
 /** `optimizer_result.crowding` — migration 047 payload, ADR-0110. */

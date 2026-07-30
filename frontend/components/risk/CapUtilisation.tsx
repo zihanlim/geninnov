@@ -16,7 +16,14 @@ import {
   type CapRow,
   type CapUtilisation as CapUtilisationData,
 } from "@/lib/risk/analytics";
-import { breachedCapRows, capRowUtil, isCapBreached } from "@/lib/risk/capBreach";
+import {
+  breachedCapRows,
+  capCoverage,
+  capRowUtil,
+  isCapBreached,
+} from "@/lib/risk/capBreach";
+import { ENFORCED } from "@/lib/mandate";
+import type { ComplexSizing } from "@/lib/book/sizingProvenance";
 import { Ident, InlineGap, SectionGap, SectionSkeleton } from "./SectionGap";
 
 interface CapGroup {
@@ -176,10 +183,94 @@ function CapGroupBlock({
   );
 }
 
+function ComplexCap({ sizing }: { sizing: ComplexSizing | null | undefined }) {
+  const mu = sizing?.mu_signal_equalised ?? null;
+  const complexes = mu?.complexes ?? [];
+  const skipped = mu?.skipped ?? [];
+  const riskMultiple = sizing?.risk_cap_multiple_of_single_name;
+
+  return (
+    <div className="mt-5 pt-4 border-t border-border">
+      <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
+        <h3 className="card-title m-0">Correlation complex</h3>
+        <span className="text-[11px] text-text-tertiary num">
+          limit {fmtPct(ENFORCED.complex_pct.value)} · {ENFORCED.complex_pct.configKey}
+        </span>
+      </div>
+
+      {!sizing ? (
+        <InlineGap>
+          No <Ident>optimizer_result.complex_sizing</Ident> on this run, so whether any
+          held names were treated as one idea is unrecorded — not the same claim as
+          none having been.
+        </InlineGap>
+      ) : (
+        <>
+          <p className="m-0 text-[12px] text-text-secondary leading-[1.6]">
+            {complexes.length > 0 ? (
+              <>
+                <span className="num">{complexes.length}</span> complex
+                {complexes.length === 1 ? "" : "es"} formed:{" "}
+                <span className="num">
+                  {complexes
+                    .map((c) => (c.members ?? []).join(" + "))
+                    .filter(Boolean)
+                    .join("; ")}
+                </span>
+                . Members above 0.70 correlation are one idea, so they share one signal
+                and one name&rsquo;s allowance — without it a 5% expected-return gap
+                corners the book on whichever member scores highest (ADR-0116).
+              </>
+            ) : (
+              <>
+                No complex formed on this run: no held names were grouped above the 0.70
+                correlation threshold, so this cap constrained nothing. It is listed
+                because the mandate enforces it, not because it bound.
+              </>
+            )}
+          </p>
+
+          {skipped.length > 0 && (
+            <p className="m-0 mt-1.5 text-[11.5px] text-text-tertiary leading-[1.55]">
+              <span className="num">{skipped.length}</span> group
+              {skipped.length === 1 ? "" : "s"} left untouched:{" "}
+              {skipped
+                .map(
+                  (x) =>
+                    `${(x.members ?? []).join(" + ")} — ${x.reason ?? "no reason recorded"}`,
+                )
+                .join("; ")}
+              .
+            </p>
+          )}
+
+          {isNum(riskMultiple) && (
+            <p className="m-0 mt-1.5 text-[11.5px] text-text-tertiary leading-[1.55]">
+              A complex&rsquo;s RISK budget is <span className="num">×{riskMultiple}</span>{" "}
+              one name&rsquo;s. That budget can bind while the capital bars above still
+              show headroom, so slack here is not slack there (ADR-0118).
+            </p>
+          )}
+
+          <p className="m-0 mt-1.5 text-[10.5px] text-text-tertiary leading-[1.5]">
+            Source: <Ident>optimizer_result.complex_sizing</Ident>
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function CapUtilisation({
   state,
+  complexSizing,
+  grossExposure,
 }: {
   state: AnalyticsState<CapUtilisationData>;
+  /** ADR-0116/0118 complex machinery, from the same run's optimizer_result. */
+  complexSizing?: ComplexSizing | null;
+  /** book_metrics.gross_exposure — what each grouping's rows should add up to. */
+  grossExposure?: number | null;
 }) {
   const gap = explainGap(state, {
     column: "cap_utilisation",
@@ -199,6 +290,11 @@ export function CapUtilisation({
     (data?.single_name?.length ?? 0) +
     (data?.sector?.length ?? 0) +
     (data?.geo?.length ?? 0);
+  // A cap binds only on weight it can SEE. Sector and geography rows are built
+  // from book_metrics' SECTOR_MAP / GEO_MAP, and a held ticker missing from either
+  // map sits in no group at all — the bars look identical whether they describe the
+  // whole book or two thirds of it. See lib/risk/capBreach.ts → capCoverage.
+  const coverage = capCoverage(data, grossExposure);
 
   return (
     // A PLAIN SECTION, not a <details> (owner's direction, ADR-0183).
@@ -273,12 +369,30 @@ export function CapUtilisation({
                 limit={data.limits?.[group.id]}
               />
             ))}
+            <ComplexCap sizing={complexSizing} />
           </div>
 
           <p className="m-0 mt-4 pt-3.5 border-t border-border text-[11px] text-text-tertiary leading-[1.6] max-w-[90ch]">
             Bars are drawn against the cap, so a full bar sits exactly on the limit;
             the tick marks {(CAP_WARN_UTILISATION * 100).toFixed(0)}% of the limit,
             where the constraint starts to bind. Amber above that, red once breached.
+            {coverage.gross !== null && (
+              <>
+                {" "}
+                Single name / sector / geography account for{" "}
+                {coverage.groups
+                  .map((g) =>
+                    g.share !== null
+                      ? `${(g.share * 100).toFixed(0)}%`
+                      : "an unmeasurable share",
+                  )
+                  .join(" / ")}{" "}
+                of the book&rsquo;s {fmtPct(coverage.gross)} gross
+                {coverage.complete
+                  ? " — every held dollar sits inside a mapped group, so each cap can see the whole book."
+                  : " — the shortfall is weight in no mapped group, where its cap cannot bind."}
+              </>
+            )}{" "}
             Source: <Ident>research_recommendations.cap_utilisation</Ident>.
           </p>
         </div>

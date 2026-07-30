@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { breachedCapRows, capRowUtil, isCapBreached } from "@/lib/risk/capBreach";
+import {
+  breachedCapRows,
+  capCoverage,
+  capRowUtil,
+  isCapBreached,
+} from "@/lib/risk/capBreach";
 import type { CapRow } from "@/lib/risk/analytics";
 
 const row = (over: Partial<CapRow>): CapRow => ({
@@ -69,5 +74,83 @@ describe("breachedCapRows", () => {
       geo: [row({ key: "US", weight: 0.35000000000000003, cap: 0.35, utilisation: 1.0000000000000002 })],
     });
     expect(breached.map((r) => r.key)).toEqual(["NVDA"]);
+  });
+});
+
+// ── capCoverage (ADR-0185) ────────────────────────────────────────────────────
+// A cap binds only on weight it can see. Sector/geo rows come from SECTOR_MAP and
+// GEO_MAP; a held ticker in neither map sits in no group, and the bars look
+// identical whether they describe the whole book or two thirds of it.
+describe("capCoverage", () => {
+  const row = (key: string, weight: number) => ({
+    key,
+    weight,
+    cap: 0.35,
+    utilisation: weight / 0.35,
+    breached: false,
+  });
+
+  it("reports each grouping's share of gross and passes only when all three reach it", () => {
+    const cov = capCoverage(
+      {
+        single_name: [row("JD", 0.5), row("GLD", 0.2874)],
+        sector: [row("China", 0.5), row("Metals", 0.2874)],
+        geo: [row("US", 0.5), row("Global", 0.2874)],
+      } as never,
+      0.7874,
+    );
+    expect(cov.gross).toBeCloseTo(0.7874, 6);
+    expect(cov.groups.map((g) => g.id)).toEqual(["single_name", "sector", "geo"]);
+    for (const g of cov.groups) expect(g.share).toBeCloseTo(1, 6);
+    expect(cov.complete).toBe(true);
+  });
+
+  it("does NOT pass when one grouping sees less of the book than the others", () => {
+    // The live failure this exists for: a ticker absent from SECTOR_MAP is in no
+    // sector group, so the sector cap cannot bind on its weight — while its
+    // single-name and geography bars look perfectly healthy.
+    const cov = capCoverage(
+      {
+        single_name: [row("JD", 0.5), row("XYZ", 0.2874)],
+        sector: [row("China", 0.5)],
+        geo: [row("US", 0.5), row("Global", 0.2874)],
+      } as never,
+      0.7874,
+    );
+    expect(cov.complete).toBe(false);
+    expect(cov.groups.find((g) => g.id === "sector")!.share).toBeCloseTo(0.635, 3);
+  });
+
+  it("tolerates the same float dust the breach check does", () => {
+    const cov = capCoverage(
+      {
+        single_name: [row("A", 0.35), row("B", 0.42739999999999995)],
+        sector: [row("S", 0.7774000000000001)],
+        geo: [row("G", 0.7774)],
+      } as never,
+      0.7774,
+    );
+    expect(cov.complete).toBe(true);
+  });
+
+  it("refuses to guess: an unmeasurable weight makes the whole group null, not zero", () => {
+    const cov = capCoverage(
+      {
+        single_name: [row("A", 0.5), { key: "B", weight: null, cap: 0.2 }],
+        sector: [row("S", 0.7874)],
+        geo: [row("G", 0.7874)],
+      } as never,
+      0.7874,
+    );
+    expect(cov.groups.find((g) => g.id === "single_name")!.covered).toBeNull();
+    expect(cov.groups.find((g) => g.id === "single_name")!.share).toBeNull();
+    expect(cov.complete).toBe(false);
+  });
+
+  it("says nothing when gross is absent — a share of an unknown book is not a share", () => {
+    const cov = capCoverage({ single_name: [row("A", 0.5)] } as never, null);
+    expect(cov.gross).toBeNull();
+    expect(cov.groups.every((g) => g.share === null)).toBe(true);
+    expect(cov.complete).toBe(false);
   });
 });

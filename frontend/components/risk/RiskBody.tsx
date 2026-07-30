@@ -901,7 +901,15 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
             twice in two wordings (ADR-0182). Alone in the column again, the card
             takes `open:h-full` back so the row keeps one bottom edge. */}
         <div>
-          <CapUtilisation state={capState} />
+          <CapUtilisation
+            state={capState}
+            // The two cap facts the card could not previously state: whether any
+            // held names were sized as ONE idea (an enforced mandate cap that
+            // nothing on the site measured), and what each grouping's rows add up
+            // to against gross — a cap only binds on weight it can see.
+            complexSizing={data.analyticsRow?.optimizer_result?.complex_sizing ?? null}
+            grossExposure={bookMetrics?.gross_exposure ?? null}
+          />
         </div>
         </>
         )}

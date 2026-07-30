@@ -122,6 +122,17 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
   // surfaced here so the observed bars have their denominators stated.
   const corpusSize = series?.[0]?.latest.corpus_size ?? null;
   const velocityCount = series?.filter((s) => s.latest.velocity !== null).length ?? 0;
+  // Attribution breakdown: which themes cover which attributed phrases.
+  // Shown as mini bars below the "Not a funnel" paragraph.
+  const attributedPhrases = series
+    ? series
+        .filter((s) => s.latest.covered_by !== null)
+        .reduce<Record<string, number>>((acc, s) => {
+          const t = s.latest.covered_by!;
+          acc[t] = (acc[t] ?? 0) + 1;
+          return acc;
+        }, {})
+    : {};
 
   useEffect(() => {
     supabase
@@ -336,6 +347,74 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
           promotion, not discovery &mdash; candidates sit in shadow under{" "}
           <em>What the engine is discovering</em> until an operator promotes one.
         </p>
+      )}
+      {/* Attribution graphic: proportional bar (unwatched | attributed) and
+          mini bars by theme — the visual answer to "not a funnel". */}
+      {funnel && Object.keys(attributedPhrases).length > 0 && (
+        <div className="mt-3 pt-2.5 border-t border-border flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-text-tertiary w-9 text-right shrink-0">
+              attribution
+            </span>
+            {/* Proportional bar: unwatched | attributed, one shared axis. */}
+            <div className="flex-1 h-3 rounded-sm overflow-hidden flex">
+              {funnel.unwatched > 0 && (
+                <div
+                  title={`${funnel.unwatched} unwatched`}
+                  className="h-full rounded-l-sm"
+                  style={{
+                    width: `${(funnel.unwatched / funnel.tracked) * 100}%`,
+                    background: "var(--border)",
+                  }}
+                />
+              )}
+              {Object.keys(attributedPhrases).length > 0 && (
+                <div
+                  title={`${funnel.tracked - funnel.unwatched} attributed`}
+                  className={`h-full${funnel.unwatched === 0 ? " rounded-sm" : " rounded-r-sm"}`}
+                  style={{
+                    width: `${((funnel.tracked - funnel.unwatched) / funnel.tracked) * 100}%`,
+                    background: "var(--series-1)",
+                    opacity: 0.75,
+                  }}
+                />
+              )}
+            </div>
+            <div className="flex gap-2 text-[10px] text-text-tertiary shrink-0">
+              <span title="unwatched">
+                <span className="inline-block w-2 h-2 rounded-sm mr-0.5" style={{ background: "var(--border)" }} />
+                <span className="num">{funnel.unwatched}</span> unwatched
+              </span>
+              <span title="attributed">
+                <span className="inline-block w-2 h-2 rounded-sm mr-0.5" style={{ background: "var(--series-1)", opacity: 0.75 }} />
+                <span className="num">{funnel.tracked - funnel.unwatched}</span> attributed
+              </span>
+            </div>
+          </div>
+          {/* Mini bars: attributed phrases broken down by which theme covers them. */}
+          {Object.entries(attributedPhrases)
+            .sort((a, b) => b[1] - a[1])
+            .map(([theme, count]) => (
+              <div key={theme} className="flex items-center gap-2">
+                <span className="text-[10px] text-text-tertiary w-9 text-right shrink-0 truncate" title={theme}>
+                  {theme}
+                </span>
+                <div className="flex-1 h-2 rounded-sm overflow-hidden bg-border/30">
+                  <div
+                    className={`h-full${count === funnel.tracked - funnel.unwatched ? " rounded-sm" : " rounded-r-sm"}`}
+                    style={{
+                      width: `${(count / (funnel.tracked - funnel.unwatched)) * 100}%`,
+                      background: "var(--series-1)",
+                      opacity: 0.6,
+                    }}
+                  />
+                </div>
+                <span className="num text-[10px] text-text-tertiary w-4 text-right shrink-0">
+                  {count}
+                </span>
+              </div>
+            ))}
+        </div>
       )}
     </div>
   );

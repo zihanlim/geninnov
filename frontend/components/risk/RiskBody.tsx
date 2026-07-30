@@ -85,16 +85,14 @@ import {
 } from "@/lib/risk/riskBoard";
 import { fetchThemeHistories } from "@/lib/themeSignals";
 import SectionNav from "@/components/SectionNav";
+import AnswerRow from "@/components/AnswerRow";
+import { riskAnswerCards } from "@/components/risk/RiskAnswerCards";
 import {
   PHASE_SECTION_NAV,
   phaseShows,
   type RiskPhase,
 } from "@/lib/method/phaseSections";
 
-// Six anchored groups, in the order the page already rendered them — no panel
-// moved. Labels are nouns and carry no figure (SectionNav is tested for that:
-// a count here would be an untraceable number that goes stale against the panel
-// it labels).
 /** Title and lede per phase route. The section nav below them comes from
  *  PHASE_SECTION_NAV, so the tabs and the sections rendered cannot disagree. */
 const PHASE_COPY: Record<RiskPhase, { title: string; lede: string }> = {
@@ -757,6 +755,25 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       {/* The nav sits BELOW the alert banners above. An alert is the one thing a
           reader has to see before deciding where to jump; putting the nav above
           it would let a reader navigate away from a breach they never saw. */}
+      {/* The answer row sits ABOVE the section nav, because it is the answer and the
+          nav is a way of getting to the evidence for it. Measured before this
+          existed: /risk's own headline — the six-scenario matrix — was at 2622px,
+          nearly three screens down (ADR-0172). Only phase 3 has one so far; the
+          other rows land in the same place as they are written. */}
+      {phase === "risk" && (
+        <AnswerRow
+          cards={riskAnswerCards({
+            scenarioState,
+            correlationState,
+            attribution,
+            positionCount: data.positions.length,
+            factorCoverage: data.positions.filter(
+              (p) => p.asset && factorMap[p.asset],
+            ).length,
+          })}
+        />
+      )}
+
       <SectionNav items={PHASE_SECTION_NAV[phase]} />
 
       {/* The mandate comes FIRST, because the board below measures against it.

@@ -72,6 +72,44 @@ from .book_metrics import (
 TRADING_DAYS = 252
 MIN_OBS_FOR_COVARIANCE = 60
 
+# ── Covariance shrinkage (ADR-0173) ───────────────────────────────────────────
+# `covariance_from_returns` used to return the raw sample estimate, symmetrised and
+# annualised, nothing else. Two things follow from that which were true and
+# undisclosed:
+#
+#   1. This SAME estimate is minimised (as w'Sigma w) by `optimize()` AND handed to
+#      `monte_carlo_var`/`compute_var_forecast` as the reporting covariance
+#      (`q1_agent.py` calls `covariance_from_returns` at both sites). Minimising a
+#      quadratic form under a noisy sample Sigma systematically favours the
+#      directions where Sigma UNDERSTATES true covariance — Markowitz's classic
+#      error-maximisation. So the risk figure on an optimised book was biased low
+#      by the same estimator that sized it, and nothing said so.
+#   2. The asymmetry was the tell: `expected_returns.py` shrinks mu 50% toward zero
+#      (ADR-0033, IC_SHRINKAGE) because an unvalidated signal has no alpha. Sigma
+#      received no equivalent treatment — the return side was treated as
+#      untrustworthy and the risk side as exact, with no argument for the
+#      difference.
+#
+# The fix shrinks toward a CONSTANT-CORRELATION target: keep each asset's own
+# sample VARIANCE (the diagonal), replace every pairwise correlation with the
+# sample's own average off-diagonal correlation (Ledoit & Wolf 2003's target
+# matrix). Variances are kept because `size_positions` and the VaR/MC path both
+# read per-asset risk contributions off this matrix, and a target that flattened
+# variances too would move single-name risk for no diversification reason —
+# shrinkage should quiet the noisiest part of the estimate (pairwise correlation,
+# O(n^2) parameters from the same O(n) observations) without touching the part
+# that is directly measured (variance, O(n) parameters).
+#
+# `COV_SHRINKAGE_INTENSITY` is a FIXED constant, not Ledoit-Wolf's
+# asymptotically-optimal intensity. Deriving that needs the paper's pi-hat/rho-hat
+# estimators — a second nontrivial thing to get right for a marginal gain over a
+# stated operator choice, and this repo already has a nearby precedent for the
+# fixed-constant answer: IC_SHRINKAGE is 50%, chosen and stated, not fitted. 0.25
+# is smaller than that because a covariance estimated from MIN_OBS_FOR_COVARIANCE
+# (60) sessions carries more information per degree of freedom than a single IC
+# reading — the sample is closer to trustworthy, so it is shrunk less.
+COV_SHRINKAGE_INTENSITY = 0.25
+
 # Weights are stored as `REAL` and rendered as percentages. Below this a position is
 # solver dust, not a trade: on $100M, 1e-6 is $100. Dust is zeroed rather than carried,
 # so `zeroed` means "the optimizer declined this name" instead of "there is a $12
@@ -159,6 +197,7 @@ class OptimizerConstraints:
             max_complex=mandate.max_complex,
             max_complex_risk_mult=mandate.max_complex,
             max_gross=mandate.max_gross,
+            max_turnover=mandate.max_turnover,
             **overrides,
         )
 
@@ -176,7 +215,14 @@ class OptimizerInputs:
     directions: dict[str, str]
     mu: dict[str, float]
     cov: np.ndarray
-    weights0: dict[str, float] | None = None       # signed, for turnover
+    # Signed. The CONVICTION book of this same run — weight_delta and the frontier's
+    # "you are here" point are both scored against it. NOT the turnover baseline.
+    weights0: dict[str, float] | None = None
+    # Signed. YESTERDAY'S published book (book_holdings.signed_weight) — the ONLY
+    # baseline the turnover constraint uses. Distinct from `weights0` on purpose: see
+    # the comment at the constraint site in `optimize()` for why conflating the two
+    # caps the wrong quantity (ADR-0173).
+    weights_held: dict[str, float] | None = None
     scenarios: np.ndarray | None = None            # T x n daily returns, `assets` order
     sector_map: dict[str, str] | None = None
     geo_map: dict[str, str] | None = None
@@ -198,7 +244,21 @@ class OptimizationResult:
     gross: float | None
     net: float | None
     cash: float | None
+    # Intra-run: this solve's weights vs `weights0` (the conviction book). What the
+    # optimizer changed relative to its own starting point — unrelated to how much
+    # the PUBLISHED book moves day over day. Unchanged meaning; kept for
+    # `weight_delta`/frontier consumers that already read it.
     turnover: float | None
+    # Day-over-day: this solve's weights vs `weights_held` (yesterday's published
+    # book). None when `weights_held` was not supplied — e.g. no prior book exists —
+    # which is a different claim from 0.0 (a book that moved nothing). THIS is the
+    # figure the mandate's `max_turnover` actually governs (ADR-0173).
+    realised_turnover: float | None = None
+    # The cap that was IN FORCE for this solve, echoed so a reader never has to
+    # cross-reference the mandate to know whether today's number was constrained.
+    # None when no cap applied — either the mandate carries none, or there was no
+    # prior book to measure against.
+    turnover_cap: float | None = None
     binding_constraints: list[str] = field(default_factory=list)
     zeroed: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -217,6 +277,8 @@ class OptimizationResult:
             "net": self.net,
             "cash": self.cash,
             "turnover": self.turnover,
+            "realised_turnover": self.realised_turnover,
+            "turnover_cap": self.turnover_cap,
             "binding_constraints": list(self.binding_constraints),
             "zeroed": list(self.zeroed),
             "warnings": list(self.warnings),
@@ -283,13 +345,53 @@ def _infeasible(objective: str, status: str, reason: str,
     )
 
 
+def _shrink_to_constant_correlation(cov: np.ndarray, intensity: float) -> np.ndarray:
+    """Shrink a sample covariance toward a constant-correlation target.
+
+    Target keeps the SAMPLE variances (the diagonal) and replaces every pairwise
+    correlation with the sample's own average off-diagonal correlation. See
+    `COV_SHRINKAGE_INTENSITY`'s module-level comment for why variances are kept and
+    why the intensity is a stated constant rather than an asymptotically-derived one.
+
+    `intensity <= 0` or fewer than 2 assets returns `cov` unchanged rather than
+    raising — a shrinkage helper that fails closed on a degenerate matrix is safer
+    than one that has to be guarded at every call site.
+    """
+    n = cov.shape[0]
+    if n < 2 or intensity <= 0:
+        return cov
+    std = np.sqrt(np.diag(cov))
+    # A zero-variance asset (constant price over the window) would divide by zero
+    # forming the correlation matrix; its row/column of the TARGET is then built
+    # from a placeholder std of 1.0, which the outer product below immediately
+    # rescales back to variance 0 via `np.outer(std, std)` using the REAL std — so
+    # the placeholder only prevents the division, it never leaks into the target.
+    std_safe = np.where(std > 0, std, 1.0)
+    corr = cov / np.outer(std_safe, std_safe)
+    off_diag_sum = corr.sum() - np.trace(corr)
+    n_pairs = n * (n - 1)
+    avg_corr = float(off_diag_sum / n_pairs) if n_pairs > 0 else 0.0
+    target_corr = np.full((n, n), avg_corr)
+    np.fill_diagonal(target_corr, 1.0)
+    target = target_corr * np.outer(std, std)
+    shrunk = (1.0 - intensity) * cov + intensity * target
+    return (shrunk + shrunk.T) / 2.0
+
+
 def covariance_from_returns(
     returns: pd.DataFrame,
     assets: list[str],
     trading_days: int = TRADING_DAYS,
     min_obs: int = MIN_OBS_FOR_COVARIANCE,
+    shrinkage: float = COV_SHRINKAGE_INTENSITY,
 ) -> tuple[np.ndarray | None, list[str], list[str]]:
-    """Annualised covariance over the assets that have history. (cov, used, dropped).
+    """Annualised, SHRUNK covariance over the assets that have history.
+
+    (cov, used, dropped). Shrunk toward constant correlation at `shrinkage` —
+    see the module-level comment on `COV_SHRINKAGE_INTENSITY` for why. Every
+    caller inherits it automatically: the optimizer and the VaR/Monte-Carlo report
+    both call this same function, so they cannot diverge on which Sigma is "the"
+    covariance (ADR-0173).
 
     Inner-joins on common dates for the same reason `decompose_risk` does: a per-column
     dropna estimates each pair over a different window, and the resulting matrix need
@@ -310,6 +412,7 @@ def covariance_from_returns(
 
     cov = aligned[used].cov().to_numpy() * trading_days
     cov = (cov + cov.T) / 2.0          # symmetrise for the PSD assumption
+    cov = _shrink_to_constant_correlation(cov, shrinkage)
     if not np.all(np.isfinite(cov)):
         return None, [], list(assets)
     return cov, used, dropped
@@ -517,8 +620,26 @@ def optimize(
                 root = _psd_sqrt(sub)
                 cons.append(cp.norm(root @ w[idx], 2) <= complex_risk_budget)
 
-    if c.max_turnover is not None:
-        cons.append(cp.norm1(w - w0) <= float(c.max_turnover))
+    # `weights_held`, NOT `w0`/`weights0`. `weights0` is the CONVICTION book of this
+    # same run — `weight_delta` and the frontier's "you are here" both need that
+    # baseline (size_positions' own comment says so), so binding turnover to it would
+    # cap the optimizer's intra-run adjustment rather than day-over-day churn. That
+    # was ADR-0150's finding about `rebalance_cost` one layer along: the measurement
+    # was fixed, the optimiser was never re-pointed. `weights_held` is yesterday's
+    # PUBLISHED book (`book_holdings.signed_weight`), fetched once in `run_q1_agent`
+    # and carried on `state["weights_held"]` (ADR-0173).
+    #
+    # Applied only when BOTH sides are present: a cap with no prior book to measure
+    # from would either silently do nothing (weights_held defaults to zeros, which
+    # is a full-rebalance-from-cash claim no run has ever made) or block the very
+    # first book. Absence of a prior book is not evidence the book should not move.
+    w_held = (
+        np.array([float((inputs.weights_held or {}).get(a, 0.0)) for a in assets])
+        if inputs.weights_held is not None
+        else None
+    )
+    if c.max_turnover is not None and w_held is not None:
+        cons.append(cp.norm1(w - w_held) <= float(c.max_turnover))
 
     # ── Objective ────────────────────────────────────────────────────────────────
     if objective == "mean_variance":
@@ -631,6 +752,15 @@ def optimize(
     expected_return = float(mu @ vector)
     delta = {a: weights[a] - float((inputs.weights0 or {}).get(a, 0.0)) for a in assets}
     turnover = float(sum(abs(d) for d in delta.values()))
+    # Day-over-day, against yesterday's PUBLISHED book — see the field docstring on
+    # OptimizationResult. None (not 0.0) when there was no prior book to measure
+    # from; the two are different claims.
+    realised_turnover = (
+        float(sum(abs(weights[a] - w_held[i]) for i, a in enumerate(assets)))
+        if w_held is not None
+        else None
+    )
+    turnover_cap = float(c.max_turnover) if (c.max_turnover is not None and w_held is not None) else None
 
     binding: list[str] = []
     for index, asset in enumerate(assets):
@@ -674,7 +804,11 @@ def optimize(
     budget = c.target_gross if c.target_gross is not None else c.max_gross
     if abs(gross - budget) < 1e-4:
         binding.append("gross at budget")
-    if c.max_turnover is not None and abs(turnover - c.max_turnover) < 1e-4:
+    # Checked against REALISED turnover, not the intra-run figure — the constraint
+    # itself binds `w - w_held`, so this must test the same quantity it constrains.
+    # Testing `turnover` (vs weights0/conviction) here would report the wrong
+    # distance as "at cap" whenever the two diverge, which they routinely do.
+    if turnover_cap is not None and realised_turnover is not None and abs(realised_turnover - turnover_cap) < 1e-4:
         binding.append("turnover at cap")
 
     # A name the optimizer declined. ADR-0058: an empty slot owes an explanation, so
@@ -693,6 +827,8 @@ def optimize(
         net=net,
         cash=max(0.0, 1.0 - gross),
         turnover=turnover,
+        realised_turnover=realised_turnover,
+        turnover_cap=turnover_cap,
         binding_constraints=binding,
         zeroed=zeroed,
         warnings=warnings,

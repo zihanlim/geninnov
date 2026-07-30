@@ -65,6 +65,24 @@ MAX_SECTOR_WEIGHT = 0.30       # no single sector > 30%
 MAX_GEO_WEIGHT = 0.35          # no single geography > 35%
 MAX_GROSS = 1.0                # long + short <= 100%; ADR-0037 banks the rest as cash
 
+# Day-over-day, against yesterday's PUBLISHED book — not the intra-run figure
+# `optimizer.py` also reports (see OptimizationResult.turnover vs .realised_turnover).
+# `OptimizerConstraints.max_turnover` has existed since ADR-0107 and NOTHING has ever
+# set it: `held_book.py`'s own docstring named this exact gap — "a real
+# portfolio-construction decision... with no measured basis in this repo for any
+# particular number... when someone can justify a budget, it goes in the mandate".
+#
+# The number is a first cut, an operator decision in the ADR-0037 sense ("re-specifying
+# it is an operator decision, not an implementation one"), not a fitted optimum. Chosen
+# against 7 sessions of `book_holdings_performance.turnover`: 30.4/47.7/51.0/57.1/72.2%
+# cluster below it and are UNAFFECTED; the two outliers, 141.6% and 200.0%, are cut
+# roughly in half. 0.60 sits above the typical band on purpose — a cap that bound on an
+# ordinary day would be indistinguishable from a bug, and the finding this is fixing is
+# the OUTLIERS, whose cost dominates the mean (35%/yr annualised drag on a 92.7% mean).
+# Revisit once the constrained series has enough history to show what it actually costs
+# in expected-return foregone.
+MAX_TURNOVER = 0.60
+
 # A CORRELATION COMPLEX IS ONE IDEA, so it may hold at most what one name may
 # (ADR-0115), and at most one name's worth of RISK (ADR-0118). Named separately
 # from the single-name cap rather than aliased, so the two can diverge later with
@@ -100,6 +118,7 @@ CONFIG_KEYS: dict[str, str] = {
     "max_gross": "max_gross",
     "max_complex": "max_complex_weight",
     "crowded_multiplier": "crowded_cap_multiplier",
+    "max_turnover": "max_turnover",
 }
 
 Source = Literal["scoring_config", "code_default"]
@@ -122,6 +141,7 @@ class Mandate:
     max_gross: float = MAX_GROSS
     max_complex: float = MAX_COMPLEX_WEIGHT
     crowded_multiplier: float = CROWDED_CAP_MULTIPLIER
+    max_turnover: float = MAX_TURNOVER
     max_longs: int = MAX_LONGS
     max_shorts: int = MAX_SHORTS
     lens: str = DEFAULT_LENS
@@ -171,7 +191,7 @@ class Mandate:
         """
         fields = (
             "total_capital", "max_single_name", "max_sector", "max_geo",
-            "max_gross", "max_complex", "crowded_multiplier",
+            "max_gross", "max_complex", "crowded_multiplier", "max_turnover",
             "max_longs", "max_shorts", "lens",
         )
         return {

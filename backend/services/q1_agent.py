@@ -75,6 +75,7 @@ from .expected_returns import (
 )
 from .position_dossier import dossier_block
 from .optimizer import (
+    COV_SHRINKAGE_INTENSITY,
     OptimizerConstraints,
     OptimizerInputs,
     covariance_from_returns,
@@ -475,6 +476,7 @@ class Q1State(dict):
     retries: int
     input_snapshot: dict[str, Any]             # frozen L0-L4 at run time
     editorial_vetoes: list                     # ADR-0171 human refusals in force
+    weights_held: dict                          # ADR-0173 yesterday's held book, signed
     error: str | None
     # v2: book construction
     book_metrics_summary: str               # formatted string of computed factor tilts
@@ -2813,6 +2815,11 @@ def size_positions(state: Q1State) -> Q1State:
                 if not mu:
                     reason = "expected returns could not be built for any held name"
                 else:
+                    # From state, not fetched here — ADR-0173, same reasoning as the
+                    # editorial vetoes: this function is called directly by several
+                    # unit tests with a minimal mock state carrying no credentials,
+                    # and it must stay a pure function of `state`.
+                    weights_held = state.get("weights_held") or {}
                     inputs = OptimizerInputs(
                         assets=priced,
                         directions={p["asset"]: p.get("direction", "long")
@@ -2823,6 +2830,11 @@ def size_positions(state: Q1State) -> Q1State:
                         # frontier's "you are here" both answer the question a reader
                         # actually has: what did the optimizer change, and what did it buy?
                         weights0={a: heuristic.get(a, 0.0) for a in priced},
+                        # Yesterday's PUBLISHED book — the turnover cap's own baseline,
+                        # deliberately NOT weights0. See optimize()'s comment at the
+                        # constraint site for why conflating the two caps the wrong
+                        # quantity.
+                        weights_held=weights_held or None,
                         complex_map=complex_map,
                     )
                     result = optimize(
@@ -2851,6 +2863,13 @@ def size_positions(state: Q1State) -> Q1State:
                         payload["unpriced_assets"] = sorted(set(unpriced) | set(mu_dropped))
                         payload["mu"] = mu
                         payload["baseline"] = "conviction (ADR-0032)"
+                        # ADR-0173. A fixed constant, not derived per solve, so it is
+                        # correct to stamp unconditionally whenever `cov` is non-None:
+                        # every path that reaches here computed cov through
+                        # `covariance_from_returns`, which applies the SAME shrinkage
+                        # every time. A shrunk Sigma that does not say how much it
+                        # shrank is another naked number.
+                        payload["cov_shrinkage_intensity"] = COV_SHRINKAGE_INTENSITY
                         # Coverage at the point of use. A reader must never see a position
                         # sized smaller without also seeing what fraction of the book the
                         # crowding check could reach — GOAL.md's constraint, and the reason
@@ -3876,6 +3895,61 @@ def reason_and_verify_with_retries(
     return state
 
 
+def _fetch_previous_held_weights(
+    supabase_url: str, supabase_key: str, run_date: date,
+) -> dict[str, float]:
+    """Yesterday's PUBLISHED book, signed — the baseline the turnover cap measures
+    against (ADR-0173).
+
+    Same two-query shape `scripts/daily_refresh.py::extend_held_book` already uses:
+    the most recent `book_holdings_performance` row strictly before `run_date`, then
+    the `book_holdings` rows for THAT date. Reused rather than reimplemented so the
+    two readings of "what was held" cannot drift into disagreeing about which run is
+    "yesterday".
+
+    Ordering this depends on: `run_q1_agent` runs, and therefore this fetch runs,
+    BEFORE `extend_held_book` — which only has today's picks to read once THIS run
+    has published them. So at the moment this executes, `book_holdings`'s latest row
+    is still genuinely yesterday's, not today's about to be overwritten.
+
+    Degrades to `{}` on any failure, exactly like `fetch_active_vetoes`: an
+    unreachable table must not stop a book being published, and the read is
+    optional — `size_positions` treats an empty/missing baseline as "no prior book",
+    which is `optimize()`'s existing no-constraint-applies branch, not an error.
+    """
+    try:
+        from supabase import create_client
+
+        sb = create_client(supabase_url, supabase_key)
+        prev = (
+            sb.table("book_holdings_performance")
+            .select("run_date")
+            .lt("run_date", run_date.isoformat())
+            .order("run_date", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        ) or []
+        if not prev:
+            return {}
+        prev_date = prev[0]["run_date"]
+        rows = (
+            sb.table("book_holdings")
+            .select("asset, signed_weight")
+            .eq("run_date", prev_date)
+            .execute()
+            .data
+        ) or []
+        return {r["asset"]: float(r["signed_weight"]) for r in rows if r.get("asset")}
+    except Exception as exc:  # noqa: BLE001 — degrade, never block a run
+        print(
+            f"[run_q1_agent] Could not read the previous held book "
+            f"({type(exc).__name__}: {exc}). Sizing with NO turnover constraint for "
+            "this run — the same behaviour as a genuine first day."
+        )
+        return {}
+
+
 def run_q1_agent(
     run_date: date,
     supabase_url: str,
@@ -3970,11 +4044,21 @@ def run_q1_agent(
     if editorial_vetoes:
         print(f"[run_q1_agent] {len(editorial_vetoes)} editorial veto(es) in force.")
 
+    # Yesterday's held book (ADR-0173) — fetched here for the same reason vetoes
+    # are: `size_positions` stays a pure function of state, testable with no
+    # credentials, and the network read happens once per run rather than inside a
+    # node several unit tests call directly with a minimal mock state.
+    weights_held = _fetch_previous_held_weights(supabase_url, supabase_key, run_date)
+    if weights_held:
+        print(f"[run_q1_agent] Turnover measured against {len(weights_held)} held "
+              f"position(s) from the prior book.")
+
     state: Q1State = Q1State({
         "run_date": run_date.isoformat(),
         "supabase_url": supabase_url,
         "supabase_key": supabase_key,
         "editorial_vetoes": editorial_vetoes,
+        "weights_held": weights_held,
         "macro_snapshot": macro_snapshot,
         "regime": regime_dict,
         "candidates": candidate_dicts,

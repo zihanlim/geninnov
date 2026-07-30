@@ -37,7 +37,7 @@ def _cov(n=4, seed=11, scale=0.011):
     return np.cov(returns, rowvar=False) * 252
 
 
-def _inputs(directions, mu, cov=None, weights0=None, assets=None):
+def _inputs(directions, mu, cov=None, weights0=None, weights_held=None, assets=None):
     assets = assets or list(directions.keys())
     return OptimizerInputs(
         assets=assets,
@@ -45,6 +45,7 @@ def _inputs(directions, mu, cov=None, weights0=None, assets=None):
         mu=mu,
         cov=cov if cov is not None else _cov(len(assets)),
         weights0=weights0,
+        weights_held=weights_held,
         sector_map={a: _SECTORS.get(a, f"s_{a}") for a in assets},
         geo_map={a: _GEOS.get(a, f"g_{a}") for a in assets},
     )
@@ -162,16 +163,66 @@ def test_single_name_cap_binds():
         assert abs(weight) <= 0.12 + 1e-6, f"{asset} at {weight} breaches the 12% cap"
 
 
-def test_turnover_cap_binds():
+def test_turnover_cap_binds_on_weights_held_not_weights0():
+    """ADR-0173. The constraint measures distance from YESTERDAY's published book
+    (`weights_held`), never from the conviction book (`weights0`) — conflating the
+    two was the exact defect this test replaces: it used to pass `weights0=start`
+    and the cap bound on the wrong baseline by construction, which nothing caught
+    because both fields were plausible-looking dicts of the same shape."""
     directions = {"A": "long", "B": "long", "C": "long", "D": "long"}
     start = {"A": 0.10, "B": 0.10, "C": 0.10, "D": 0.10}
     result = optimize(
-        _inputs(directions, {a: 0.10 for a in directions}, weights0=start),
+        _inputs(directions, {a: 0.10 for a in directions}, weights_held=start),
         "mean_variance",
         OptimizerConstraints(max_turnover=0.05, risk_aversion=0.01),
     )
     assert result.feasible, result.reason
-    assert result.turnover <= 0.05 + 1e-5, f"turnover {result.turnover} exceeds its cap"
+    assert result.realised_turnover is not None
+    assert result.realised_turnover <= 0.05 + 1e-5, (
+        f"realised_turnover {result.realised_turnover} exceeds its cap"
+    )
+    assert result.turnover_cap == pytest.approx(0.05)
+    assert "turnover at cap" in result.binding_constraints
+
+
+def test_turnover_cap_does_not_bind_the_intra_run_figure():
+    """The two turnover figures are genuinely decoupled. A conviction book (weights0)
+    far from the solve is unaffected by a tight turnover cap, because the cap
+    constrains distance from weights_held, not from weights0."""
+    directions = {"A": "long", "B": "long", "C": "long", "D": "long"}
+    far_conviction = {"A": 0.0, "B": 0.0, "C": 0.0, "D": 0.0}
+    close_held = {"A": 0.10, "B": 0.10, "C": 0.10, "D": 0.10}
+    result = optimize(
+        _inputs(
+            directions, {a: 0.10 for a in directions},
+            weights0=far_conviction, weights_held=close_held,
+        ),
+        "mean_variance",
+        OptimizerConstraints(max_turnover=0.05, risk_aversion=0.01),
+    )
+    assert result.feasible, result.reason
+    # realised_turnover (vs weights_held) is capped...
+    assert result.realised_turnover <= 0.05 + 1e-5
+    # ...while turnover (vs weights0, the far conviction book) is NOT — proving the
+    # constraint never touched that quantity.
+    assert result.turnover > 0.3
+
+
+def test_no_prior_book_means_no_turnover_constraint():
+    """weights_held absent (a genuine first day, or an unreachable read) must not
+    silently become a zero-weights baseline — that would assert the book started
+    from cash, which no run has ever claimed. None means the constraint does not
+    apply, the same way it does when max_turnover itself is None."""
+    directions = {"A": "long", "B": "long", "C": "long", "D": "long"}
+    result = optimize(
+        _inputs(directions, {a: 0.10 for a in directions}),  # no weights_held
+        "mean_variance",
+        OptimizerConstraints(max_turnover=0.05, risk_aversion=0.01),
+    )
+    assert result.feasible, result.reason
+    assert result.realised_turnover is None
+    assert result.turnover_cap is None
+    assert "turnover at cap" not in result.binding_constraints
 
 
 # ─── Correctness against a closed form ───────────────────────────────────────
@@ -326,6 +377,90 @@ def test_covariance_needs_two_priced_names_and_enough_history():
 
     single, _, _ = covariance_from_returns(frame, ["A"])
     assert single is None, "one priced name is not a covariance"
+
+
+# ─── Covariance shrinkage (ADR-0173) ──────────────────────────────────────────
+#
+# The regression this section exists for: `optimize()` minimises w'Sigma w under a
+# NOISY sample Sigma, and that same Sigma is what `monte_carlo_var`/
+# `compute_var_forecast` report as the book's risk — so an unshrunk estimate is
+# biased low exactly where it is optimised against, and nothing said so. See the
+# module-level comment on COV_SHRINKAGE_INTENSITY for the full argument.
+
+
+def test_shrinkage_preserves_variance_and_pulls_correlation_toward_the_average():
+    from backend.services.optimizer import _shrink_to_constant_correlation
+
+    rng = np.random.default_rng(3)
+    A = rng.normal(size=(6, 6))
+    cov = A @ A.T + np.eye(6) * 0.01
+    cov = (cov + cov.T) / 2
+
+    shrunk = _shrink_to_constant_correlation(cov, 0.25)
+
+    assert np.allclose(np.diag(cov), np.diag(shrunk)), (
+        "shrinkage must not touch the diagonal — size_positions and the VaR/MC "
+        "path both read per-asset risk contributions off it, and a target that "
+        "flattened variances too would move single-name risk for no "
+        "diversification reason"
+    )
+    assert np.allclose(shrunk, shrunk.T), "must stay symmetric"
+
+    std = np.sqrt(np.diag(cov))
+    off = (cov / np.outer(std, std))[~np.eye(6, dtype=bool)]
+    off_shrunk = (shrunk / np.outer(std, std))[~np.eye(6, dtype=bool)]
+    assert off_shrunk.std() < off.std(), (
+        "shrinkage must narrow the SPREAD of pairwise correlations toward their "
+        "average, which is the whole point of a constant-correlation target"
+    )
+
+
+def test_shrinkage_intensity_zero_and_one_are_the_named_edge_cases():
+    from backend.services.optimizer import _shrink_to_constant_correlation
+
+    rng = np.random.default_rng(4)
+    A = rng.normal(size=(5, 5))
+    cov = A @ A.T + np.eye(5) * 0.01
+    cov = (cov + cov.T) / 2
+
+    assert np.allclose(cov, _shrink_to_constant_correlation(cov, 0.0)), (
+        "intensity 0 must return the sample estimate untouched"
+    )
+
+    full = _shrink_to_constant_correlation(cov, 1.0)
+    std = np.sqrt(np.diag(cov))
+    off_full = (full / np.outer(std, std))[~np.eye(5, dtype=bool)]
+    assert np.allclose(off_full, off_full[0], atol=1e-8), (
+        "intensity 1 must land EXACTLY on constant correlation — every "
+        "off-diagonal entry equal"
+    )
+
+
+def test_covariance_from_returns_is_shrunk_by_default():
+    """End-to-end: the function every caller uses applies the shrinkage, not just
+    the helper in isolation. This is the assertion that actually protects against
+    someone adding a new call site that bypasses it."""
+    import pandas as pd
+
+    rng = np.random.default_rng(6)
+    # Correlated returns so the raw sample has real off-diagonal spread to shrink.
+    factor = rng.normal(0, 0.01, size=120)
+    frame = pd.DataFrame(
+        {
+            "A": factor + rng.normal(0, 0.003, size=120),
+            "B": factor + rng.normal(0, 0.02, size=120),
+            "C": -0.5 * factor + rng.normal(0, 0.01, size=120),
+        },
+        index=pd.date_range("2025-01-01", periods=120, freq="B"),
+    )
+    shrunk, used, dropped = covariance_from_returns(frame, ["A", "B", "C"])
+    raw, _, _ = covariance_from_returns(frame, ["A", "B", "C"], shrinkage=0.0)
+    assert used == ["A", "B", "C"] and dropped == []
+    assert not np.allclose(shrunk, raw), (
+        "the default call must differ from the unshrunk one, or the shrinkage is "
+        "not actually wired into the function every caller uses"
+    )
+    assert np.allclose(np.diag(shrunk), np.diag(raw)), "variances must survive"
 
 
 # ─── Frontier ────────────────────────────────────────────────────────────────

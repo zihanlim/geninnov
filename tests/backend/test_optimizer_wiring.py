@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from backend.services import q1_agent  # noqa: E402
 from backend.services.expected_returns import IcReading  # noqa: E402
 from backend.services.hype_calculator import ScoringConfig  # noqa: E402
+from backend.services.mandate import Mandate  # noqa: E402
 from backend.services.q1_agent import size_positions  # noqa: E402
 
 CFG = ScoringConfig(
@@ -143,6 +144,53 @@ def test_the_conviction_book_is_kept_as_the_comparison_baseline():
         "the optimizer and the conviction weighting produced identical books, which "
         "would make the whole comparison vacuous"
     )
+
+
+# ─── ADR-0173: turnover cap and covariance shrinkage, on the LIVE path ────────
+
+
+def test_weights_held_on_state_actually_constrains_the_published_book():
+    """Not a hand-built OptimizerInputs — `state["weights_held"]`, exactly as
+    `run_q1_agent` populates it, reaching `size_positions` and changing what gets
+    published. A per-component optimizer test cannot fail when this wiring is cut;
+    this one can. (The strict "the cap actually BINDS" proof, on a controlled
+    two-input example, lives in test_optimizer.py — here the live path pulls in
+    the real SECTOR_MAP/GEO_MAP caps too, so a held book is kept modest to stay
+    comfortably feasible rather than chasing a tight bind against unknown caps.)"""
+    modest_held = {a: (0.05 if a in LONGS else -0.05) for a in ASSETS}
+    state = _state()
+    state["weights_held"] = modest_held
+    state["mandate"] = Mandate(max_turnover=0.40)
+
+    out = size_positions(state)
+
+    assert out["sizing_method"] == "optimizer", out.get("sizing_reason")
+    result = out["optimizer_result"]
+    assert result["realised_turnover"] is not None
+    assert result["realised_turnover"] <= 0.40 + 1e-5, (
+        f"realised_turnover {result['realised_turnover']} exceeds the mandate's cap"
+    )
+    assert result["turnover_cap"] == pytest.approx(0.40)
+
+
+def test_no_weights_held_on_state_leaves_turnover_unconstrained():
+    """The default mandate now carries a real max_turnover (0.60) — but with no
+    prior book on state, size_positions must not invent a zero baseline. Absence of
+    history is not evidence the book should not move."""
+    out = size_positions(_state())  # no state["weights_held"]
+
+    result = out["optimizer_result"]
+    assert result["realised_turnover"] is None
+    assert result["turnover_cap"] is None
+    assert "turnover at cap" not in result["binding_constraints"]
+
+
+def test_the_published_optimizer_result_discloses_the_shrinkage_intensity():
+    """ADR-0173: a shrunk Sigma that does not say how much it shrank is another
+    naked number. This is the PERSISTED payload, not the in-memory OptimizationResult
+    — the frontend reads research_recommendations.optimizer_result, not the object."""
+    out = size_positions(_state())
+    assert out["optimizer_result"]["cov_shrinkage_intensity"] == pytest.approx(0.25)
 
 
 # ─── Cutting the wiring must be visible ──────────────────────────────────────

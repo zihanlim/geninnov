@@ -23,11 +23,24 @@ import {
 
 const HORIZON = 21;
 
-export default function TrackRecord() {
-  const [rows, setRows] = useState<PickOutcomeRow[] | null>(null);
+/**
+ * `rows` supplied => this component does NOT fetch.
+ *
+ * ADR-0172 moved this panel to /attribution, where `RiskBody` already reads the run in
+ * ONE effect and the answer row needs the same numbers. Letting it fetch again there
+ * would put two reads of `pick_outcomes` on one page, which is the "two vintages of the
+ * same run" failure ADR-0084 refuses — and the card and the panel could then disagree
+ * about the hit count while sitting 400px apart.
+ *
+ * Self-contained remains the default so nothing else that mounts it has to change.
+ */
+export default function TrackRecord({ rows: given }: { rows?: PickOutcomeRow[] | null }) {
+  const [fetched, setFetched] = useState<PickOutcomeRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const rows = given !== undefined ? given : fetched;
 
   useEffect(() => {
+    if (given !== undefined) return;   // caller owns the read
     supabase
       .from("pick_outcomes")
       // One string literal, not a concatenation: supabase-js infers the row type from the
@@ -41,9 +54,9 @@ export default function TrackRecord() {
           setError(error.message);
           return;
         }
-        setRows((data ?? []) as PickOutcomeRow[]);
+        setFetched((data ?? []) as PickOutcomeRow[]);
       });
-  }, []);
+  }, [given]);
 
   const tr: Record_ | null = rows === null ? null : buildTrackRecord(rows, HORIZON);
   const status = tr ? trackRecordStatus(tr) : null;

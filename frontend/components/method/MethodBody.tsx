@@ -56,7 +56,6 @@ import {
 import SignalValidation from "@/components/method/SignalValidation";
 import FactorReconciliation from "@/components/method/FactorReconciliation";
 import EdgeValidation from "@/components/method/EdgeValidation";
-import TrackRecord from "@/components/method/TrackRecord";
 import BookRevisions from "@/components/method/BookRevisions";
 import SourceBoard from "@/components/method/SourceBoard";
 import SourceIndependence from "@/components/method/SourceIndependence";
@@ -2437,11 +2436,29 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
       </Section>
       )}
 
-      {/* Self-contained like SignalValidation/EdgeValidation: it reads pick_outcomes on its
-          own rather than joining the shared useEffect, because it is the one panel whose
-          table may not exist yet on an environment that has not applied migration 043 —
-          and a missing table must degrade to one explained gap, not fail the whole page. */}
-      {chapterOwns(chapter, "track-record") && <TrackRecord />}
+      {/* The forward record MOVED to /attribution (ADR-0172) — phase 6 is literally
+          "was the thesis right?", and that is where a reader asking it now goes. A LINK
+          and not a second render: ADR-0084's stop rule is split by section, never by
+          copy of the same data, and two copies could disagree about the hit count.
+          The anchor is kept because ADRs and PROGRESS rows cite /method#track-record,
+          and `routeForAnchor` still resolves it to this chapter. */}
+      {chapterOwns(chapter, "track-record") && (
+        <section className="mb-7" id="track-record">
+          <h2 className="text-[18px] font-semibold m-0 mb-1.5">
+            Were the published books right?
+          </h2>
+          <p className="m-0 text-[13.5px] text-text-secondary leading-[1.65] max-w-[76ch]">
+            The forward track record now lives on{" "}
+            <Link href="/attribution#track-record" className="text-accent hover:underline">
+              Attribution
+            </Link>
+            , the phase whose question it answers. Each published pick is resolved against
+            a spec the pipeline assigns rather than one the model chooses, and rows are
+            written <em>pending</em> at publication so the denominator exists before any
+            outcome does (ADR-0090).
+          </p>
+        </section>
+      )}
 
       {/* Self-contained like the panels above: it reads book_revisions on its own so a
           missing table (migration 044 unapplied) degrades to one explained gap rather

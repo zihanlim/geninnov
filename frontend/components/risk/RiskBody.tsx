@@ -87,6 +87,10 @@ import { fetchThemeHistories } from "@/lib/themeSignals";
 import SectionNav from "@/components/SectionNav";
 import AnswerRow from "@/components/AnswerRow";
 import { riskAnswerCards } from "@/components/risk/RiskAnswerCards";
+import { mandateAnswerCards } from "@/components/risk/MandateAnswerCards";
+import { attributionAnswerCards } from "@/components/risk/AttributionAnswerCards";
+import TrackRecord from "@/components/method/TrackRecord";
+import { buildTrackRecord, type PickOutcomeRow } from "@/lib/method/trackRecord";
 import {
   PHASE_SECTION_NAV,
   phaseShows,
@@ -183,6 +187,8 @@ interface PageData {
   inception: InceptionRow | null;
   /** The held book's cost-netted series (m056 / ADR-0150), for the comparison. */
   holdings: HoldingsPerformanceRow[];
+  /** pick_outcomes at the 21-day horizon; null when the read failed. */
+  outcomeRows: PickOutcomeRow[] | null;
   /** Reference series for the realised curve (ADR-0094). */
   benchmark: BenchmarkRow[];
   // ── Actionable-risk inputs ──────────────────────────────────────────────
@@ -212,6 +218,7 @@ const INITIAL: PageData = {
   returnsFailure: null,
   inception: null,
   holdings: [],
+  outcomeRows: null,
   benchmark: [],
   positions: [],
   positionsFailure: null,
@@ -257,6 +264,8 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         inceptionRes,
         benchmarkRes,
         holdingsRes,
+        outcomesRes,
+      
       ] = await Promise.all([
         supabase
           .from("research_recommendations")
@@ -317,6 +326,18 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           .select("run_date, turnover, cost_pct, cost_usd, gross_return, net_return, nav, tracking_error")
           .order("run_date")
           .limit(2000),
+        // The forward record (ADR-0090), read HERE rather than by `TrackRecord`
+        // itself. ADR-0172 moved that panel to /attribution, where the answer row
+        // needs the same counts — two reads of pick_outcomes on one page is the
+        // "two vintages of one run" failure, and the card and the panel could
+        // disagree about the hit count 400px apart. One string literal, not a
+        // concatenation: supabase-js infers the row type from the select text.
+        supabase
+          .from("pick_outcomes")
+          .select("run_date, asset, direction, horizon_days, verdict, void_reason, signed_return, entry_date, exit_date, expected_exit_date, spec_version")
+          .eq("horizon_days", 21)
+          .order("run_date", { ascending: false })
+          .limit(1000),
       ]);
 
       // portfolio_risk.run_date only exists from migration 016. If ordering by it
@@ -407,6 +428,9 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         // Absent until migration 056 is applied and the held book has run; the
         // panel renders nothing rather than an empty frame in that case.
         holdings: (holdingsRes.data as HoldingsPerformanceRow[] | null) ?? [],
+        outcomeRows: outcomesRes.error
+          ? null
+          : ((outcomesRes.data as PickOutcomeRow[] | null) ?? []),
         returnsFailure: toFailure(
           "portfolio_returns",
           RETURN_COLUMNS,
@@ -760,6 +784,30 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           existed: /risk's own headline — the six-scenario matrix — was at 2622px,
           nearly three screens down (ADR-0172). Only phase 3 has one so far; the
           other rows land in the same place as they are written. */}
+      {phase === "mandate" && (
+        <AnswerRow
+          cards={mandateAnswerCards({
+            limitRows: limitBoard,
+            capState,
+            bookMetrics,
+            totalCapital: data.risk?.total_capital ?? null,
+          })}
+        />
+      )}
+
+      {phase === "attribution" && (
+        <AnswerRow
+          cards={attributionAnswerCards({
+            track:
+              data.outcomeRows === null
+                ? null
+                : buildTrackRecord(data.outcomeRows, 21),
+            holdings: data.holdings,
+            sessions: data.returns.length,
+          })}
+        />
+      )}
+
       {phase === "risk" && (
         <AnswerRow
           cards={riskAnswerCards({
@@ -966,6 +1014,12 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           against the other was previously a scroll. */}
       {shows("realised") && (
       <section id="realised" aria-label="Realised performance">
+      {/* The forward record, moved here from /method/evidence (ADR-0172). Phase 6
+          IS "was the thesis right", and this is the only instrument that answers it
+          about books we actually published. Fed the rows this page already read, so
+          it makes no second query of its own. */}
+      <TrackRecord rows={data.outcomeRows} />
+
       {/* Moved off /mandate (ADR-0172). Both are BACKWARD-LOOKING, which is phase
           6's question and not phase 1's — a mandate says what the book is allowed to
           be, not what it did. They were at 4093px on a page whose own answer is at

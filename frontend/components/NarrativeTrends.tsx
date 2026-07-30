@@ -1195,6 +1195,12 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                             , first seen <span className="num">{s.latest.first_seen}</span> (
                             {STATUS_COPY[s.latest.status]})
                           </span>
+                          <span className="text-text-tertiary text-[10.5px]">
+                            {" · "}{s.latest.days_observed} days observed
+                            {isCorroborated(s.latest)
+                              ? ` · corroborated by ${(s.latest.methods ?? []).join(" + ")}`
+                              : " · frequency only"}
+                          </span>
                         </li>
                       ))}
                     </ul>

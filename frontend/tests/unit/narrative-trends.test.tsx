@@ -235,6 +235,109 @@ describe("share axis overrides let two charts share one scale (ADR-0177)", () =>
   });
 });
 
+describe("labelInside keeps end-labels within the plot's own x-axis (ADR-0178)", () => {
+  it("anchors the label INSIDE plotWidth, not past its right edge", () => {
+    const data = [series("a fairly long narrative phrase", [0.01, 0.05, 0.1])];
+    const withoutInside = renderToStaticMarkup(
+      <TrendPlot series={data} width={430} height={225} />,
+    );
+    const withInside = renderToStaticMarkup(
+      <TrendPlot series={data} width={430} height={225} plotRight={16} labelInside />,
+    );
+    // Default mode: the label sits in the dedicated right gutter, past the
+    // plot's own data area (plotLeft + plotWidth = 44 + (430-44-148) = 282).
+    const outsideLabel = withoutInside.match(
+      /<text x="([\d.]+)"[^>]*fill="var\(--series-1\)" font-size="10">/,
+    );
+    expect(outsideLabel).not.toBeNull();
+    expect(Number(outsideLabel?.[1])).toBeGreaterThan(282);
+    // labelInside mode: text-anchor="end" at (or left of) the plot's own
+    // right edge (44 + (430-44-16) = 414) — never past it.
+    const insideLabel = withInside.match(
+      /<text x="([\d.]+)"[^>]*text-anchor="end" fill="var\(--series-1\)" font-size="10">/,
+    );
+    expect(insideLabel).not.toBeNull();
+    expect(Number(insideLabel?.[1])).toBeLessThanOrEqual(414);
+  });
+
+  it("still ties a displaced label back to its line, as a vertical connector rather than a rightward leader", () => {
+    // Two lines converging at the end still need the collision pass; the
+    // connector shape changes (vertical, at the point's own x) but a
+    // reader must still be able to trace a moved label back to its line.
+    const out = renderToStaticMarkup(
+      <TrendPlot
+        series={[
+          series("first narrative", [0.01, 0.05]),
+          series("second narrative", [0.02, 0.0501]),
+        ]}
+        width={430}
+        height={225}
+        plotRight={16}
+        labelInside
+      />,
+    );
+    // A short vertical tie: x1 === x2, y1 !== y2 (the rightward-leader shape
+    // has x1 !== x2 for its horizontal run, so this distinguishes them).
+    expect(out).toMatch(/<line x1="([\d.]+)" y1="[\d.]+" x2="\1" y2="[\d.]+"/);
+  });
+});
+
+describe("per-phrase colours can be shared with another chart (ADR-0178)", () => {
+  it("TrendPlot's colors map overrides seriesColor for a matched phrase", () => {
+    const data = [series("second in rank", [0.01, 0.05])];
+    // Rank 0 in a single-series call would normally get SERIES_COLORS[0].
+    const withoutMap = renderToStaticMarkup(<TrendPlot series={data} />);
+    expect(withoutMap).toContain("var(--series-1)");
+    const withMap = renderToStaticMarkup(
+      <TrendPlot series={data} colors={new Map([["second in rank", "var(--theme-ai-capex)"]])} />,
+    );
+    expect(withMap).toContain("var(--theme-ai-capex)");
+    expect(withMap).not.toContain("var(--series-1)");
+  });
+
+  it("DetectionScatter's colors map overrides markColor for a matched phrase only", () => {
+    const matched: NarrativeSeries = {
+      phrase: "matched",
+      points: [{ run_date: "2026-07-28", share: 0.1 }],
+      latest: row({ phrase: "matched", share: 0.1, velocity: 1.0, covered_by: null }),
+    };
+    const unmatched: NarrativeSeries = {
+      phrase: "unmatched",
+      points: [{ run_date: "2026-07-28", share: 0.08 }],
+      latest: row({ phrase: "unmatched", share: 0.08, velocity: 1.2, covered_by: null }),
+    };
+    const out = renderToStaticMarkup(
+      <DetectionScatter
+        series={[matched, unmatched]}
+        colors={new Map([["matched", "var(--theme-ai-capex)"]])}
+      />,
+    );
+    expect(out).toContain("var(--theme-ai-capex)");
+    // The unmatched phrase keeps the ordinary uncovered default.
+    expect(out).toContain("var(--series-1)");
+  });
+
+  it("the board gives a top-5 phrase the SAME colour on its line and its dot", () => {
+    // End-to-end: not just that both props are wired (the source-text pin
+    // covers that), but that the computed colour actually round-trips onto
+    // both charts for the same phrase.
+    const twoRuns: NarrativeSeries = {
+      phrase: "shared colour phrase",
+      points: [
+        { run_date: "2026-07-28", share: 0.05 },
+        { run_date: "2026-07-29", share: 0.08 },
+      ],
+      latest: row({ phrase: "shared colour phrase", share: 0.08, velocity: 1.5 }),
+    };
+    const out = renderToStaticMarkup(
+      <NarrativeTrends shared={{ series: [twoRuns], asOfFallback: null, error: null }} />,
+    );
+    // Rank 0, uncovered -> SERIES_COLORS[0] on both the line and the dot.
+    const lineColorCount = (out.match(/var\(--series-1\)/g) ?? []).length;
+    expect(lineColorCount).toBeGreaterThanOrEqual(2); // at least the line's path/circles AND the dot
+  });
+});
+
 describe("plot geometry holds at every series count and run count", () => {
   // ADR-0126's bug class was a mark centred on a coordinate that is already the
   // plot boundary — invisible at the one size the original test happened to use.
@@ -314,6 +417,29 @@ describe("geometry props hold at a narrow width too (ADR-0176)", () => {
           <TrendPlot series={data} width={430} height={225} />,
         );
         expect(out).toContain('viewBox="0 0 430 225"');
+        expect(marksOutsideViewBox(out)).toEqual([]);
+      });
+    }
+  }
+
+  for (const runs of [2, 5, 14, 30]) {
+    for (const seriesCount of [1, 3, 5]) {
+      it(`labelInside mode with the actual production plotRight draws nothing outside the viewBox at ${seriesCount}x${runs} (ADR-0178)`, () => {
+        // The exact config NarrativeTrends passes live: plotRight shrunk from
+        // the 148-unit label gutter to 16, labels moved inline. Distinct from
+        // the sweep above (which uses the 430x225 box but the OLD 148 gutter
+        // and outside-label rendering) — this is the geometry that actually
+        // ships, and it is the one most likely to clip something, since the
+        // plot area grew by ~130 units into space labels used to own alone.
+        const data = Array.from({ length: seriesCount }, (_, s) =>
+          series(
+            `narrative ${s}`,
+            Array.from({ length: runs }, (_, i) => 0.01 + (i * (s + 1)) / 1000),
+          ),
+        );
+        const out = renderToStaticMarkup(
+          <TrendPlot series={data} width={430} height={225} plotRight={16} labelInside />,
+        );
         expect(marksOutsideViewBox(out)).toEqual([]);
       });
     }
@@ -667,26 +793,36 @@ describe("DetectionScatter — the detector's honesty (ADR-0146)", () => {
     expect(src).toContain("<DetectionScatter series={series}");
   });
 
-  it("the scatter's x-axis shares the trend's own axis, not its own separate max (ADR-0177)", () => {
+  it("the scatter's x-axis shares the trend's own axis and colour map, not its own separate max (ADR-0177/0178)", () => {
     const src = readFileSync(
       path.resolve(__dirname, "../../components/NarrativeTrends.tsx"),
       "utf8",
     );
-    expect(src).toContain('<DetectionScatter series={series} xMax={sharedShareMax} />');
+    expect(src).toContain(
+      "<DetectionScatter series={series} xMax={sharedShareMax} colors={topColors} />",
+    );
   });
 
-  it("the trend plot is narrowed to the scatter's own box, not left at the wide default (ADR-0176)", () => {
+  it("the trend plot is narrowed to the scatter's own box, labels drawn inline, colours matched to the scatter (ADR-0176/0178)", () => {
     // Both plots render `w-full` inside the same grid column, which makes
     // them the same CSS width regardless of their viewBox numbers — but
     // TrendPlot's 720-wide DEFAULT viewBox would still scale its fonts down
     // to illegibility at that column's ~400px, the exact failure ADR-0168
-    // fixed for DetectionScatter. Pins that the call site passes DetectionScatter's
-    // own S_WIDTH/S_HEIGHT rather than relying on the default.
+    // fixed for DetectionScatter. `plotRight={16}` + `labelInside` reclaim
+    // the space the old 148-unit label gutter reserved (ADR-0178); `colors`
+    // gives each line the same hue as its own dot below.
     const src = readFileSync(
       path.resolve(__dirname, "../../components/NarrativeTrends.tsx"),
       "utf8",
     );
-    expect(src).toContain('<TrendPlot series={top} width={S_WIDTH} height={S_HEIGHT} yMax={sharedShareMax} />');
+    const callSite = src.slice(src.indexOf("<TrendPlot\n"), src.indexOf("<TrendPlot\n") + 320);
+    expect(callSite).toContain("series={top}");
+    expect(callSite).toContain("width={S_WIDTH}");
+    expect(callSite).toContain("height={S_HEIGHT}");
+    expect(callSite).toContain("plotRight={16}");
+    expect(callSite).toContain("yMax={sharedShareMax}");
+    expect(callSite).toContain("labelInside");
+    expect(callSite).toContain("colors={topColors}");
   });
 
   it("also renders a share-over-time trend above the plane (ADR-0175)", () => {

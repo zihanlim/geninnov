@@ -153,6 +153,8 @@ export function TrendPlot({
   plotTop = DEFAULT_PLOT_TOP,
   plotBottom = DEFAULT_PLOT_BOTTOM,
   yMax: yMaxProp,
+  labelInside = false,
+  colors,
 }: {
   series: TrendSeries[];
   width?: number;
@@ -167,6 +169,20 @@ export function TrendPlot({
    *  ADR-0177) put both on one scale, so a reader compares a line's height
    *  to a dot's position without doing the conversion themselves. */
   yMax?: number;
+  /** Draws end-labels INSIDE the plot, anchored left of each line's last
+   *  point, instead of in a dedicated right-hand gutter. `plotRight`'s
+   *  default (148) exists to hold those gutter labels; a caller passing
+   *  `labelInside` should also pass a much smaller `plotRight`, or the
+   *  point of this flag — reclaiming that space for the plotted data
+   *  (ADR-0178) — is undone. `ThemeTrends` passes neither and is
+   *  unaffected. */
+  labelInside?: boolean;
+  /** Per-phrase colour overrides, keyed by `phrase`. Falls back to
+   *  `seriesColor` for anything not in the map. Lets a caller stacking this
+   *  beside another chart of the SAME phrases (the narrative board's own
+   *  scatter) give a phrase one colour across both (ADR-0178) rather than
+   *  each chart picking its own independently. */
+  colors?: Map<string, string>;
 }) {
   const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string; color: string; dateX: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -280,7 +296,7 @@ export function TrendPlot({
         </text>
 
         {series.map((s, i) => {
-          const color = seriesColor(s.phrase, i);
+          const color = colors?.get(s.phrase) ?? seriesColor(s.phrase, i);
           const d = s.points
             .map((p, j) => `${j === 0 ? "M" : "L"}${x(p.run_date).toFixed(2)},${y(p.share).toFixed(2)}`)
             .join(" ");
@@ -314,10 +330,11 @@ export function TrendPlot({
 
         {/* Direct labels. Identity never depends on a colour lookup. */}
         {series.map((s, i) => {
-          const color = seriesColor(s.phrase, i);
+          const color = colors?.get(s.phrase) ?? seriesColor(s.phrase, i);
           const yl = labelY.get(i) ?? plotTop;
           const last = s.points[s.points.length - 1];
           const yEnd = y(last.share);
+          const lastX = x(last.run_date);
           // A leader line wherever the anti-collision pass moved a label off its
           // own line's end. Without it, three narratives converging at ~3% get
           // three stacked labels whose only tie to their lines is hue — which is
@@ -327,22 +344,38 @@ export function TrendPlot({
           return (
             <g key={`lbl-${s.phrase}`}>
               {displaced && (
-                <polyline
-                  points={[
-                    `${plotLeft + plotWidth},${yEnd.toFixed(2)}`,
-                    `${plotLeft + plotWidth + LEADER_RUN * 0.4},${yEnd.toFixed(2)}`,
-                    `${plotLeft + plotWidth + LEADER_RUN * 0.8},${yl.toFixed(2)}`,
-                    `${plotLeft + plotWidth + LEADER_RUN},${yl.toFixed(2)}`,
-                  ].join(" ")}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={1}
-                  opacity={0.7}
-                />
+                labelInside ? (
+                  // A short vertical tie, the same shape DetectionScatter uses
+                  // for its own displaced labels — appropriate here too, since
+                  // the label sits AT the point's own x, not off to one side.
+                  <line
+                    x1={lastX - 2}
+                    y1={yEnd}
+                    x2={lastX - 2}
+                    y2={yl}
+                    stroke={color}
+                    strokeWidth={1}
+                    opacity={0.6}
+                  />
+                ) : (
+                  <polyline
+                    points={[
+                      `${plotLeft + plotWidth},${yEnd.toFixed(2)}`,
+                      `${plotLeft + plotWidth + LEADER_RUN * 0.4},${yEnd.toFixed(2)}`,
+                      `${plotLeft + plotWidth + LEADER_RUN * 0.8},${yl.toFixed(2)}`,
+                      `${plotLeft + plotWidth + LEADER_RUN},${yl.toFixed(2)}`,
+                    ].join(" ")}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={1}
+                    opacity={0.7}
+                  />
+                )
               )}
               <text
-                x={plotLeft + plotWidth + LABEL_X}
+                x={labelInside ? lastX - 6 : plotLeft + plotWidth + LABEL_X}
                 y={yl + 3}
+                textAnchor={labelInside ? "end" : undefined}
                 fill={color}
                 fontSize="10"
               >
@@ -450,6 +483,7 @@ const RUG_NAMED = 3;
 export function DetectionScatter({
   series,
   xMax: xMaxProp,
+  colors,
 }: {
   series: NarrativeSeries[];
   /** Overrides this plane's own computed max — see TrendPlot's `yMax` prop
@@ -457,6 +491,13 @@ export function DetectionScatter({
    *  dot's horizontal position and a line's height become directly
    *  comparable (ADR-0177). */
   xMax?: number;
+  /** Per-phrase colour overrides, keyed by `phrase` — see TrendPlot's
+   *  `colors` prop for why (ADR-0178). Only the phrases ALSO drawn as lines
+   *  above (the top few by share) are ever in this map; every other mark
+   *  keeps the existing coverage-only scheme untouched, so the plane's
+   *  primary encoding (filled/hollow = payload/context) is not diluted for
+   *  the long tail it actually exists to triage. */
+  colors?: Map<string, string>;
 }) {
   const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string; color: string } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -493,8 +534,17 @@ export function DetectionScatter({
   // of the phrase itself. `phrase.includes("ai")` also caught `supply chain`,
   // `rail freight` and `capital` — a mark's identity cannot be decided by two
   // letters appearing anywhere in it.
-  const markColor = (s: { covered_by?: string | null }) =>
-    (s.covered_by && IDENTITY_COLORS[s.covered_by]) || "var(--series-1)";
+  //
+  // `colors` is checked FIRST, ahead of the covered_by identity check — a
+  // phrase in the map is one of the few also drawn as a line above, and that
+  // per-phrase colour already resolved its OWN covered_by internally
+  // (ADR-0178). Falling through past it here would let this second lookup
+  // silently disagree with the first.
+  const markColor = (phrase: string, coveredBy: string | null) => {
+    const matched = colors?.get(phrase);
+    if (matched) return matched;
+    return (coveredBy && IDENTITY_COLORS[coveredBy]) || "var(--series-1)";
+  };
 
 // Direct labels on BOTH encodings (ADR-0162), not on the payload alone.
   //
@@ -609,7 +659,7 @@ export function DetectionScatter({
           return (
             <g key={s.phrase}>
               {s.latest.status === "emerging" && (
-                <circle cx={cx} cy={cy} r={6.5} fill="none" stroke={markColor(s.latest)} strokeWidth={1} opacity={0.8} />
+                <circle cx={cx} cy={cy} r={6.5} fill="none" stroke={markColor(s.phrase, s.latest.covered_by)} strokeWidth={1} opacity={0.8} />
               )}
               {/* Hue and coverage are separate channels. The hue names WHICH
                   narrative; the fill/hollow split names whether anything is
@@ -620,8 +670,8 @@ export function DetectionScatter({
                 cx={cx}
                 cy={cy}
                 r={uncovered ? 3.5 : 3}
-                fill={uncovered ? markColor(s.latest) : "transparent"}
-                stroke={uncovered ? "none" : markColor(s.latest)}
+                fill={uncovered ? markColor(s.phrase, s.latest.covered_by) : "transparent"}
+                stroke={uncovered ? "none" : markColor(s.phrase, s.latest.covered_by)}
                 strokeWidth={uncovered ? 0 : 1.2}
                 onMouseEnter={(e) => {
                   const svgRect = svgRef.current?.getBoundingClientRect();
@@ -685,7 +735,10 @@ export function DetectionScatter({
             x2={x(s.latest.share)}
             y1={XLABEL_Y + 22}
             y2={XLABEL_Y + 22 + RUG_H}
-            stroke={s.latest.covered_by === null ? "var(--series-1)" : "var(--text-tertiary)"}
+            stroke={
+              colors?.get(s.phrase) ??
+              (s.latest.covered_by === null ? "var(--series-1)" : "var(--text-tertiary)")
+            }
             strokeWidth={1.5}
             opacity={0.65}
           >
@@ -883,6 +936,24 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
         ...top.flatMap((s) => s.points.map((p) => p.share)),
       ) * 1.1
     : 0.01;
+  // ONE colour per phrase, shared by the line above and its dot below
+  // (ADR-0178). Computed HERE because only the parent has both pieces a
+  // narrative phrase's colour needs at once — its RANK (this is `top`'s own
+  // index, the same one `seriesColor` already uses) and its `covered_by`
+  // (only visible on `NarrativeSeries.latest`, which `TrendSeries` does not
+  // carry). `seriesColor(phrase, i)` alone — what TrendPlot called before
+  // this existed — checks `IDENTITY_COLORS[phrase]`, and no narrative phrase
+  // is ever literally the string "AI Capex"; only `covered_by` is. Checking
+  // it here is what lets "ai" (covered by AI Capex) actually GET the
+  // theme's own hue instead of a rank-rotation colour that happened to miss
+  // every time.
+  const topColors = new Map(
+    top.map((s, i) => [
+      s.phrase,
+      (s.latest.covered_by && IDENTITY_COLORS[s.latest.covered_by]) ||
+        SERIES_COLORS[i % SERIES_COLORS.length],
+    ]),
+  );
   // For the trend plot only — the scatter below needs no run count, it plots
   // one day. A trajectory needs at least two.
   const runs = series
@@ -1038,7 +1109,15 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                     <h4 className="m-0 mb-1.5 text-[10.5px] uppercase tracking-[0.1em] text-text-secondary">
                       Share over time
                     </h4>
-                    <TrendPlot series={top} width={S_WIDTH} height={S_HEIGHT} yMax={sharedShareMax} />
+                    <TrendPlot
+                      series={top}
+                      width={S_WIDTH}
+                      height={S_HEIGHT}
+                      plotRight={16}
+                      yMax={sharedShareMax}
+                      labelInside
+                      colors={topColors}
+                    />
                     <p className="m-0 mt-1 text-[11px] text-text-tertiary leading-[1.5]">
                       Top {top.length} by today&rsquo;s share, not by whether
                       they mean anything — the loudest phrase in a news corpus
@@ -1049,7 +1128,7 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                     </p>
                   </div>
                 )}
-                <DetectionScatter series={series} xMax={sharedShareMax} />
+                <DetectionScatter series={series} xMax={sharedShareMax} colors={topColors} />
               </div>
 
               <div className="border-l border-border pl-5">

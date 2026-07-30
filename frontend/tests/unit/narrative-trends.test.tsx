@@ -473,13 +473,22 @@ describe("the table view is the contrast relief the palette requires", () => {
     expect(markup).toContain("ai capex cycle");
   });
 
-  it("says 'not measurable' rather than 0 when velocity has no reading", () => {
+  it("says 'n/a' rather than 0 when velocity has no reading, with the reason on hover (ADR-0184)", () => {
+    // "n/a" replaced the longer "not measurable" prose here specifically —
+    // that string alone was wide enough to set the whole Velocity column's
+    // width and push the table past its container (ADR-0184). The Emerging
+    // list two sections down already said "n/a" for this exact state, so
+    // this is not new vocabulary. The fuller reason survives on `title`,
+    // not dropped — ADR-0126's "never the only copy" applies to the hover
+    // text itself, not to the visible cell needing to spell it out.
     const noVelocity: NarrativeSeries = {
       ...series("young", [0.03]),
       latest: row({ phrase: "young", velocity: null, status: "new" }),
     };
     const out = renderToStaticMarkup(<SeriesTable series={[noVelocity]} />);
-    expect(out).toContain("not measurable");
+    expect(out).toContain(">n/a<");
+    expect(out).not.toContain("not measurable");
+    expect(out).toMatch(/title="[^"]*not yet measurable[^"]*"/);
   });
 
   it("says 'nothing' when no anchor theme covers the narrative", () => {

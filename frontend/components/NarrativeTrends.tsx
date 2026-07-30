@@ -812,8 +812,23 @@ export function DetectionScatter({
  *  Column gutters are `pr-2` (8px), not the `pr-3` the sibling ThemeTrendsTable
  *  uses. Six columns pay that gutter five times, and the 4px is real slack:
  *  every column width is min-content over a live value ("established",
- *  "AI Capex", "not measurable"), so the next 4px would truncate a reading
- *  rather than tighten a rule.
+ *  "AI Capex"), so the next 4px would truncate a reading rather than tighten
+ *  a rule.
+ *
+ *  The Velocity column reads "n/a" for a null reading, not the longer "not
+ *  measurable" prose the Emerging list below uses for the same state — this
+ *  table has no ceiling on its own width (`table-layout: auto`, no fixed
+ *  column widths), so a 15-character cell in an otherwise ~5-character
+ *  ("+4.00") column set the whole column's width and pushed the table past
+ *  its 319px container (ADR-0184, measured live: 347px content). "n/a"
+ *  matches the Emerging list's own existing abbreviation for the identical
+ *  null-velocity state, so this is not a new vocabulary, just this table
+ *  catching up to a precedent already set two sections down. This closes
+ *  TODAY's overflow with ~40px to spare — it does not raise a ceiling. A
+ *  future long value elsewhere (`Found by` showing "frequency + lda +
+ *  embedding" on a corroborated narrative is the likely next one, at ~27
+ *  characters) can still reopen the scrollbar; see the ADR for why a
+ *  structural fix (`table-layout: fixed`) was not taken instead.
  *
  *  NO SPARKLINE COLUMN, and that is a width decision taken with its eyes open.
  *  ADR-0146 put an own-scale mini-trend here when the top-5 line chart was
@@ -857,7 +872,7 @@ export function SeriesTable({ series }: { series: NarrativeSeries[] }) {
               <td className="py-1 pr-2 text-right num">{sharePct(s.latest.share)}</td>
               <td className="py-1 pr-2 text-right num">
                 {s.latest.velocity === null ? (
-                  <span className="text-text-tertiary">not measurable</span>
+                  <span className="text-text-tertiary" title="Velocity not yet measurable — needs more observed days">n/a</span>
                 ) : (
                   `${s.latest.velocity >= 0 ? "+" : ""}${s.latest.velocity.toFixed(2)}`
                 )}

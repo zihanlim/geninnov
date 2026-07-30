@@ -162,8 +162,19 @@ Dense is correct when a reader is comparing rows. It is wrong when it hides the
 single fact they came for. Two consequences:
 
 - **Collapse optional detail behind `<details>`**, don't delete it and don't
-  make it always-on. The three detail panels on `/risk` are collapsed by
-  default for exactly this reason.
+  make it always-on. The detail panels already collapsed on `/book` and `/risk`
+  are collapsed for exactly this reason.
+
+  **NARROWED, 2026-07-30 (owner's direction): this permits what exists and no
+  longer prescribes MORE.** ADR-0172 was scoped with new collapsing on
+  `/mandate` — which had zero collapsed blocks across 5.3 screens — and the
+  owner refused it: every card stays visible on arrival. It turned out
+  unnecessary, which is the useful part. Moving each block to the phase whose
+  question it answers took `/mandate` from 5.3 to **3.6 screens** and 232 to
+  **122 numerals** on its own, with nothing hidden. So the remedy for a page that
+  is too long is **first check whether its content belongs there**; a disclosure
+  is what you reach for when it does. Existing `<details>` are untouched — this
+  narrows the rule, it does not reverse it.
 - **Never trap a page in an inner scroller.** Viewport-locked shells
   (`h-screen` + `overflow-y-auto` on the content) photograph well and break
   Ctrl+F, deep links, and long candidate tables. Full-page scroll always wins.
@@ -265,36 +276,54 @@ Stated so nobody re-litigates them by accident:
   costs viewport one-for-one — see
   [ADR-0086](adrs/0086-a-labelled-rail-that-collapses-rather-than-a-glyph-rail.md)).
   Unlabelled glyph rails stay refused: they trade clarity for the appearance of
-  scale, which is what this non-goal was always about. Four top-bar
-  *destinations*. A destination may have
-  section sub-routes, and they never appear in the bar — `/method` is two
-  chapters (`/method` and `/method/evidence`) behind one header item, and the
-  repo has always served `/trades`, `/portfolio` and `/research` as redirects
-  behind that same four-item bar. The objection here is to the unlabelled glyph
-  rail, which trades clarity for the appearance of scale; it was never a count
-  of URLs.
+  scale, which is what this non-goal was always about. The objection is to the
+  unlabelled glyph rail; it was never a count of URLs.
 
-  **Still four, and there is now a worked example of the bar a fifth has to clear.**
-  `/portfolio` was un-retired as a fifth destination on 2026-07-29
-  ([ADR-0151](adrs/0151-the-portfolio-is-not-the-book.md)) and retired again the same
-  day ([ADR-0152](adrs/0152-a-true-page-nobody-asked-for.md)). The argument for it was
-  correct as far as it went — the HELD book is a genuinely different object from the
-  published one, not the duplicate ADR-0025 retired. It was still wrong, because
-  being a distinct object is necessary and **not sufficient**: `task.md` asks for
-  "top five long and short trades, and why" and for a daily theme process, and
-  nothing in either question asks what the book EARNED. A destination has to be a
-  different object **the brief asks for**. A true page nobody asked for still costs
-  a reader the attention it takes to rule out, and a page reporting NAV invites
-  "what is your track record?" — which the data cannot answer and ADR-0090/0112
-  already refuse to claim.
-  See [ADR-0084](adrs/0084-method-splits-by-reader-question-not-by-copy.md)
-  for the stop rules that keep this from becoming the rail by increments —
-  chiefly: **split by section, never by copy of the same data.**
-  `/ask` ([ADR-0087](adrs/0087-a-chat-that-cannot-do-arithmetic.md)) is the
-  worked example of the distinction: it is a route, and it is reached from a
-  TopBar *control*, because it is a way of READING the book rather than a fifth
-  thing the product is. Four destinations, still. If it ever turns up in the nav
-  or the rail, that decision has been reversed and needs re-arguing here.
+  **SUPERSEDED ON THE COUNT, 2026-07-30. The nav is now SIX phase tabs, and this
+  section is kept because its reasoning is still the bar — only its arithmetic
+  changed.** [ADR-0170](adrs/0170-the-navigation-is-the-process.md) replaced the
+  four object-shaped destinations with one tab per phase of the investment process
+  (`01 Mandate · 02 Alpha · 03 Risk · 04 Construction · 05 Execution ·
+  06 Attribution`), at the owner's direction, on the ground that **the sequence is
+  what this artefact demonstrates** and a numbered strip teaches it before a reader
+  has read a word. [ADR-0172](adrs/0172-every-phase-answers-its-own-question-above-the-fold.md)
+  then renamed phase 3 to `Risk`.
+
+  **The rule that replaces "four destinations":**
+
+  > A tab is a PHASE of the process, and the set of tabs is the whole process in
+  > order. A surface that is not a phase does not get one — it is a section of a
+  > phase, or a TopBar control. Adding a tab means arguing that the process has
+  > another step; it can no longer be argued as "this is a different object".
+
+  Two things follow, and both have already been tested against:
+
+  - **`/method` is off the nav**, because the method chapters explain *every* phase —
+    naming them as one would be false. It is reached from the process map and by URL.
+  - **`/execution` keeps a tab while rendering no figures**, because a sequence that
+    skips 5 reads as a missing page. The boundary is the content: the book is a
+    recommendation (ADR-0040), so no fill, borrow cost or slippage exists to report.
+
+  **What did NOT change, and is still the bar.** The ADR-0151 → ADR-0152 worked
+  example stands as the test a new SURFACE has to pass. `/portfolio` was un-retired as
+  a fifth destination on 2026-07-29 and retired again the same day. The argument for
+  it was correct as far as it went — the HELD book is a genuinely different object
+  from the published one, not the duplicate ADR-0025 retired. It was still wrong,
+  because being a distinct object is necessary and **not sufficient**: `task.md` asks
+  for "top five long and short trades, and why" and for a daily theme process, and
+  nothing in either question asks what the book EARNED. A true page nobody asked for
+  still costs a reader the attention it takes to rule out, and a page reporting NAV
+  invites "what is your track record?" — which the data cannot answer and
+  ADR-0090/0112 already refuse to claim. Under the new rule that page fails a second
+  time and for a cleaner reason: reporting NAV is not a phase of choosing a book.
+
+  See [ADR-0084](adrs/0084-method-splits-by-reader-question-not-by-copy.md) for the
+  stop rules that keep this from becoming the rail by increments — chiefly: **split by
+  section, never by copy of the same data.** `/ask`
+  ([ADR-0087](adrs/0087-a-chat-that-cannot-do-arithmetic.md)) is still the worked
+  example of the distinction: it is a route reached from a TopBar *control*, because it
+  is a way of READING the book rather than a step in producing one. If it ever turns up
+  in the nav or the rail, that decision has been reversed and needs re-arguing here.
 - **A chatbot that answers from the model's own knowledge.** `/ask` may only
   answer from values a tool fetched this turn. When the tools come back empty,
   the absences ARE the answer — the agent says what is missing, and does not

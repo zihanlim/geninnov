@@ -121,6 +121,9 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
   // Corpus size and velocity count — available from the same series read,
   // surfaced here so the observed bars have their denominators stated.
   const corpusSize = series?.[0]?.latest.corpus_size ?? null;
+  // The day every count on this card is FROM — stamped in the header, the same
+  // field and the same place the board beside it stamps.
+  const runDate = series?.[0]?.latest.run_date ?? null;
   const velocityCount = series?.filter((s) => s.latest.velocity !== null).length ?? 0;
   // How many tracked phrases a SECOND method also found (ADR-0133). The
   // observed half's provenance caveat, and the exact counterpart of the
@@ -180,16 +183,50 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
   const linked = basis ? basis.measured + basis.operator : 0;
 
   return (
-    <div className="card px-4 py-3 flex flex-col flex-1">
-      <div className="flex items-baseline justify-between gap-3 mb-2.5">
-        <span className="text-[10.5px] uppercase tracking-[0.1em] text-text-secondary">
-          Attention funnel
-        </span>
-        <span className="text-[10.5px] text-text-tertiary">
-          what is observed, and what is committed
-        </span>
+    <div className="card flex flex-col flex-1">
+      {/* The SHARED chrome — `.card-header` / `.card-title` — not a hand-rolled
+          line, which is what this was.
+
+          `TerminalPane` is passed `title="Attention funnel"`, but this pane is
+          `bare`, and in bare mode that title is only the section's
+          `aria-label`: the pane deliberately renders no chrome of its own
+          because the child is the card (two headers per pane was the defect
+          `bare` exists to fix). So the visible heading is entirely this
+          component's, and it had drifted off the standard — 10.5px against
+          `.card-title`'s 11px, `tracking-[0.1em]` against `0.12em`, no
+          `font-medium`, and no header band, border or run stamp at all. Beside
+          `NarrativeTrends`, which uses the shared classes, it read as a label
+          rather than as a title, on a page ADR-0189 had just finished
+          de-duplicating five hand-rolled headers out of.
+
+          The run stamp is now here rather than inline in the `Observed`
+          sub-heading below, matching the board's. ADR-0159's requirement is
+          that a count keyed to an older day says so; a card header is a more
+          prominent place to say it than a sub-heading, and printing the date
+          in both places would put it on screen twice. */}
+      <div className="card-header flex-wrap gap-2">
+        <div>
+          <span className="card-title">Attention funnel</span>
+          {/* "what is observed, and what is committed" — the parallel form —
+              measured 330px of a 403px inner header, which left the run stamp
+              28px short and wrapped the header onto a second line, so this
+              card's body started 25px below its neighbour's across the row.
+              Shortened rather than wrapped: the two section labels directly
+              below are literally `OBSERVED` and `COMMITTED`, so the subtitle
+              orients and does not have to carry the full sentence. */}
+          <span className="text-text-tertiary text-[11px] ml-2">
+            what is observed vs committed
+          </span>
+        </div>
+        {runDate && (
+          <span className="text-[11px] text-text-tertiary num">
+            run {runDate}
+            {asOfFallback ? " · last measured day" : ""}
+          </span>
+        )}
       </div>
 
+      <div className="px-4 py-3 flex flex-col flex-1">
       {/* One column, always. This card lives in the 1fr slot beside the
           narrative board, so its widest possible rendering is
           (1400 − 64 − 16) / 3 ≈ 440px — 408px inside the card padding. The
@@ -202,17 +239,11 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
         <div className="flex flex-col gap-1.5 min-w-0">
           <span className="text-[10px] uppercase tracking-[0.08em] text-text-tertiary">
             Observed &middot; <code className="num">narrative_signals</code>
-            {/* The day these counts are FROM, whenever it is not the newest run.
-                Stated for the same reason the board states it (ADR-0159): a
-                count keyed to one day under a heading implying another is the
-                mislabel, not the fallback. */}
-            {asOfFallback && (
-              <>
-                {" "}
-                &middot; <span className="num">{asOfFallback}</span>, last
-                measured day
-              </>
-            )}
+            {/* The day these counts are FROM moved to the card header above,
+                where the board beside this one already stamps its own. ADR-0159
+                is satisfied either way — it requires the older day to be
+                DISCLOSED, not to sit in any particular element — and one card
+                printing the same date twice was the alternative. */}
           </span>
           {funnel && (
             <>
@@ -486,13 +517,29 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
                   <span className="num w-10 text-right shrink-0 text-text-tertiary">
                     {sharePct(s.latest.share)}
                   </span>
-                  {/* An em dash, not 0.00 (ADR-0066). A phrase with too little
-                      history has no velocity; writing zero would place it at
-                      "measured, not moving", which is a different and stronger
-                      claim than the data supports. */}
-                  <span className="num w-10 text-right shrink-0 text-text-tertiary">
+                  {/* Not 0.00 (ADR-0066): a phrase with too little history has
+                      no velocity, and writing zero would place it at
+                      "measured, not moving" — a different and stronger claim
+                      than the data supports.
+
+                      And `n/a`, not an em dash. Two of these six also appear
+                      in the board's table one column left, so the SAME null on
+                      the SAME screen was rendering as `n/a` there and `—`
+                      here. That file settled on `n/a` for a reason it wrote
+                      down (ADR-0184: the prose form set the column width and
+                      pushed the table past its container); a third glyph for
+                      the state reads as a third state. The tooltip travels
+                      too, so the abbreviation is explained in both places. */}
+                  <span
+                    className="num w-10 text-right shrink-0 text-text-tertiary"
+                    title={
+                      s.latest.velocity === null
+                        ? "Velocity not yet measurable — needs more observed days"
+                        : undefined
+                    }
+                  >
                     {s.latest.velocity === null
-                      ? "—"
+                      ? "n/a"
                       : `${s.latest.velocity >= 0 ? "+" : ""}${s.latest.velocity.toFixed(2)}`}
                   </span>
                 </div>
@@ -535,6 +582,7 @@ export default function AttentionFunnel({ shared }: { shared?: NarrativeSeriesSt
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

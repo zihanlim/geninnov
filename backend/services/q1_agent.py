@@ -464,8 +464,10 @@ class Q1State(dict):
     macro_snapshot: dict[str, dict]          # {series_id: {name, value, unit}}
     theme_scores: list[dict]                # [{theme_id, name, hype_score, trade_score, avg_sentiment}]
     factor_exposures: dict[str, dict]        # {asset: {beta_mkt, beta_smb, ...}}
-    credit_betas: dict[str, dict]            # {asset: {marginal_beta_ig, marginal_beta_qual}}
-                                              # — status='measured' only, this run_date (ADR-0192)
+    credit_betas: dict[str, dict]            # {asset: {marginal_beta_ig, marginal_beta_qual,
+                                              #          marginal_se_ig, marginal_se_qual}}
+                                              # — status='measured' only, this run_date (ADR-0192);
+                                              # SEs gate significance in scenario_analysis (ADR-0193)
     regime: dict                              # {cycle, sentiment, yield_curve_slope, ...}
     risk_metrics: dict[str, Any]              # {total_capital, var_95, sharpe, beta, cvar_95, concentration_hhi}
     news_headlines: list[dict]                # [{text, date}] — raw L1 collected
@@ -619,6 +621,12 @@ def _load_credit_betas(sb: Client, run_date: str) -> dict[str, dict]:
     again here on the returned rows — a query change or a test double that forgets the
     filter must not leak a `degenerate` beta into a scenario as if it were measured.
 
+    Also reads `marginal_se_ig` / `marginal_se_qual` (migration 061) and passes them through
+    UNCHANGED, including `None` for a row written before that migration ran. This function does
+    NOT decide significance — `scenario_analysis._credit_beta_significant` (ADR-0193) does, per
+    leg, and treats a missing SE as not-believable. Passing a raw beta through without its SE
+    would let `_measured_credit_shock` silently transmit an unqualified coefficient again.
+
     Returns `{}` (never raises) when the table is empty for this date or unreachable — S7 then
     degrades to its factor-and-override-only behaviour, which is the required fallback, not an
     error.
@@ -626,7 +634,10 @@ def _load_credit_betas(sb: Client, run_date: str) -> dict[str, dict]:
     try:
         rows = (
             sb.table("credit_rates_exposures")
-            .select("asset, marginal_beta_ig, marginal_beta_qual, status")
+            .select(
+                "asset, marginal_beta_ig, marginal_beta_qual, "
+                "marginal_se_ig, marginal_se_qual, status"
+            )
             .eq("run_date", run_date)
             .eq("status", "measured")
             .execute()
@@ -644,9 +655,13 @@ def _load_credit_betas(sb: Client, run_date: str) -> dict[str, dict]:
         beta_qual = r.get("marginal_beta_qual")
         if beta_ig is None or beta_qual is None:
             continue
+        se_ig = r.get("marginal_se_ig")
+        se_qual = r.get("marginal_se_qual")
         out[r["asset"]] = {
             "marginal_beta_ig": float(beta_ig),
             "marginal_beta_qual": float(beta_qual),
+            "marginal_se_ig": float(se_ig) if se_ig is not None else None,
+            "marginal_se_qual": float(se_qual) if se_qual is not None else None,
         }
     print(f"[credit_betas] {len(out)} of {len(rows)} measured rows have both marginal betas "
           f"for run_date={run_date}")

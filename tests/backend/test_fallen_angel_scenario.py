@@ -87,13 +87,21 @@ def test_transmission_arithmetic_worked_example():
               = (-4.08 + -2.8) / 100
               = -6.88 / 100
               = -0.0688   (-6.88%)
+
+    SEs are chosen so BOTH legs clear ADR-0193's significance gate (|t| >= 2):
+    ig t = -6.8/1.0 = -6.8, qual t = -2.0/0.9 ≈ -2.22.
     """
     scenario = Scenario(
         name="test_transmission", label="test", description="",
         factor_shocks={}, base_asset_shocks={},
         credit_leg_shocks={"d_ig": 60.0, "d_qual": 140.0},
     )
-    credit_betas = {"LQD": {"marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0}}
+    credit_betas = {
+        "LQD": {
+            "marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0,
+            "marginal_se_ig": 1.0, "marginal_se_qual": 0.9,
+        }
+    }
 
     shock, origin = _resolve_shock(scenario, "LQD", credit_betas)
 
@@ -109,7 +117,12 @@ def test_transmission_arithmetic_flows_into_pnl():
         factor_shocks={}, base_asset_shocks={},
         credit_leg_shocks={"d_ig": 60.0, "d_qual": 140.0},
     )
-    credit_betas = {"LQD": {"marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0}}
+    credit_betas = {
+        "LQD": {
+            "marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0,
+            "marginal_se_ig": 1.0, "marginal_se_qual": 0.9,
+        }
+    }
     picks = [_pick("LQD", "long", 0.10)]
     bm = _bm(gross=0.10)
 
@@ -130,9 +143,15 @@ def test_measured_beta_beats_sector_shock():
         sector_shocks={"Credit": -0.30},
         credit_leg_shocks={"d_ig": 60.0, "d_qual": 140.0},
     )
-    credit_betas = {"LQD": {"marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0}}
+    credit_betas = {
+        "LQD": {
+            "marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0,
+            "marginal_se_ig": 1.0, "marginal_se_qual": 0.9,
+        }
+    }
 
-    # LQD sits in the "Credit" sector bucket AND has a measured beta. Measured wins.
+    # LQD sits in the "Credit" sector bucket AND has a measured, SIGNIFICANT beta.
+    # Measured wins.
     assert SECTOR_MAP.get("LQD") == "Credit"
     shock, origin = _resolve_shock(scenario, "LQD", credit_betas)
 
@@ -260,9 +279,14 @@ def test_coverage_reported_and_correct_partial_measurement():
         sector_shocks={"Credit": -0.30},
         credit_leg_shocks={"d_ig": 60.0, "d_qual": 140.0},
     )
-    credit_betas = {"LQD": {"marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0}}
+    credit_betas = {
+        "LQD": {
+            "marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0,
+            "marginal_se_ig": 1.0, "marginal_se_qual": 0.9,
+        }
+    }
     picks = [
-        _pick("LQD", "long", 0.10),     # measured
+        _pick("LQD", "long", 0.10),     # measured AND believed (both legs significant)
         _pick("HYG", "short", 0.08),    # override
         _pick("JNK", "long", 0.05),     # sector (Credit, no measured beta)
         _pick("NOTATICKER", "short", 0.02),  # unresolved -> factor path
@@ -275,9 +299,55 @@ def test_coverage_reported_and_correct_partial_measurement():
         l for l in result.contribution_breakdown if "Credit-beta coverage" in l
     )
     assert coverage_line == (
-        "  Credit-beta coverage: 1 of 4 held names measured (40% of gross); "
-        "1 override, 1 via sector, 1 unresolved (factor path)"
+        "  Credit-beta coverage: 1 of 4 held names have a measured credit beta "
+        "(40% of gross); 1 of 4 (40% of gross) are distinguishable from zero at "
+        "|t|>=2 and transmit; 1 override, 1 via sector, 1 unresolved (factor path)"
     )
+
+
+def test_coverage_distinguishes_measured_from_believed():
+    """ADR-0193: a name can have a measured beta that is NOT distinguishable from
+    zero. `_resolve_shock`/`_coverage_tier` must fall through for it, and the coverage
+    line must show both counts — and they must differ here."""
+    scenario = Scenario(
+        name="test_coverage_believed", label="test", description="",
+        factor_shocks={"mkt": -0.05}, base_asset_shocks={},
+        credit_leg_shocks={"d_ig": 60.0, "d_qual": 140.0},
+    )
+    credit_betas = {
+        # Measured, but neither leg clears |t| >= 2 -> NOT believed, falls through.
+        "LQD": {
+            "marginal_beta_ig": -6.8, "marginal_se_ig": 10.0,     # t = -0.68
+            "marginal_beta_qual": -2.0, "marginal_se_qual": 5.0,  # t = -0.4
+        },
+        # Measured AND believed (ig leg only).
+        "HYG": {
+            "marginal_beta_ig": -3.0, "marginal_se_ig": 1.0,      # t = -3.0
+            "marginal_beta_qual": -1.0, "marginal_se_qual": 2.0,  # t = -0.5
+        },
+    }
+    picks = [_pick("LQD", "long", 0.10), _pick("HYG", "short", 0.08)]
+    bm = _bm(gross=0.18)
+
+    # Unit-level: LQD has a beta row but neither leg is believable -> falls through
+    # (no sector/override defined here, so straight to the factor path, never 0.0).
+    assert _resolve_shock(scenario, "LQD", credit_betas) == (None, "")
+    assert _coverage_tier(scenario, "LQD", credit_betas) is None
+    # HYG's ig leg alone transmits: -3.0 * (60/100) / 100 = -0.018.
+    shock, origin = _resolve_shock(scenario, "HYG", credit_betas)
+    assert shock == pytest.approx(-0.018, abs=1e-9)
+    assert origin == " via measured credit beta"
+    assert _coverage_tier(scenario, "HYG", credit_betas) == "measured"
+
+    result = estimate_scenario_pnl(scenario, picks, bm, 1e8, credit_betas=credit_betas)
+
+    coverage_line = next(
+        l for l in result.contribution_breakdown if "Credit-beta coverage" in l
+    )
+    # Both names are "measured" (2 of 2); only HYG clears the significance gate.
+    assert "2 of 2 held names have a measured credit beta" in coverage_line
+    assert "1 of 2" in coverage_line
+    assert "distinguishable from zero" in coverage_line
 
 
 def test_coverage_absent_for_scenarios_with_no_credit_leg_shocks():
@@ -304,7 +374,12 @@ def test_coverage_tier_helper_matches_resolve_shock():
         sector_shocks={"Credit": -0.30},
         credit_leg_shocks={"d_ig": 60.0, "d_qual": 140.0},
     )
-    credit_betas = {"LQD": {"marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0}}
+    credit_betas = {
+        "LQD": {
+            "marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0,
+            "marginal_se_ig": 1.0, "marginal_se_qual": 0.9,
+        }
+    }
 
     assert _coverage_tier(scenario, "HYG", credit_betas) == "override"
     assert _coverage_tier(scenario, "LQD", credit_betas) == "measured"
@@ -347,18 +422,43 @@ def test_load_credit_betas_excludes_non_measured_and_partial_rows():
     must both be excluded — never guessed, never entered as if fully measured."""
     rows = [
         {"asset": "LQD", "marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0,
-         "status": "measured"},
+         "marginal_se_ig": 1.0, "marginal_se_qual": 0.9, "status": "measured"},
         {"asset": "PARTIAL", "marginal_beta_ig": None, "marginal_beta_qual": None,
-         "status": "measured"},
+         "marginal_se_ig": None, "marginal_se_qual": None, "status": "measured"},
         {"asset": "BADFIT", "marginal_beta_ig": -1.0, "marginal_beta_qual": -1.0,
-         "status": "degenerate"},
+         "marginal_se_ig": 1.0, "marginal_se_qual": 1.0, "status": "degenerate"},
         {"asset": "THIN", "marginal_beta_ig": -1.0, "marginal_beta_qual": -1.0,
-         "status": "insufficient_history"},
+         "marginal_se_ig": 1.0, "marginal_se_qual": 1.0, "status": "insufficient_history"},
     ]
 
     out = q1_agent._load_credit_betas(_CreditSB(rows), "2026-07-30")
 
-    assert out == {"LQD": {"marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0}}
+    assert out == {
+        "LQD": {
+            "marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0,
+            "marginal_se_ig": 1.0, "marginal_se_qual": 0.9,
+        }
+    }
+
+
+def test_load_credit_betas_passes_through_null_se_for_pre_migration_rows():
+    """A row written before migration 061 has NULL `marginal_se_*`. `_load_credit_betas`
+    must pass that through as `None` rather than dropping the row or inventing a value —
+    `scenario_analysis._credit_beta_significant` is the one place that decides a NULL SE
+    means 'not believable'."""
+    rows = [
+        {"asset": "LQD", "marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0,
+         "marginal_se_ig": None, "marginal_se_qual": None, "status": "measured"},
+    ]
+
+    out = q1_agent._load_credit_betas(_CreditSB(rows), "2026-07-30")
+
+    assert out == {
+        "LQD": {
+            "marginal_beta_ig": -6.8, "marginal_beta_qual": -2.0,
+            "marginal_se_ig": None, "marginal_se_qual": None,
+        }
+    }
 
 
 def test_load_credit_betas_returns_empty_on_no_rows_or_error():

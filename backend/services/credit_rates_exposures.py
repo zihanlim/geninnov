@@ -292,14 +292,27 @@ def compute_marginal_betas(
     Same unit convention as `compute_total_betas`: percent return per 100bp
     (see the block at the top of this module).
 
-    Returns NaN-valued betas on insufficient history or a singular fit.
-    Raises FactorsUnavailable when the equity factors are missing entirely,
-    so the caller can record partial success rather than a failed row.
+    Also returns `se_ig` / `se_qual` — the standard errors of the two credit
+    legs from the SAME joint fit (`backend.data._ols_core.ols_window`'s `_se`
+    output), in the same percent-per-100bp units as the betas (no extra
+    conversion needed: both sides of the fit are already scaled before
+    `_ols_window` runs, so its `_se` is already in the published unit).
+    `r2_marginal` cannot serve this purpose — it is the JOINT fit's r²,
+    dominated by the six equity factors, and stays high even when the two
+    credit coefficients are pure noise. The SE is what lets a caller test
+    `|beta / se|` and decide whether a coefficient is distinguishable from
+    zero (ADR-0193) — `beta_ust10` deliberately has no stored SE today; only
+    the two legs S7_fallen_angel transmits through are persisted.
+
+    Returns NaN-valued betas (and NaN SEs) on insufficient history or a
+    singular fit. Raises FactorsUnavailable when the equity factors are
+    missing entirely, so the caller can record partial success rather than a
+    failed row.
     """
     nan = float("nan")
     out: dict[str, float] = {
         "beta_ust10": nan, "beta_ig": nan, "beta_qual": nan,
-        "r2_marginal": nan, "n_obs": 0,
+        "r2_marginal": nan, "se_ig": nan, "se_qual": nan, "n_obs": 0,
     }
 
     # Raised before the history check: "the factors are missing" and "this
@@ -350,6 +363,9 @@ def compute_marginal_betas(
     out["beta_ig"] = result["d_ig"]
     out["beta_qual"] = result["d_qual"]
     out["r2_marginal"] = result["r_squared"]
+    se = result.get("_se", {})
+    out["se_ig"] = se.get("d_ig", nan)
+    out["se_qual"] = se.get("d_qual", nan)
     return out
 
 
@@ -369,6 +385,13 @@ def assemble_row(
       - otherwise -> 'measured' (even when FF5 unavailable; partial success)
 
     Betas are stored as float or None; NaN inputs become None on the wire.
+    Same for `marginal_se_ig` / `marginal_se_qual` (migration 061): the STANDARD
+    ERROR is stored, not the t-statistic. The SE is the primitive measurement;
+    a t-stat is a derived ratio against a caller-chosen threshold, and storing
+    the derived quantity would bake in one threshold's choice and throw away
+    the information needed to compute a confidence interval or use a different
+    bar. `scenario_analysis.py`'s significance gate (ADR-0193) divides beta by
+    this SE itself rather than reading a pre-computed t.
 
     There is deliberately NO `factors_unavailable` argument. The partial-
     success case — FF5+UMD missing, so the total variant is stored and the
@@ -407,6 +430,8 @@ def assemble_row(
         "marginal_beta_ig":    _f(marginal.get("beta_ig"))    if marginal else None,
         "marginal_beta_qual":  _f(marginal.get("beta_qual"))  if marginal else None,
         "marginal_r2":         _f(marginal.get("r2_marginal")) if marginal else None,
+        "marginal_se_ig":      _f(marginal.get("se_ig"))      if marginal else None,
+        "marginal_se_qual":    _f(marginal.get("se_qual"))    if marginal else None,
         "n_obs": int(n_obs),
         "status": status,
     }

@@ -40,6 +40,14 @@ variant may drive it: `marginal_beta_*` is orthogonalised against FF5+UMD, so
 it does not double-count with the `mkt` factor shock this scenario also
 declares; `total_beta_*` would.
 
+A measured beta transmits only when it clears a significance test against its
+own standard error (ADR-0193): residualising a leg leaves a small-variance
+regressor, so a noisy single-name fit routinely produces a large, imprecise
+coefficient that `marginal_r2` — the joint fit's r², dominated by the six
+equity factors — cannot catch. An asset whose beta does not clear the gate
+falls through to the sector, then factor, path exactly as if it had no row at
+all; it is never treated as a measured zero.
+
 Each scenario returns an estimated P&L impact on the book in % and $M,
 computed from factor tilts and historical beta regressions.
 
@@ -353,6 +361,44 @@ SCENARIOS: list[Scenario] = [
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Significance gate for measured credit betas (ADR-0193)
+#
+# Residualising a leg against FF5+UMD (credit_rates_exposures.py's marginal
+# variant) leaves a SMALL-VARIANCE regressor. Regressing a noisy single-name
+# equity return on it yields large, imprecisely-estimated coefficients:
+# measured on the live 2026-07-30 rows (t = beta / se, by hand),
+#     GEV -24.09 (t -1.31)   GLD +16.90 (t +1.53)   JD +14.28 (t +1.08)
+#     SMH -13.03 (t -1.73)   UNG -12.62 (t -0.48)   SPY  -0.33 (t -0.91)
+# — not one clears |t| = 2. `marginal_r2` cannot serve as this gate: it is the
+# r² of the JOINT fit, dominated by the six equity factors, so it stays high
+# even when the credit coefficients are pure noise.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# |beta / se| below this is not distinguishable from zero and must not
+# transmit a shock. 2.0 is approximately the two-sided 95% critical value.
+# A NAMED constant rather than an inline literal because ADR-0193 explains
+# the choice and a future reviewer should find one place to change it.
+CREDIT_BETA_T_THRESHOLD = 2.0
+
+
+def _credit_beta_significant(beta: Optional[float], se: Optional[float]) -> bool:
+    """True iff a single measured marginal credit-beta leg is distinguishable
+    from zero at `CREDIT_BETA_T_THRESHOLD`.
+
+    NULL/missing/non-positive `se` — a row written before migration 061 (no
+    SE was ever computed for it), or a degenerate covariance — fails CLOSED:
+    treated as NOT believable, never as significant. `beta is None` likewise
+    fails closed. This is deliberately per-LEG, not per-asset: a name may have
+    a believable `beta_ig` and an unbelievable `beta_qual`.
+    """
+    if beta is None or se is None:
+        return False
+    if se != se or se <= 0:  # NaN or non-positive
+        return False
+    return abs(beta / se) >= CREDIT_BETA_T_THRESHOLD
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # P&L estimation engine
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -362,9 +408,18 @@ def _measured_credit_shock(
     """The MEASURED-beta shock for `asset` under this scenario's credit legs, or None.
 
     None whenever the scenario declares no `credit_leg_shocks`, `credit_betas` was not
-    passed, this asset has no row, or either beta is missing — never a guess and never
+    passed, this asset has no row, either beta is missing, or NEITHER leg passes the
+    significance gate (`_credit_beta_significant`, ADR-0193) — never a guess and never
     0.0 standing in for "not measured" (the same discipline `credit_rates_exposures.py`
-    itself follows: NULL, not zero, on a failed fit).
+    itself follows: NULL, not zero, on a failed fit). An insignificant beta must never
+    become a 0.0 shock for the asset: that would assert "this name has no credit
+    exposure", which is precisely what an insignificant estimate does not establish.
+    Falling through to the next tier (sector, then factor) is the correct behaviour.
+
+    The gate is applied PER LEG: a name may have a believable `beta_ig` and an
+    unbelievable `beta_qual` (or vice versa). Only the legs that pass contribute to the
+    shock; a leg that fails is silently dropped from the sum rather than substituted
+    with zero, exactly as the asset-level fallthrough above is not a zero.
 
     Uses ONLY `marginal_beta_ig` / `marginal_beta_qual` — see the module docstring and
     ADR-0190/ADR-0192 for why `total_beta_*` must never drive a scenario: this scenario
@@ -374,7 +429,7 @@ def _measured_credit_shock(
     Arithmetic (legs in bp, betas in percent-return-per-100bp):
         shock_decimal = (beta_ig * (d_ig_bp / 100) + beta_qual * (d_qual_bp / 100)) / 100
     The trailing /100 converts the percent result to the decimal every other shock in
-    this module is expressed in.
+    this module is expressed in. Only the significant legs' terms enter the sum.
     """
     if not scenario.credit_leg_shocks or not credit_betas:
         return None
@@ -385,9 +440,20 @@ def _measured_credit_shock(
     beta_qual = betas.get("marginal_beta_qual")
     if beta_ig is None or beta_qual is None:
         return None
+
+    ig_significant = _credit_beta_significant(beta_ig, betas.get("marginal_se_ig"))
+    qual_significant = _credit_beta_significant(beta_qual, betas.get("marginal_se_qual"))
+    if not ig_significant and not qual_significant:
+        return None  # neither leg is believable -> fall through, never a fabricated 0.0
+
     d_ig = scenario.credit_leg_shocks.get("d_ig", 0.0)
     d_qual = scenario.credit_leg_shocks.get("d_qual", 0.0)
-    return (beta_ig * (d_ig / 100.0) + beta_qual * (d_qual / 100.0)) / 100.0
+    contribution = 0.0
+    if ig_significant:
+        contribution += beta_ig * (d_ig / 100.0)
+    if qual_significant:
+        contribution += beta_qual * (d_qual / 100.0)
+    return contribution / 100.0
 
 
 def _resolve_shock(
@@ -397,10 +463,13 @@ def _resolve_shock(
 ) -> tuple[Optional[float], str]:
     """The direct shock for one asset, and where it came from.
 
-    Resolution order (ADR-0192 inserted the second tier):
+    Resolution order (ADR-0192 inserted the second tier; ADR-0193 gated it):
       1. ``base_asset_shocks``   — a deliberate ticker override; still wins, unchanged
-      2. measured credit beta    — only when the scenario declares `credit_leg_shocks`
-         AND this asset has a measured, non-null beta pair (`_measured_credit_shock`)
+      2. measured credit beta    — only when the scenario declares `credit_leg_shocks`,
+         this asset has a measured, non-null beta pair, AND at least one leg clears
+         `CREDIT_BETA_T_THRESHOLD` (`_measured_credit_shock`). A row with a beta but no
+         leg distinguishable from zero behaves as if it had no row at all — it falls
+         through to tier 3, never contributing a fabricated 0.0.
       3. ``sector_shocks``       — the SECTOR_MAP bucket
       4. ``(None, "")``          — nothing calibrated; the caller falls back to the
          factor path
@@ -433,6 +502,13 @@ def _coverage_tier(
     makes (ticker membership, then the measured-beta helper) rather than duplicating
     its arithmetic, so this and the P&L loop cannot disagree about what "measured"
     means (ADR-0097's coverage-first doctrine, applied to a new signal).
+
+    Since ADR-0193, the "measured" tier here means measured AND BELIEVED — at least
+    one leg cleared the significance gate. An asset with a beta row but no leg
+    distinguishable from zero is NOT "measured" by this function's answer; it falls
+    through to "sector" or None exactly like an asset L2b never priced at all. See
+    `estimate_scenario_pnl`'s coverage line for the separate "has a measured beta at
+    all, regardless of significance" count, which this function does not report.
 
     Returns "override" / "measured" / "sector" / None (unresolved — the factor path).
     """
@@ -620,24 +696,55 @@ def estimate_scenario_pnl(
     # signal): a scenario that silently covered 3 of 10 names would read as
     # authoritative. Gated on `credit_leg_shocks` so the six pre-existing scenarios —
     # which never set it — get no new line and stay bit-identical.
+    #
+    # ADR-0193 split this into two counts. "Measured" (a row exists with both legs
+    # non-NULL) and "believed" (at least one leg clears CREDIT_BETA_T_THRESHOLD, i.e.
+    # what actually transmits) are different claims, and reporting only the first — as
+    # this line did before ADR-0193 — reads as "N names are covered" when the honest
+    # answer may be "N names have a beta, and ZERO of them are distinguishable from
+    # zero." Computed independently of `tier_counts["measured"]` below, which can
+    # UNDERSTATE "believed" for a name a ticker override happens to also shadow.
     if scenario.credit_leg_shocks:
         tier_counts: dict[Optional[str], int] = {"override": 0, "measured": 0, "sector": 0, None: 0}
         tier_weight: dict[Optional[str], float] = {"override": 0.0, "measured": 0.0, "sector": 0.0, None: 0.0}
+        has_beta_count = 0
+        has_beta_weight = 0.0
+        believed_count = 0
+        believed_weight = 0.0
         for p in picks:
             w = p.get("weight", 0.0)
             if w <= 0:
                 continue
-            tier = _coverage_tier(scenario, p.get("asset", ""), credit_betas)
+            asset = p.get("asset", "")
+            tier = _coverage_tier(scenario, asset, credit_betas)
             tier_counts[tier] += 1
             tier_weight[tier] += abs(w)
+
+            betas = (credit_betas or {}).get(asset)
+            beta_ig = betas.get("marginal_beta_ig") if betas else None
+            beta_qual = betas.get("marginal_beta_qual") if betas else None
+            if beta_ig is not None and beta_qual is not None:
+                has_beta_count += 1
+                has_beta_weight += abs(w)
+                if (
+                    _credit_beta_significant(beta_ig, betas.get("marginal_se_ig"))
+                    or _credit_beta_significant(beta_qual, betas.get("marginal_se_qual"))
+                ):
+                    believed_count += 1
+                    believed_weight += abs(w)
+
         n_held = sum(tier_counts.values())
         gross_for_coverage = max(book_metrics.gross_exposure, 0.01)
-        measured_frac = tier_weight["measured"] / gross_for_coverage if gross_for_coverage > 0 else 0.0
+        measured_frac = has_beta_weight / gross_for_coverage if gross_for_coverage > 0 else 0.0
+        believed_frac = believed_weight / gross_for_coverage if gross_for_coverage > 0 else 0.0
         contributions.insert(
             0,
-            f"  Credit-beta coverage: {tier_counts['measured']} of {n_held} held names "
-            f"measured ({measured_frac:.0%} of gross); {tier_counts['override']} override, "
-            f"{tier_counts['sector']} via sector, {tier_counts[None]} unresolved (factor path)"
+            f"  Credit-beta coverage: {has_beta_count} of {n_held} held names have a "
+            f"measured credit beta ({measured_frac:.0%} of gross); {believed_count} of "
+            f"{n_held} ({believed_frac:.0%} of gross) are distinguishable from zero at "
+            f"|t|>={CREDIT_BETA_T_THRESHOLD:g} and transmit; {tier_counts['override']} "
+            f"override, {tier_counts['sector']} via sector, {tier_counts[None]} "
+            f"unresolved (factor path)"
         )
 
     dollar_pnl = best_estimate * total_capital / 1_000_000  # convert to $M
@@ -729,10 +836,13 @@ def run_scenario_analysis(
     measured maritime disruption. Omitted or unmeasured, S6 runs on its documented ADR-0088
     calibration — which is what every caller did before ADR-0095 and remains the default.
 
-    `credit_betas` (ADR-0192, optional) is `{asset: {"marginal_beta_ig", "marginal_beta_qual"}}`
-    for `status='measured'` rows only. S7_fallen_angel transmits through it; every other
-    scenario ignores it entirely. Omitted or empty, S7 degrades to its factor-and-override-only
-    behaviour — never an error, never a fabricated beta.
+    `credit_betas` (ADR-0192, optional) is `{asset: {"marginal_beta_ig", "marginal_beta_qual",
+    "marginal_se_ig", "marginal_se_qual"}}` for `status='measured'` rows only. S7_fallen_angel
+    transmits through it; every other scenario ignores it entirely. Omitted or empty, S7
+    degrades to its factor-and-override-only behaviour — never an error, never a fabricated
+    beta. Since ADR-0193, a beta also has to clear `CREDIT_BETA_T_THRESHOLD` (per leg) against
+    its own SE to transmit at all; a beta with a missing/NULL SE, or one that fails the test,
+    behaves as if the row were absent.
     """
     results: list[ScenarioResult] = []
     for scenario in scenarios_for_run(chokepoint_signal):

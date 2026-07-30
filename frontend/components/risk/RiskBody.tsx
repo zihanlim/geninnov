@@ -124,7 +124,8 @@ const PHASE_COPY: Record<RiskPhase, { title: string; lede: string }> = {
   attribution: {
     title: "Attribution & Feedback",
     lede:
-      "What the book actually did — realised drawdown and the return path, " +
+      "What the book actually did — the five headline risk statistics, the " +
+      "forward record of published picks, realised drawdown and the return path, " +
       "against the ex-ante figures the phases above produced. This is the only " +
       "surface here that is backward-looking.",
   },
@@ -888,35 +889,19 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           />
         </section>
 
-        {/* The last column is a STACK, not a card: cap headroom, then the five
-            risk-metric tiles one below another (owner's direction). Both are
-            readings of the same book against the same mandate, and at 316px the
-            tiles' own `md:grid-cols-5` would have given each one 52px, so the
-            column is the only place they can go five-deep instead of five-across.
+        {/* Cap headroom, moved from the risk page (ADR-0172). "Am I inside my limits"
+            is the MANDATE's question, and the board beside it states the limits this
+            measures against — separating a constraint from the reading of that
+            constraint is what made the caps unreadable before MandatePanel existed.
 
-            This column is also what the other two align to — it is the tallest of
-            the three, so `h-full` on the mandate and the board stretches them to
-            its bottom edge. The caps card deliberately carries no `h-full`: it
-            shares this column rather than owning it. */}
-        <div className="flex flex-col gap-6">
-          {/* Cap headroom, moved from the risk page (ADR-0172). "Am I inside my limits"
-              is the MANDATE's question, and the board beside it states the limits this
-              measures against — separating a constraint from the reading of that
-              constraint is what made the caps unreadable before MandatePanel existed. */}
+            It briefly shared this column with the five risk-metric tiles, which
+            have since moved to /attribution — four of the five were the same
+            portfolio_risk figures the board already reports AGAINST THEIR LIMIT,
+            two cards apart, and three of those were stating the same ABSENCE
+            twice in two wordings (ADR-0182). Alone in the column again, the card
+            takes `open:h-full` back so the row keeps one bottom edge. */}
+        <div>
           <CapUtilisation state={capState} />
-
-          {/* 2 — Risk metrics (always rendered) + prior-run deltas. */}
-          <section aria-label="Headline risk metrics">
-            <RiskMetricsGrid
-              loading={data.loading}
-              risk={data.risk}
-              failure={data.riskFailure}
-              orderingNote={data.riskOrderingNote}
-              deltas={riskDeltas}
-              prevRunDate={prevRunDate}
-              sessions={data.returns.length}
-            />
-          </section>
         </div>
         </>
         )}
@@ -956,9 +941,10 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       )}
 
       {/* VaR by method — moved off /mandate (ADR-0172). The mandate LISTS a VaR
-          limit and the metric grid beside it reports the one published figure; the
+          limit and its board reports the one published figure against it; the
           four-way comparison is a risk analysis, not a limits check, and belongs on
-          the page whose question is what could go wrong. Its own section, because
+          the page whose question is what could go wrong. (The metric grid that used
+          to report that figure beside the board is on /attribution now — ADR-0182.) Its own section, because
           five instruments in `stress` would bury the scenario matrix again — which
           is the defect this whole reorganisation exists to fix. */}
       {/* No `id` on the wrapper below: `VarMethods` already renders
@@ -1068,6 +1054,32 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           against the other was previously a scroll. */}
       {shows("realised") && (
       <section id="realised" aria-label="Realised performance">
+      {/* The five headline risk statistics, moved off /mandate (ADR-0182). Four of
+          them — VaR, CVaR, beta, HHI — are the same portfolio_risk figures the
+          limit board reports there AGAINST THEIR LIMIT, which on a page asking
+          "is the book inside its mandate" is the strictly better form; three were
+          stating the same ABSENCE twice, two cards apart, in two wordings. The
+          fifth, Sharpe, has no mandate limit at all.
+
+          They land HERE and not on /risk because every one of them is computed
+          from the realised return series, and /risk's own lede promises that
+          every figure on it is ex-ante — a pure function of the recommended
+          weights and a covariance estimate. Putting these there would have made
+          that sentence false. The Δ-vs-yesterday chips are the same claim this
+          phase is for.
+
+          First in the section, because they are the headline: a compact
+          five-across strip above the record and the curves that explain it. */}
+      <RiskMetricsGrid
+        loading={data.loading}
+        risk={data.risk}
+        failure={data.riskFailure}
+        orderingNote={data.riskOrderingNote}
+        deltas={riskDeltas}
+        prevRunDate={prevRunDate}
+        sessions={data.returns.length}
+      />
+
       {/* The forward record, moved here from /method/evidence (ADR-0172). Phase 6
           IS "was the thesis right", and this is the only instrument that answers it
           about books we actually published. Fed the rows this page already read, so

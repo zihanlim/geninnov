@@ -210,12 +210,24 @@ export function CapUtilisation({
     // new one being added. The disclosure itself is kept: a reader who wants the
     // limit board beside it without 19 bars can still close it.
     //
-    // It carries NO `h-full`, unlike the other two cards in that row (ADR-0181):
-    // it does not own its column, it shares it with the five risk-metric tiles
-    // stacked beneath it. The COLUMN is what aligns to the row's height; this
-    // card is content-height at the top of it, and a stretched card here would
-    // push the tiles out of the row entirely.
-    <details open className="card mb-6 group" aria-labelledby="risk-caps-heading">
+    // `open:h-full`, not `h-full`: the mandate row aligns its three cards top AND
+    // bottom (ADR-0181), and this card owns its column again now the risk-metric
+    // tiles have left it (ADR-0182). Gated on `[open]` because a COLLAPSED card
+    // stretched to the row height is a 1600px empty bordered box — the disclosure
+    // would still work and would still look broken.
+    //
+    // The `[&::details-content]` half is not decoration. Chrome wraps a
+    // <details>'s non-summary content in a UA `::details-content` box, so
+    // `flex-col` on the element makes THAT box the flex item and the card body
+    // inside it is not one — measured: the body stopped at 1068px inside a 1546px
+    // slot, and the closing note floated with 400px of blank beneath it. Both
+    // paths are kept: Firefox and Safari have no such box and flex the children
+    // directly, where the rule is simply ignored.
+    <details
+      open
+      className="card mb-6 group open:h-full open:flex open:flex-col open:[&::details-content]:h-full open:[&::details-content]:flex open:[&::details-content]:flex-col"
+      aria-labelledby="risk-caps-heading"
+    >
       <summary className="card-header cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
         <h2 id="risk-caps-heading" className="card-title m-0">
           Cap utilisation
@@ -239,7 +251,7 @@ export function CapUtilisation({
           <SectionGap copy={gap} tone={state.status === "query_error" ? "error" : "empty"} />
         ) : null
       ) : (
-        <div className="card-body">
+        <div className="card-body flex-1 flex flex-col">
           {breaches.length > 0 && (
             <div
               className="mb-5 pl-4 border-l-2 py-1"
@@ -259,14 +271,20 @@ export function CapUtilisation({
             </div>
           )}
 
-          {GROUPS.map((group) => (
-            <CapGroupBlock
-              key={group.id}
-              group={group}
-              rows={data[group.id]}
-              limit={data.limits?.[group.id]}
-            />
-          ))}
+          {/* flex-1 on the GROUPS, not `mt-auto` on the note below them: this is
+              what absorbs the slack when the card is stretched to the mandate
+              row's height, and it leaves the note's own `mt-4` intact for every
+              layout where there is no slack to absorb. */}
+          <div className="flex-1">
+            {GROUPS.map((group) => (
+              <CapGroupBlock
+                key={group.id}
+                group={group}
+                rows={data[group.id]}
+                limit={data.limits?.[group.id]}
+              />
+            ))}
+          </div>
 
           <p className="m-0 mt-4 pt-3.5 border-t border-border text-[11px] text-text-tertiary leading-[1.6] max-w-[90ch]">
             Bars are drawn against the cap, so a full bar sits exactly on the limit;

@@ -60,6 +60,31 @@ export interface TrackRecord {
   byDirection: Partial<Record<"long" | "short", DirectionStat>>;
   /** Distinct run_dates represented, i.e. how many published books are covered. */
   books: number;
+  /**
+   * Claims whose asset is NOT in the book finally published for their run_date, or
+   * null when the caller supplied nothing to check against.
+   *
+   * These are picks from a book that was REPLACED the same day. The pipeline runs
+   * twice on some dates; each run writes its picks to `pick_outcomes` at
+   * publication, and the second run's upsert replaces the book in
+   * `research_recommendations` without touching the first run's outcome rows —
+   * `book_revisions` records it as `trigger_type: pipeline_rerun`. On 2026-07-30
+   * that is 4 of 13 rows (ARKK, JD, MSFT, NUE); across 07-27..07-30 it is 20 of
+   * the ~80 claims, a quarter of the denominator. Nothing before 07-27 is affected.
+   *
+   * THEY ARE COUNTED, NOT REMOVED, and `total` still includes them. ADR-0090's
+   * property is that the denominator exists before any outcome does, so that a
+   * pick cannot leave it once it looks bad; a rerun that silently dropped picks
+   * from the denominator would be exactly that hole, and "the book was replaced"
+   * is not a reason a claim was never made. So the honest treatment is to keep the
+   * claim and say how many are in this state — which also makes the figure
+   * reconcilable, since a reader auditing "13 claims" against the 9-name book on
+   * /book could not previously make it add up.
+   *
+   * Null, not 0, when unknown: "no superseded claims" and "nobody checked" are
+   * different facts and the second must not render as the first.
+   */
+  superseded: number | null;
 }
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -67,6 +92,13 @@ const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFin
 export function buildTrackRecord(
   rows: PickOutcomeRow[],
   horizonDays: number,
+  /**
+   * run_date -> the assets in the book finally published for it, from
+   * `book_holdings`. Omit it and `superseded` is null; a run_date absent from the
+   * map contributes nothing rather than counting all of its rows as superseded,
+   * because a missing entry means unknown.
+   */
+  publishedByRunDate?: Map<string, Set<string>>,
 ): TrackRecord {
   const scoped = rows.filter((r) => r.horizon_days === horizonDays);
 
@@ -85,6 +117,14 @@ export function buildTrackRecord(
     firstExpectedMaturity: null,
     byDirection: {},
     books: new Set(scoped.map((r) => r.run_date)).size,
+    superseded: publishedByRunDate
+      ? scoped.filter((r) => {
+          const published = publishedByRunDate.get(r.run_date);
+          // Unknown run_date -> not counted. Only a run_date we HAVE the published
+          // book for can tell us a claim is not in it.
+          return published ? !published.has(r.asset) : false;
+        }).length
+      : null,
   };
 
   const scored: PickOutcomeRow[] = [];

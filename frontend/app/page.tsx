@@ -171,6 +171,15 @@ function ConvictionPageInner() {
   const lensParam = useSearchParams().get("lens");
   const otherBook =
     isLens(lensParam) && lensParam !== DEFAULT_LENS ? lensParam : null;
+  // theme_ids the PUBLISHED BOOK holds, so a "positions →" link can only promise
+  // positions that exist. Undefined until the read lands, which the link treats as
+  // "unknown" rather than "none".
+  //
+  // From `research_recommendations.picks`, NOT `portfolio_positions` — the trap
+  // AbstentionRoster documents: L1 writes its full candidate pool to positions first
+  // and the pipeline reconciles it down only after L5, so for the several minutes that
+  // takes every theme looks held. The book of record is the published picks (ADR-0040).
+  const [heldThemeIds, setHeldThemeIds] = useState<Set<string> | undefined>(undefined);
   const [themes, setThemes] = useState<ConvictionTheme[]>([]);
   const [regime, setRegime] = useState<Regime | null>(null);
   const [factors, setFactors] = useState<Factor[]>([]);
@@ -307,11 +316,36 @@ function ConvictionPageInner() {
         { byTheme, error: histErr },
         { byTheme: edgeByTheme },
         { byTheme: provByTheme },
+        bookPicksRes,
       ] = await Promise.all([
         fetchThemeHistories(ids, 30),
         fetchThemeEdge(ids),
         fetchThemeProvenance(ids),
+        // Lens-pinned like every other read here (migration 062 keyed this table on
+        // (run_date, lens); this page describes the multi-asset book).
+        supabase
+          .from("research_recommendations")
+          .select("picks")
+          .eq("lens", "multi_asset")
+          .order("run_date", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ]);
+      // Left undefined on a read error: "the query failed" is not "the book holds
+      // nothing in this theme", and the link must not render the second for the first.
+      if (!bookPicksRes.error && bookPicksRes.data) {
+        const raw = (bookPicksRes.data as { picks: unknown }).picks;
+        const picks = (typeof raw === "string" ? JSON.parse(raw || "[]") : raw) as
+          | Array<{ theme_id?: string | null }>
+          | null;
+        if (Array.isArray(picks)) {
+          setHeldThemeIds(
+            new Set(
+              picks.map((p) => p.theme_id).filter((t): t is string => Boolean(t)),
+            ),
+          );
+        }
+      }
       setHistories(byTheme);
       setHistoryError(histErr);
       setEdges(edgeByTheme);
@@ -740,6 +774,7 @@ function ConvictionPageInner() {
               </div>
             ) : (
               <ThemeHeatmap
+                heldThemeIds={heldThemeIds}
                 themes={enriched}
                 onSelect={setDrawerTheme}
                 edgeByTheme={edges}
@@ -787,6 +822,7 @@ function ConvictionPageInner() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:flex-1">
               {top3.map((t, i) => (
                 <ConvictionCard
+                  heldThemeIds={heldThemeIds}
                   key={t.id}
                   rank={i + 1}
                   theme={t}

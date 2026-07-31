@@ -50,6 +50,10 @@ interface Props {
   edge?: ThemeEdge;
   /** |EdgeScore| below which the engine abstains (scoring_config, live). */
   abstainThreshold?: number;
+  /** theme_ids the published book holds a position in; undefined = unknown.
+   *  Distinct from the abstain test — a theme can clear the bar and still be
+   *  sized at zero, because sizing is a competition under binding caps. */
+  heldThemeIds?: Set<string>;
   /** Latest-run data_source provenance for the HypeScore. */
   provenance?: ThemeProvenance;
   /**
@@ -108,6 +112,7 @@ export default function ConvictionCard({
   onOpenDerivation,
   edge,
   abstainThreshold = 0.15,
+  heldThemeIds,
   provenance,
   topHeadline,
 }: Props) {
@@ -179,7 +184,7 @@ export default function ConvictionCard({
           with the one-line IC-defensible rationale beneath. */}
       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
         <EdgeDirectionChip edge={edge} abstainThreshold={abstainThreshold} />
-        <PositionsLink themeId={theme.id} held={isThemeAbstained(edge, abstainThreshold)} className="ml-auto text-[11px] text-text-tertiary hover:text-accent transition-colors whitespace-nowrap" />
+        <PositionsLink themeId={theme.id} held={isThemeAbstained(edge, abstainThreshold)} hasPositions={heldThemeIds ? heldThemeIds.has(theme.id) : undefined} className="ml-auto text-[11px] text-text-tertiary hover:text-accent transition-colors whitespace-nowrap" />
       </div>
       {edge && edge.edge_score !== null && (
         <div

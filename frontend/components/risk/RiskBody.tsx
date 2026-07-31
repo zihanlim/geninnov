@@ -323,6 +323,9 @@ interface PageData {
   defaultLensPicks: ResearchAnalyticsRow["picks"];
   /** pick_outcomes at the 21-day horizon; null when the read failed. */
   outcomeRows: PickOutcomeRow[] | null;
+  /** run_date -> assets in the book finally published for it. Empty map on a
+   *  read error, which the track record treats as "unknown" per run_date. */
+  publishedByRunDate: Map<string, Set<string>>;
   /** Reference series for the realised curve (ADR-0094). */
   benchmark: BenchmarkRow[];
   // ── Actionable-risk inputs ──────────────────────────────────────────────
@@ -358,6 +361,7 @@ const INITIAL: PageData = {
   holdings: [],
   defaultLensPicks: null,
   outcomeRows: null,
+  publishedByRunDate: new Map(),
   benchmark: [],
   positions: [],
   positionsFailure: null,
@@ -556,6 +560,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         benchmarkRes,
         holdingsRes,
         outcomesRes,
+        holdingsByDateRes,
         defaultPicksRes,
       ] = await Promise.all([
         // Migration 062 keyed this table on (run_date, lens): a run_date can now
@@ -647,6 +652,24 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           .from("pick_outcomes")
           .select("run_date, asset, direction, horizon_days, verdict, void_reason, signed_return, entry_date, exit_date, expected_exit_date, spec_version")
           .eq("horizon_days", 21)
+          .order("run_date", { ascending: false })
+          .limit(1000),
+        // What each run_date FINALLY published, so the track record can say how many
+        // of its claims come from a book that was replaced the same day. The pipeline
+        // runs twice on some dates; each run writes its picks to `pick_outcomes` at
+        // publication and the second run's upsert replaces the book without touching
+        // the first run's outcome rows (`book_revisions`, trigger_type=pipeline_rerun),
+        // so the claim count legitimately exceeds the picks on /book — 13 against 9 on
+        // 2026-07-30 — with nothing on screen explaining the gap.
+        //
+        // `book_holdings`, not `research_recommendations.picks`: this needs the book
+        // for EVERY run_date, and holdings is already one row per (run_date, lens,
+        // asset) so the set falls out of a two-column select. Pinned to multi_asset,
+        // like every other read on this phase.
+        supabase
+          .from("book_holdings")
+          .select("run_date, asset")
+          .eq("lens", "multi_asset")
           .order("run_date", { ascending: false })
           .limit(1000),
         // The MULTI-ASSET book's pick list, pinned — the one read on this page
@@ -790,6 +813,18 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         outcomeRows: outcomesRes.error
           ? null
           : ((outcomesRes.data as PickOutcomeRow[] | null) ?? []),
+        // An EMPTY map on failure, not a partial one: `buildTrackRecord` treats a
+        // run_date it has no entry for as unknown and counts nothing, so a failed
+        // read degrades to "superseded not stated" rather than to "none superseded".
+        publishedByRunDate: holdingsByDateRes.error
+          ? new Map<string, Set<string>>()
+          : (((holdingsByDateRes.data as { run_date: string; asset: string }[] | null) ??
+              []).reduce((m, r) => {
+              if (!r.run_date || !r.asset) return m;
+              const set = m.get(r.run_date) ?? new Set<string>();
+              set.add(r.asset);
+              return m.set(r.run_date, set);
+            }, new Map<string, Set<string>>())),
         returnsFailure: toFailure(
           "portfolio_returns",
           RETURN_COLUMNS,
@@ -1325,7 +1360,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
             track:
               data.outcomeRows === null
                 ? null
-                : buildTrackRecord(data.outcomeRows, 21),
+                : buildTrackRecord(data.outcomeRows, 21, data.publishedByRunDate),
             holdings: data.holdings,
             sessions: data.returns.length,
           })}
@@ -1656,7 +1691,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           IS "was the thesis right", and this is the only instrument that answers it
           about books we actually published. Fed the rows this page already read, so
           it makes no second query of its own. */}
-      <TrackRecord rows={data.outcomeRows} />
+      <TrackRecord rows={data.outcomeRows} publishedByRunDate={data.publishedByRunDate} />
 
       {/* Moved off /mandate (ADR-0172). Both are BACKWARD-LOOKING, which is phase
           6's question and not phase 1's — a mandate says what the book is allowed to
@@ -1715,7 +1750,15 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
               {data.inception.inception_date}, weekdays only —{" "}
               <strong>not yet a track record</strong> on sample size either. The
               forward record that does account for this is{" "}
-              <a href="/method/evidence#track-record" className="text-accent hover:underline">
+              {/* Same page, not a round trip. This pointed at
+                  /method/evidence#track-record, which since ADR-0172 renders a
+                  SIGNPOST reading "the forward track record now lives on
+                  Attribution" — so a reader on /attribution was sent to another
+                  route to be told to come back, for a table forty lines above them.
+                  The anchor there is not dead and is deliberately kept for the ADRs
+                  and PROGRESS rows that cite it; it is just not where a reader
+                  already looking at the table should be sent. */}
+              <a href="#track-record" className="text-accent hover:underline">
                 pick outcomes
               </a>
               , which scores each published call at a fixed horizon.

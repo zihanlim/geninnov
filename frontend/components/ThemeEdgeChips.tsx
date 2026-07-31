@@ -111,6 +111,7 @@ export function PositionsLink({
   className,
   label,
   held = false,
+  hasPositions,
 }: {
   themeId: string;
   className?: string;
@@ -119,8 +120,30 @@ export function PositionsLink({
    *  the link says so honestly and lands on the book's held-out explanation
    *  (banner → abstention roster) rather than implying positions exist. */
   held?: boolean;
+  /**
+   * Does the book ACTUALLY hold a position in this theme?
+   *
+   * `held` answers a question about the THEME'S SCORE — is |EdgeScore| below the
+   * abstain bar — and was standing in for a question about the BOOK. They come
+   * apart: a theme can clear the conviction bar comfortably and still win no slot,
+   * because sizing is a competition and the caps bind. On the 2026-07-30 book,
+   * Energy Prices (+0.20) and US Dollar (+0.27) both cleared the 0.15 bar, hold
+   * nothing, and offered a reader "positions →" under the tooltip "See this
+   * theme's sized positions in the book".
+   *
+   * `undefined` means the caller could not determine it, and the label falls back
+   * to the score-only reading rather than asserting either way — the destination
+   * corrects it on arrival (BookBody classifies a themed deep-link with no
+   * positions as held out and says so), but a link should not need its target to
+   * fix its own label.
+   */
+  hasPositions?: boolean;
 }) {
-  const text = label ?? (held ? "held out →" : "positions →");
+  // Score below the bar, or scored fine and simply not sized. Both are "nothing to
+  // show here"; only the first is the abstention roster's story.
+  const notSized = hasPositions === false && !held;
+  const text =
+    label ?? (held ? "held out →" : notSized ? "not sized →" : "positions →");
   return (
     <Link
       href={`/book?theme=${encodeURIComponent(themeId)}`}
@@ -132,7 +155,9 @@ export function PositionsLink({
       title={
         held
           ? "This theme was held out of the book — see why in the abstention roster"
-          : "See this theme's sized positions in the book"
+          : notSized
+            ? "This theme cleared the conviction bar but no position was sized in it — sizing is a competition and the caps bind. Opens the book filtered to this theme."
+            : "See this theme's sized positions in the book"
       }
     >
       {text}

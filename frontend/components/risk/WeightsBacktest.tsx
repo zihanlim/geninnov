@@ -73,8 +73,16 @@ export default function WeightsBacktest({ data }: { data?: WeightsBacktestRow | 
         fixed across {data.n_observations ?? "—"} sessions of the constituents&rsquo; own
         returns{data.window_start ? ` (${data.window_start} to ${data.window_end})` : ""}.{" "}
         {data.selection_caveat} {data.method_caveat} The forward record — picks scored
-        against a horizon fixed <em>before</em> the outcome was knowable — is on{" "}
-        <code className="num">/method</code>.
+        against a horizon fixed <em>before</em> the outcome was knowable — is{" "}
+        {/* On THIS page, and it has been since ADR-0172 moved it here. The old text
+            named `/method`, where the anchor now renders only a signpost back to
+            Attribution — and this panel renders on Attribution, so it was directing
+            a reader off-route to be told to return. Not a code path: a stale
+            sentence naming a route the content left. */}
+        <a href="#track-record" className="text-accent hover:underline">
+          on this page
+        </a>
+        .
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 mb-3">

@@ -123,15 +123,35 @@ export default function ThesisBlock({ advisory, citations, className }: Props) {
   }
 
   // ---- Render the verified/partial body ------------------------------------
+  const evidenceSources = new Set(advisory.evidence_ids).size;
+
   return (
     <div className={`card p-7 ${className ?? ""}`}>
       <div className="flex items-baseline gap-2.5 mb-4">
         <h3 className="text-[18px] font-semibold m-0">Thesis</h3>
         <StatusBadge displayStatus={display_status} />
-        {advisory.evidence_ids.length > 0 && (
-          <span className="text-text-tertiary text-[11px]">
-            {advisory.evidence_ids.length} evidence source
-            {advisory.evidence_ids.length === 1 ? "" : "s"}
+        {/* DISTINCT sources, not the length of the citation list.
+            `advisory_derivation.evidence_ids` records one entry per CITATION, and a
+            source cited more than once appears more than once: on the 2026-07-30
+            multi-asset run it holds 24 entries over 17 sources — `L1 theme_scores`
+            six times and `scenario_analysis` three. So the header claimed "24
+            evidence sources" above a CitationList enumerating 17, and the two
+            numbers a reader would try to reconcile were counting different things.
+            (The credit book is 16/16, which is why the gap only ever showed on the
+            default page.)
+            Deduped here rather than upstream: the raw array is the citation record
+            and dropping repeats from it would lose how heavily a source was leaned
+            on. It is the COUNT that has to say "sources" or say "citations". */}
+        {evidenceSources > 0 && (
+          <span
+            className="text-text-tertiary text-[11px]"
+            title={
+              advisory.evidence_ids.length !== evidenceSources
+                ? `${advisory.evidence_ids.length} citations over ${evidenceSources} distinct sources — some are cited more than once.`
+                : undefined
+            }
+          >
+            {evidenceSources} evidence source{evidenceSources === 1 ? "" : "s"}
           </span>
         )}
       </div>

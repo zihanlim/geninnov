@@ -205,3 +205,73 @@ describe("formatters", () => {
     expect(fmtSignedPct(0.0123)).toBe("+1.23%");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Superseded claims — picks from a book the pipeline replaced the same day.
+//
+// The pipeline runs twice on some dates. Each run writes its picks to
+// `pick_outcomes` at publication, and the second run's upsert replaces the book
+// in `research_recommendations` WITHOUT touching the first run's outcome rows
+// (`book_revisions` logs it as `trigger_type: pipeline_rerun`). So the claim
+// count legitimately exceeds the picks visible on /book — 13 against 9 on
+// 2026-07-30, and 20 of ~80 across 07-27..07-30 — and nothing on screen said why.
+//
+// The fixture below is that real run. The decisive assertion is that `total` does
+// NOT shrink: ADR-0090's property is that a claim cannot leave the denominator
+// once it looks bad, and "the book was later replaced" is not a reason the claim
+// was never published. Counted, disclosed, never subtracted.
+describe("buildTrackRecord — superseded claims", () => {
+  /** pick_outcomes for 2026-07-30: the 9 published names + 4 from the replaced book. */
+  const OUTCOMES_0730 = [
+    ...["BABA", "F", "GEV", "GLD", "NOC", "PDD", "SMH", "UNG", "UNH"].map((asset) =>
+      row({ run_date: "2026-07-30", asset }),
+    ),
+    ...["ARKK", "JD", "MSFT", "NUE"].map((asset) => row({ run_date: "2026-07-30", asset })),
+  ];
+
+  /** book_holdings for that run_date, multi_asset — what was FINALLY published. */
+  const PUBLISHED = new Map([
+    [
+      "2026-07-30",
+      new Set(["BABA", "F", "GEV", "GLD", "NOC", "PDD", "SMH", "UNG", "UNH"]),
+    ],
+  ]);
+
+  it("counts the picks absent from the finally-published book", () => {
+    const tr = buildTrackRecord(OUTCOMES_0730, 21, PUBLISHED);
+    expect(tr.superseded).toBe(4);
+  });
+
+  it("does NOT remove them from the denominator", () => {
+    // The whole point. A rerun that silently dropped picks from `total` would be
+    // exactly the hole ADR-0090 exists to close.
+    const tr = buildTrackRecord(OUTCOMES_0730, 21, PUBLISHED);
+    expect(tr.total).toBe(13);
+    expect(tr.books).toBe(1);
+  });
+
+  it("is null — not 0 — when no published book was supplied", () => {
+    // "Nothing superseded" and "nobody checked" are different facts, and the
+    // second must not render as the first.
+    expect(buildTrackRecord(OUTCOMES_0730, 21).superseded).toBeNull();
+  });
+
+  it("treats a run_date missing from the map as unknown, not as all-superseded", () => {
+    // A partial map is the realistic failure (book_holdings only goes back so far).
+    // Counting every row of an unmapped run_date would invent a huge superseded
+    // figure out of missing data.
+    const partial = new Map([["2026-07-30", PUBLISHED.get("2026-07-30")!]]);
+    const rows = [...OUTCOMES_0730, row({ run_date: "2026-07-22", asset: "XLE" })];
+    const tr = buildTrackRecord(rows, 21, partial);
+    expect(tr.total).toBe(14);
+    expect(tr.superseded).toBe(4);
+  });
+
+  it("reports 0 for a run_date whose every pick is still published", () => {
+    // 2026-07-25 and earlier: outcome rows equal book picks exactly, so a
+    // well-behaved date must read zero rather than null.
+    const clean = [row({ run_date: "2026-07-25", asset: "XLE" })];
+    const tr = buildTrackRecord(clean, 21, new Map([["2026-07-25", new Set(["XLE"])]]));
+    expect(tr.superseded).toBe(0);
+  });
+});

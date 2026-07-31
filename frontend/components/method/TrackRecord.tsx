@@ -34,7 +34,17 @@ const HORIZON = 21;
  *
  * Self-contained remains the default so nothing else that mounts it has to change.
  */
-export default function TrackRecord({ rows: given }: { rows?: PickOutcomeRow[] | null }) {
+export default function TrackRecord({
+  rows: given,
+  publishedByRunDate,
+}: {
+  rows?: PickOutcomeRow[] | null;
+  /**
+   * run_date -> assets in the book finally published for it (`book_holdings`).
+   * Without it the superseded count is null and nothing is claimed about it.
+   */
+  publishedByRunDate?: Map<string, Set<string>>;
+}) {
   const [fetched, setFetched] = useState<PickOutcomeRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const rows = given !== undefined ? given : fetched;
@@ -58,7 +68,8 @@ export default function TrackRecord({ rows: given }: { rows?: PickOutcomeRow[] |
       });
   }, [given]);
 
-  const tr: Record_ | null = rows === null ? null : buildTrackRecord(rows, HORIZON);
+  const tr: Record_ | null =
+    rows === null ? null : buildTrackRecord(rows, HORIZON, publishedByRunDate);
   const status = tr ? trackRecordStatus(tr) : null;
 
   return (
@@ -88,6 +99,26 @@ export default function TrackRecord({ rows: given }: { rows?: PickOutcomeRow[] |
           </span>
           <span className="text-[11px] text-text-tertiary num">
             {tr ? `${tr.total} claims · ${tr.books} book${tr.books === 1 ? "" : "s"}` : ""}
+            {/* Why the count can exceed the books on screen. The pipeline runs twice
+                on some dates; each run writes its picks here at publication, and the
+                second run's upsert replaces the book WITHOUT touching the first
+                run's rows (book_revisions logs it as trigger_type=pipeline_rerun).
+                So a reader auditing "13 claims" against the 9-name book on /book
+                could not make it add up, and had no way to learn why.
+                Counted, never subtracted: ADR-0090's property is that a claim
+                cannot leave the denominator once it looks bad, and "the book was
+                replaced" is not a reason the claim was never made. */}
+            {tr && tr.superseded !== null && tr.superseded > 0 && (
+              <span
+                // `ml-1` styles the gap but innerText has none, so the string reads
+                // "8 books· incl." to a screen reader, to Ctrl+F and in a copy-paste.
+                // The space has to be a character, not a margin.
+                className="ml-1"
+                title={`${tr.superseded} of these picks are not in the book finally published for their run_date — the pipeline re-ran and replaced the book the same day (book_revisions, trigger_type=pipeline_rerun). They stay in the denominator on purpose: a published claim cannot leave it because the book was later replaced. This is why the claim count exceeds the picks visible on /book for those dates.`}
+              >
+                {" · "}incl. {tr.superseded} from books later replaced
+              </span>
+            )}
           </span>
         </div>
 

@@ -224,12 +224,36 @@ describe("every research_recommendations / book_holdings read is lens-qualified"
     ).toBe(false);
   });
 
-  it("book_holdings has no direct frontend reader today", () => {
-    // Not a requirement — a stated fact worth pinning. If this starts failing, a
-    // NEW read of book_holdings was added and must be lens-qualified like every
-    // research_recommendations read above; book_holdings_performance (a
-    // DIFFERENT, deliberately lens-less table per ADR-0194) is unaffected.
+  it("every book_holdings read is lens-qualified", () => {
+    // This assertion used to read "book_holdings has no direct frontend reader
+    // today" and pinned `hits` to []. Its own comment said what to do when that
+    // stopped being true: "a NEW read of book_holdings was added and must be
+    // lens-qualified like every research_recommendations read above". One was —
+    // `RiskBody` reads (run_date, asset) at lens=multi_asset to learn what each
+    // run_date FINALLY published, so the forward track record can say how many of
+    // its claims come from a book the pipeline replaced the same day. So the fact
+    // being pinned changes from "nobody reads it" to the rule that always mattered.
+    //
+    // `book_holdings_performance` is a DIFFERENT and deliberately lens-less table
+    // (ADR-0194) and is unaffected — `TABLES` does not include it, and the
+    // `\\.from\\("book_holdings"\\)` match is exact, so the longer name cannot
+    // collide with this check.
     const hits = allHits().filter((h) => h.table === "book_holdings");
-    expect(hits).toEqual([]);
+    for (const h of hits) {
+      expect(
+        h.qualified,
+        `${h.file}:${h.line} reads book_holdings without an explicit lens filter. ` +
+          `Migration 062 keyed it on (run_date, lens, asset), so an unfiltered read ` +
+          `mixes the multi-asset and credit books' holdings in one result.`,
+      ).toBe(true);
+    }
+  });
+
+  it("book_holdings is actually read, so the check above is not vacuous", () => {
+    // The rule is a `for` loop over matches: with zero matches it passes while
+    // asserting nothing. That is how the previous version of this file could have
+    // gone on passing after the reader landed, had it been written as the rule
+    // rather than as the count.
+    expect(allHits().filter((h) => h.table === "book_holdings").length).toBeGreaterThan(0);
   });
 });

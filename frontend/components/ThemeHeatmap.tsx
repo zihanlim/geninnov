@@ -40,6 +40,16 @@ interface Props<T extends HeatmapTheme> {
   abstainThreshold?: number;
   /** Latest-run data_source per theme_id — drives the provenance dot. */
   provByTheme?: Record<string, ThemeProvenance>;
+  /**
+   * theme_ids the published book actually holds a position in, or undefined when
+   * the caller could not determine it.
+   *
+   * Separate from `edgeByTheme` because they answer different questions: a theme
+   * can clear the abstain bar and still be sized at zero, since sizing is a
+   * competition under binding caps. Without this the "positions →" link promised
+   * positions for Energy Prices and US Dollar, which hold none.
+   */
+  heldThemeIds?: Set<string>;
 }
 
 // Diverging color: red (low) → gray (mid) → green (high) on a 0-100 scale.
@@ -87,6 +97,7 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({
   onSelect,
   edgeByTheme,
   abstainThreshold = 0.15,
+  heldThemeIds,
   provByTheme,
 }: Props<T>) {
   if (themes.length === 0) {
@@ -311,6 +322,7 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({
                   <PositionsLink
                     themeId={t.id}
                     held={isThemeAbstained(edgeByTheme?.[t.id], abstainThreshold)}
+                    hasPositions={heldThemeIds ? heldThemeIds.has(t.id) : undefined}
                   />
                 </td>
               </tr>

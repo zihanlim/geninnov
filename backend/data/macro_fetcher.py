@@ -80,7 +80,88 @@ YFINANCE_TICKERS = {
     "HG=F": {"name": "Copper", "unit": "USD"},
 }
 
-# Equity index tickers (subset of YFINANCE_TICKERS for the market bar display)
+# ── The homepage tape ────────────────────────────────────────────────────────
+#
+# A SEPARATE map from YFINANCE_TICKERS, and that separation is the whole design.
+# `upsert_latest_snapshot` walks YFINANCE_TICKERS into `macro_indicators` — the
+# L0 macro set that `regime_classifier` reads, `/method` renders and the L5
+# prompt is built from. Adding the Nikkei and Bitcoin to that map to get them
+# onto a decorative tape would put them in the macro snapshot as well, where
+# nothing asked for them and every consumer would silently inherit them. The
+# tape needs PRICE HISTORY (for prev_close), not macro-indicator status, so
+# these tickers reach `macro_daily_history` and stop there.
+#
+# ^VIX and DX-Y.NYB appear in both maps on purpose. History is keyed by
+# (series_id, trading_date), so the overlap costs one de-duplicated fetch and
+# keeps each map readable as its own list.
+#
+# Membership AND order live here, then travel to `market_assets.market_group` /
+# `.sort_order`. The frontend previously held its own `DISPLAY_ORDER` array —
+# two lists that had to agree, with nothing failing when they stopped. That
+# array had already drifted: it listed "^VIX", which was never in
+# EQUITY_INDICES, so the VIX cell of the tape had never once rendered.
+#
+# Every ticker below was resolved against yfinance before being written down.
+# The one asset that could not be: Coinbase's COIN 50 index has no Yahoo symbol
+# (`COIN50-USD` → "Quote not found"), so the crypto group is BTC/ETH/SOL and
+# says nothing about a fourth.
+RIBBON_GROUPS: dict[str, list[tuple[str, str, str]]] = {
+    # group: [(ticker, display name, unit)]
+    "US": [
+        ("^SPX", "S&P 500", "pts"),
+        ("^NDX", "NASDAQ 100", "pts"),
+        ("^DJI", "Dow Jones", "pts"),
+        ("^RUT", "Russell 2000", "pts"),
+        ("^VIX", "VIX", "index"),
+    ],
+    "Europe": [
+        ("^FTSE", "FTSE 100", "pts"),
+        ("^GDAXI", "DAX", "pts"),
+        ("^FCHI", "CAC 40", "pts"),
+        ("^STOXX50E", "Euro Stoxx 50", "pts"),
+    ],
+    "Asia": [
+        ("^N225", "Nikkei 225", "pts"),
+        ("^HSI", "Hang Seng", "pts"),
+        ("000001.SS", "SSE Composite", "pts"),
+        ("^KS11", "KOSPI", "pts"),
+    ],
+    "Currencies": [
+        ("EURUSD=X", "EUR/USD", "rate"),
+        ("GBPUSD=X", "GBP/USD", "rate"),
+        ("JPY=X", "USD/JPY", "rate"),
+        ("DX-Y.NYB", "US Dollar Index", "index"),
+    ],
+    "Crypto": [
+        ("BTC-USD", "Bitcoin", "USD"),
+        ("ETH-USD", "Ethereum", "USD"),
+        ("SOL-USD", "Solana", "USD"),
+    ],
+    "Futures": [
+        ("ES=F", "S&P Futures", "USD"),
+        ("NQ=F", "NASDAQ Futures", "USD"),
+        ("YM=F", "Dow Futures", "USD"),
+    ],
+}
+
+#: Flat ticker → {name, unit, group, sort_order}, derived so the groups above
+#: stay the only place a tape asset is declared.
+RIBBON_TICKERS: dict[str, dict] = {
+    ticker: {"name": name, "unit": unit, "group": group, "sort_order": i}
+    for group, members in RIBBON_GROUPS.items()
+    for i, (ticker, name, unit) in enumerate(members)
+}
+
+#: Everything needing daily price history: the macro set plus the tape.
+#: `dict.fromkeys` rather than a set — insertion order is stable, so a failed
+#: batch logs the same ticker order every run and diffs cleanly.
+HISTORY_TICKERS: list[str] = list(
+    dict.fromkeys([*YFINANCE_TICKERS, *RIBBON_TICKERS])
+)
+
+#: Retained: `fetch_market_assets(tickers=...)` still takes an explicit list and
+#: three tests pass `EQUITY_INDICES[0]`. The tape's own default is the full
+#: RIBBON_TICKERS universe.
 EQUITY_INDICES = ["^SPX", "^NDX", "^DJI", "^RUT"]
 
 FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
@@ -169,10 +250,17 @@ class MacroFetcher:
         return result
 
     def fetch_yfinance_batch(self, end: date | None = None) -> pd.DataFrame:
-        """Fetch VIX, DXY, gold, oil, copper from yfinance."""
+        """Fetch the macro set AND the homepage tape from yfinance.
+
+        One batch over `HISTORY_TICKERS`, not two calls: yfinance's threaded
+        download is per-request overhead, and the two maps overlap on ^VIX and
+        DX-Y.NYB. What the two sets do NOT share is where they land —
+        `upsert_latest_snapshot` still walks YFINANCE_TICKERS alone, so a tape
+        ticker gets price history and never becomes a macro indicator.
+        """
         end = end or (date.today() + timedelta(days=1))
         start = self._get_lookback_start()
-        return _yfinance_batch(list(YFINANCE_TICKERS), start, end)
+        return _yfinance_batch(HISTORY_TICKERS, start, end)
 
     def persist_daily_history(self, fred_df: pd.DataFrame, yf_df: pd.DataFrame) -> int:
         """Append daily values to macro_daily_history. Returns rows inserted."""
@@ -203,13 +291,18 @@ class MacroFetcher:
             td = row["trading_date"]
             if hasattr(td, "isoformat"):
                 td = td.isoformat()
-            for ticker in YFINANCE_TICKERS:
+            # HISTORY_TICKERS, not YFINANCE_TICKERS: the tape's tickers need a
+            # price series here to have a prev_close at all. `macro_daily_history`
+            # is keyed by (series_id, trading_date), so this is purely additive —
+            # every existing reader selects the series_ids it already knows.
+            for ticker in HISTORY_TICKERS:
                 if ticker not in row or pd.isna(row.get(ticker)):
                     continue
+                meta = YFINANCE_TICKERS.get(ticker) or RIBBON_TICKERS[ticker]
                 rows.append({
                     "series_id": ticker,
                     "value": float(row[ticker]),
-                    "unit": YFINANCE_TICKERS[ticker]["unit"],
+                    "unit": meta["unit"],
                     "trading_date": td,
                 })
 
@@ -304,7 +397,7 @@ class MacroFetcher:
         # today's closes under an "Updated 2d ago" label (a false freshness claim,
         # the same wrong-field defect as ADR-0062). Stamp it explicitly here.
         now_iso = datetime.now(timezone.utc).isoformat()
-        tickers = tickers or EQUITY_INDICES
+        tickers = tickers or list(RIBBON_TICKERS)
         today = date.today()
         # Last 5 trading days should cover any weekend gap
         start = (today - timedelta(days=7)).isoformat()
@@ -331,7 +424,12 @@ class MacroFetcher:
 
         results = []
         for ticker in tickers:
-            meta = YFINANCE_TICKERS.get(ticker, {"name": ticker})
+            # RIBBON_TICKERS first: it carries the tape's display name, group
+            # and position. YFINANCE_TICKERS is the fallback for a caller that
+            # passes a macro ticker explicitly (three tests do), and a bare
+            # ticker string is the last resort so an unknown symbol still gets
+            # a NOT NULL name rather than failing the upsert.
+            meta = RIBBON_TICKERS.get(ticker) or YFINANCE_TICKERS.get(ticker) or {}
             vals = by_ticker.get(ticker, [])
             if len(vals) < 2:
                 continue
@@ -340,20 +438,36 @@ class MacroFetcher:
             if curr is None or prev is None or prev == 0:
                 continue
             pct = (curr - prev) / prev * 100
+            # Two decimals is right for index points and LOSSY for a currency:
+            # EUR/USD 1.1512 stored as 1.15 cannot be recovered downstream, and
+            # an FX quote is read in the digits that rounding removes — a 0.4%
+            # move renders as no move at all. Keyed on magnitude, not on the
+            # group, so USD/JPY at 160.84 and Bitcoin at 64,131.20 keep 2dp
+            # where more would be false precision on a float4 column. The
+            # frontend formats on the same rule; this is what gives it the
+            # digits to format.
+            places = 4 if abs(curr) < 10 else 2
             results.append({
                 "ticker": ticker,
-                "name": meta["name"],
-                "current": round(curr, 2),
-                "prev_close": round(prev, 2),
+                "name": meta.get("name", ticker),
+                "current": round(curr, places),
+                "prev_close": round(prev, places),
                 "pct_change": round(pct, 2),
+                # The SESSION the close came from, which `updated_at` is not —
+                # that is the pipeline's write time and is identical for the
+                # Nikkei and the S&P despite ~15 hours between their closes.
+                # This date was already in hand and was being thrown away.
+                "as_of": vals[0]["date"],
+                "market_group": meta.get("group", "US"),
+                "sort_order": meta.get("sort_order", 0),
                 "updated_at": now_iso,
             })
 
         # Persist to market_assets table.
-        # `results` already carries exactly the five columns the table declares.
-        # Do not hand-pick a subset here: market_assets.name is NOT NULL
-        # (migration 010), so dropping it made every upsert fail with an
-        # APIError and the homepage market bar stayed empty.
+        # `results` already carries exactly the columns the table declares
+        # (migration 010 + 063). Do not hand-pick a subset here:
+        # market_assets.name is NOT NULL, so dropping it made every upsert fail
+        # with an APIError and the homepage market bar stayed empty.
         if results:
             self.supabase.table("market_assets").upsert(
                 results, on_conflict="ticker"

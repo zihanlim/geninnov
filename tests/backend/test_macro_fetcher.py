@@ -209,3 +209,98 @@ class TestMarketAssetsUpsertPayload:
             assert "updated_at" in row, "upsert payload must set updated_at"
             ts = datetime.fromisoformat(row["updated_at"])
             assert before <= ts <= after, "updated_at must be the write time, not stale"
+
+
+class TestRibbonGroups:
+    """The homepage tape's universe (migration 063).
+
+    Three properties, each of which was a live defect or a near miss:
+
+    1. The tape's tickers must NOT reach `macro_indicators`. That table is L0 —
+       `regime_classifier` reads it, `/method` renders it and the L5 prompt is
+       built from it. `upsert_latest_snapshot` walks `YFINANCE_TICKERS`, so the
+       moment a Nikkei or a Bitcoin is added to THAT map to get it onto a
+       decorative tape, it silently becomes a macro indicator.
+    2. Membership and order live in one place. The frontend used to hold its own
+       `DISPLAY_ORDER`, which listed `^VIX` while the backend's `EQUITY_INDICES`
+       did not — so the VIX cell of the tape had never once rendered.
+    3. Every tape ticker needs price HISTORY, or `fetch_market_assets` finds
+       fewer than two closes and drops the row without saying so.
+    """
+
+    def test_tape_tickers_do_not_become_macro_indicators(self):
+        from macro_fetcher import RIBBON_TICKERS, YFINANCE_TICKERS
+
+        leaked = {
+            t
+            for t in RIBBON_TICKERS
+            if t in YFINANCE_TICKERS
+            and RIBBON_TICKERS[t]["group"] not in ("US", "Currencies")
+        }
+        assert not leaked, (
+            f"{leaked} are in YFINANCE_TICKERS, so upsert_latest_snapshot will "
+            "write them to macro_indicators — the L0 macro set, which nothing "
+            "asked to contain a foreign index or a coin"
+        )
+
+    def test_every_tape_ticker_gets_price_history(self):
+        from macro_fetcher import HISTORY_TICKERS, RIBBON_TICKERS
+
+        missing = set(RIBBON_TICKERS) - set(HISTORY_TICKERS)
+        assert not missing, (
+            f"{missing} would have no rows in macro_daily_history, so "
+            "fetch_market_assets finds <2 closes and drops them silently"
+        )
+
+    def test_groups_are_contiguous_and_ordered_from_zero(self):
+        from macro_fetcher import RIBBON_GROUPS, RIBBON_TICKERS
+
+        for group, members in RIBBON_GROUPS.items():
+            orders = [
+                RIBBON_TICKERS[t]["sort_order"] for t, _name, _unit in members
+            ]
+            assert orders == list(range(len(members))), (
+                f"{group} sort_order is {orders}; the frontend sorts on this "
+                "column and a gap or a duplicate reorders the tape"
+            )
+
+    def test_fetch_market_assets_defaults_to_the_whole_tape(self):
+        """Not EQUITY_INDICES. `daily_refresh` calls this with no arguments, so
+        the default IS the tape — a default of four US indices is how the other
+        five groups would have shipped empty."""
+        import inspect
+
+        from macro_fetcher import RIBBON_TICKERS, MacroFetcher
+
+        src = inspect.getsource(MacroFetcher.fetch_market_assets)
+        assert "tickers or list(RIBBON_TICKERS)" in src
+        assert len(RIBBON_TICKERS) > 4
+
+    def test_currency_quotes_keep_four_decimals(self):
+        """`round(v, 2)` is right for index points and destroys an FX quote:
+        EUR/USD 1.1512 stored as 1.15 cannot be recovered downstream, and a
+        0.4% move renders as no move at all."""
+        f, _ = TestMarketAssetsUpsertPayload()._fetcher_with_history(
+            [
+                {"series_id": "EURUSD=X", "trading_date": "2026-07-31", "value": 1.15125},
+                {"series_id": "EURUSD=X", "trading_date": "2026-07-30", "value": 1.14666},
+            ]
+        )
+        out = f.fetch_market_assets(tickers=["EURUSD=X"])
+        assert out[0]["current"] == pytest.approx(1.1513, abs=1e-9)
+        assert out[0]["prev_close"] == pytest.approx(1.1467, abs=1e-9)
+
+    def test_as_of_is_the_session_not_the_write_time(self):
+        """Six markets on one tape close in different sessions — measured
+        2026-07-31, Asia/FX/crypto carried 07-31 while the US, Europe and
+        futures carried 07-30. `updated_at` is the pipeline's write time and is
+        identical across all of them, so it cannot answer "which session"."""
+        f, _ = TestMarketAssetsUpsertPayload()._fetcher_with_history(
+            [
+                {"series_id": "^N225", "trading_date": "2026-07-31", "value": 110.0},
+                {"series_id": "^N225", "trading_date": "2026-07-30", "value": 100.0},
+            ]
+        )
+        out = f.fetch_market_assets(tickers=["^N225"])
+        assert out[0]["as_of"] == "2026-07-31"
+        assert out[0]["market_group"] == "Asia"

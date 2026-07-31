@@ -11,14 +11,33 @@ interface MarketAsset {
   current: number;
   prev_close: number;
   pct_change: number;
-  as_of?: string;
+  /** Trading date of `current` (migration 063). NOT `updated_at` — see below. */
+  as_of?: string | null;
   updated_at?: string;
+  /** US | Europe | Asia | Currencies | Crypto | Futures (migration 063). */
+  market_group?: string | null;
+  /** Position within the group. Ordering is data, not a constant here. */
+  sort_order?: number | null;
 }
 
-// Ordered display: equities first, VIX last
-const DISPLAY_ORDER = ["^SPX", "^NDX", "^DJI", "^RUT", "^VIX"];
+/**
+ * Order the GROUPS are offered in. Membership and within-group order are data
+ * (`market_group` / `sort_order`, migration 063); only this sequence is a
+ * display preference, and it is the one thing a column cannot carry without a
+ * second ordering key nobody would maintain.
+ *
+ * Groups not listed here are appended alphabetically rather than dropped. That
+ * matters: the previous version of this file held the whole membership list as
+ * `DISPLAY_ORDER = ["^SPX","^NDX","^DJI","^RUT","^VIX"]` and sorted by
+ * `indexOf`, so any ticker the backend added scored −1 and silently led the
+ * tape. It also listed `^VIX`, which was never in the backend's
+ * `EQUITY_INDICES`, so the VIX cell had never once rendered — two lists that
+ * had to agree, with nothing failing when they stopped.
+ */
+const GROUP_ORDER = ["US", "Europe", "Asia", "Currencies", "Crypto", "Futures"];
+const DEFAULT_GROUP = "US";
 const FRESHNESS_FIELD = "market.index.as_of";
-const MAX_AGE_SECONDS = 86400; // market data should be ≤ 24h old
+const MAX_AGE_SECONDS = 86400; // daily closes — never live intraday quotes
 
 function derive(
   field_id: string,
@@ -52,6 +71,7 @@ function ageFromDate(d?: string): number {
 export default function MarketBar() {
   const [assets, setAssets] = useState<MarketAsset[] | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const [group, setGroup] = useState(DEFAULT_GROUP);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,12 +88,14 @@ export default function MarketBar() {
         setAssets([]);
         return;
       }
+      // Ordered by the row's own `sort_order` within its group. A row written
+      // before migration 063 defaults to group "US", order 0 — so a database
+      // that has the columns but has not been refreshed still renders its old
+      // tape rather than nothing.
       const list = (data as MarketAsset[]) ?? [];
-      const sorted = [...list].sort(
-        (a, b) =>
-          DISPLAY_ORDER.indexOf(a.ticker) - DISPLAY_ORDER.indexOf(b.ticker)
+      setAssets(
+        [...list].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
       );
-      setAssets(sorted);
     })();
     return () => {
       cancelled = true;
@@ -125,20 +147,101 @@ export default function MarketBar() {
     );
   }
 
-  // ── Healthy: render tape + freshness for the freshest asset as_of ────────
-  const freshestAge = assets.reduce(
+  // ── Healthy ──────────────────────────────────────────────────────────────
+  // Groups actually present, in GROUP_ORDER, then anything unrecognised.
+  const present = Array.from(
+    new Set(assets.map((a) => a.market_group || DEFAULT_GROUP)),
+  );
+  const groups = [
+    ...GROUP_ORDER.filter((g) => present.includes(g)),
+    ...present.filter((g) => !GROUP_ORDER.includes(g)).sort(),
+  ];
+  // Fall back to the first present group rather than rendering an empty tape:
+  // `group` is US by default and a database without US rows is not a reason to
+  // show nothing.
+  const active = groups.includes(group) ? group : (groups[0] ?? DEFAULT_GROUP);
+  const shown = assets.filter((a) => (a.market_group || DEFAULT_GROUP) === active);
+
+  // Freshness is computed over the GROUP ON SCREEN, not the whole tape. The
+  // groups close in different sessions — measured 2026-07-31, Asia, FX and
+  // crypto carried 07-31 while the US, Europe and futures carried 07-30 — so a
+  // single tape-wide "freshest" would have advertised Tokyo's age above New
+  // York's numbers. Per group, the label describes what the reader is looking
+  // at.
+  const freshestAge = shown.reduce(
     (min, a) => Math.min(min, ageFromDate(a.as_of ?? a.updated_at)),
     Number.POSITIVE_INFINITY
   );
   const freshestDisplay =
     Number.isFinite(freshestAge) ? freshestAge : 0;
+  // The SESSION every quote on screen closed in. Distinct dates within one
+  // group are possible (a market on holiday while its neighbours trade), so
+  // this states each one rather than picking the newest.
+  const sessions = Array.from(
+    new Set(shown.map((a) => a.as_of).filter(Boolean) as string[]),
+  ).sort();
 
   return (
+    <div className="mb-4" data-testid="market-bar-wrap">
+      {groups.length > 1 && (
+        /* `flex-wrap`, and the session label wraps BELOW the control rather
+           than competing with it for one row. Measured at 390px: six buttons
+           are ~310px and the label ~180px, so on one row the strip clipped
+           `Crypto` and `Futures` — a toggle whose last two options cannot be
+           reached is worse than no toggle. The control also scrolls if it ever
+           outgrows the viewport by itself; that is the table's `overflow-x-auto`
+           escape hatch, not goal 7's forbidden page-level scroller. */
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1.5">
+          {/* Same segmented control as `LensSelector`, hand-rolled rather than
+              imported: that component's `value`/`onChange` are typed to the L5
+              `Lens` union (ADR-0015), and widening a lens type so a price tape
+              can borrow its markup would couple the homepage tape to the
+              book's asset-class contract. The LOOK is shared; the vocabulary
+              is not. */}
+          <div
+            className="inline-flex items-stretch rounded-md border border-border bg-bg-elevated overflow-x-auto max-w-full"
+            role="group"
+            aria-label="Market group"
+          >
+            {groups.map((g, idx) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setGroup(g)}
+                aria-pressed={g === active}
+                className={[
+                  "px-2.5 py-1 text-[11px] font-medium transition-colors",
+                  idx > 0 ? "border-l border-border" : "",
+                  g === active
+                    ? "bg-accent text-bg-primary"
+                    : "text-text-secondary hover:text-text-primary hover:bg-bg-hover",
+                ].join(" ")}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+          {/* Daily closes, said once. The tape looks like a live ticker and is
+              not one: the pipeline runs at 21:30 UTC, so every figure here is a
+              settled close from the session named beside it. Design goal 1 —
+              a number a reader cannot place is worse than no number. */}
+          <span className="text-[10.5px] text-text-tertiary">
+            Daily closes
+            {sessions.length > 0 && (
+              <>
+                {" · "}
+                <span className="num">{sessions.join(", ")}</span> session
+                {sessions.length > 1 ? "s" : ""}
+              </>
+            )}
+          </span>
+        </div>
+      )}
     <div
-      className="flex flex-wrap gap-0 bg-bg-surface border border-border rounded-[8px] mb-4 overflow-hidden"
+      className="flex flex-wrap gap-0 bg-bg-surface border border-border rounded-[8px] overflow-hidden"
       data-testid="market-bar"
     >
-      {assets.map((a, i) => {
+      {shown.map((a, i) => {
         const isPos = a.pct_change >= 0;
         const isNeg = a.pct_change < 0;
         const isVix = a.ticker === "^VIX";
@@ -161,8 +264,18 @@ export default function MarketBar() {
                 {a.name}
               </span>
               <div className="flex items-baseline gap-1.5">
+                {/* Four decimals under 10, two above. Fixed 2dp was right for
+                    a tape of index points and rounds EUR/USD 1.1512 to "1.15",
+                    throwing away the two digits an FX quote is actually read
+                    in — a 0.4% move would render as no move at all. Keyed on
+                    magnitude rather than on the group, so USD/JPY at 160.84
+                    and Bitcoin at 64,131.20 stay at 2dp where more would be
+                    noise. */}
                 <span className="num text-[13px] font-semibold text-text-primary leading-none">
-                  {a.current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {a.current.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: Math.abs(a.current) < 10 ? 4 : 2,
+                  })}
                 </span>
                 <span
                   className="num text-[11.5px] font-semibold leading-none"
@@ -179,6 +292,7 @@ export default function MarketBar() {
       <div className="ml-auto px-4 py-2.5 flex items-center text-text-tertiary text-[11px]">
         <FreshnessLabel observed_age_seconds={freshestDisplay} />
       </div>
+    </div>
     </div>
   );
 }

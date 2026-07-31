@@ -35,7 +35,7 @@
 // renders on the edge that removed it, with the constraint that did the
 // removing.
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import {
   buildBookFunnel,
   funnelHeadline,
@@ -178,24 +178,36 @@ export default function BookFunnel({
           </p>
         )}
 
-        {/* The chain. Vertical below `lg` -- a five-across row of boxes at phone
-            width is four line-broken numbers and no legible flow.
-            NINE TRACKS, NOT FIVE. Each `<li>` is `display: contents`, so it emits
-            TWO grid items (its connector and its node) rather than one; five
-            columns therefore wrapped the chain mid-flow, putting `Agent selected`
-            on a second row under `L1 screen` and breaking the left-to-right
-            reading the panel exists for. The tracks alternate 1fr/auto so the
-            nodes share a width and the connectors take only the label. */}
-        <ol className="m-0 p-0 list-none grid gap-0 items-stretch lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)]">
+        {/* The chain, and each step's account of itself directly beneath it.
+            The explanations used to be a two-column definition list below the
+            whole row, so "why did 12 candidates go?" was answered several
+            hundred pixels from the `−12` that raised the question and in a
+            different reading order. They are now the SECOND ROW of the same
+            grid, each one starting in its own connector's column.
+
+            EXPLICIT PLACEMENT, and a flex column below `lg`. The columns cannot
+            be Tailwind classes because they are computed per index and Tailwind
+            only generates literal class strings — so they are inline
+            `gridColumn` / `gridRow`, which the browser ignores while the
+            container is `flex`. That is what makes the narrow layout work with
+            no second code path: DOM order is already node, connector, prose,
+            node, … so stacked it reads in pipeline order.
+
+            NINE TRACKS. Nodes land on the odd columns, connectors on the even
+            ones, and each prose cell starts at its connector and spans into the
+            node it produced. */}
+        <div className="m-0 p-0 flex flex-col gap-3 lg:grid lg:gap-x-0 lg:gap-y-3 lg:items-stretch lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)]">
           {funnel.nodes.map((node, i) => {
             const edge = funnel.edges.find((e) => e.to === node.id);
+            const edgeCol = i * 2;           // 2, 4, 6, 8 for i = 1..4
             return (
-              <li key={node.id} className="min-w-0 contents">
+              <Fragment key={node.id}>
                 {/* The connector carries the edge's label and cost. It is the
-                    only place a removal is described, so it is never decoration. */}
+                    only place a removal is named, so it is never decoration. */}
                 {i > 0 && edge && (
                   <div
-                    className="flex lg:flex-col items-center justify-center gap-1 py-2 lg:py-0 lg:px-1"
+                    className="flex lg:flex-col items-center justify-center gap-1 py-1 lg:py-0 lg:px-1"
+                    style={{ gridColumn: edgeCol, gridRow: 1 }}
                     data-testid={`funnel-edge-${node.id}`}
                   >
                     <div
@@ -212,77 +224,81 @@ export default function BookFunnel({
                         color: edge.notable ? "var(--warning)" : "var(--text-tertiary)",
                       }}
                     >
-                      {/* `−0` is noise, not information: an edge that removed
-                          nothing should read as a step, not as a cost of zero.
-                          Live on the credit lens, where the agent took all three
-                          available ideas. */}
                       {edge.removed ? `−${edge.removed}` : ""} {edge.label}
                     </span>
                   </div>
                 )}
-                <Node node={node} emphasise={node.id === "published"}>
-                  {node.id === "published" && publishedAssets.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-1">
-                      {publishedAssets.map((p) => {
-                        const active = selectedAsset === p.asset;
-                        return (
-                          <button
-                            key={p.asset}
-                            type="button"
-                            onClick={() => onSelectAsset?.(p.asset)}
-                            aria-pressed={active}
-                            title={`Show the lineage for ${p.asset}`}
-                            className="num text-[10.5px] px-1.5 py-0.5 rounded border transition-colors"
-                            style={{
-                              borderColor: active ? "var(--accent)" : "var(--border)",
-                              background: active ? "var(--accent)" : "transparent",
-                              color: active
-                                ? "var(--bg-primary)"
-                                : p.direction === "long"
-                                  ? "var(--long)"
-                                  : "var(--short)",
-                            }}
-                          >
-                            {p.direction === "long" ? "▲" : "▼"}
-                            {p.asset}
-                          </button>
-                        );
-                      })}
+
+                <div style={{ gridColumn: i * 2 + 1, gridRow: 1 }} className="min-w-0">
+                  <Node node={node} emphasise={node.id === "published"}>
+                    {node.id === "published" && publishedAssets.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {publishedAssets.map((pk) => {
+                          const active = selectedAsset === pk.asset;
+                          return (
+                            <button
+                              key={pk.asset}
+                              type="button"
+                              onClick={() => onSelectAsset?.(pk.asset)}
+                              aria-pressed={active}
+                              title={`Open the ${pk.asset} position`}
+                              className="num text-[10.5px] px-1.5 py-0.5 rounded border transition-colors"
+                              style={{
+                                borderColor: active ? "var(--accent)" : "var(--border)",
+                                background: active ? "var(--accent)" : "transparent",
+                                color: active
+                                  ? "var(--bg-primary)"
+                                  : pk.direction === "long"
+                                    ? "var(--long)"
+                                    : "var(--short)",
+                              }}
+                            >
+                              {pk.direction === "long" ? "▲" : "▼"}
+                              {pk.asset}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </Node>
+                </div>
+
+                {/* This step's account of itself, under its own connector. */}
+                {i > 0 && edge && (
+                  <div
+                    className="min-w-0 text-[11.5px] leading-[1.55] lg:pl-1 lg:pr-3"
+                    style={{ gridColumn: `${edgeCol} / span 2`, gridRow: 2 }}
+                    data-testid={`funnel-detail-${node.id}`}
+                  >
+                    <div
+                      className="num text-[10px] uppercase tracking-[0.08em] mb-1"
+                      style={{
+                        color: edge.notable ? "var(--warning)" : "var(--text-tertiary)",
+                      }}
+                    >
+                      {edge.removed ? `−${edge.removed} ` : ""}
+                      {edge.label}
                     </div>
-                  )}
-                </Node>
-              </li>
+                    <p className="m-0 text-text-secondary">{edge.detail}</p>
+                    {edge.names?.length ? (
+                      <ul className="m-0 mt-1.5 p-0 list-none flex flex-col gap-1">
+                        {edge.names.map((n) => (
+                          <li
+                            key={n}
+                            className="num text-[10.5px] text-text-tertiary rounded border border-border px-1.5 py-[2px] break-words"
+                          >
+                            {n}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                )}
+              </Fragment>
             );
           })}
-        </ol>
+        </div>
 
-        {/* The prose for each step, below the chain rather than inside a box.
-            A connector that had to hold this text would set the column width
-            for the whole row, and the numbers are what the row is for. */}
-        <dl className="m-0 mt-4 grid gap-2.5 sm:grid-cols-2 text-[12px] leading-[1.55]">
-          {funnel.edges.map((edge) => (
-            <div key={edge.to} className="min-w-0">
-              <dt
-                className="num text-[10.5px] uppercase tracking-[0.08em]"
-                style={{
-                  color: edge.notable ? "var(--warning)" : "var(--text-tertiary)",
-                }}
-              >
-                {edge.label}
-                {edge.removed ? ` · −${edge.removed}` : ""}
-              </dt>
-              <dd className="m-0 text-text-secondary">
-                {edge.detail}
-                {edge.names?.length ? (
-                  <span className="num text-[11px] text-text-tertiary">
-                    {" "}
-                    {edge.names.join(" · ")}
-                  </span>
-                ) : null}
-              </dd>
-            </div>
-          ))}
-        </dl>
 
         {/* The table the columns above belong to. Goal 1 asks that a reader can
             follow any figure to its origin without asking; the cards carry the

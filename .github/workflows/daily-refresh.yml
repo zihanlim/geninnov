@@ -105,8 +105,22 @@ jobs:
       # Non-fatal, like the IC step above: this reports on the book, it does not produce
       # it, and a yfinance hiccup must never fail a refresh that already persisted a book.
       # Idempotent, so the next run picks up whatever this one missed.
+      #
+      # `always()`, NOT `success()`, and the difference is the whole point of the step.
+      # `|| echo` is what makes it non-fatal; `success()` made it SKIPPED whenever an
+      # earlier step failed — which inverted the guarantee, because the case where the
+      # recorder is most needed is exactly the case where the refresh partly failed. The
+      # book is published in phase 5; L5b runs LAST. So "book published, then a late
+      # phase died" leaves claims unrecorded and, under `success()`, silently skips the
+      # only thing that would have recorded them. That is ADR-0117's defect — 9 of 32
+      # published claims had no row on 2026-07-27 — reinstated by a workflow condition.
+      #
+      # Safe to run unconditionally: pass 1 is insert-if-absent, so re-recording is a
+      # no-op (verified live — a second run wrote 0 rows), and if the refresh failed
+      # before publishing anything it simply finds the previous book already recorded.
+      # The integrity guard below already uses `always()` for the same reason.
       - name: Resolve published-pick outcomes (forward track record)
-        if: success()
+        if: always()
         run: |
           python -m scripts.resolve_outcomes \
             || echo "::warning::outcome resolution did not complete"

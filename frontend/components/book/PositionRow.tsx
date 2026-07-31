@@ -116,6 +116,7 @@ export function PositionRow({
   bookRunDate,
   clearedAlternatives,
   lens,
+  variant = "both",
 }: {
   pick: Pick;
   rank: number;
@@ -155,6 +156,20 @@ export function PositionRow({
    * path under the default lens, so nothing changes there.
    */
   lens?: string | null;
+  /**
+   * Which half of the row to render.
+   *
+   * `both` is the original component and stays the default, so the field-coverage
+   * guard keeps rendering one tree containing every value.
+   *
+   * The page splits them: the TABLE renders `row` — the collapsed 7-column line,
+   * still marked open in its own direction's colour — and the DRAWER renders
+   * `detail`. Two variants of ONE component rather than two components, because
+   * the twelve collapsed values and the dozen expanded ones are derived from the
+   * same props by the same code, and splitting the file would fork those
+   * derivations the first time one of them changed.
+   */
+  variant?: "both" | "row" | "detail";
 }) {
   const isLong = pick.direction === "long";
   const dirColor = isLong ? "var(--long)" : "var(--short)";
@@ -245,6 +260,9 @@ export function PositionRow({
     }))
     .filter((s) => s.line);
 
+  const showRow = variant !== "detail";
+  const showDetail = variant !== "row";
+
   return (
     // `id` so `BookFunnel`'s ticker chips can scroll here after opening the row.
     // On the asset, not on the composite open-key: the chip knows a ticker, and
@@ -259,6 +277,7 @@ export function PositionRow({
       {/* A div, not a button: the theme name is an <a>, which cannot be nested
           inside a <button>. Keyboard + ARIA are wired by hand to keep the row a
           single toggle target while the inner link stays independently focusable. */}
+      {showRow && (
       <div
         role="button"
         tabIndex={0}
@@ -418,8 +437,9 @@ export function PositionRow({
           {open ? "−" : "+"}
         </span>
       </div>
+      )}
 
-      {open && (
+      {open && showDetail && (
         <div className="px-[18px] pb-5 pt-1 bg-bg-elevated/40">
           {/* ── The lineage, first ─────────────────────────────────────────────
               The four steps the pipeline actually performed, in the order it

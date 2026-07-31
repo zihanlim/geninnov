@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -50,6 +50,7 @@ import type { OptimizerResult, SizingMethod } from "@/lib/book/sizingProvenance"
 import TrackRecordPanel from "@/components/book/TrackRecordPanel";
 import { type IndependentIdeas } from "@/components/book/PoolDepth";
 import BookFunnel from "@/components/book/BookFunnel";
+import PositionDrawer from "@/components/book/PositionDrawer";
 import {
   buildWorkedExample,
   type PrimaryScenarioInput,
@@ -826,25 +827,72 @@ function BookPageInner() {
     [longs, shorts]
   );
 
-  /** A funnel chip: open that position's row and bring it into view. */
+  /** The ticker inside the composite open key, or null. */
+  const openTicker = openAsset ? openAsset.split("-").slice(1, -1).join("-") : null;
+  const openPick = openTicker ? pickByAsset[openTicker] ?? null : null;
+
+  // ── The open position lives in the URL ──────────────────────────────────────
+  // `/book?lens=credit&position=EMB` opens that book AND that position. Inline
+  // expansion kept this in component state only, so it could never be sent to
+  // anyone — which is the property a drawer had to earn to be worth having over
+  // an inline panel.
+  //
+  // `replace`, never `push`: nine clicks through nine positions must not become
+  // nine back-button steps between the reader and the page they arrived from.
+  // `scroll: false` for the same reason the click itself does not scroll.
+  //
+  // GATED ON `honouredPosition`, and that gate is the whole correctness of the
+  // feature. Both effects run after mount. Without the gate this one goes first,
+  // sees `openTicker === null` because the book has not loaded yet, and DELETES
+  // the `?position=` the reader just arrived on — so a cold deep link stripped
+  // itself before the effect below could act on it. Measured: /book?position=SMH
+  // opened nothing.
+  const honouredPosition = useRef(false);
+  useEffect(() => {
+    if (!honouredPosition.current) return;
+    const params = new URLSearchParams(searchParams.toString());
+    if (openTicker) params.set("position", openTicker);
+    else params.delete("position");
+    const qs = params.toString();
+    const next = qs ? `${pathname}?${qs}` : pathname;
+    if (next !== `${pathname}${window.location.search}`) {
+      router.replace(next, { scroll: false });
+    }
+  }, [openTicker, pathname, router, searchParams]);
+
+  // The reverse: honour `?position=` on arrival, once the book has loaded and the
+  // ticker can be matched to a row. Runs when the picks change (first load, and a
+  // lens switch) rather than on every render, so it cannot fight a reader who has
+  // since closed the drawer.
+  const requestedPosition = searchParams.get("position");
+  useEffect(() => {
+    // Nothing to honour, or the book has not arrived yet — stay closed and keep
+    // the gate shut so the writer above cannot strip the param in the meantime.
+    if (longs.length === 0 && shorts.length === 0) return;
+    if (requestedPosition && !openAsset) {
+      const key = rowKeyForAsset(requestedPosition);
+      if (key) setOpenAsset(key);
+    }
+    // Opened, or the ticker is not in this book (a stale link, or a lens that
+    // does not hold it). Either way the question has been asked and answered, so
+    // the URL writer may take over.
+    honouredPosition.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedPosition, longs, shorts]);
+
+  /**
+   * A funnel chip, or a row's own `+`: open that position in the drawer.
+   *
+   * DELIBERATELY DOES NOT SCROLL. It used to, because the detail rendered inline
+   * and the reader had to be taken to it. The drawer is a fixed overlay in the
+   * same place every time, so scrolling would be pure movement — the exact thing
+   * moving the detail out of the flow was meant to stop. The row keeps its `id`
+   * for deep links, not for this.
+   */
   const selectFromFunnel = useCallback(
     (asset: string) => {
       const key = rowKeyForAsset(asset);
-      if (!key) return;
-      setOpenAsset(key);
-      // Scrolled on the NEXT frame, after the state lands, so the row is already
-      // expanded when it arrives rather than growing under the reader.
-      //
-      // `start`, NOT `center`. An opened row is ~900px tall and centring it put
-      // the reader in the middle of the EdgeScore bars with the four lineage
-      // steps — the thing the chip promised — scrolled off the top. The row
-      // carries `scroll-mt-24` so `start` clears the sticky top bar rather than
-      // tucking the position's own name under it.
-      requestAnimationFrame(() => {
-        document
-          .getElementById(`position-${asset}`)
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
+      if (key) setOpenAsset(key);
     },
     [rowKeyForAsset, setOpenAsset]
   );
@@ -1234,9 +1282,6 @@ function BookPageInner() {
               <PositionSection
                 lens={lens}
                 title="Longs"
-                cellClassName={
-                  openAsset?.startsWith("Longs-") ? "wide:col-span-2" : ""
-                }
                 glyph="▲"
                 color="var(--long)"
                 picks={longs}
@@ -1261,9 +1306,6 @@ function BookPageInner() {
               <PositionSection
                 lens={lens}
                 title="Shorts"
-                cellClassName={
-                  openAsset?.startsWith("Shorts-") ? "wide:col-span-2" : ""
-                }
                 glyph="▼"
                 color="var(--short)"
                 picks={shorts}
@@ -1339,12 +1381,60 @@ function BookPageInner() {
                   picks: rec.picks,
                   optimizerResult: rec.optimizer_result ?? null,
                 }}
-                selectedAsset={
-                  openAsset ? openAsset.split("-").slice(1, -1).join("-") : null
-                }
+                selectedAsset={openTicker}
                 onSelectAsset={selectFromFunnel}
               />
 
+              {/* ── One position, beside the book ──────────────────────────────
+                  Fixed overlay, so opening it moves NOTHING on the page behind:
+                  the inline expander pushed every row below it down, and the
+                  full-width variant made the other side's table jump to a new
+                  row. `variant="detail"` is the same component the table renders
+                  as `variant="row"`, so the collapsed line and the panel cannot
+                  drift apart. */}
+              <PositionDrawer
+                open={!!openPick}
+                title={openPick?.asset ?? ""}
+                subtitle={
+                  openPick
+                    ? `${openPick.direction === "long" ? "Long" : "Short"}${
+                        openPick.theme_name || openPick.theme
+                          ? ` · ${openPick.theme_name ?? openPick.theme}`
+                          : ""
+                      }`
+                    : undefined
+                }
+                accent={
+                  openPick?.direction === "long" ? "var(--long)" : "var(--short)"
+                }
+                onClose={() => setOpenAsset(null)}
+              >
+                {openPick && (
+                  <PositionRow
+                    variant="detail"
+                    lens={lens}
+                    pick={openPick}
+                    rank={0}
+                    open
+                    onToggle={() => setOpenAsset(null)}
+                    citations={citations}
+                    repl={repl}
+                    bookRunDate={rec.run_date}
+                    advisory={advisory}
+                    cap={capByAsset.get(openPick.asset)}
+                    bindingGroupCaps={bindingGroupCaps}
+                    edge={edgeByAsset[openPick.asset]}
+                    edgeWeights={edgeWeights}
+                    convictionSum={convictionSum}
+                    allPicks={allPicks}
+                    correlationPairs={correlationPairs}
+                    ideas={rec?.independent_ideas ?? null}
+                    scenarios={rec.scenario_results ?? []}
+                    lineage={lineageForAsset(openPick.asset)}
+                    clearedAlternatives={clearedByHeldAsset.get(openPick.asset)}
+                  />
+                )}
+              </PositionDrawer>
 
             </>
           )}
@@ -1827,7 +1917,7 @@ function PositionSection({
                     : `${title}-${p.asset}-${i}`
                 )
               }
-              lineage={lineageForAsset(p.asset)}
+              variant="row"
               citations={citations}
               repl={repl}
               bookRunDate={bookRunDate}

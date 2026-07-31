@@ -276,12 +276,24 @@ export function PositionRow({
         // Goal 8 is a floor, so density stops here rather than at the cell value.
         // Open-row marking. The closed state keeps a TRANSPARENT border of the
         // same width so opening a row does not shift its contents 4px sideways.
-        // --accent, never --long: the comp this came from marks its open row
-        // with its LONG colour, which would mean a long and an open short row
-        // read the same (goal 3, ADR-0085). Border-box sizing keeps the 4px
-        // inside BOOK_ROW_MIN_W, so the two-pane arithmetic is untouched.
+        // Border-box sizing keeps the 4px inside BOOK_ROW_MIN_W, so the two-pane
+        // arithmetic is untouched.
+        //
+        // THE BAR TAKES THE ROW'S OWN DIRECTION COLOUR — green on a long, crimson
+        // on a short (owner's direction, 2026-07-31). It was `--accent` for every
+        // open row, to avoid the source comp's mistake of marking EVERY open row
+        // with its LONG colour, which made an open short read as long (goal 3,
+        // ADR-0085). Using the row's own direction answers that objection more
+        // directly than a neutral accent did: an open short is now crimson, so it
+        // cannot be confused with a long, and the bar reinforces the semantic the
+        // rest of the row already carries instead of competing with it.
+        //
+        // Open-ness is not carried by hue alone and so does not depend on telling
+        // crimson from green: the closed state has NO bar at all, and an open row
+        // also takes `bg-bg-elevated`. Desaturated, presence-vs-absence still reads.
+        style={open ? { borderLeftColor: dirColor } : undefined}
         className={`w-full ${BOOK_ROW_MIN_W} ${BOOK_ROW_GRID} text-left px-4 py-[9px] border-l-4 ${
-          open ? "border-accent bg-bg-elevated" : "border-transparent"
+          open ? "bg-bg-elevated" : "border-transparent"
         } hover:bg-bg-elevated transition-colors grid items-center gap-3 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent`}
       >
         <span className="num text-text-tertiary text-[12px]">#{rank}</span>
@@ -445,7 +457,7 @@ export function PositionRow({
               <ol className="m-0 p-0 list-none divide-y divide-border rounded-md border border-border bg-bg-primary px-3 py-1">
                 {lineage.map((step) => (
                   <li key={step.number} className="min-w-0">
-                    <StepLine step={step} />
+                    <StepLine step={step} accent={dirColor} />
                   </li>
                 ))}
               </ol>

@@ -29,8 +29,26 @@ import { Reconciliation } from "@/components/Reconciliation";
  * and NOT for the source line, because a definition may sit behind a hover and a
  * citation may not (design goal 1).
  */
-export function StepLine({ step }: { step: WorkedExampleStep }) {
+export function StepLine({
+  step,
+  accent,
+}: {
+  step: WorkedExampleStep;
+  /**
+   * The colour of the position this chain belongs to \u2014 `var(--long)` or
+   * `var(--short)`. Defaults to `--accent` where there is no direction to carry.
+   *
+   * A derivation is not a neutral object on this page: it is the derivation OF a
+   * long or OF a short, and the row around it is already coloured that way. Four
+   * teal bubbles inside a crimson short row read as a different kind of thing
+   * than the row that contains them. Direction colour here is reinforcement, not
+   * a second meaning \u2014 the step NUMBER carries the sequence, so nothing is
+   * encoded by hue alone (goal 3).
+   */
+  accent?: string;
+}) {
   const isGap = !step.sourcePersisted || step.formula.startsWith("\u2014");
+  const ink = accent ?? "var(--accent)";
   return (
     <div
       className="grid grid-cols-[1.25rem_1fr] gap-x-2 gap-y-0.5 py-1.5"
@@ -40,7 +58,8 @@ export function StepLine({ step }: { step: WorkedExampleStep }) {
     >
       <span
         aria-hidden="true"
-        className="flex items-center justify-center w-5 h-5 rounded-full border border-accent text-[10px] font-semibold text-accent leading-none mt-[1px]"
+        className="flex items-center justify-center w-5 h-5 rounded-full border text-[10px] font-semibold leading-none mt-[1px]"
+        style={{ borderColor: ink, color: ink }}
       >
         {step.number}
       </span>

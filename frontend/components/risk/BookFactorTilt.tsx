@@ -115,6 +115,30 @@ export function BookFactorTilt({
     beta: tilts && isNum(tilts[d.key]) ? (tilts[d.key] as number) : null,
   }));
   const measured = rows.filter((r) => r.beta !== null);
+
+  /**
+   * What share of the book's gross these tilts actually describe (ADR-0212).
+   *
+   * `compute_book_metrics` skips any holding whose regression fails `r² >= 0.10`, so
+   * the denominator it divides by is the gross of the COVERED sleeve, not the book.
+   * This panel said "sized book" in its header, "value-weighted over the sized
+   * positions" in its footnote, and "6 of 6 factors measured" in its summary — three
+   * statements a reader adds up to complete coverage, while the tilt could be
+   * describing a fraction of the book. Factors measured and POSITIONS covered are
+   * different counts, and only one of them was on screen.
+   *
+   * Null when the run predates `factor_covered_gross`, in which case nothing is
+   * claimed and the panel reads exactly as it did before.
+   */
+  const coverage =
+    isNum(bm?.factor_covered_gross) &&
+    isNum(bm?.gross_exposure) &&
+    (bm!.gross_exposure as number) > 0
+      ? (bm!.factor_covered_gross as number) / (bm!.gross_exposure as number)
+      : null;
+  // Float division on two persisted decimals lands at 0.9999… on a fully covered
+  // book, so "covers 99.99% of gross" would be a rounding artefact reported as a gap.
+  const fullyCovered = coverage !== null && coverage >= 0.9995;
   const dominant = [...measured]
     .filter((r) => Math.abs(r.beta as number) > 0.2)
     .sort((a, b) => Math.abs(b.beta as number) - Math.abs(a.beta as number));
@@ -182,14 +206,46 @@ export function BookFactorTilt({
                 . {measured.length} of {FACTOR_DEFS.length} factors measured.
               </>
             )}
+            {/* Positions covered, beside factors measured — the two counts a reader
+                was previously invited to conflate. Only rendered when the run carries
+                the denominator (ADR-0212); silent otherwise. */}
+            {coverage !== null && !fullyCovered && (
+              <span data-testid="tilt-coverage">
+                {" "}
+                Measured over{" "}
+                <span className="num text-text-primary">
+                  {(coverage * 100).toFixed(0)}%
+                </span>{" "}
+                of gross — the rest of the book holds no regression clearing r²
+                ≥ 0.10 and is absent from these betas, not neutral in them.
+              </span>
+            )}
+            {fullyCovered && (
+              <span data-testid="tilt-coverage">
+                {" "}
+                Every sized position carries a usable regression, so these betas cover
+                the whole book.
+              </span>
+            )}
           </div>
 
           <p className="m-0 mt-3 text-[11px] text-text-tertiary leading-[1.6] max-w-[90ch]">
-            Value-weighted over the sized positions, computed by{" "}
+            {/* "the sized positions" was the claim this panel could not support: the
+                weighting runs over the positions whose regression clears r² >= 0.10,
+                which is a subset it never named. */}
+            Value-weighted over the sized positions whose own regression clears{" "}
+            <span className="num">r² ≥ 0.10</span>, computed by{" "}
             <Ident>book_metrics.compute_book_metrics</Ident> and persisted to{" "}
             <Ident>research_recommendations.book_metrics</Ident>. A factor with no
             usable regression contributes nothing and is shown as{" "}
             <span className="num">—</span>, not as zero.
+            {coverage === null && (
+              <>
+                {" "}
+                This run does not record how much of the book cleared that bar, so the
+                share these betas describe is unknown here.
+              </>
+            )}
           </p>
         </div>
       )}

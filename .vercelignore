@@ -34,26 +34,44 @@
 #   3. move the solver behind a service that is not a 500 MB lambda.
 # Until one of those happens, this file is what makes `main` deployable.
 
+# EVERY PATTERN BELOW IS ANCHORED WITH A LEADING SLASH, and that is not style.
+#
+# .vercelignore uses .gitignore matching: an UNANCHORED `research/` matches a
+# directory of that name at ANY depth. The first version of this file was
+# unanchored and excluded `frontend/components/research/`, so the build failed
+# with:
+#
+#     ./components/book/BookBody.tsx
+#     Module not found: Can't resolve '@/components/research/ThesisBlock'
+#
+# `api/` was worse and had not been reached yet: it would have excluded
+# `frontend/app/api/`, deleting the /api/chat and /api/mcp route handlers from
+# the deployment — a silent removal of /ask and the MCP server rather than a
+# build error. The build failing first is the only reason that was caught.
+#
+# So: a leading slash on every entry. Root only, never a subdirectory that
+# happens to share a name.
+
 # The Python serverless function and its dependency manifest.
-api/
-requirements.txt
+/api/
+/requirements.txt
 
 # The pipeline. Never served; only inflates the upload.
-backend/
-scripts/
-tests/
-supabase/
+/backend/
+/scripts/
+/tests/
+/supabase/
 
 # Documentation, research and scratch. Not part of any build.
-docs/
-research/
-email/
-stitch_review/
-stitch_remix_of_auralis_saas_landing_page/
-__pycache__/
+/docs/
+/research/
+/email/
+/stitch_review/
+/stitch_remix_of_auralis_saas_landing_page/
+/__pycache__/
+/.venv/
+/.venv-*/
 *.pyc
-.venv/
-.venv-*/
 
 # Large binaries that must never reach a deployment.
 *.zip

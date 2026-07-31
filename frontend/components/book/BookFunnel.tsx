@@ -266,7 +266,7 @@ export default function BookFunnel({
                 {/* This step's account of itself, under its own connector. */}
                 {i > 0 && edge && (
                   <div
-                    className="min-w-0 text-[11.5px] leading-[1.55] lg:pl-1 lg:pr-3"
+                    className="min-w-0 text-[11.5px] leading-[1.55] lg:px-2 lg:text-center"
                     style={{ gridColumn: `${edgeCol} / span 2`, gridRow: 2 }}
                     data-testid={`funnel-detail-${node.id}`}
                   >
@@ -279,9 +279,14 @@ export default function BookFunnel({
                       {edge.removed ? `−${edge.removed} ` : ""}
                       {edge.label}
                     </div>
-                    <p className="m-0 text-text-secondary">{edge.detail}</p>
+                    {/* The PROSE stays left-aligned inside a centred block. A
+                        centred paragraph gives every line a different starting
+                        x, so the eye has to re-find the left edge on each one —
+                        which is the opposite of what centring the block was for.
+                        The label and the chips centre; the sentences do not. */}
+                    <p className="m-0 text-text-secondary text-left">{edge.detail}</p>
                     {edge.names?.length ? (
-                      <ul className="m-0 mt-1.5 p-0 list-none flex flex-col gap-1">
+                      <ul className="m-0 mt-1.5 p-0 list-none flex flex-col gap-1 lg:items-center">
                         {edge.names.map((n) => (
                           <li
                             key={n}

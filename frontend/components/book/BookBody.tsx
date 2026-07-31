@@ -9,6 +9,7 @@ import { resolveLens } from "@/lib/book/lensView";
 // re-exported there so the fallback a caller applies to an empty `lenses` and
 // the probe that produced that emptiness arrive from one import.
 import { DEFAULT_LENS, fetchLensesForLatestRun } from "@/lib/book/lensProbe";
+import { inLensCandidates, restrictToLensPool } from "@/lib/book/candidatePool";
 import CitationList, { Citation } from "@/components/CitationList";
 import PageHeader from "@/components/PageHeader";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
@@ -47,7 +48,8 @@ import BookTurnover from "@/components/book/BookTurnover";
 import SizingProvenance from "@/components/book/SizingProvenance";
 import type { OptimizerResult, SizingMethod } from "@/lib/book/sizingProvenance";
 import TrackRecordPanel from "@/components/book/TrackRecordPanel";
-import PoolDepth, { type IndependentIdeas } from "@/components/book/PoolDepth";
+import { type IndependentIdeas } from "@/components/book/PoolDepth";
+import BookFunnel from "@/components/book/BookFunnel";
 import { WorkedExamplePanel } from "@/components/book/WorkedExamplePanel";
 import type {
   PrimaryScenarioInput,
@@ -245,6 +247,12 @@ function BookPageInner() {
   const searchParams = useSearchParams();
   const requestedLens = searchParams.get("lens");
   const [lens, setLensState] = useState<Lens>(DEFAULT_LENS);
+  // Which position `WorkedExamplePanel` traces, chosen from `BookFunnel`'s
+  // published node. NOT in the URL, unlike the lens: the lens selects a BOOK and
+  // is worth sending to someone; this selects which of nine rows a panel expands,
+  // and putting it in the query string would make every click a history entry.
+  // Null means "the panel's own default" (highest |EdgeScore|, ADR-0081).
+  const [lineageAsset, setLineageAsset] = useState<string | null>(null);
   // What the toggle may offer. Starts as just the default so the control does
   // not flash a five-lens picker before the real answer loads; narrowed to
   // whatever `research_recommendations` actually has for today's run_date.
@@ -469,6 +477,34 @@ function BookPageInner() {
   // with no theme_id are skipped — they belong to no theme and there is
   // nothing to match against. The held asset itself is excluded so a row
   // never lists itself as a "passed-over alternative".
+  // ── The lens's own candidate pool ──────────────────────────────────────────
+  // `trade_candidates` is the single L1 pool and has NO lens column: L1 ranks
+  // names before a lens is chosen, so every lens screens the same 42 rows. The
+  // two panels below that read it — ClearedNotTaken and each held row's "also
+  // cleared" footer — were therefore describing the MULTI-ASSET pool under every
+  // lens. On /book?lens=credit that listed 31 names the page's own screening
+  // funnel had already removed at its `lens = credit` stage, under the heading
+  // "cleared the screen", beside a Pool depth panel reading 11 candidates.
+  //
+  // Null under a lens whose funnel stage removed nothing, so the default page is
+  // untouched — the gate is the measurement, not the lens's name. Why the pool is
+  // derived from `independent_ideas` rather than from a copy of the backend's
+  // ticker list is in lib/book/candidatePool.ts.
+  const lensPool = useMemo(
+    () =>
+      restrictToLensPool(rec?.independent_ideas ?? null, rec?.screening_funnel ?? null)
+        .pool,
+    [rec?.independent_ideas, rec?.screening_funnel],
+  );
+
+  // In-lens candidates, for every consumer of the pool other than the panel that
+  // states the exclusion count itself. Filtering once here is what stops the
+  // held-row footers and ClearedNotTaken from disagreeing about the pool.
+  const lensCandidates = useMemo(
+    () => inLensCandidates(candidates, lensPool),
+    [candidates, lensPool],
+  );
+
   const clearedByHeldAsset = useMemo(() => {
     const m = new Map<string, CandidateRow[]>();
     const heldAssets = new Set((rec?.picks ?? []).map((p) => p.asset));
@@ -478,7 +514,11 @@ function BookPageInner() {
       const tid = themeOfHeld(p);
       if (!tid) continue;
       const alts: CandidateRow[] = [];
-      for (const c of candidates) {
+      // lensCandidates, not candidates: a held credit position must not offer an
+      // out-of-lens name as the alternative it was taken over. The footer deep-links
+      // into ClearedNotTaken (`#cleared-${asset}-${direction}`), so a row this
+      // filter did not reach would link to an anchor the table no longer renders.
+      for (const c of lensCandidates) {
         if (heldAssets.has(c.asset)) continue;
         if (c.theme_id !== tid) continue;
         if (c.direction !== p.direction) continue;
@@ -487,7 +527,7 @@ function BookPageInner() {
       if (alts.length > 0) m.set(p.asset, alts);
     }
     return m;
-  }, [rec, posEdgeByAsset, candidates]);
+  }, [rec, posEdgeByAsset, lensCandidates]);
 
   // Σ conviction across every sized position with a non-null conviction — the
   // normalisation denominator the sizing chain shows.
@@ -1173,6 +1213,30 @@ function BookPageInner() {
                 />
               )}
 
+              {/* ── The chain, and one position traced through it ─────────────
+                  These two are ONE instrument in two grains and are adjacent on
+                  purpose. The funnel is the POPULATION per run — how 42 candidates
+                  became 9 positions, and which step took the ones that did not
+                  make it. The lineage is ONE POSITION — how a single number came
+                  to exist, over four pipeline stages.
+
+                  Selecting a ticker in the funnel is what joins them, which is
+                  why the panels touch: a reader clicks a name in the last node
+                  and the derivation appears immediately below it, with no scroll
+                  between the click and its effect. Placing the funnel anywhere
+                  else on the page would make that click a jump. */}
+              <BookFunnel
+                inputs={{
+                  screeningFunnel: rec.screening_funnel ?? null,
+                  independentIdeas: rec.independent_ideas ?? null,
+                  heuristicWeights: rec.heuristic_weights ?? null,
+                  picks: rec.picks,
+                  optimizerResult: rec.optimizer_result ?? null,
+                }}
+                selectedAsset={lineageAsset}
+                onSelectAsset={setLineageAsset}
+              />
+
               {/* ADR-0081 — Worked example lineage panel. Additive, collapsed by default
                   (a native `<details>`), rendered only when there are picks. Same data
                   the rows above already show, in the order the pipeline performed it. */}
@@ -1183,6 +1247,7 @@ function BookPageInner() {
                 maContextForAsset={maContextForAsset}
                 sizingForAsset={sizingForAsset}
                 primaryScenarioForAsset={primaryScenarioForAsset}
+                selectedAsset={lineageAsset}
               />
             </>
           )}
@@ -1223,7 +1288,21 @@ function BookPageInner() {
           </section>
 
           <section id="solidity" aria-label="How solid this book is">
-          <div className="grid lg:grid-cols-2 gap-6 [&>*]:mb-0 mb-6">
+          {/* THREE PANELS, THREE COLUMNS — and the arithmetic above still holds.
+              `PoolDepth` used to be the fourth. It answered "why not five and
+              five?" with counts and bars; `BookFunnel` above answers it as the
+              SEQUENCE it actually is, from the same columns, and names the step
+              that removed each missing position — which a stack of counts cannot
+              do. Keeping both would have put the same measurement on the page
+              twice in two shapes, and the weaker one is the one that cannot say
+              WHERE the fifth long went.
+
+              The comment above warns that four panels cannot fill three columns
+              without orphaning one. Three fill three exactly, so the same rule
+              that made this row 2x2 makes it 1x3 now. Below `lg` it is one
+              column either way. `items-start` stays off for the reason given
+              above: these are corroborating readings and share a bottom edge. */}
+          <div className="grid lg:grid-cols-3 gap-6 [&>*]:mb-0 mb-6">
           {/* ── Did the books we already published turn out right? (ADR-0090) ─
               The instrument lived only on /method, two clicks from the claims it
               grades. This is the summary at the point of the claim. */}
@@ -1234,13 +1313,6 @@ function BookPageInner() {
             current={(rec?.picks ?? []).map((p) => p.asset).filter(Boolean)}
             previous={prevBook?.assets ?? null}
             previousDate={prevBook?.date ?? null}
-          />
-
-          {/* ── Pool depth: the answer to "why not five and five?" ───────── */}
-          <PoolDepth
-            ideas={rec?.independent_ideas ?? null}
-            heldLongs={(rec?.picks ?? []).filter((p) => p.direction === "long").length}
-            heldShorts={(rec?.picks ?? []).filter((p) => p.direction === "short").length}
           />
 
           {/* ── Same inputs, run again: agent churn as against market churn ─ */}
@@ -1295,6 +1367,12 @@ function BookPageInner() {
                 )}
                 themeNames={themeNames}
                 correlations={rec?.candidate_correlations ?? {}}
+                // `trade_candidates` has no lens column — it is the single L1 pool
+                // every lens screens from — so the panel has to be told which of
+                // those names THIS book's lens admitted. Null under a lens that
+                // removed nothing, which is what keeps the default page unchanged.
+                lensPool={lensPool}
+                lensLabel={lens === DEFAULT_LENS ? undefined : lens}
               />
             </div>
             <div className="min-w-0 [&>section]:!mb-0">

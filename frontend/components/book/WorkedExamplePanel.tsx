@@ -37,6 +37,21 @@ interface Props {
   sizingForAsset: (asset: string) => SizingFinalInput;
   /** Per-asset primary scenario contribution parsed from contribution_breakdown. */
   primaryScenarioForAsset: (asset: string) => PrimaryScenarioInput | null;
+  /**
+   * Which position to trace, chosen by the reader in `BookFunnel`.
+   *
+   * ADR-0081 rendered the highest-|EdgeScore| pick and nothing else. That was a
+   * page-weight decision, not a claim that one position is the only one worth
+   * tracing, and it left the panel answering "which position is most
+   * interesting?" with "the biggest one" — an editorial choice nothing on the
+   * page disclosed. With the funnel above offering every published ticker, the
+   * |EdgeScore| pick becomes the DEFAULT and the reader owns the rest.
+   *
+   * An asset not present in `picks` falls back to the default rather than
+   * rendering empty: the selection comes from a sibling component's state and a
+   * stale ticker (a lens change, a new run mid-session) must not blank the panel.
+   */
+  selectedAsset?: string | null;
 }
 
 export function WorkedExamplePanel({
@@ -46,6 +61,7 @@ export function WorkedExamplePanel({
   maContextForAsset,
   sizingForAsset,
   primaryScenarioForAsset,
+  selectedAsset,
 }: Props) {
   const built = useMemo(() => {
     if (picks.length === 0) return null;
@@ -53,7 +69,9 @@ export function WorkedExamplePanel({
       ...p,
       edge_score: edgeByAsset[p.asset]?.edge_score ?? null,
     }));
-    const chosen = pickWorkedExamplePosition(enriched);
+    const chosen =
+      enriched.find((p) => p.asset === selectedAsset) ??
+      pickWorkedExamplePosition(enriched);
     if (!chosen) return null;
     const themeScore =
       chosen.theme_id && edgeByTheme[chosen.theme_id]
@@ -73,6 +91,7 @@ export function WorkedExamplePanel({
     maContextForAsset,
     sizingForAsset,
     primaryScenarioForAsset,
+    selectedAsset,
   ]);
 
   if (!built) return null;

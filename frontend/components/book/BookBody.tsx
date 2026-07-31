@@ -486,23 +486,29 @@ function BookPageInner() {
   // funnel had already removed at its `lens = credit` stage, under the heading
   // "cleared the screen", beside a Pool depth panel reading 11 candidates.
   //
-  // Null under a lens whose funnel stage removed nothing, so the default page is
-  // untouched — the gate is the measurement, not the lens's name. Why the pool is
-  // derived from `independent_ideas` rather than from a copy of the backend's
-  // ticker list is in lib/book/candidatePool.ts.
-  const lensPool = useMemo(
+  // The restriction also carries a MODE, because two funnel stages keep a
+  // candidate out of the pool the agent saw and they need opposite treatments: a
+  // name the LENS removed was never in this book's universe (excluded), while one
+  // the CAP truncated cleared every filter and was cut from the LLM's context by
+  // conviction rank (kept, and marked — hiding it would delete the only on-page
+  // evidence the cap binds). Mode is "none" where nothing was removed, so the
+  // default page is untouched; the gate is the measurement, not the lens's name.
+  // Why the pool is derived from `independent_ideas` rather than a copy of the
+  // backend's ticker list is in lib/book/candidatePool.ts.
+  const pool = useMemo(
     () =>
-      restrictToLensPool(rec?.independent_ideas ?? null, rec?.screening_funnel ?? null)
-        .pool,
+      restrictToLensPool(rec?.independent_ideas ?? null, rec?.screening_funnel ?? null),
     [rec?.independent_ideas, rec?.screening_funnel],
   );
 
-  // In-lens candidates, for every consumer of the pool other than the panel that
-  // states the exclusion count itself. Filtering once here is what stops the
-  // held-row footers and ClearedNotTaken from disagreeing about the pool.
+  // For every consumer that can only show a name or not. `inLensCandidates` drops
+  // ONLY what the lens removed: a cap-truncated name did clear the screen and was
+  // not taken, so a held row's "also cleared, not taken" footer says nothing false
+  // about it, while a lens-removed name would make that footer a false claim.
+  // Filtering once here is what stops the consumers disagreeing about the pool.
   const lensCandidates = useMemo(
-    () => inLensCandidates(candidates, lensPool),
-    [candidates, lensPool],
+    () => inLensCandidates(candidates, pool),
+    [candidates, pool],
   );
 
   const clearedByHeldAsset = useMemo(() => {
@@ -1371,7 +1377,7 @@ function BookPageInner() {
                 // every lens screens from — so the panel has to be told which of
                 // those names THIS book's lens admitted. Null under a lens that
                 // removed nothing, which is what keeps the default page unchanged.
-                lensPool={lensPool}
+                pool={pool}
                 lensLabel={lens === DEFAULT_LENS ? undefined : lens}
               />
             </div>

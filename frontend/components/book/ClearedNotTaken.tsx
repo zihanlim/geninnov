@@ -7,6 +7,11 @@ import {
   overlapLabel,
   HIGH_CORR_THRESHOLD,
 } from "@/lib/candidateOverlap";
+import {
+  inLensCandidates,
+  reachedAgent,
+  type PoolRestriction,
+} from "@/lib/book/candidatePool";
 
 /**
  * Names that cleared the screen and did NOT make the book.
@@ -104,7 +109,7 @@ export default function ClearedNotTaken({
   themeNames,
   correlations = {},
   poolLimit = CANDIDATE_POOL_LIMIT,
-  lensPool = null,
+  pool = null,
   lensLabel,
 }: {
   candidates: CandidateRow[];
@@ -119,32 +124,35 @@ export default function ClearedNotTaken({
    *  exactly this size the list is truncated, not complete, and says so. */
   poolLimit?: number;
   /**
-   * The (asset, side) pool THIS book's lens actually screened, or null for no
-   * restriction. `trade_candidates` has no lens column — it is the one L1 pool
-   * shared by every lens — so without this the credit book listed 31 names its
-   * own screening funnel had already removed, on the same page that says the
-   * pool held 11. Built by `lib/book/candidatePool.ts` from the lens-keyed
-   * `independent_ideas` row; see that module's header for why the pool is taken
-   * from the book's own record rather than from a ticker list.
+   * Which candidates reached the agent, and what to do about the ones that did
+   * not. `trade_candidates` has no lens column — it is the one L1 pool shared by
+   * every lens — so without this the credit book listed 31 names its own
+   * screening funnel had already removed, on the same page saying the pool held
+   * 11. Built by `lib/book/candidatePool.ts` from the lens-keyed
+   * `independent_ideas` row; see that module's header for why the pool comes
+   * from the book's own record rather than from a ticker list, and why a
+   * lens-removed name is EXCLUDED while a cap-truncated one is MARKED.
    *
-   * Applied here rather than by the caller so ONE component owns both the list
-   * and the count under it. Filtering upstream would have left the truncation
-   * check comparing a filtered length against the raw query's row cap, which is
-   * how "the list is complete" and "the query was capped" start disagreeing.
+   * Applied here rather than by the caller so ONE component owns the list, the
+   * markers and the counts under it. Filtering upstream would have left the
+   * truncation check comparing a filtered length against the raw query's row
+   * cap, which is how "the list is complete" and "the query was capped" start
+   * disagreeing.
    */
-  lensPool?: Set<string> | null;
+  pool?: PoolRestriction | null;
   /** How this book's lens is named in the exclusion line. Absent under the
    *  default lens, where there is no exclusion line to write. */
   lensLabel?: string;
 }) {
-  // In-lens first, then held. Both counts below are stated against the in-lens
-  // pool, because that is the pool this book was chosen from.
-  const inLens = lensPool
-    ? candidates.filter((c) => lensPool.has(`${c.asset}::${c.direction}`))
-    : candidates;
-  const excludedByLens = candidates.length - inLens.length;
+  // Mode "filter": the lens removed these, so they were never in this book's
+  // universe and listing them as declined is a false claim about its selection.
+  // Mode "mark": the cap truncated them, so they DID clear every filter and are
+  // the only on-page evidence the cap binds — kept, and marked below.
+  const shown =
+    pool?.mode === "filter" ? inLensCandidates(candidates, pool) : candidates;
+  const excludedByLens = candidates.length - shown.length;
 
-  const notTaken = inLens
+  const notTaken = shown
     .filter((c) => !heldAssets.has(c.asset))
     .sort((a, b) => {
       // Shorts first — that is the side the book is thin on and the side a reader
@@ -156,6 +164,9 @@ export default function ClearedNotTaken({
   if (notTaken.length === 0) return null;
 
   const shorts = notTaken.filter((c) => c.direction === "short").length;
+  // Rows kept but never shown to the agent. Only non-empty under mode "mark":
+  // under "filter" they are already gone, and under "none" nothing is known.
+  const truncated = notTaken.filter((c) => reachedAgent(c, pool) === false);
 
   // The panel opens by default, but its collapsed summary still carries the finding.
   //
@@ -171,7 +182,14 @@ export default function ClearedNotTaken({
   // so anything a reader might search for has to appear in the summary text.
   // Naming the ticker here is what keeps Ctrl+F working for the one name that
   // matters.
+  //
+  // A cap-truncated name is excluded from this selection: it was never shown to
+  // the agent, so calling it "passed over" attributes a judgement nobody made —
+  // the same invention this panel's docstring refuses for the reason a name is
+  // absent. It stays in the TABLE, where its marker says what happened; it just
+  // cannot be the headline.
   const mostIndependent = notTaken
+    .filter((c) => reachedAgent(c, pool) !== false)
     .map((c) => {
       const corr = correlations[c.asset];
       const { aligned, kind } = classifyOverlap(
@@ -253,6 +271,11 @@ export default function ClearedNotTaken({
                 heldSide,
                 corr?.corr,
               );
+              // This name cleared every filter and the cap-30 stage still cut it
+              // from the LLM's context window, ordered by conviction. The agent
+              // never saw it, so "passed over" would be wrong about this row in
+              // the same way the whole panel was wrong about the credit book.
+              const cut = reachedAgent(c, pool) === false;
               return (
                 <tr
                   key={`${c.asset}-${c.direction}`}
@@ -365,6 +388,19 @@ export default function ClearedNotTaken({
                         )}
                       </span>
                     )}
+                    {/* Sits AFTER the overlap read, not instead of it: the
+                        correlation is still true and still worth reading, and
+                        replacing it would hide why this name was low-conviction
+                        in the first place. On its own line so it cannot be
+                        skimmed past as a suffix to the read above it. */}
+                    {cut && (
+                      <span
+                        className="block text-[11px] text-text-tertiary"
+                        title="This name cleared every filter. The candidate pool (cap 30) stage then truncated it out of the LLM's context window, keeping the highest |EdgeScore| — so the agent never saw it and did not decline it. See the screening funnel below."
+                      >
+                        not shown to the agent — cut by the pool cap
+                      </span>
+                    )}
                   </td>
                 </tr>
               );
@@ -388,8 +424,23 @@ export default function ClearedNotTaken({
         </p>
       ) : (
         <p className="m-0 px-[18px] py-2 text-[11px] leading-[1.6] text-text-tertiary">
-          End of list — {notTaken.length} not taken, of {inLens.length}{" "}
+          End of list — {notTaken.length} not taken, of {shown.length}{" "}
           candidates screened this run.
+        </p>
+      )}
+
+      {/* The cap, said once under the list as well as marked per row. A reader
+          who scans the table sees the markers; a reader who reads the count needs
+          to know that {truncated.length} of the rows above are not the agent's
+          judgement at all. Both, because they are different readers. */}
+      {truncated.length > 0 && (
+        <p className="m-0 px-[18px] pb-2 text-[11px] leading-[1.6] text-text-tertiary">
+          {truncated.length} of those{" "}
+          {truncated.length === 1 ? "was" : "were"} never shown to the agent: the
+          candidate-pool cap in the screening funnel below truncated the pool by
+          conviction rank, keeping the highest &#124;EdgeScore&#124;. Those rows
+          are marked, and the book did not decline them — nothing chose against
+          them, a context-window limit did.
         </p>
       )}
 

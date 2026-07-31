@@ -132,46 +132,120 @@ export function lensRemoved(
   return Number.isFinite(stage.removed) ? stage.removed : null;
 }
 
-export interface LensPoolRestriction {
-  /** Membership set for the panel to filter on, or null to filter nothing. */
-  pool: Set<string> | null;
-  /** How many candidates the lens stage removed. Null when unrecorded. */
-  removed: number | null;
+/**
+ * How many candidates the `candidate pool (cap N)` stage truncated away, or null
+ * when the stage is absent. Prefix-matched for the same reason as the lens
+ * stage: the label carries the cap in it.
+ */
+export function capRemoved(
+  funnel: FunnelStage[] | null | undefined,
+): number | null {
+  const stage = (funnel ?? []).find((s) => s?.stage?.startsWith("candidate pool (cap"));
+  if (!stage) return null;
+  return Number.isFinite(stage.removed) ? stage.removed : null;
 }
 
 /**
- * The pool restriction /book should apply to an unfiltered `trade_candidates`
- * read, given the lens-keyed book row it is rendering beside.
+ * What the panel should DO about candidates that never reached the agent.
  *
- * Both conditions must hold before anything is restricted:
+ * Two stages can keep a `trade_candidates` row out of the pool the agent saw,
+ * and they call for opposite treatments — which is the whole reason this is a
+ * mode and not a boolean:
  *
- *   1. the funnel says the lens stage actually removed candidates, and
- *   2. `independent_ideas` enumerates a pool to restrict to.
+ *   "filter" — the LENS removed names. Those were never in this book's universe,
+ *              so listing them under "cleared the screen" is a false claim about
+ *              the book's own selection. Excluded, and counted.
+ *   "mark"   — the CAP truncated names. Those cleared every filter and were cut
+ *              from the LLM's context window by conviction rank, which is a fact
+ *              ABOUT THE CAP and the only on-page evidence that it binds at all.
+ *              Hiding them would delete that evidence. Kept, and marked.
+ *   "none"   — nothing to say, or nothing to say it with.
  *
- * Either missing returns `pool: null` and the caller renders today's unfiltered
- * list. Failing OPEN is the right direction here: an over-long candidate list is
- * a page that shows more than it should, while a wrongly-empty one is a page
+ * A run where BOTH stages removed names resolves to "filter", not to a third
+ * mode. Per-name attribution is impossible — `independent_ideas` records what
+ * SURVIVED both stages, so a missing name could owe its absence to either — and
+ * between the two errors available, hiding a cap-truncated in-lens name costs a
+ * row while showing an out-of-lens name is the defect this module exists to
+ * close. The counts are reported separately so the sentence can still be true.
+ */
+export type PoolMode = "filter" | "mark" | "none";
+
+export interface PoolRestriction {
+  /** Every (asset, side) that reached the agent, or null when unrecorded. */
+  pool: Set<string> | null;
+  mode: PoolMode;
+  /** Candidates the lens stage removed. Null when unrecorded, 0 when none. */
+  lensRemoved: number | null;
+  /** Candidates the cap stage truncated. Null when unrecorded, 0 when none. */
+  capRemoved: number | null;
+}
+
+/**
+ * What /book should do with an unfiltered `trade_candidates` read, given the
+ * lens-keyed book row it is rendering beside.
+ *
+ * `mode` is never anything but "none" unless `independent_ideas` enumerates a
+ * pool. Failing OPEN is the right direction: an over-long candidate list is a
+ * page that shows more than it should, while a wrongly-empty one is a page
  * claiming the screen cleared nothing. The first is the bug we already had; the
  * second would be worse than the bug.
  */
 export function restrictToLensPool(
   ideas: IndependentIdeasLike | null | undefined,
   funnel: FunnelStage[] | null | undefined,
-): LensPoolRestriction {
-  const removed = lensRemoved(funnel);
-  if (!removed || removed <= 0) return { pool: null, removed };
-  return { pool: poolAssets(ideas), removed };
+): PoolRestriction {
+  const lens = lensRemoved(funnel);
+  const cap = capRemoved(funnel);
+  const base = { lensRemoved: lens, capRemoved: cap };
+
+  // Order matters: lens before cap. A run where both removed names must filter,
+  // because it is the lens error that puts another book's names on this page.
+  const mode: PoolMode =
+    lens && lens > 0 ? "filter" : cap && cap > 0 ? "mark" : "none";
+  if (mode === "none") return { ...base, pool: null, mode };
+
+  const pool = poolAssets(ideas);
+  return { ...base, pool, mode: pool ? mode : "none" };
 }
 
 /**
- * Apply a restriction to a candidate list. A null pool passes everything
- * through unchanged and by identity, so the default page cannot be perturbed by
- * a re-sort or a copy.
+ * Drop the candidates this book's lens never admitted.
+ *
+ * Only mode "filter" removes anything. Mode "mark" deliberately passes
+ * everything through, and the distinction is a factual one rather than a
+ * convenience: a cap-truncated name **did** clear every screen and **was not**
+ * taken, so a held row's "also cleared, not taken" footer states nothing false
+ * about it — dropping it would delete a true statement. A lens-removed name
+ * never cleared this book's screen at all, so the same footer would be a false
+ * one. Filter the false claim, keep the true one.
+ *
+ * A consumer that can distinguish the two (`ClearedNotTaken`, which has a row to
+ * mark) should not call this at all for mode "mark"; it should ask
+ * `reachedAgent` per row.
+ *
+ * Modes "mark" and "none" pass the array through BY IDENTITY, so the default
+ * page cannot be perturbed even by a re-sort or a copy.
  */
 export function inLensCandidates<T extends { asset: string; direction: string }>(
   candidates: T[],
-  pool: Set<string> | null,
+  restriction: PoolRestriction | Set<string> | null,
 ): T[] {
+  const pool =
+    restriction instanceof Set
+      ? restriction
+      : restriction?.mode === "filter"
+        ? restriction.pool
+        : null;
   if (!pool) return candidates;
   return candidates.filter((c) => pool.has(poolKey(c.asset, c.direction)));
+}
+
+/** Did this candidate reach the agent? `null` when the pool is unrecorded — not
+ *  the same fact as "no", and it must not render as one. */
+export function reachedAgent(
+  candidate: { asset: string; direction: string },
+  restriction: PoolRestriction | null | undefined,
+): boolean | null {
+  if (!restriction || restriction.mode === "none" || !restriction.pool) return null;
+  return restriction.pool.has(poolKey(candidate.asset, candidate.direction));
 }

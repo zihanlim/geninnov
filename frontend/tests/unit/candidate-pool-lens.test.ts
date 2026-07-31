@@ -20,9 +20,11 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  capRemoved,
   inLensCandidates,
   lensRemoved,
   poolAssets,
+  reachedAgent,
   restrictToLensPool,
   type FunnelStage,
   type IndependentIdeasLike,
@@ -123,44 +125,26 @@ describe("poolAssets", () => {
   });
 });
 
-describe("restrictToLensPool", () => {
+describe("restrictToLensPool — mode filter (the lens removed names)", () => {
   it("restricts the credit pool to the 11 the lens admitted", () => {
-    const { pool, removed } = restrictToLensPool(CREDIT_IDEAS, CREDIT_FUNNEL);
-    expect(removed).toBe(31);
-    const inLens = inLensCandidates(POOL_42, pool);
+    const r = restrictToLensPool(CREDIT_IDEAS, CREDIT_FUNNEL);
+    expect(r.mode).toBe("filter");
+    expect(r.lensRemoved).toBe(31);
+    const inLens = inLensCandidates(POOL_42, r);
     expect(POOL_42).toHaveLength(42);
     expect(inLens).toHaveLength(11);
     // 42 − 11 = 31, the funnel's own figure. The panel and the funnel now agree.
-    expect(POOL_42.length - inLens.length).toBe(removed);
+    expect(POOL_42.length - inLens.length).toBe(r.lensRemoved);
   });
 
   it("drops every short under a long-only lens", () => {
     // The credit book's thesis says no short candidates exist in the pool while
     // the panel summarised "13 short". Both sentences were on one page.
-    const { pool } = restrictToLensPool(CREDIT_IDEAS, CREDIT_FUNNEL);
-    const inLens = inLensCandidates(POOL_42, pool);
-    expect(inLens.filter((c) => c.direction === "short")).toHaveLength(0);
-  });
-
-  it("leaves the multi-asset pool identical, and by identity", () => {
-    // THE INVARIANT. The default page must not move. `inLensCandidates` returns
-    // the SAME array reference, so not even a re-sort or a copy can perturb it.
-    const { pool, removed } = restrictToLensPool(null, MULTI_ASSET_FUNNEL);
-    expect(removed).toBe(0);
-    expect(pool).toBeNull();
-    expect(inLensCandidates(POOL_42, pool)).toBe(POOL_42);
-  });
-
-  it("does not fold in the cap-30 stage", () => {
-    // The multi_asset funnel's cap-30 removed 12 names. Those DID clear every
-    // filter and were truncated out of the LLM's context by conviction rank, so
-    // the honest answer is to label the row, not to hide it — a different defect
-    // with a different fix. This filter must stay out of it.
-    const { pool } = restrictToLensPool(
-      { long: { standalone: ["QQQ"] }, short: { standalone: ["GLD"] } },
-      MULTI_ASSET_FUNNEL,
+    const inLens = inLensCandidates(
+      POOL_42,
+      restrictToLensPool(CREDIT_IDEAS, CREDIT_FUNNEL),
     );
-    expect(pool).toBeNull();
+    expect(inLens.filter((c) => c.direction === "short")).toHaveLength(0);
   });
 
   it("fails OPEN when the lens filtered but the pool was never recorded", () => {
@@ -168,9 +152,103 @@ describe("restrictToLensPool", () => {
     // claims the screen cleared nothing, which is worse. So a funnel that says
     // the lens removed names, with no `independent_ideas` to restrict to,
     // renders today's unfiltered list rather than a blank panel.
-    const { pool, removed } = restrictToLensPool(null, CREDIT_FUNNEL);
-    expect(removed).toBe(31);
-    expect(pool).toBeNull();
-    expect(inLensCandidates(POOL_42, pool)).toBe(POOL_42);
+    const r = restrictToLensPool(null, CREDIT_FUNNEL);
+    expect(r.lensRemoved).toBe(31);
+    expect(r.mode).toBe("none");
+    expect(r.pool).toBeNull();
+    expect(inLensCandidates(POOL_42, r)).toBe(POOL_42);
+  });
+
+  it("filters, not marks, when BOTH stages removed names", () => {
+    // Per-name attribution is impossible — `independent_ideas` records what
+    // survived both stages — and between the two available errors, hiding a
+    // cap-truncated in-lens name costs a row while showing an out-of-lens name is
+    // the defect this module exists to close. Lens wins.
+    const both: FunnelStage[] = [
+      { stage: "lens = credit", removed: 31, remaining: 11 },
+      { stage: "candidate pool (cap 30)", removed: 4, remaining: 7 },
+    ];
+    const r = restrictToLensPool(CREDIT_IDEAS, both);
+    expect(r.mode).toBe("filter");
+    // Both counts still travel, so the sentence on screen can stay true.
+    expect(r.lensRemoved).toBe(31);
+    expect(r.capRemoved).toBe(4);
+  });
+});
+
+describe("restrictToLensPool — mode mark (only the cap truncated)", () => {
+  // The multi_asset funnel's cap-30 removed 12 names the agent was never shown.
+  // Those DID clear every filter and were cut from the LLM's context window by
+  // conviction rank, so hiding them would delete the only on-page evidence the
+  // cap binds at all. Marked, not filtered — and `reachedAgent` is what a row
+  // asks to find out.
+  const MULTI_IDEAS: IndependentIdeasLike = {
+    long: { standalone: ["QQQ", "SPY"] },
+    short: { standalone: ["GLD"] },
+  };
+
+  it("marks rather than filters", () => {
+    const r = restrictToLensPool(MULTI_IDEAS, MULTI_ASSET_FUNNEL);
+    expect(r.mode).toBe("mark");
+    expect(r.lensRemoved).toBe(0);
+    expect(r.capRemoved).toBe(12);
+  });
+
+  it("passes the list through BY IDENTITY, so the default page cannot move", () => {
+    // THE INVARIANT. `inLensCandidates` drops only what the LENS removed: a
+    // cap-truncated name did clear the screen and was not taken, so a held row's
+    // "also cleared, not taken" footer states nothing false about it.
+    const r = restrictToLensPool(MULTI_IDEAS, MULTI_ASSET_FUNNEL);
+    expect(inLensCandidates(POOL_42, r)).toBe(POOL_42);
+  });
+
+  it("reachedAgent separates the truncated rows from the declined ones", () => {
+    const r = restrictToLensPool(MULTI_IDEAS, MULTI_ASSET_FUNNEL);
+    // In the pool: the agent saw these and did not take them. Declined.
+    expect(reachedAgent({ asset: "QQQ", direction: "long" }, r)).toBe(true);
+    expect(reachedAgent({ asset: "GLD", direction: "short" }, r)).toBe(true);
+    // Not in it: cut by the cap, never shown. NOT declined.
+    expect(reachedAgent({ asset: "SLV", direction: "short" }, r)).toBe(false);
+    // Side-keyed here too: the pool holds GLD short, so GLD LONG never reached
+    // the agent even though the ticker did.
+    expect(reachedAgent({ asset: "GLD", direction: "long" }, r)).toBe(false);
+  });
+});
+
+describe("restrictToLensPool — mode none", () => {
+  it("is none when neither stage removed anything", () => {
+    const quiet: FunnelStage[] = [
+      { stage: "lens = multi_asset", removed: 0, remaining: 42 },
+      { stage: "candidate pool (cap 30)", removed: 0, remaining: 42 },
+    ];
+    const r = restrictToLensPool({ long: { standalone: ["QQQ"] } }, quiet);
+    expect(r.mode).toBe("none");
+    expect(r.pool).toBeNull();
+    expect(inLensCandidates(POOL_42, r)).toBe(POOL_42);
+  });
+
+  it("reports null, not false, for a row it cannot place", () => {
+    // "Nobody recorded the pool" is not "this name never reached the agent", and
+    // rendering the second for the first would put a cap marker on a row that may
+    // well have been declined outright.
+    const r = restrictToLensPool(null, null);
+    expect(r.mode).toBe("none");
+    expect(r.lensRemoved).toBeNull();
+    expect(r.capRemoved).toBeNull();
+    expect(reachedAgent({ asset: "QQQ", direction: "long" }, r)).toBeNull();
+  });
+});
+
+describe("capRemoved", () => {
+  it("reads the count off the cap stage, whatever the cap is set to", () => {
+    // Prefix-matched: the label carries the cap in it, so an exact string would
+    // stop working the day the cap moves off 30.
+    expect(capRemoved(MULTI_ASSET_FUNNEL)).toBe(12);
+    expect(capRemoved([{ stage: "candidate pool (cap 50)", removed: 3, remaining: 47 }])).toBe(3);
+  });
+
+  it("returns null, not 0, when the row predates the stage", () => {
+    expect(capRemoved([{ stage: "lens = credit", removed: 31, remaining: 11 }])).toBeNull();
+    expect(capRemoved(null)).toBeNull();
   });
 });

@@ -35,7 +35,7 @@
 // renders on the edge that removed it, with the constraint that did the
 // removing.
 
-import { Fragment, useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   buildBookFunnel,
   funnelHeadline,
@@ -146,6 +146,33 @@ export default function BookFunnel({
   const funnel = useMemo(() => buildBookFunnel(inputs), [inputs]);
   const headline = useMemo(() => funnelHeadline(funnel), [funnel]);
 
+  // ── Where the open card goes ────────────────────────────────────────────────
+  // `position: fixed`, because the panel is a `.card` and `.card` carries
+  // `overflow-hidden` — load-bearing, it is what clips the header fill flush to
+  // the 10px radius. An absolutely-positioned card inside it was therefore cut
+  // off at the panel's edge, which on the rightmost connector meant losing the
+  // end of the sizer's explanation. A fixed element is positioned against the
+  // viewport and escapes ancestor overflow (no ancestor here establishes a
+  // containing block via transform/filter), so it can sit outside the panel.
+  //
+  // Coordinates come from the TRIGGER's own rect at open time rather than from
+  // a static offset, which is also what puts the card next to the pointer: the
+  // reader's cursor is on that label when it opens.
+  const [tip, setTip] = useState<{ id: string; left: number; top: number } | null>(
+    null,
+  );
+  const openTip = (id: string, el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    const W = 304; // w-[19rem]
+    setTip({
+      id,
+      // Centred on the trigger, then clamped so a card on the rightmost
+      // connector does not run off the viewport it just escaped into.
+      left: Math.min(Math.max(8, r.left + r.width / 2 - W / 2), window.innerWidth - W - 8),
+      top: r.bottom + 8,
+    });
+  };
+
   if (!funnel.available) return null;
 
   const published = funnel.nodes.find((n) => n.id === "published");
@@ -226,6 +253,10 @@ export default function BookFunnel({
                     <button
                       type="button"
                       aria-describedby={`funnel-tip-${node.id}`}
+                      onMouseEnter={(e) => openTip(node.id, e.currentTarget)}
+                      onFocus={(e) => openTip(node.id, e.currentTarget)}
+                      onMouseLeave={() => setTip((t) => (t?.id === node.id ? null : t))}
+                      onBlur={() => setTip((t) => (t?.id === node.id ? null : t))}
                       className="text-[10px] num whitespace-nowrap underline decoration-dotted underline-offset-2 rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                       style={{
                         color: edge.notable ? "var(--warning)" : "var(--text-tertiary)",
@@ -246,7 +277,18 @@ export default function BookFunnel({
                       // hovering INTO it keeps it open — which is what lets a reader
                       // select the complex chips or the turnover figures rather than
                       // watching them vanish as the cursor arrives.
-                      className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 transition-opacity absolute left-1/2 -translate-x-1/2 top-full mt-2 z-30 w-[19rem] max-w-[80vw] text-left card p-3 shadow-lg"
+                      // Rendered ALWAYS, hidden when not active, rather than
+                      // mounted on demand: the text has to stay in the DOM for a
+                      // browser find to reach "turnover at cap" and for
+                      // aria-describedby to resolve.
+                      className={`${
+                        tip?.id === node.id ? "visible opacity-100" : "invisible opacity-0"
+                      } transition-opacity fixed z-50 w-[19rem] max-w-[90vw] text-left card p-3 shadow-lg`}
+                      style={
+                        tip?.id === node.id
+                          ? { left: tip.left, top: tip.top }
+                          : { left: -9999, top: -9999 }
+                      }
                     >
                       <div
                         className="num text-[10px] uppercase tracking-[0.08em] mb-1"

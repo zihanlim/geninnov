@@ -984,16 +984,37 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
   // two rows identical in both and no stated relationship, is a reader's
   // problem however correct each one is. Phrase-level rows live HERE, in the
   // one table that has all six columns; the funnel card counts and attributes.
-  const tableRows = series
-    ? [
-        ...top,
-        ...series.filter(
+  //
+  // BOUNDED, and the bound is the point. This started as `top` ∪ EVERY
+  // unwatched phrase, which is unbounded in the size of the unwatched set —
+  // ADR-0191 said so in its own Consequences and the next nightly run proved
+  // it within hours: the corpus went from 11 tracked / 6 unwatched to 55 / 42,
+  // the table rendered 47 rows at 1396px, and the card it lives in went from
+  // 750px to 1758px. "Every unwatched phrase named" is not a property a table
+  // can hold at 42; a rule that reads well at one corpus size and destroys the
+  // page at another is not a rule, it is a coincidence.
+  //
+  // The extra slots are filled by SHARE, not by velocity, even though velocity
+  // is the alarm. The alarm already has a home: `emergingUncovered` below is
+  // exactly "accelerating AND young AND watched by nothing", and it is a
+  // shortlist rather than a table because that is the reading it supports. If
+  // this table also selected on velocity it would be a second, worse copy of
+  // it, sorted by a column it does not sort on — which is the mistake ADR-0191
+  // exists to record, made again one level down.
+  const UNWATCHED_SLOTS = 5;
+  const extras = series
+    ? series
+        .filter(
           (s) =>
             s.latest.covered_by === null && !top.some((t) => t.phrase === s.phrase),
-        ),
-      ].sort((a, b) => b.latest.share - a.latest.share)
+        )
+        .sort((a, b) => b.latest.share - a.latest.share)
+        .slice(0, UNWATCHED_SLOTS)
     : [];
-  const extraUnwatched = tableRows.length - top.length;
+  const tableRows = [...top, ...extras].sort(
+    (a, b) => b.latest.share - a.latest.share,
+  );
+  const extraUnwatched = extras.length;
   const dropped = series ? Math.max(0, series.length - tableRows.length) : 0;
   // ONE share axis for both plots (ADR-0177): the scatter's x and the trend's
   // y are the same quantity, drawn on perpendicular axes only because the two
@@ -1227,8 +1248,10 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                     narratives
                     {extraUnwatched > 0 ? (
                       <>
-                        , plus <span className="num">{extraUnwatched}</span>{" "}
-                        quieter ones no anchor watches
+                        , plus the <span className="num">{extraUnwatched}</span>{" "}
+                        loudest of the{" "}
+                        <span className="num">{uncoveredCount}</span> no anchor
+                        watches
                       </>
                     ) : null}
                     . Every one of the{" "}
@@ -1269,8 +1292,10 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                         watched by nothing is both <em>young</em> and
                         accelerating — that is a finding, not an empty state.
                         An older one can still be breaking out and stay{" "}
-                        <span className="num">established</span>; the table
-                        above lists every one of them with its velocity.
+                        <span className="num">established</span>: the plane
+                        above plots all{" "}
+                        <span className="num">{funnel ? funnel.unwatched : 0}</span>{" "}
+                        of them, and the table lists the loudest.
                       </p>
                     ) : (
                       <p className="m-0 text-[11px] text-text-secondary leading-[1.55]">

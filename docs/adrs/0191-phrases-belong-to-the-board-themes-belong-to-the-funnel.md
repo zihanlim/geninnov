@@ -96,6 +96,36 @@ the two cards do not both own the same noun.
   pointed at the funnel for velocities that are now in the table above it. That
   is the standing cost of prose that names a neighbour.
 
+## Amendment, 2026-07-31 (same day): the extra rows are capped at five
+
+Decision 1 above was **unbounded**, and the Consequences section below said so
+— *"a corpus with dozens of unwatched phrases would need a cap argued on its own
+terms rather than inherited from a palette again."* The next nightly run
+delivered exactly that, hours later. The `archive` corpus went from 11 tracked /
+6 unwatched to **55 tracked / 42 unwatched**; `top` ∪ all-unwatched rendered
+**47 rows at 1396px**, and the card went from 750px to **1758px**, taking the
+page from 5392px with it. The original text stands as written; this is what
+replaced it.
+
+**`UNWATCHED_SLOTS = 5`.** The table renders `top` plus the five LOUDEST
+unwatched phrases not already among them — at most ten rows, whatever the
+corpus does. Measured after: card 805px, table 443px, page 4439px.
+
+Two things this fixes beyond the height. "Every unwatched phrase named" was
+never a property a table could hold at 42 — it read as a principle because 6
+happened to fit, which is a coincidence dressed as a rule. And the extra slots
+are filled by **share, not velocity**, even though velocity is the alarm:
+`emergingUncovered` below the table already *is* "accelerating AND young AND
+watched by nothing", and a table selecting on velocity while sorting on share
+would be a second, worse copy of it — the same mistake this ADR exists to
+record, made one level down.
+
+The caption states the bound rather than implying coverage: *"The 5 loudest of
+55 tracked narratives, plus the 5 loudest of the 42 no anchor watches."* The
+emerging shortlist's cross-reference moved with it — it claimed the table listed
+every unwatched phrase with its velocity, which was true at 6 and false at 42;
+it now points at the plane for all of them and the table for the loudest.
+
 ## Alternatives considered
 
 - **Keep both lists and mark the overlap.** Adds a third encoding to explain a

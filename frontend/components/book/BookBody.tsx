@@ -1631,6 +1631,13 @@ function BookPageInner() {
               <CollapsibleSection
                 title="Cross-cutting book risks"
                 summary={`${rec.book_risks.length} things that could break the book`}
+                // Open on arrival. It is five sentences about how this book
+                // breaks, on a page whose job is to be doubted — the one panel
+                // here a reader should not have to opt into. It stays a
+                // `CollapsibleSection` rather than becoming plain markup so it
+                // can still be closed, and so it keeps the same shell as its
+                // neighbours.
+                defaultOpen
               >
                 <div className="card-body">
                   <ul className="m-0 pl-[18px] leading-[1.8] text-text-primary text-[13.5px]">

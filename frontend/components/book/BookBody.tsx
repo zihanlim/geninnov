@@ -1278,7 +1278,19 @@ function BookPageInner() {
                   refuses to shrink below the 640px row grid nested inside it —
                   without it the section stretched to 642px and scrolled the body
                   on a 375px phone instead of letting each row's ScrollArea scroll. */}
-              <div className="grid wide:grid-cols-2 gap-6 items-start [&>*]:mb-0 [&>*]:min-w-0 mb-6">
+              {/* NO `items-start`, deliberately. Longs and Shorts almost never
+                  hold the same number of names — 4 and 5 on this run — so with
+                  the cells sized to their own content the two cards ended at
+                  different heights and the section read as two unrelated tables
+                  that happened to be adjacent. The grid's default `stretch`
+                  gives both cells the taller height; the section below is a flex
+                  column and its card grows into it, so the two borders share a
+                  top AND a bottom edge at every count.
+
+                  This is the same arithmetic the `#solidity` row already uses
+                  one section down, and for the same reason: panels meant to be
+                  read as a pair must not end on two different lines. */}
+              <div className="grid wide:grid-cols-2 gap-6 [&>*]:mb-0 [&>*]:min-w-0 mb-6">
               <PositionSection
                 lens={lens}
                 title="Longs"
@@ -1847,7 +1859,7 @@ function PositionSection({
   cellClassName?: string;
 }) {
   return (
-    <section className={`mb-6 ${cellClassName ?? ""}`}>
+    <section className={`mb-6 flex flex-col ${cellClassName ?? ""}`}>
       <h2 className="text-[16px] font-semibold m-0 mb-3 flex items-center gap-2">
         <span style={{ color }}>{glyph}</span> {title}
         <span className="text-text-tertiary text-[12px] font-normal">
@@ -1855,7 +1867,7 @@ function PositionSection({
         </span>
       </h2>
       {picks.length === 0 ? (
-        <div className="card">
+        <div className="card grow">
           <EmptyState
             title={`No ${title.toLowerCase()} in this book`}
             cause={
@@ -1868,7 +1880,12 @@ function PositionSection({
           />
         </div>
       ) : (
-        <ScrollArea className="card" frameClassName="rounded-[10px]">
+        // `grow` on the frame and `h-full` on the card: the section is a flex
+        // column, so the frame takes the leftover height and the bordered
+        // element inside it fills the frame. Without BOTH, the cell stretches
+        // and the border stops where the rows stop — which is the misalignment
+        // this is fixing, just moved one element in.
+        <ScrollArea className="card h-full" frameClassName="rounded-[10px] grow flex flex-col">
           {/* Column legend for the dense row grid below. Each figure column
               carries a second line naming what it is measured over — see
               BOOK_ROW_SCOPES for why the copy lives in lib/book/grid.ts. */}

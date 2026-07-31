@@ -29,11 +29,36 @@ import AnswerCards from "@/components/book/AnswerCards";
 // nouns and carry no figure — SectionNav is tested for the absence of digits,
 // because a count here would be a number a reader cannot trace and it would go
 // stale against the panel it labels.
+// THREE, not four, because the page is three vertical blocks and was four when
+// this list was written. Measured at 1440 after the sizing/not-taken pairing:
+//
+//   631  x= 76  w=1344  #holdings
+//  1999  x= 76  w=1344  #solidity
+//  2506  x= 76  w= 660  #sizing      ]  one row, two columns
+//  2506  x=760  w= 660  #not-taken   ]
+//  3247  x= 76  w= 660  #abstention-roster
+//  3502  x= 76  w= 660  #audit
+//
+// `not-taken` and `audit` were nav destinations that no longer describe what a
+// reader lands on. `not-taken` starts at the same y as Sizing — they are side by
+// side — so the label named half the row. `audit` is worse: the screening funnel
+// that made it audit DETAIL now lives on the funnel itself, so the tab pointed
+// at the book-risks list, from inside not-taken's own row, at a scroll position
+// where the right column is mid-candidate-list.
+//
+// All four ids REMAIN on their sections. They are still deep links, still the
+// process map's phase-3 target (`/book#sizing`, lib/method/phases.ts), and still
+// the destination of the two in-page links this file and PositionRow carry. What
+// changes is only which of them are offered as a place to jump to.
 const BOOK_SECTIONS = [
   { id: "holdings", label: "Holdings" },
   { id: "solidity", label: "How solid" },
-  { id: "not-taken", label: "Not taken" },
-  { id: "audit", label: "Audit" },
+  // "Sizing & not taken", not "Sizing". The row is two columns and the label
+  // named one of them; the candidate list is the taller half. It also avoids
+  // repeating the sidebar, where "Sizing" is the PHASE this whole page is — a
+  // tab named after the page a reader is already on points at nothing they can
+  // distinguish.
+  { id: "sizing", label: "Sizing & not taken" },
 ];
 import {
   AdvisoryDerivation,

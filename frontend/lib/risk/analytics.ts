@@ -106,6 +106,25 @@ export interface BookMetrics {
    * `computed` through the payload.
    */
   concentration_hhi?: number | null;
+  /**
+   * The denominator `factor_tilts` was divided by: sum of |weight| over the picks
+   * whose betas cleared r² ≥ 0.10.
+   *
+   * Each `factor_tilts.beta_*` is `Σ(signed_w × β) / Σ|w|` — a tilt PER UNIT OF
+   * COVERED GROSS, not the book's beta. `tilt × factor_covered_gross` recovers the
+   * un-normalised `Σ(signed_w × β)`, which is what ADR-0063 calls the book's net
+   * factor beta and the only quantity a `|β| ≤ 0.50` limit can mean. Live on
+   * 2026-07-30 the credit book's MKT-RF tilt is +0.24 at 50% gross — a market beta
+   * of +0.12, so reading the tilt against that limit publishes 2× the truth.
+   *
+   * Also the coverage: `factor_covered_gross / gross_exposure` is the share of the
+   * book the tilts describe.
+   *
+   * Absent on rows written before the field existed. **Gate on `> 0`**, not on
+   * numeric-ness — 0 means no pick cleared the r² floor, and multiplying a tilt by
+   * it yields 0.0, a fabricated "perfectly market-neutral" book.
+   */
+  factor_covered_gross?: number | null;
 }
 
 export interface CorrelationSummary {

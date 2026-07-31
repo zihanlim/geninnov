@@ -306,6 +306,13 @@ export const PANEL_SCOPE: Record<string, PanelSources> = {
       // The row itself cites whichever it actually read.
       "research_recommendations.book_metrics.concentration_hhi",
       "portfolio_risk.concentration_hhi",
+      // Either table, depending on the run — the beta row's twin of the HHI pair
+      // above (ADR-0212). The lens-following factor beta is preferred; the lens-less
+      // regression is the fallback for a row written before `factor_covered_gross`
+      // existed, so the chip must keep saying "part multi-asset" while historical
+      // rows still fall through. The row itself cites whichever it actually read.
+      "research_recommendations.book_metrics.factor_tilts",
+      "portfolio_risk.beta",
       "portfolio_returns.cumulative_return",
       "research_recommendations.book_metrics",
       "research_recommendations.cap_utilisation",

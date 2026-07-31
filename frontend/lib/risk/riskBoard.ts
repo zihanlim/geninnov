@@ -359,6 +359,29 @@ export interface LimitBoardInputs {
    * evidence must not switch a limit off.
    */
   shortSideAvailable?: boolean | null;
+  /**
+   * The book's OWN market beta — the un-normalised `Σ(signed_w × β_mkt)` recovered
+   * as `book_metrics.factor_tilts.beta_mkt × book_metrics.factor_covered_gross`.
+   * Null when the run predates `factor_covered_gross` or no pick cleared its r² floor.
+   *
+   * Preferred over `beta` above, and NOT gated by `returnSessions`. Both halves of
+   * that are deliberate:
+   *
+   * - **Preferred**, because it follows the lens. `portfolio_risk.beta` has no lens
+   *   column (ADR-0194), so the credit page measured its own directionality with the
+   *   multi-asset book's regression — the same defect ADR-0208 fixed for HHI.
+   * - **Ungated**, because it needs no return history: it is today's weights against
+   *   252-day per-asset regressions, the same family as the cap and exposure rows,
+   *   and ADR-0063 already ruled on exactly this quantity — *"it needs no return
+   *   history and is knowable on day one. Gating it would replace a real number with
+   *   a blank."* The 60-session floor exists for the REGRESSION beta and travels with
+   *   it into the fallback below, where it still applies.
+   *
+   * It is a different quantity from `beta`, so the row says which one it read rather
+   * than presenting them interchangeably — ADR-0063's other half, which stopped a
+   * panel promising a reconciliation between the two that fails 40× on a short sample.
+   */
+  bookBetaMkt?: number | null;
   /** Worst peak-to-trough on the realised curve, a negative decimal, or null. */
   maxDrawdown: number | null;
   /** Peak utilisation observed per cap group (max over rows), decimals. */
@@ -433,7 +456,13 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
   const ddAbs = isNum(inp.maxDrawdown) ? Math.abs(inp.maxDrawdown) : null;
   const netAbs = isNum(inp.netExposure) ? Math.abs(inp.netExposure) : null;
   const grossAbs = isNum(inp.grossExposure) ? Math.abs(inp.grossExposure) : null;
-  const betaAbs = enough("beta_abs") && isNum(inp.beta) ? Math.abs(inp.beta) : null;
+  // The book's OWN market beta when the run carries one, the lens-less realised
+  // regression otherwise. `enough()` gates only the fallback — see `bookBetaMkt`.
+  const ownBeta = isNum(inp.bookBetaMkt) ? Math.abs(inp.bookBetaMkt) : null;
+  const regressionBeta =
+    enough("beta_abs") && isNum(inp.beta) ? Math.abs(inp.beta) : null;
+  const betaFromBook = ownBeta !== null;
+  const betaAbs = ownBeta ?? regressionBeta;
 
   const defs: Array<{
     def: LimitDef;
@@ -505,11 +534,29 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
       limitKey: "beta_abs",
       def: {
         key: "beta",
-        label: "Beta to SPX (|β|)",
+        // "Market beta", not "Beta to SPX". The two sources measure against
+        // different benchmarks — the regression is on `benchmark_returns`, the
+        // factor beta on Ken French's MKT-RF (the CRSP value-weighted market, not
+        // the S&P) — so a label naming one index is false whenever the other is
+        // read. `MandatePanel`'s entry for this limit is renamed with it: the two
+        // cards sit 24px apart and must not name one limit two ways.
+        label: "Market beta (|β|)",
         unit: "ratio",
         limitSource: "house_default",
-        note: "Absolute market beta. A long-short mandate targets near-neutral; large |β| is directional drift. From portfolio_risk.beta.",
-        source: "portfolio_risk.beta",
+        // The note says WHICH beta, because they are different quantities and
+        // ADR-0063 is the record of what happens when a surface lets a reader
+        // assume otherwise.
+        note: betaFromBook
+          ? "Absolute market beta. A long-short mandate targets near-neutral; large |β| is directional drift. This book's OWN beta: value-weighted MKT-RF loading over the sized positions × the gross those loadings cover. Ex-ante, from each holding's 252-day regression, so it needs no return history and is knowable on day one (ADR-0063)."
+          // METHOD only, no lens clause. Whose book this is belongs to the scope
+          // tag, which renders only under a non-default lens; saying it here would
+          // put "the multi-asset book's whatever lens is selected" into a title on
+          // the DEFAULT page, where there is no other book in view. Caught by
+          // `lens-scope-rows.test.tsx`'s byte-for-byte default-lens assertion.
+          : "Absolute market beta. A long-short mandate targets near-neutral; large |β| is directional drift. Realised regression of the book's own returns on the benchmark, from portfolio_risk.beta — withheld below 60 sessions.",
+        source: betaFromBook
+          ? "book_metrics.factor_tilts.beta_mkt × book_metrics.factor_covered_gross"
+          : "portfolio_risk.beta",
       },
     },
     {

@@ -117,6 +117,103 @@ def test_book_metrics_ignores_low_r2_assets():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# factor_covered_gross — the denominator the tilts were divided by (ADR-0212)
+#
+# Each book_beta_* is Σ(signed_w × β) / Σ|w|, a tilt PER UNIT OF COVERED GROSS.
+# The book's actual factor beta is the un-normalised Σ(signed_w × β) — the quantity
+# ADR-0063 names and the only one a |β| <= 0.50 mandate limit can mean. Persisting
+# the denominator is what makes the division reversible, so these tests are about
+# one property: tilt × factor_covered_gross == the un-normalised sum.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_factor_covered_gross_recovers_the_unnormalised_sum():
+    picks = [_pick("SPY", "long", 0.50), _pick("TLT", "short", 0.50)]
+    factor_exp = {
+        "SPY": _fe(r2=0.80, beta_mkt=1.0, beta_hml=0.1),
+        "TLT": _fe(r2=0.60, beta_mkt=-0.30, beta_hml=0.4),
+    }
+    bm = compute_book_metrics(picks, factor_exp, 100_000_000.0)
+    # Both picks clear r², so the covered gross IS the gross: 0.5 + 0.5.
+    assert abs(bm.factor_covered_gross - 1.0) < 1e-9
+    # Σ(signed_w × β_mkt) = (+0.5·1.0) + (−0.5·−0.30) = 0.65, and with a denominator
+    # of exactly 1.0 the tilt and the sum coincide. That is the degenerate case, which
+    # is why the test below uses one where they do NOT.
+    assert abs(bm.book_beta_mkt * bm.factor_covered_gross - 0.65) < 1e-9
+    assert abs(bm.book_beta_hml * bm.factor_covered_gross - (-0.15)) < 1e-9
+
+
+def test_the_tilt_is_not_the_books_beta_when_gross_is_not_one():
+    # THE CASE THAT MOTIVATED THE FIELD. A half-deployed book: the tilt reads 1.0
+    # while the book's actual market beta is 0.50. Reading the tilt against a
+    # |β| <= 0.50 limit would publish this book at exactly 2x its directionality —
+    # measured live on 2026-07-30, the credit book's MKT-RF tilt was +0.24 at 50%
+    # gross, a true beta of +0.12.
+    picks = [_pick("SPY", "long", 0.50)]
+    factor_exp = {"SPY": _fe(r2=0.80, beta_mkt=1.0)}
+    bm = compute_book_metrics(picks, factor_exp, 100_000_000.0)
+
+    assert abs(bm.book_beta_mkt - 1.0) < 1e-9          # the tilt
+    assert abs(bm.factor_covered_gross - 0.50) < 1e-9  # the denominator
+    assert abs(bm.book_beta_mkt * bm.factor_covered_gross - 0.50) < 1e-9  # the beta
+    # And the two are genuinely different numbers, so a consumer cannot use one for
+    # the other by accident and still pass.
+    assert bm.book_beta_mkt != pytest.approx(bm.book_beta_mkt * bm.factor_covered_gross)
+
+
+def test_factor_covered_gross_is_the_covered_sleeve_not_the_whole_book():
+    # The r² < 0.10 exclusion makes coverage differ from gross, which is the reason
+    # this cannot be derived as `tilt × gross_exposure` in a consumer. BULL is half
+    # the book and contributes nothing.
+    picks = [_pick("SPY", "long", 0.50), _pick("BULL", "long", 0.50)]
+    factor_exp = {
+        "SPY": _fe(r2=0.80, beta_mkt=1.0),
+        "BULL": _fe(r2=0.05, beta_mkt=5.0),
+    }
+    bm = compute_book_metrics(picks, factor_exp, 100_000_000.0)
+    assert abs(bm.gross_exposure - 1.0) < 1e-9            # the whole book
+    assert abs(bm.factor_covered_gross - 0.50) < 1e-9     # the covered half
+    assert bm.factor_covered_gross < bm.gross_exposure
+    # Using gross here would give 1.0 — double the book's real 0.50 market beta.
+    assert abs(bm.book_beta_mkt * bm.factor_covered_gross - 0.50) < 1e-9
+    assert abs(bm.book_beta_mkt * bm.gross_exposure - 1.0) < 1e-9
+
+
+def test_factor_covered_gross_is_zero_when_nothing_clears_the_r2_floor():
+    # 0.0 is why a consumer must gate on `> 0` rather than on numeric-ness: the tilt
+    # is also 0.0 here, and `0.0 × 0.0` would publish a confident "perfectly
+    # market-neutral" book from a run that measured nothing at all.
+    picks = [_pick("BULL", "long", 0.50)]
+    bm = compute_book_metrics(picks, {"BULL": _fe(r2=0.01, beta_mkt=5.0)}, 100_000_000.0)
+    assert bm.factor_covered_gross == 0.0
+    assert bm.book_beta_mkt == 0.0
+
+
+def test_book_metrics_to_dict_carries_the_denominator():
+    # A consumer reads the payload, not the dataclass. A field computed and not
+    # serialised is a field that does not exist.
+    picks = [_pick("SPY", "long", 0.50)]
+    bm = compute_book_metrics(picks, {"SPY": _fe(r2=0.80, beta_mkt=1.0)}, 100_000_000.0)
+    d = book_metrics_to_dict(bm)
+    assert "factor_covered_gross" in d
+    assert abs(d["factor_covered_gross"] - 0.50) < 1e-9
+    # And it travels beside the tilts it is the denominator for, so the two cannot
+    # be read from different runs.
+    assert abs(d["factor_tilts"]["beta_mkt"] * d["factor_covered_gross"] - 0.50) < 1e-9
+
+
+def test_computed_is_not_a_has_a_beta_flag_and_the_denominator_is():
+    # `computed` is True for an EMPTY book (see test_book_metrics_empty_picks): it
+    # means the function ran, not that anything was measured. So a consumer that
+    # gates a beta on `computed` alone reads 0.0 × 0.0 and publishes a confident
+    # "perfectly market-neutral" book from a run with no positions in it.
+    # `factor_covered_gross > 0` is the check that actually holds.
+    bm = compute_book_metrics([], {}, 100_000_000.0)
+    assert bm.computed is True
+    assert bm.factor_covered_gross == 0.0
+    assert bm.book_beta_mkt == 0.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Cap enforcement
 # ─────────────────────────────────────────────────────────────────────────────
 

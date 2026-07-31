@@ -238,6 +238,31 @@ class BookMetrics:
     # no safety. 0.0 is the not-computed sentinel: a real HHI over a non-empty book is
     # at least 10000/N, so it can never legitimately be zero.
     concentration_hhi: float = 0.0
+    # The DENOMINATOR the six tilts above were divided by: sum of |weight| over the
+    # picks whose betas cleared r² >= 0.10. Defaulted and last for the same reason as
+    # concentration_hhi.
+    #
+    # WHY THIS HAS TO BE PERSISTED. Each `book_beta_*` is
+    # `Σ(signed_w × β) / Σ|w|` — a tilt PER UNIT OF COVERED GROSS, not the book's
+    # beta. The book's beta is the un-normalised `Σ(signed_w × β)`, which is the
+    # quantity ADR-0063 names ("the book's net factor beta is −0.0355:
+    # Σ signed_weight × β_mkt") and the only one a |β| <= 0.50 mandate limit can
+    # mean. Measured live 2026-07-30: the credit book's MKT-RF tilt is +0.24 at 50%
+    # gross, so its market beta is +0.12 — reading the tilt against that limit would
+    # publish the book at 2x its actual directionality.
+    #
+    # Persisting the denominator rather than a second copy of the numerator makes the
+    # division reversible for ALL SIX factors from one number, and it cannot drift
+    # from the tilts the way a parallel set of fields could.
+    #
+    # NOT `gross_exposure`, which is the whole book. This sums only the covered
+    # sleeve, so `factor_covered_gross / gross_exposure` is the share of the book the
+    # tilts actually describe — coverage that was previously invisible.
+    #
+    # 0.0 means NO pick cleared the r² floor. A consumer must gate on `> 0` rather
+    # than on numeric-ness: multiplying a tilt by a zero denominator yields 0.0, which
+    # would publish a fabricated "perfectly market-neutral" book.
+    factor_covered_gross: float = 0.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -380,6 +405,9 @@ def compute_book_metrics(
         weight_violations=weight_violations,
         high_correlation_pairs=[],   # filled by compute_correlation_matrix
         concentration_hhi=hhi,
+        # The denominator the six tilts above were divided by, so a consumer can
+        # recover the un-normalised Σ(signed_w × β) a |β| limit is actually about.
+        factor_covered_gross=total_weighted,
         computed=True,
     )
 
@@ -742,6 +770,13 @@ def book_metrics_to_dict(bm: BookMetrics) -> dict:
         # here rather than added to portfolio_risk because that table is deliberately
         # single-book, and a second book must not write into the first book's record.
         "concentration_hhi": bm.concentration_hhi,
+        # The tilts above are per unit of COVERED GROSS. This is that gross, so a
+        # consumer can recover the book's actual factor beta — `tilt × this` — which
+        # is the un-normalised Σ(signed_w × β) of ADR-0063 and the only quantity a
+        # |β| <= 0.50 mandate limit can mean. Without it the risk board has to either
+        # measure a tilt against a portfolio-beta limit (the credit book reads +0.24
+        # against a true +0.12) or keep borrowing the lens-less realised regression.
+        "factor_covered_gross": bm.factor_covered_gross,
     }
 
 

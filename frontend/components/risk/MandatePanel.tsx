@@ -135,7 +135,11 @@ const MONITORED_ROWS: Row[] = [
   { key: "cvar_95_pct", label: "CVaR 95%", note: "The tail beyond VaR.", value: MONITORED.cvar_95_pct.value, configKey: MONITORED.cvar_95_pct.configKey },
   { key: "max_drawdown_pct", label: "Max drawdown", note: "Peak-to-trough on the realised curve.", value: MONITORED.max_drawdown_pct.value, configKey: MONITORED.max_drawdown_pct.configKey },
   { key: "net_exposure_pct", label: "Net exposure", note: "Long − short. Nothing in the sizer targets this.", value: MONITORED.net_exposure_pct.value, configKey: MONITORED.net_exposure_pct.configKey },
-  { key: "beta_abs", label: "|Beta| to SPX", note: "Nothing in the sizer targets this either.", value: MONITORED.beta_abs.value, configKey: MONITORED.beta_abs.configKey },
+  // "Market beta", not "to SPX": the board beside this card measures the limit
+  // against Ken French's MKT-RF when the run carries the book's own factor beta,
+  // and against a `benchmark_returns` regression when it falls back. Naming one
+  // index here would contradict the card 24px to the right half the time.
+  { key: "beta_abs", label: "|Market beta|", note: "Nothing in the sizer targets this either.", value: MONITORED.beta_abs.value, configKey: MONITORED.beta_abs.configKey },
   { key: "hhi", label: "Concentration (HHI)", note: "Herfindahl on the 0–10 000 scale; 2 000 ≈ five equal names.", value: MONITORED.hhi.value, configKey: MONITORED.hhi.configKey },
 ];
 

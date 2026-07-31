@@ -986,6 +986,29 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
     return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
   }, [bookMetrics]);
 
+  // This book's own market beta, or null when the run predates `factor_covered_gross`
+  // (ADR-0212) — in which case the board falls back to the lens-less regression.
+  //
+  // `> 0` on the DENOMINATOR, not just `isNum`. Zero means no pick cleared the r²
+  // floor, and `tilt × 0` is 0.0 — a fabricated "perfectly market-neutral" book,
+  // which against a |β| ≤ 0.50 limit would stamp a confident OK on nothing at all.
+  // The tilt itself is NOT gated that way: 0.0 is a legitimate beta, so ADR-0208's
+  // HHI sentinel trick does not transfer here (ADR-0208 said so in as many words).
+  //
+  // AND `computed` IS NOT ENOUGH ON ITS OWN. It is True for an EMPTY book — it means
+  // `compute_book_metrics` ran, not that it measured anything
+  // (`test_computed_is_not_a_has_a_beta_flag_and_the_denominator_is`). It is checked
+  // first only to reject the agent's placeholder; the denominator is what actually
+  // holds the line.
+  const lensBookBeta = useMemo<number | null>(() => {
+    if (bookMetrics?.computed !== true) return null;
+    const tilt = bookMetrics?.factor_tilts?.beta_mkt;
+    const covered = bookMetrics?.factor_covered_gross;
+    if (!isNum(tilt)) return null;
+    if (!isNum(covered) || covered <= 0) return null;
+    return tilt * covered;
+  }, [bookMetrics]);
+
   const cfgMap = useMemo(() => configMap(data.config), [data.config]);
   const factorMap = useMemo(() => factorsByAsset(data.factors), [data.factors]);
 
@@ -1011,6 +1034,9 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       var95Usd: data.risk?.var_95 ?? null,
       cvar95Usd: data.risk?.cvar_95 ?? null,
       beta: data.risk?.beta ?? null,
+      // This book's own beta when the run computed one, the lens-less regression
+      // otherwise. Ungated by session count on purpose — see `bookBetaMkt`.
+      bookBetaMkt: lensBookBeta,
       // The book's OWN concentration when it has one, the lens-less table otherwise.
       //
       // `portfolio_risk.concentration_hhi` has no lens column (ADR-0194), so this row
@@ -1046,7 +1072,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       shortSideAvailable,
     };
     return buildLimitBoard(inputs);
-  }, [cfgMap, data.risk, data.returns.length, bookMetrics, lensHhi, drawdown, capData, data.analyticsRow]);
+  }, [cfgMap, data.risk, data.returns.length, bookMetrics, lensHhi, lensBookBeta, drawdown, capData, data.analyticsRow]);
 
   const limitCoverageNote = useMemo(() => {
     const missing: string[] = [];

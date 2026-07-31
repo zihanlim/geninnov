@@ -54,13 +54,26 @@ const INPUTS: LimitBoardInputs = {
   realisedTurnover: 0.09,
 };
 
-/** The lens-less half, by the source string each row prints under itself. */
+/**
+ * The lens-less half, by the source string each row prints under itself.
+ *
+ * `portfolio_risk.beta` is here because the fixture below carries no
+ * `bookBetaMkt` — the beta row falls back to the lens-less regression on a run
+ * predating `factor_covered_gross` (ADR-0212). The run that DOES carry one moves
+ * this row to the book side; `BETA_SOURCES` below pins both directions.
+ */
 const PUBLISHED_SOURCES = [
   "portfolio_risk.var_95 / total_capital",
   "portfolio_risk.cvar_95 / total_capital",
   "portfolio_returns.cumulative_return",
   "portfolio_risk.beta",
 ];
+
+/** The beta row's two possible sources — which one is read is a per-run fact. */
+const BETA_SOURCES = {
+  book: "book_metrics.factor_tilts.beta_mkt × book_metrics.factor_covered_gross",
+  published: "portfolio_risk.beta",
+};
 
 /** The lens-following half — JSONB fields of `research_recommendations`. */
 const BOOK_SOURCES = [
@@ -183,6 +196,60 @@ describe("the live board's rows are all classified", () => {
       expect(live, `board no longer builds "${s}"`).toContain(s);
       expect(sourceProvenance(s), s).toBe("book");
     }
+  });
+});
+
+describe("the beta row prefers this book's own beta (ADR-0212)", () => {
+  const betaRow = (extra: Partial<LimitBoardInputs> = {}) =>
+    rowsFor(extra).find((r) => r.key === "beta")!;
+
+  it("reads the lens-following factor beta when the run carries one", () => {
+    const row = betaRow({ bookBetaMkt: 0.12 });
+    expect(row.source).toBe(BETA_SOURCES.book);
+    expect(row.value).toBeCloseTo(0.12, 10);
+    expect(sourceProvenance(row.source)).toBe("book");
+  });
+
+  it("falls back to the lens-less regression on a run that has none", () => {
+    const row = betaRow();
+    expect(row.source).toBe(BETA_SOURCES.published);
+    expect(sourceProvenance(row.source)).toBe("published");
+  });
+
+  it("is NOT withheld on a short sample, unlike the regression it replaces", () => {
+    // ADR-0063 ruled on exactly this quantity: "it needs no return history and is
+    // knowable on day one. Gating it would replace a real number with a blank."
+    // Two sessions is far below MIN_SESSIONS.beta_abs (60).
+    const short = betaRow({ bookBetaMkt: 0.12, returnSessions: 2 });
+    expect(short.value).toBeCloseTo(0.12, 10);
+    expect(short.status).not.toBe("unknown");
+
+    // ...while the 60-session floor still governs the fallback, which is a
+    // realised estimate and does need the sample.
+    const fallback = betaRow({ returnSessions: 2 });
+    expect(fallback.value).toBeNull();
+    expect(fallback.status).toBe("unknown");
+  });
+
+  it("takes the absolute value, since the limit is on |β|", () => {
+    // A net-short book's beta is negative and is no less directional for it.
+    expect(betaRow({ bookBetaMkt: -0.44 }).value).toBeCloseTo(0.44, 10);
+  });
+
+  it("names neither benchmark in the label, because the two sources differ", () => {
+    // The regression is on `benchmark_returns`; the factor beta is on Ken French's
+    // MKT-RF. A label saying "SPX" is false whenever the other one is read.
+    for (const row of [betaRow(), betaRow({ bookBetaMkt: 0.12 })]) {
+      expect(row.label).toBe("Market beta (|β|)");
+      expect(row.label).not.toMatch(/SPX/);
+    }
+  });
+
+  it("says in the note WHICH beta it read — they are different quantities", () => {
+    // ADR-0063 is the record of what happens when a surface lets a reader assume
+    // the two reconcile: a panel promised it and the check failed 40×.
+    expect(betaRow({ bookBetaMkt: 0.12 }).note).toMatch(/own beta/i);
+    expect(betaRow().note).toMatch(/realised regression/i);
   });
 });
 

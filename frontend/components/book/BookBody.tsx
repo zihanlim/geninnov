@@ -1234,6 +1234,9 @@ function BookPageInner() {
               <PositionSection
                 lens={lens}
                 title="Longs"
+                cellClassName={
+                  openAsset?.startsWith("Longs-") ? "wide:col-span-2" : ""
+                }
                 glyph="▲"
                 color="var(--long)"
                 picks={longs}
@@ -1258,6 +1261,9 @@ function BookPageInner() {
               <PositionSection
                 lens={lens}
                 title="Shorts"
+                cellClassName={
+                  openAsset?.startsWith("Shorts-") ? "wide:col-span-2" : ""
+                }
                 glyph="▼"
                 color="var(--short)"
                 picks={shorts}
@@ -1713,6 +1719,7 @@ function PositionSection({
   emptySeverity,
   clearedByHeldAsset,
   lens,
+  cellClassName,
 }: {
   title: string;
   glyph: string;
@@ -1745,9 +1752,12 @@ function PositionSection({
   /** Carried only so `PositionRow`'s one outbound /risk link keeps the
    *  reader on the book they are reading. */
   lens?: string | null;
+  /** Grid-cell classes from the parent — used to let the section holding the
+   *  OPEN row span both columns. See the call sites. */
+  cellClassName?: string;
 }) {
   return (
-    <section className="mb-6">
+    <section className={`mb-6 ${cellClassName ?? ""}`}>
       <h2 className="text-[16px] font-semibold m-0 mb-3 flex items-center gap-2">
         <span style={{ color }}>{glyph}</span> {title}
         <span className="text-text-tertiary text-[12px] font-normal">

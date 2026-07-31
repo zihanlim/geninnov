@@ -57,6 +57,19 @@ export interface SideIdeas {
 }
 
 export interface FunnelInputs {
+  /**
+   * The raw L1 pool from `trade_candidates`, for the first node's long/short
+   * split. Optional: the chain is complete without it.
+   *
+   * `trade_candidates` has NO lens column — L1 ranks names before a lens is
+   * chosen, so every lens screens the same rows. That is exactly why the split
+   * is worth drawing: on 2026-07-30 the shared pool was 29 long / 13 short, and
+   * the credit lens left 11 long and ZERO short. Every short candidate that
+   * existed was outside the credit universe, which is the measured form of the
+   * published thesis's own sentence that a long/short structure is not
+   * constructible from this screen.
+   */
+  candidates?: Array<{ asset?: string | null; direction?: string | null }> | null;
   screeningFunnel?: ScreeningStage[] | null;
   independentIdeas?: Partial<Record<"long" | "short", SideIdeas>> | null;
   /** The agent's chosen book, signed, pre-optimizer (ADR-0107). */
@@ -231,6 +244,17 @@ export function buildBookFunnel(inp: FunnelInputs): BookFunnel {
   const chosen = splitSigned(inp.heuristicWeights);
   const published = splitPicks(inp.picks);
 
+  // The raw pool's own long/short split, used only if it describes the SAME pool
+  // the funnel counts. `trade_candidates` is read on its own latest run_date and
+  // the book row on its own; a split from one vintage under a total from another
+  // is two books on one line, which is the failure this whole panel exists to
+  // stop. Equality of counts is the cheapest honest check available here.
+  const rawCandidates = inp.candidates?.length ? splitPicks(inp.candidates) : null;
+  const rawSplit =
+    rawCandidates && bounds.first !== null && rawCandidates.total === bounds.first
+      ? rawCandidates
+      : null;
+
   if (published.total === 0) {
     return {
       available: false,
@@ -259,15 +283,19 @@ export function buildBookFunnel(inp: FunnelInputs): BookFunnel {
     {
       id: "screen",
       label: "L1 screen",
-      // No side split at this stage, and that is a fact about the data rather
-      // than a gap to fill: the long/short breakdown of the raw pool lives in
-      // `trade_candidates`, which this page does not read. Showing 0/0 here
-      // would claim the screen found no shorts.
-      long: null,
-      short: null,
+      // Split shown ONLY when the candidate rows agree with the funnel's own
+      // count. `trade_candidates` is read on its own latest run_date and the
+      // book on its own; those are normally the same day and occasionally are
+      // not, and a split taken from a different vintage than the total above it
+      // is the two-books-on-one-line failure in miniature. Disagree -> no split,
+      // which costs a detail; assert it anyway -> a wrong one.
+      long: rawSplit ? rawSplit.long : null,
+      short: rawSplit ? rawSplit.short : null,
       total: bounds.first,
       unit: "candidates",
-      source: "research_recommendations.screening_funnel",
+      source: rawSplit
+        ? "research_recommendations.screening_funnel + trade_candidates.direction"
+        : "research_recommendations.screening_funnel",
       cause:
         bounds.first === null
           ? "screening_funnel is absent on this row -- it is populated from migration 022 onward."
@@ -345,7 +373,20 @@ export function buildBookFunnel(inp: FunnelInputs): BookFunnel {
             .map((s) =>
               s.reason ? `${s.stage} (−${s.removed}): ${s.reason}` : `${s.stage}: −${s.removed}`,
             )
-            .join(" "),
+            .join(" ") +
+          // The side arithmetic across this edge, when both ends carry a split.
+          // On the credit lens it is the whole argument: 13 shorts in, 0 out, so
+          // the universe -- not the screen and not the agent -- is what makes a
+          // long/short credit book unconstructible. Stated only when it is TRUE
+          // that a side was emptied; a generic "x long and y short remain" every
+          // day would bury the one day it matters.
+          (rawSplit !== null && ctxLong !== null && ctxShort !== null
+            ? ` Of ${rawSplit.long} long and ${rawSplit.short} short candidates, ` +
+              `${ctxLong} long and ${ctxShort} short survive` +
+              (rawSplit.short > 0 && ctxShort === 0
+                ? " — every short candidate in the pool is outside this lens, so a long/short book is not constructible from it."
+                : ".")
+            : ""),
   });
 
   // Correlated names collapsing into one idea. This edge removes NOTHING from

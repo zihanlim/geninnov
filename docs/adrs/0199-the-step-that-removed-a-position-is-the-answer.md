@@ -110,3 +110,36 @@ than the only option — it had been answering "which position is most interesti
   with no split rather than a fabricated one. The 29/13 skew is genuinely interesting —
   the raw pool was more than twice as long as short — and surfacing it needs a decision
   about whether `/book` should read a second table.
+
+## Correction, 2026-07-31 (same day, appended not rewritten)
+
+**The last consequence above is wrong on its facts.** `BookBody` has read
+`trade_candidates` for some time — `asset, direction, edge_score, theme_id, run_date,
+via_conviction`, filtered to the latest candidate `run_date`, limit 200 — because
+`ClearedNotTaken` needs it. The split was available the whole time and needed no new
+query and no decision about reading a second table. I asserted a limitation instead of
+checking for one, which is the same class of error as the "context cap" mislabel this
+ADR's own fix commit records.
+
+The split now renders on the first node, guarded: it is shown **only** when the
+candidate row count equals the funnel's own first `remaining`. `trade_candidates` is
+read on its own latest `run_date` and the book row on its own; those are normally the
+same day and occasionally are not, and a split taken from one vintage sitting under a
+total from another is two books on one line — the failure this whole panel exists to
+stop, reproduced inside it. On disagreement the split is absent, which costs a detail;
+asserting it anyway would cost a true one.
+
+What it buys is the credit lens's central fact, measured rather than argued. The shared
+L1 pool on 2026-07-30 is **29 long / 13 short**, and after `lens = credit` **11 long and
+0 short** survive — so the edge now reads *"every short candidate in the pool is outside
+this lens, so a long/short book is not constructible from it."* That sentence is stated
+only when a side is genuinely emptied; on the multi-asset lens the same edge reports
+"19 long and 11 short survive" and stops. A line that appears every day cannot mean
+anything on the day it does.
+
+This also settles a question the original text left open — whether both lenses start
+from the same pool. They do, and necessarily: `trade_candidates` has no lens column, L1
+ranks names before a lens is chosen, and the lens is a filter applied downstream inside
+`screen_candidates`. Both books' funnels therefore open at 42 and diverge at the second
+node. See [ADR-0200](0200-a-candidate-the-lens-removed-is-not-a-candidate-the-book-declined.md),
+written concurrently, for what goes wrong when a panel forgets that.

@@ -1233,6 +1233,13 @@ function BookPageInner() {
                   else on the page would make that click a jump. */}
               <BookFunnel
                 inputs={{
+                  // The raw L1 pool, for the first node's long/short split.
+                  // Deliberately the UNFILTERED `candidates`, not `lensCandidates`:
+                  // this node IS the shared pool every lens screens, and the next
+                  // edge is where the lens removes from it. Passing the filtered
+                  // list would make the first node agree with the second and
+                  // delete the very step the panel is drawing.
+                  candidates,
                   screeningFunnel: rec.screening_funnel ?? null,
                   independentIdeas: rec.independent_ideas ?? null,
                   heuristicWeights: rec.heuristic_weights ?? null,

@@ -338,6 +338,58 @@ describe("buildBookFunnel — the credit lens narrows at a different step", () =
   });
 });
 
+// The raw L1 pool is SHARED: `trade_candidates` has no lens column, so L1 ranks
+// names before a lens is chosen and both books screen the same 42 rows. On
+// 2026-07-30 that pool was 29 long / 13 short.
+const RAW42 = [
+  ...Array.from({ length: 29 }, (_, i) => ({ asset: `L${i}`, direction: "long" })),
+  ...Array.from({ length: 13 }, (_, i) => ({ asset: `S${i}`, direction: "short" })),
+];
+
+describe("the first node's split, and what the lens does to it", () => {
+  it("carries 29L/13S when the candidate rows match the funnel's own count", () => {
+    const f = buildBookFunnel({ ...LIVE, candidates: RAW42 });
+    const screen = f.nodes.find((n) => n.id === "screen");
+    expect(screen).toMatchObject({ total: 42, long: 29, short: 13 });
+    expect(screen?.source).toContain("trade_candidates.direction");
+  });
+
+  it("REFUSES the split when the candidate rows describe a different pool", () => {
+    // trade_candidates is read on its own latest run_date and the book on its
+    // own. A split from one vintage under a total from another is two books on
+    // one line -- the failure this panel exists to stop, reproduced inside it.
+    const f = buildBookFunnel({ ...LIVE, candidates: RAW42.slice(0, 20) });
+    const screen = f.nodes.find((n) => n.id === "screen");
+    expect(screen?.long).toBeNull();
+    expect(screen?.short).toBeNull();
+    expect(screen?.source).not.toContain("trade_candidates");
+  });
+
+  it("says a long/short book is not constructible when the lens empties a side", () => {
+    // The credit argument, measured: 13 shorts in the shared pool, 0 survive.
+    const f = buildBookFunnel({ ...CREDIT, candidates: RAW42 });
+    const lensEdge = f.edges.find((e) => e.to === "context");
+    expect(lensEdge?.detail).toContain("29 long and 13 short candidates");
+    expect(lensEdge?.detail).toContain("11 long and 0 short survive");
+    expect(lensEdge?.detail).toContain("not constructible");
+  });
+
+  it("does NOT say it when both sides survive", () => {
+    // The multi-asset lens removes nothing, so the sentence would be noise --
+    // and a line that appears every day cannot mean anything on the day it does.
+    const f = buildBookFunnel({ ...LIVE, candidates: RAW42 });
+    const edge = f.edges.find((e) => e.to === "context");
+    expect(edge?.detail).not.toContain("not constructible");
+    expect(edge?.detail).toContain("19 long and 11 short survive");
+  });
+
+  it("omits the split entirely when no candidate rows are supplied", () => {
+    const screen = buildBookFunnel(LIVE).nodes.find((n) => n.id === "screen");
+    expect(screen?.long).toBeNull();
+    expect(screen?.total).toBe(42);
+  });
+});
+
 describe("splitPicks", () => {
   it("ignores rows with no asset rather than counting them", () => {
     const s = splitPicks([

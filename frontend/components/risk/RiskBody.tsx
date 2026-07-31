@@ -20,10 +20,50 @@
 //      rejected select is how three production defects stayed invisible.
 //   2. The risk metric grid always renders. A grid that disappears when its row
 //      is missing looks like an absence of risk rather than an absence of data.
+//
+// THE LENS (`?lens=credit`) — /mandate and /risk only
+// ---------------------------------------------------
+// Migration 062 re-keyed `research_recommendations` on (run_date, lens), so one
+// run_date now carries both the multi-asset book and the credit-lens book. The
+// two reads of that table below follow the lens the URL asks for, resolved by
+// exactly the plumbing /book uses. The other ~10 reads CANNOT: migration 062
+// deliberately gave no lens column to `portfolio_risk`, `portfolio_returns`,
+// `portfolio_positions`, `portfolio_cumulative_return`,
+// `book_holdings_performance`, `pick_outcomes` or `benchmark_returns` —
+// ADR-0194, because a second book must not write into the first book's record.
+//
+// That split is the whole hazard, and it is why this is not a one-line change.
+// Swap the lens with nothing said on screen and a reader gets the credit book's
+// stress table beside the multi-asset book's VaR headline and drawdown curve:
+// ADR-0084's failure — one page describing two books — and strictly worse than
+// the honest hardcoded pin it replaces. So `lib/risk/lensScope.ts` owns the
+// boundary, `components/risk/LensScope.tsx` states it, and every figure sourced
+// from a lens-less table is marked whenever the active lens is not multi_asset.
+//
+// UNDER THE DEFAULT LENS NOTHING HERE RENDERS. `resolveLens(null, …)` is
+// multi_asset, `showScopeNote` returns false for every panel at multi_asset,
+// and both LensScope exports return null there as well — so a URL with no
+// `?lens=` produces the same two queries and the same markup as the version
+// before any of this existed. The one visible addition is the selector itself,
+// and only on a day when a second lens actually published a book: a feature
+// with no control is not reachable, and a control that can offer nothing is not
+// rendered.
 
 "use client";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import LensSelector, { type Lens } from "@/components/LensSelector";
+import { resolveLens } from "@/lib/book/lensView";
+// DEFAULT_LENS comes from lensProbe, which re-exports lensView's own binding.
+// Same value, one import: the fallback a caller reaches for when discovery
+// returns an empty lens list arrives beside the list it is a fallback for.
+import { DEFAULT_LENS, fetchLensesForLatestRun } from "@/lib/book/lensProbe";
+import { LensScopeBanner, LensScopeChip } from "@/components/risk/LensScope";
+// `panelLabel` is deliberately NOT imported: this file passes panel KEYS to the
+// banner, which needs each panel's scope as well as its name and resolves both
+// from the one module that knows them.
+import { lensLessPanels, showScopeNote } from "@/lib/risk/lensScope";
 import { StressScenarios } from "@/components/risk/StressScenarios";
 import { PositioningCrowding } from "@/components/risk/PositioningCrowding";
 import { SanctionsExposure } from "@/components/risk/SanctionsExposure";
@@ -50,6 +90,8 @@ import { AttentionCrowding } from "@/components/risk/AttentionCrowding";
 import {
   PositionRiskScatter,
   RiskContributionWaterfall,
+  SCATTER_MIN_POINTS,
+  positionRiskScatterPoints,
 } from "@/components/risk/RiskCharts";
 import { reconcileToBook } from "@/lib/risk/bookOfRecord";
 import { WhatIfScenario } from "@/components/risk/WhatIfScenario";
@@ -132,6 +174,64 @@ const PHASE_COPY: Record<RiskPhase, { title: string; lede: string }> = {
   },
 };
 
+/**
+ * Which gate puts each `PANEL_SCOPE` panel on screen.
+ *
+ * `lensLessPanels()` names every panel in this tree that cannot follow the
+ * lens; the page banner must name only the ones the reader is actually looking
+ * at. Naming the drawdown chart on /mandate — which does not render it — would
+ * teach the boundary in the wrong shape, and a disclosure a reader can falsify
+ * by scrolling is worse than no disclosure.
+ *
+ * This map lives HERE and not in `lib/risk/lensScope.ts` on purpose. It states
+ * a fact about THIS FILE's markup (which section a panel sits in); lensScope
+ * states a fact about the database (which tables a panel reads). They rot at
+ * different rates and for different reasons, so they do not share a home.
+ *
+ * Values are either a section id for `phaseShows`, `PANEL_EVERY_PHASE` for page
+ * chrome, or `phase:<name>` for the three answer rows, which are gated on the
+ * phase directly rather than on a section id.
+ */
+const PANEL_EVERY_PHASE = "*";
+const PANEL_SECTION: Record<string, string> = {
+  // Page chrome — every phase renders these.
+  PageHeader: PANEL_EVERY_PHASE,
+  ReconciliationBanner: PANEL_EVERY_PHASE,
+  ReadErrorsBanner: PANEL_EVERY_PHASE,
+  SectionNav: PANEL_EVERY_PHASE,
+  // Answer rows — one per phase route.
+  MandateAnswerRow: "phase:mandate",
+  RiskAnswerRow: "phase:risk",
+  AttributionAnswerRow: "phase:attribution",
+  // Phase 1 — mandate & limits.
+  MandatePanel: "mandate",
+  RiskLimitBoard: "limits",
+  CapUtilisation: "limits",
+  // Phase 2 — risk & scenario.
+  StressScenarios: "stress",
+  WhatIfScenario: "stress",
+  SanctionsExposure: "stress",
+  PositioningCrowding: "stress",
+  VarMethods: "var-methods",
+  PositionRiskScatter: "attribution",
+  RiskContributionWaterfall: "attribution",
+  PositionRiskAttribution: "attribution",
+  AttentionCrowding: "attribution",
+  CorrelationMatrix: "concentration",
+  BookFactorTilt: "exposure",
+  // Phase 3 — attribution & feedback. Pinned to multi_asset (see `lensEnabled`),
+  // so in practice nothing below is ever named or chipped; classified anyway so
+  // the map does not have a hole where a phase used to be.
+  RiskMetricsGrid: "realised",
+  TrackRecord: "realised",
+  BenchmarkComparison: "realised",
+  WeightsBacktest: "realised",
+  InceptionCaveat: "realised",
+  CostDrag: "realised",
+  DrawdownChart: "realised",
+  DailyPLHistory: "realised",
+};
+
 const ANALYTICS_COLUMNS =
   // picks: the published book, so this page can check that the positions it computes
   // risk on are the names the book actually holds (ADR-0040).
@@ -179,7 +279,21 @@ interface PageData {
   analyticsRow: ResearchAnalyticsRow | null;
   rowExists: boolean;
   runDate: string | null;
+  /** The lens the returned row CLAIMS, read back from `research_recommendations`. */
   lens: string | null;
+  /**
+   * The lens the page QUERIED. Kept apart from `lens` above deliberately: one is
+   * the request, the other is the row's own answer, and if they ever disagree
+   * that is a real defect rather than a display quirk. `lens` is what the header
+   * reports (it is what the data says it is); `resolvedLens` is what every scope
+   * disclosure below is derived from, because a banner has to describe the query
+   * that produced the page even on the run where the row came back mislabelled.
+   *
+   * Set with the rest of the payload rather than early, so the disclosures move
+   * in lockstep with the figures they describe — a banner that flips a beat
+   * before the panels beneath it is a banner describing the previous book.
+   */
+  resolvedLens: Lens;
   risk: RiskRow | null;
   /** The two most recent risk rows (newest-first) for prior-run deltas. */
   riskRows: RiskRow[];
@@ -191,6 +305,16 @@ interface PageData {
   inception: InceptionRow | null;
   /** The held book's cost-netted series (m056 / ADR-0150), for the comparison. */
   holdings: HoldingsPerformanceRow[];
+  /**
+   * The MULTI-ASSET book's pick list, whatever lens the page is on.
+   *
+   * Only ADR-0040's reconciliation check reads this, and it needs the
+   * multi-asset one specifically: the other side of that comparison is
+   * `portfolio_positions`, which has no lens column (ADR-0194). Kept apart from
+   * `analyticsRow.picks` — the ACTIVE lens's picks — because collapsing the two
+   * is precisely what made the check cross-book under a lens.
+   */
+  defaultLensPicks: ResearchAnalyticsRow["picks"];
   /** pick_outcomes at the 21-day horizon; null when the read failed. */
   outcomeRows: PickOutcomeRow[] | null;
   /** Reference series for the realised curve (ADR-0094). */
@@ -214,6 +338,10 @@ const INITIAL: PageData = {
   rowExists: false,
   runDate: null,
   lens: null,
+  // DEFAULT_LENS, not the URL's value: the first paint of a `?lens=credit` page
+  // has read nothing yet, so it must not yet claim to be showing the credit
+  // book. The banner appears with the credit figures, not ahead of them.
+  resolvedLens: DEFAULT_LENS,
   risk: null,
   riskRows: [],
   riskFailure: null,
@@ -222,6 +350,7 @@ const INITIAL: PageData = {
   returnsFailure: null,
   inception: null,
   holdings: [],
+  defaultLensPicks: null,
   outcomeRows: null,
   benchmark: [],
   positions: [],
@@ -233,6 +362,30 @@ const INITIAL: PageData = {
   crowding: {},
   crowdingFailure: null,
 };
+
+/**
+ * A panel's "still the multi-asset book" marker, or nothing at all.
+ *
+ * One line at a call site, and the gate cannot be forgotten: `showScopeNote`
+ * returns false for EVERY panel at multi_asset, so under the default lens this
+ * renders null and the extra DOM node never reaches the eight cards that would
+ * otherwise carry one. (`LensScopeChip` re-checks the lens itself; that is its
+ * own invariant, not a reason to skip this one.)
+ *
+ * Left-aligned rather than right. `PositionRiskScatter`'s marker sits above a
+ * two-column grid whose FIRST cell is the panel being marked, so a left edge
+ * puts the chip over the card it describes at every breakpoint; right-aligned
+ * it would float above the waterfall beside it, which has a different scope and
+ * needs no marker at all.
+ */
+function ScopeNote({ lens, panel }: { lens: string; panel: string }) {
+  if (!showScopeNote(lens, panel)) return null;
+  return (
+    <div className="mb-1.5">
+      <LensScopeChip lens={lens} panel={panel} />
+    </div>
+  );
+}
 
 export default function RiskBody({ phase }: { phase: RiskPhase }) {
   return (
@@ -252,10 +405,138 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
   const shows = (id: string) => phaseShows(phase, id);
   const [data, setData] = useState<PageData>(INITIAL);
 
+  // ── Lens (?lens=credit) ──────────────────────────────────────────────────
+  // /mandate and /risk get the same lens control /book has. /attribution does
+  // NOT, and that is a decision rather than an omission.
+  //
+  // Phase 6's question is "was the thesis right?", and it is answered from
+  // `pick_outcomes` (the forward record of published picks) and
+  // `book_holdings_performance` (the held book's cost-netted series). Migration
+  // 062 gave neither table a lens column, per ADR-0194: a second book must not
+  // write into the first book's record. There is one realised return series and
+  // one forward track record, and both belong to the multi-asset book that has
+  // published every day since inception.
+  //
+  // So a lens control on /attribution could not change a single figure on the
+  // page. It could only put the word "credit" above the multi-asset book's
+  // record — a relabelling, which is worse than not offering the control at
+  // all: it would manufacture a track record for a book that has none. The
+  // phase is pinned, the selector is not rendered, and both reads below use
+  // multi_asset. The header says so on screen (see `fine` in PageHeader) on any
+  // day a second lens exists to be confused with.
+  const lensEnabled = phase !== "attribution";
+
+  // Selection lives in the URL, exactly as on /book: a reviewer must be able to
+  // send someone /risk?lens=credit and have them land on the same page.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const requestedLens = searchParams.get("lens");
+
+  // What the toggle may offer. Starts as just the default so the control does
+  // not flash a six-lens picker before discovery answers; narrowed to whatever
+  // `research_recommendations` actually holds for today's run_date.
+  const [lensOffered, setLensOffered] = useState<Lens[]>([DEFAULT_LENS]);
+
+  // The control's own value, computed from the URL rather than held in state so
+  // a click is reflected the instant `router.push` lands, without waiting for
+  // the refetch it triggers. `data.resolvedLens` — set only when the new rows
+  // arrive — is what the DISCLOSURES read, so during that window the control
+  // shows where the reader is going and the banner still describes what is on
+  // screen. Both are right; they are answering different questions.
+  const controlLens = lensEnabled
+    ? resolveLens(requestedLens, lensOffered)
+    : DEFAULT_LENS;
+
+  const setLens = useCallback(
+    (next: Lens) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === DEFAULT_LENS) params.delete("lens");
+      else params.set("lens", next);
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
+
   useEffect(() => {
     let cancelled = false;
 
+    // Back into the loading state BEFORE anything is fetched — the same
+    // `setLoading(true); load();` BookBody does, for the same reason.
+    //
+    // Without it a lens change is silent for the whole round trip.
+    // `controlLens` is computed from the URL, so the segmented control reads
+    // "Credit Lens" the instant `router.push` lands, while `data` still holds
+    // the multi-asset payload: `loading` false and `resolvedLens` multi_asset,
+    // which is exactly the pair that makes `LensScopeBanner` and every
+    // `ScopeNote` return null. For the probe + the twelve-query Promise.all +
+    // fetchThemeHistories the reader would get the PREVIOUS book's stress
+    // matrix, correlation matrix and four-way VaR under a control naming the
+    // new one, with no skeleton, no dimming and the disclosure machinery
+    // switched off precisely because it is derived from the stale payload.
+    // That is ADR-0084's "one page, two books" with the disclosures disabled —
+    // worse than the failure on its own.
+    //
+    // The WHOLE payload, not just `loading`. Several panels read
+    // `data.analyticsRow` directly rather than through `classify`: the VaR
+    // comparison's three lens-following methods, the risk-contribution
+    // waterfall, cap headroom's complex sizing, the weights backtest, the limit
+    // board's realised turnover. A `loading` flag they never receive would
+    // leave the old book's figures drawn between the skeletons of the ones that
+    // do. INITIAL is the very object `useState` mounted with, so on the first
+    // run React compares by identity and bails out — the default page still
+    // renders exactly once.
+    setData(INITIAL);
+
     (async () => {
+      // Which lens to query, resolved BEFORE anything else is fetched. Migration
+      // 062 keyed research_recommendations on (run_date, lens), so a run_date can
+      // carry more than one book and an unfiltered read returns whichever of them
+      // Postgres orders first. `fetchLensesForLatestRun` is the one deliberately
+      // lens-unqualified read in the tree — it asks which books exist rather than
+      // fetching one — and `resolveLens` then honours `?lens=` only when that lens
+      // published a book today, so a stale link lands on the default book instead
+      // of an empty page.
+      //
+      // AWAITED ON /mandate AND /risk, NOT ON /attribution, and the asymmetry is
+      // the point. This probe sits in front of the twelve-query Promise.all
+      // below, so every page that awaits it pays a full extra round trip before
+      // its first byte of data is even requested. Two of the three pages have to:
+      // `resolved` is what their two `research_recommendations` reads are keyed
+      // by, and reading the wrong book is worse than reading it late.
+      //
+      // /attribution does not. It is pinned to multi_asset (`lensEnabled` is
+      // false), so `resolved` is a constant there and the probe's ONLY consumer
+      // is the one tertiary sentence in the header telling a reader who arrived
+      // from /risk?lens=credit that this record is the multi-asset book's. That
+      // sentence is worth saying; it is not worth delaying every figure on the
+      // page to say it. So the probe is started and left to land on its own, and
+      // the sentence appears when it does.
+      const probe = fetchLensesForLatestRun();
+      let resolved: Lens = DEFAULT_LENS;
+      let offered: Lens[] = [DEFAULT_LENS];
+      if (lensEnabled) {
+        const { lenses } = await probe;
+        offered = lenses.length ? lenses : [DEFAULT_LENS];
+        resolved = resolveLens(requestedLens, offered);
+        if (cancelled) return;
+        // NOT `setLensOffered` here, one round trip ahead of the payload: that
+        // is what made the selector pop in against a page of skeletons and push
+        // the whole body down ~54px on its own. It is set with `setData` below
+        // instead, so the control and the figures it labels arrive in the same
+        // commit and the reader sees ONE settle rather than two.
+      } else {
+        probe
+          .then(({ lenses }) => {
+            if (!cancelled && lenses.length) setLensOffered(lenses);
+          })
+          // A failed probe on /attribution costs the disambiguating sentence and
+          // nothing else. The page is pinned either way, so there is no wrong
+          // book to land on and nothing to report to the reader.
+          .catch(() => {});
+      }
+
       const [
         analyticsRes,
         baseRes,
@@ -269,25 +550,38 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         benchmarkRes,
         holdingsRes,
         outcomesRes,
-      
+        defaultPicksRes,
       ] = await Promise.all([
         // Migration 062 keyed this table on (run_date, lens): a run_date can now
-        // carry both the multi-asset and the credit-lens book. /risk, /mandate and
-        // /attribution are hardcoded to the multi-asset book by design (ADR-0194 —
-        // the credit book has no track record), so every read below is explicit
-        // about lens rather than depending on whichever row Postgres returns first.
+        // carry both the multi-asset and the credit-lens book. These two reads
+        // FOLLOW THE LENS the reader asked for — `resolved` above — while the ~10
+        // reads below them cannot, because migration 062 deliberately gave those
+        // tables no lens column (ADR-0194: a second book must not write into the
+        // first book's record). That asymmetry is disclosed on screen rather than
+        // hidden; see the LensScopeBanner and the per-panel chips.
+        //
+        // /attribution is the exception and stays pinned: `resolved` is forced to
+        // multi_asset there, because its question is answered entirely from the
+        // lens-less tables and a credit label over them would be a fabricated
+        // record rather than a filtered one.
+        //
+        // Either way the filter stays EXPLICIT. An unfiltered read here looks
+        // exactly like the single-book code that was correct for years and
+        // silently returns whichever of today's two books Postgres orders first.
         supabase
           .from("research_recommendations")
           .select(ANALYTICS_COLUMNS)
-          .eq("lens", "multi_asset")
+          .eq("lens", resolved)
           .order("run_date", { ascending: false })
           .limit(1),
         // Minimal probe: succeeds even when the migration-022 columns are absent,
         // which is what lets the UI tell "no run yet" apart from "column missing".
+        // Same lens as the analytics read above, so the two cannot disagree about
+        // which book the page is describing.
         supabase
           .from("research_recommendations")
           .select(BASE_COLUMNS)
-          .eq("lens", "multi_asset")
+          .eq("lens", resolved)
           .order("run_date", { ascending: false })
           .limit(1),
         // Two rows: the latest metrics and the prior run for signed deltas.
@@ -349,6 +643,34 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           .eq("horizon_days", 21)
           .order("run_date", { ascending: false })
           .limit(1000),
+        // The MULTI-ASSET book's pick list, pinned — the one read on this page
+        // that deliberately ignores `resolved`.
+        //
+        // ADR-0040's provisional-positions check compares `portfolio_positions`
+        // against a pick list, and `portfolio_positions` has no lens column
+        // (ADR-0194): it is always the multi-asset book. Comparing it to the
+        // ACTIVE lens's picks is therefore cross-book, reads "unreconciled" on
+        // every credit run, and the first answer to that was to suppress the
+        // alert under a non-default lens — which threw away the real mid-run
+        // warning along with the false one. The pipeline writes L1's full
+        // candidate set here at 21:30 and reconciles it to the picked book only
+        // when L5 returns, so in that window /risk?lens=credit showed ~60
+        // candidate names under chips positively asserting they ARE the
+        // multi-asset published book. Pinning the pick side makes the
+        // comparison same-book, so the alert renders under every lens and says
+        // something true.
+        //
+        // Skipped entirely under the default lens: `analyticsRes` above already
+        // IS this read there, so the default page fires the same twelve queries
+        // it fired before, in the same order.
+        resolved === DEFAULT_LENS
+          ? Promise.resolve(null)
+          : supabase
+              .from("research_recommendations")
+              .select("run_date, picks")
+              .eq("lens", DEFAULT_LENS)
+              .order("run_date", { ascending: false })
+              .limit(1),
       ]);
 
       // portfolio_risk.run_date only exists from migration 016. If ordering by it
@@ -384,6 +706,16 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       const analyticsRow =
         (analyticsRes.data?.[0] as ResearchAnalyticsRow | undefined) ?? null;
 
+      // Under the default lens the pinned read was skipped, because the
+      // analytics row above already is it. One expression, so "which picks does
+      // the reconciliation check use" has a single answer on every path.
+      const defaultLensPicks: ResearchAnalyticsRow["picks"] =
+        resolved === DEFAULT_LENS
+          ? (analyticsRow?.picks ?? null)
+          : ((defaultPicksRes?.data?.[0] as
+              | { picks?: ResearchAnalyticsRow["picks"] }
+              | undefined)?.picks ?? null);
+
       const positions = (positionsRes.data as PositionRow[] | null) ?? [];
       const themeNames: Record<string, string> = {};
       for (const t of (themesRes.data as { id: string; name: string }[] | null) ?? []) {
@@ -409,6 +741,14 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       }
 
       if (cancelled) return;
+      // The selector's options land HERE, in the same commit as the payload they
+      // label — not back at the probe, one round trip earlier. React batches the
+      // two setStates, so on /mandate and /risk the control appears at the same
+      // instant the skeletons become figures: one layout settle instead of a
+      // selector row shoving a page of skeletons down and the figures arriving
+      // after. On /attribution this is a no-op (the probe sets it on its own,
+      // late and unblocking, because nothing on that page waits for it).
+      if (lensEnabled) setLensOffered(offered);
       setData({
         loading: false,
         analyticsFailure: toFailure(
@@ -425,6 +765,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         rowExists: Boolean(analyticsRow) || Boolean(baseRow),
         runDate: analyticsRow?.run_date ?? baseRow?.run_date ?? null,
         lens: analyticsRow?.lens ?? baseRow?.lens ?? null,
+        resolvedLens: resolved,
         risk,
         riskRows,
         riskFailure,
@@ -439,6 +780,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         // Absent until migration 056 is applied and the held book has run; the
         // panel renders nothing rather than an empty frame in that case.
         holdings: (holdingsRes.data as HoldingsPerformanceRow[] | null) ?? [],
+        defaultLensPicks,
         outcomeRows: outcomesRes.error
           ? null
           : ((outcomesRes.data as PickOutcomeRow[] | null) ?? []),
@@ -461,7 +803,14 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+    // `requestedLens`, not the resolved lens: the resolved value is computed
+    // INSIDE this effect, so depending on it would be depending on its own
+    // output. requestedLens is the URL's raw ?lens= value — the actual external
+    // input — and it is `null` on every page with no lens in the URL, so the
+    // default path re-runs exactly as often as the old `[]` deps did: once.
+    // `lensEnabled` is a function of the `phase` prop and never changes for a
+    // mounted route; it is listed because it is read here, not because it moves.
+  }, [requestedLens, lensEnabled]);
 
   const source: AnalyticsSource = useMemo(
     () => ({
@@ -653,10 +1002,39 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
   );
   const prevRunDate = data.riskRows[1]?.run_date ?? null;
 
+  // Will the scatter draw anything? Asked HERE because two things above it
+  // depend on the answer — the "still the multi-asset book" marker that sits
+  // over the grid's first cell, and the page banner's list of panels the reader
+  // will find below. Both are wrong when the chart self-suppresses: the marker
+  // lands on the risk-contribution waterfall beside it, which is the panel that
+  // DOES follow the lens, and the banner names a panel that is not on the page.
+  //
+  // Under a lens that is the normal case rather than an edge one. The scatter
+  // plots held positions (lens-less) against the risk decomposition (lens
+  // following), so it needs names in BOTH; on 2026-07-30 the held book was
+  // {BABA, F, GEV, GLD, NOC, PDD, SMH, UNG, UNH} and the credit decomposition
+  // {BIL, BKLN, EMB}, an empty intersection. The predicate is imported, not
+  // rewritten: one implementation, so the chart and the disclosures cannot
+  // disagree about whether the chart exists.
+  const scatterVisible = useMemo(
+    () =>
+      positionRiskScatterPoints(
+        data.positions,
+        data.analyticsRow?.risk_decomposition ?? null,
+      ).length >= SCATTER_MIN_POINTS,
+    [data.positions, data.analyticsRow],
+  );
+
   // ADR-0040's invariant, checked rather than assumed: the names this page computes
   // risk on must be the names the book publishes.
+  //
+  // BOTH SIDES ARE THE MULTI-ASSET BOOK, under every lens. `portfolio_positions`
+  // has no lens column, so the pick side is read pinned to multi_asset (see the
+  // last entry in the Promise.all above) rather than at the active lens. A
+  // cross-book comparison here would report "provisional" on every credit run,
+  // and an alert that fires every run is one a reader learns to scroll past.
   const reconciliation = useMemo(() => {
-    const raw = data.analyticsRow?.picks;
+    const raw = data.defaultLensPicks;
     const parsed = Array.isArray(raw)
       ? raw
       : typeof raw === "string"
@@ -672,7 +1050,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       data.positions.map((p) => p.asset).filter((a): a is string => Boolean(a)),
       parsed ? parsed.map((p) => p.asset ?? "").filter(Boolean) : null,
     );
-  }, [data.analyticsRow, data.positions]);
+  }, [data.defaultLensPicks, data.positions]);
 
   const failures = [
     data.analyticsFailure,
@@ -680,6 +1058,40 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
     data.riskFailure,
     data.returnsFailure,
   ].filter((f): f is QueryFailure => f !== null);
+
+  // The lens-less panel KEYS this phase actually puts on screen. Keys, not
+  // labels: `LensScopeBanner` groups them by `scopeOf` before naming them, and
+  // it can only do that from the key. Not memoised — it is a filter over ~25
+  // static keys, and a dependency array here would have to track `phase`,
+  // `failures.length`, `scatterVisible`, the reconciliation and the resolved
+  // lens to save nothing measurable.
+  //
+  // PHASE ALONE IS NOT ENOUGH. The banner promises "these are on the page
+  // below", and the file's own rule is that a disclosure a reader can falsify
+  // by scrolling is worse than no disclosure — so a panel that self-suppresses
+  // on its data must be excluded by the same predicate the panel uses, not
+  // assumed present because its section renders. Three do:
+  //   ReconciliationBanner — renders only on a real disagreement between
+  //     `portfolio_positions` and the pinned multi-asset pick list.
+  //   ReadErrorsBanner     — renders only when a read actually failed.
+  //   PositionRiskScatter  — returns null below SCATTER_MIN_POINTS, which under
+  //     a non-default lens is the common case rather than the edge one (see
+  //     `scatterVisible`). It was the reason this rule got written: the banner
+  //     read "6 panels still multi-asset" and named a chart that was not there.
+  const lensLessOnThisPhase = lensLessPanels().filter((panel) => {
+    if (panel === "ReconciliationBanner") {
+      return !data.loading && !reconciliation.reconciled;
+    }
+    if (panel === "ReadErrorsBanner") return failures.length > 0;
+    if (panel === "PositionRiskScatter") return shows("attribution") && scatterVisible;
+    const gate = PANEL_SECTION[panel];
+    // Unclassified panels are assumed to render, matching `scopeOf`'s
+    // over-disclose default: naming a panel the reader cannot find is a
+    // smaller error than leaving a multi-asset figure unmarked.
+    if (gate === undefined || gate === PANEL_EVERY_PHASE) return true;
+    if (gate.startsWith("phase:")) return gate.slice("phase:".length) === phase;
+    return shows(gate);
+  });
 
   return (
     <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-7 pb-20">
@@ -690,9 +1102,32 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       <PageHeader
         title={PHASE_COPY[phase].title}
         lede={PHASE_COPY[phase].lede}
+        // /attribution is pinned to multi_asset, and on a day when a second lens
+        // has published a book that pin needs saying. A reader who arrived from
+        // /risk?lens=credit — the only route by which they could hold the credit
+        // book in mind — must not read this page's forward record as the credit
+        // book's. One tertiary line, not an alert: nothing is wrong here.
+        //
+        // Gated on a second lens EXISTING, which is precisely the condition under
+        // which the confusion is reachable: /risk only offers ?lens=credit when
+        // the credit book published. With one book there is nothing to
+        // disambiguate, and the sentence would be noise on the default page.
+        fine={
+          !lensEnabled && lensOffered.length > 1 ? (
+            <>
+              This page reports the multi-asset book only: the forward record and
+              the realised return series have no lens column (ADR-0194), so there
+              is no per-lens version of them to show.
+            </>
+          ) : undefined
+        }
         meta={[
           { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
           {
+            // The lens the ROW claims, not the lens the page queried. They should
+            // always agree; if a run ever writes a row whose `lens` differs from
+            // the key it was fetched by, this is where it shows, and the scope
+            // disclosures below still describe the query that produced the page.
             label: "Lens",
             value: data.loading ? "…" : (data.lens ?? "not recorded"),
             capitalize: true,
@@ -700,9 +1135,51 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         ]}
       />
 
+      {/* The lens toggle. Rendered only when more than one lens actually has a
+          published book for today's run_date — a control offering a book that does
+          not exist is worse than no control — and never on /attribution, which is
+          pinned (see `lensEnabled`). Selection lives in the URL via setLens, so
+          /risk?lens=credit is linkable on its own.
+
+          This is the ONE thing on this page that a default-lens reader can see
+          which they could not before, and only on a day a second book published.
+          A feature reachable by hand-typed query string is not a feature. */}
+      {lensEnabled && lensOffered.length > 1 && (
+        <div className="mb-6 flex items-center gap-2">
+          <span className="text-[11px] uppercase tracking-[0.08em] text-text-tertiary">
+            Book
+          </span>
+          <LensSelector value={controlLens} onChange={setLens} lenses={lensOffered} />
+        </div>
+      )}
+
+      {/* The boundary, stated once at the top rather than inferred from scattered
+          chips: which panels below are the lens the reader chose, and which are
+          still the multi-asset published book. Returns null at multi_asset, so it
+          is absent from the default page entirely — its own guard, not this call
+          site's. */}
+      <LensScopeBanner lens={data.resolvedLens} panels={lensLessOnThisPhase} />
+
       {/* Every number below is computed on portfolio_positions. When that table has
           not been reconciled to the published book, they describe a portfolio nobody
           selected — say so before the reader reads them, not after. */}
+      {/* RENDERS UNDER EVERY LENS, because the comparison behind it is
+          same-book under every lens. `portfolio_positions` is lens-less
+          (ADR-0194), so the pick side is read pinned to multi_asset — see the
+          last entry in the Promise.all above — rather than at the page's lens.
+
+          It was briefly gated on `resolvedLens === DEFAULT_LENS` instead, and
+          that was the wrong repair. The problem it addressed was real: compared
+          against the ACTIVE lens's picks the check is cross-book and reads
+          "provisional" on every credit run, and an alert that fires every run
+          is one a reader learns to scroll past. But suppressing it threw away
+          the true signal with the false one. The pipeline writes L1's full
+          candidate set here at 21:30 and reconciles it to the picked book only
+          when L5 returns, so at 21:35 /risk?lens=credit showed ~60 candidate
+          names across the what-if builder, the attribution table and the answer
+          row — each under a chip whose title asserted they ARE the multi-asset
+          published book, which in that window they are not. Fixing the
+          comparison keeps the alert AND makes it true. */}
       {!data.loading && !reconciliation.reconciled && (
         <div
           className="card mb-6"
@@ -740,6 +1217,20 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
                     : ""}
                 </span>
                 .
+              </>
+            )}
+            {/* Appended, never substituted: the default-lens paragraph above is
+                byte-identical to what it has always been, and this sentence
+                exists only on a page where "the published book" would otherwise
+                be ambiguous between two of them. */}
+            {data.resolvedLens !== DEFAULT_LENS && (
+              <>
+                {" "}
+                Both sides of that count are the <strong>multi-asset</strong>{" "}
+                book — the held positions have no lens column (ADR-0194) and the
+                pick list is read pinned to match them — so this is the
+                multi-asset book mid-run, not a disagreement between it and the{" "}
+                {data.resolvedLens} book.
               </>
             )}
           </p>
@@ -788,16 +1279,26 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           nearly three screens down (ADR-0172). Only the risk phase has one so far; the
           other rows land in the same place as they are written. */}
       {phase === "mandate" && (
-        <AnswerRow
-          cards={mandateAnswerCards({
-            limitRows: limitBoard,
-            capState,
-            bookMetrics,
-            totalCapital: data.risk?.total_capital ?? null,
-          })}
-        />
+        <>
+          {/* Mixed: four of its figures are portfolio_risk's, which is lens-less.
+              `AnswerRow` takes no slot, so the marker sits above the grid — a
+              fragment, which adds no DOM of its own, rather than a wrapper. */}
+          <ScopeNote lens={data.resolvedLens} panel="MandateAnswerRow" />
+          <AnswerRow
+            cards={mandateAnswerCards({
+              limitRows: limitBoard,
+              capState,
+              bookMetrics,
+              totalCapital: data.risk?.total_capital ?? null,
+            })}
+          />
+        </>
       )}
 
+      {/* No ScopeNote on this row or anywhere in the `realised` section below:
+          /attribution is pinned to multi_asset, so `showScopeNote` is false for
+          every panel on it by construction and a chip here could never render.
+          Dead JSX that looks conditional is worse than an absence with a note. */}
       {phase === "attribution" && (
         <AnswerRow
           cards={attributionAnswerCards({
@@ -812,19 +1313,24 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       )}
 
       {phase === "risk" && (
-        <AnswerRow
-          cards={riskAnswerCards({
-            scenarioState,
-            correlationState,
-            attribution,
-            positionCount: data.positions.length,
-            factorCoverage: data.positions.filter(
-              (p) => p.asset && factorMap[p.asset],
-            ).length,
-            covShrinkageIntensity:
-              data.analyticsRow?.optimizer_result?.cov_shrinkage_intensity ?? null,
-          })}
-        />
+        <>
+          {/* Mixed: the scenario and correlation cards follow the lens, the
+              position-count and factor-coverage cards are portfolio_positions'. */}
+          <ScopeNote lens={data.resolvedLens} panel="RiskAnswerRow" />
+          <AnswerRow
+            cards={riskAnswerCards({
+              scenarioState,
+              correlationState,
+              attribution,
+              positionCount: data.positions.length,
+              factorCoverage: data.positions.filter(
+                (p) => p.asset && factorMap[p.asset],
+              ).length,
+              covShrinkageIntensity:
+                data.analyticsRow?.optimizer_result?.cov_shrinkage_intensity ?? null,
+            })}
+          />
+        </>
       )}
 
       <SectionNav items={PHASE_SECTION_NAV[phase]} />
@@ -878,6 +1384,11 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         {shows("limits") && (
         <>
         <section id="limits" aria-label="Limits">
+          {/* The single worst panel to swap silently: five of its eleven rows are
+              valued from lens-less tables and six from the lens-following
+              analytics row, in one table, under one heading, with one OK/BREACH
+              column. Inside the section wrapper, so the grid cell is untouched. */}
+          <ScopeNote lens={data.resolvedLens} panel="RiskLimitBoard" />
           <RiskLimitBoard
             loading={data.loading}
             rows={limitBoard}
@@ -924,6 +1435,10 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
 
 
       {/* Browser-side estimate, labelled as one — after the persisted matrix. */}
+      {/* Both figures it puts on screen — the shocked positions and the dollar
+          P&L against total_capital — come from lens-less tables, so the shock is
+          applied to the multi-asset book whatever lens is active. */}
+      <ScopeNote lens={data.resolvedLens} panel="WhatIfScenario" />
       <WhatIfScenario
         loading={data.loading}
         positions={data.positions}
@@ -966,6 +1481,11 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
               one without the others is how a page ends up with two numbers called
               VaR that differ by an order of magnitude. */}
       <div className="mt-6">
+        {/* Three of the four VaRs follow the lens; the published one on the risk
+            row does not. A multi-asset VaR sitting inside a four-way comparison
+            of credit VaRs is precisely the "two numbers called VaR" defect
+            ADR-0082 named, one lens toggle later. */}
+        <ScopeNote lens={data.resolvedLens} panel="VarMethods" />
         <VarMethods
           risk={data.risk}
           decomposition={data.analyticsRow?.risk_decomposition ?? null}
@@ -985,6 +1505,25 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           markup does another is the defect, not the nav. */}
       {shows("attribution") && (
       <section id="attribution" aria-label="Per-position and per-theme attribution">
+      {/* Marks the SCATTER, not the waterfall beside it: the scatter plots
+          portfolio_positions (lens-less) against the lens-following risk
+          decomposition, while the waterfall is the decomposition alone and needs
+          no marker. Above the grid rather than inside a cell — a wrapper div
+          around one grid child would alter the default page's DOM, which this
+          may not do, and `ScopeNote` is left-aligned so at `xl` it sits over the
+          first cell and at narrower widths over the card directly below it.
+
+          GATED ON THE SCATTER ACTUALLY DRAWING, because sitting outside the grid
+          is what makes that necessary. `PositionRiskScatter` returns null below
+          SCATTER_MIN_POINTS, and under a lens that is the ordinary case: it
+          needs names present in BOTH the lens-less held book and the
+          lens-following decomposition, which on 2026-07-30 intersected in
+          nothing. Ungated, the words "multi-asset book" then sat directly above
+          the risk-contribution waterfall — the one panel in this section that
+          genuinely IS the credit book — labelling it as the other one. */}
+      {scatterVisible && (
+        <ScopeNote lens={data.resolvedLens} panel="PositionRiskScatter" />
+      )}
       <div className="grid xl:grid-cols-2 gap-6 items-start [&>*]:min-w-0">
         <PositionRiskScatter
           positions={data.positions}
@@ -994,6 +1533,10 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           decomposition={data.analyticsRow?.risk_decomposition ?? null}
         />
       </div>
+      {/* Every row is a held name from portfolio_positions, and the book beta it
+          compares against is portfolio_risk's — so the table names multi-asset
+          positions whatever lens is active. */}
+      <ScopeNote lens={data.resolvedLens} panel="PositionRiskAttribution" />
       <PositionRiskAttribution
         loading={data.loading}
         rows={attribution}
@@ -1007,6 +1550,10 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       />
 
       {/* 4 — Theme attention crowding: the risk-monitoring half of the engine. */}
+      {/* The two theme tables are lens-neutral, so the only book-shaped input is
+          the held-position list — which means every row here scores a theme the
+          MULTI-ASSET book holds, whichever lens the reader picked. */}
+      <ScopeNote lens={data.resolvedLens} panel="AttentionCrowding" />
       <AttentionCrowding
         loading={data.loading}
         rows={crowdingRows}

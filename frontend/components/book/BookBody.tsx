@@ -4,7 +4,11 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import LensSelector, { type Lens } from "@/components/LensSelector";
-import { DEFAULT_LENS, availableLensesForLatestRun, resolveLens } from "@/lib/book/lensView";
+import { resolveLens } from "@/lib/book/lensView";
+// DEFAULT_LENS comes from lensProbe rather than lensView on purpose: it is
+// re-exported there so the fallback a caller applies to an empty `lenses` and
+// the probe that produced that emptiness arrive from one import.
+import { DEFAULT_LENS, fetchLensesForLatestRun } from "@/lib/book/lensProbe";
 import CitationList, { Citation } from "@/components/CitationList";
 import PageHeader from "@/components/PageHeader";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
@@ -262,16 +266,15 @@ function BookPageInner() {
       // Which lens to query, resolved BEFORE the book itself is fetched. Migration
       // 062 keyed research_recommendations on (run_date, lens), so a run_date can
       // now carry more than one book — reading it without a lens filter is exactly
-      // the ambiguity this resolves. A lightweight (run_date, lens) probe is enough
-      // to know what today's run_date published without pulling every column twice.
-      const lensRowsRes = await supabase
-        .from("research_recommendations")
-        .select("run_date, lens")
-        .order("run_date", { ascending: false })
-        .limit(40);
-      const { lenses } = availableLensesForLatestRun(
-        (lensRowsRes.data as { run_date: string | null; lens: string | null }[] | null) ?? []
-      );
+      // the ambiguity this resolves, and the full book select below is
+      // `.eq("lens", resolved)`, so this has to answer first. The probe reads two
+      // columns, not the row: knowing WHICH books today's run_date published does
+      // not need every column of either of them pulled twice. Discovery is the one
+      // deliberately lens-unqualified read in the tree — why that exemption is
+      // sound, and why it is 40 rows rather than 1, is in lib/book/lensProbe.ts.
+      const { lenses } = await fetchLensesForLatestRun();
+      // Empty means the read failed OR nothing has ever published — the probe
+      // reports both without guessing, so the fallback is chosen here.
       const offered = lenses.length ? lenses : [DEFAULT_LENS];
       const resolved = resolveLens(requestedLens, offered);
       setAvailableLenses(offered);

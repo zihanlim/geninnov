@@ -172,6 +172,50 @@ function pct(x: number | null | undefined): string | null {
 }
 
 /**
+ * The screening stages that actually removed something.
+ *
+ * THIS FUNCTION EXISTS BECAUSE THE FIRST VERSION GOT THE CREDIT BOOK WRONG. It
+ * collapsed the whole screen to `first - last` and hardcoded the label "context
+ * cap", which is true of the multi-asset run and false of every other lens. On
+ * 2026-07-30 the credit funnel reads:
+ *
+ *     L1 ranked candidates      -0    42
+ *     conviction override       -0    42
+ *     lens = credit            -31    11     <-- the entire removal
+ *     factor R^2 >= 0.10        -0    11
+ *     dedupe                    -0    11
+ *     editorial veto            -0    11
+ *     candidate pool (cap 30)   -0    11     <-- removed NOTHING
+ *
+ * so the panel told a reader that the model's context window discarded 31 credit
+ * candidates. It did not; the asset-class filter did, which is the entire point
+ * of the credit book. A label naming the wrong cause is worse than no label --
+ * it is the failure the whole panel was written to fix, reproduced inside the
+ * fix. The stage list is authored in `q1_agent.screen_candidates` and carries
+ * its own `reason` prose, so the edge now quotes the data instead of asserting
+ * over it, and a stage added later is described correctly with no change here.
+ */
+export function removingStages(
+  stages: ScreeningStage[] | null | undefined,
+): Array<{ stage: string; removed: number; reason: string }> {
+  return (stages ?? [])
+    .filter((s) => typeof s?.removed === "number" && (s.removed as number) > 0)
+    .map((s) => ({
+      stage: s.stage ?? "screen",
+      removed: s.removed as number,
+      reason: (s.reason ?? "").trim(),
+    }));
+}
+
+/** A stage name short enough for a connector label. */
+function shortStageLabel(stage: string): string {
+  // `candidate pool (cap 30)` -> `context cap`; anything else keeps its own
+  // name, truncated at the first parenthesis so `lens = credit` survives whole.
+  if (/candidate pool/i.test(stage)) return "context cap";
+  return stage.split("(")[0].trim();
+}
+
+/**
  * Build the chain.
  *
  * Returns `available: false` rather than a partial diagram when the two columns
@@ -276,17 +320,32 @@ export function buildBookFunnel(inp: FunnelInputs): BookFunnel {
   // ── Edges ────────────────────────────────────────────────────────────────
   const edges: FunnelEdge[] = [];
 
-  const truncated =
-    bounds.first !== null && bounds.last !== null ? bounds.first - bounds.last : null;
+  // Named by the stage that DID the removing, per lens, rather than by whichever
+  // stage does it on the default book. See `removingStages`.
+  const removers = removingStages(inp.screeningFunnel);
+  const totalRemoved = removers.reduce((a, s) => a + s.removed, 0);
+  const haveFunnel = bounds.first !== null;
   edges.push({
     to: "context",
-    label: "context cap",
-    removed: truncated,
-    detail:
-      truncated === null
-        ? "The screening funnel did not record how many candidates were dropped."
-        : `Truncated to fit the model's context window, keeping the highest |EdgeScore|. ` +
-          `Ordered by conviction, not attention, so the cap cannot re-impose the gate it exists to overrule.`,
+    label:
+      removers.length === 1
+        ? shortStageLabel(removers[0].stage)
+        : removers.length > 1
+          ? "screen"
+          : "screen",
+    removed: haveFunnel ? totalRemoved : null,
+    detail: !haveFunnel
+      ? "The screening funnel did not record how many candidates were dropped."
+      : removers.length === 0
+        ? "Every candidate the screen admitted reached the reasoning step; nothing was dropped here."
+        : // The stage's OWN reason text, authored beside the code that removed
+          // the rows. Quoting it is what keeps this correct under a lens whose
+          // dominant filter is not the one the default book hits.
+          removers
+            .map((s) =>
+              s.reason ? `${s.stage} (−${s.removed}): ${s.reason}` : `${s.stage}: −${s.removed}`,
+            )
+            .join(" "),
   });
 
   // Correlated names collapsing into one idea. This edge removes NOTHING from

@@ -12,6 +12,7 @@ import {
   buildBookFunnel,
   funnelBounds,
   funnelHeadline,
+  removingStages,
   splitPicks,
   splitSigned,
   type FunnelInputs,
@@ -230,6 +231,110 @@ describe("funnelHeadline", () => {
       optimizerResult: { ...LIVE.optimizerResult, zeroed: [] },
     });
     expect(funnelHeadline(clean)).toBeNull();
+  });
+});
+
+// The credit lens is not a smaller version of the multi-asset run -- it is
+// narrowed by a DIFFERENT stage, and the first version of this panel said
+// otherwise. On 2026-07-30 the credit screen removed 31 names at `lens = credit`
+// and 0 at the context cap; the panel labelled the whole drop "context cap" and
+// told a reader the model's context window discarded 31 credit candidates.
+const CREDIT: FunnelInputs = {
+  screeningFunnel: [
+    { stage: "L1 ranked candidates", removed: 0, remaining: 42 },
+    { stage: "conviction override (ADR-0046)", removed: 0, remaining: 42 },
+    {
+      stage: "lens = credit",
+      removed: 31,
+      remaining: 11,
+      reason: "Asset outside the selected asset-class lens.",
+    },
+    { stage: "factor R^2 >= 0.10", removed: 0, remaining: 11 },
+    { stage: "dedupe (asset, direction)", removed: 0, remaining: 11 },
+    { stage: "editorial veto (ADR-0171)", removed: 0, remaining: 11 },
+    { stage: "candidate pool (cap 30)", removed: 0, remaining: 11 },
+  ],
+  independentIdeas: {
+    long: { count: 3, names: 11 },
+    short: { count: 0, names: 0 },
+  },
+  heuristicWeights: { BIL: 0.2, EMB: 0.15, BKLN: 0.15 },
+  picks: [
+    { asset: "EMB", direction: "long" },
+    { asset: "BIL", direction: "long" },
+    { asset: "BKLN", direction: "long" },
+  ],
+  optimizerResult: {
+    zeroed: [],
+    binding_constraints: [
+      "EMB at single-name cap",
+      "BIL at single-name cap",
+      "Credit at sector cap",
+    ],
+    realised_turnover: null,
+    turnover_cap: null,
+    forced_exit_turnover: null,
+    feasible: true,
+  },
+};
+
+describe("removingStages", () => {
+  it("returns only the stages that removed something", () => {
+    expect(removingStages(CREDIT.screeningFunnel)).toEqual([
+      {
+        stage: "lens = credit",
+        removed: 31,
+        reason: "Asset outside the selected asset-class lens.",
+      },
+    ]);
+    expect(removingStages(LIVE.screeningFunnel).map((s) => s.stage)).toEqual([
+      "candidate pool (cap 30)",
+    ]);
+  });
+});
+
+describe("buildBookFunnel — the credit lens narrows at a different step", () => {
+  const f = buildBookFunnel(CREDIT);
+  const firstEdge = f.edges.find((e) => e.to === "context");
+
+  it("names the LENS as the remover, not the context cap", () => {
+    // The regression. `context cap` here would be a false attribution of the
+    // one filter that defines this book.
+    expect(firstEdge?.label).toBe("lens = credit");
+    expect(firstEdge?.removed).toBe(31);
+    expect(firstEdge?.detail).toContain("outside the selected asset-class lens");
+    expect(firstEdge?.detail).not.toContain("context window");
+  });
+
+  it("still names the context cap on the multi-asset run", () => {
+    const m = buildBookFunnel(LIVE).edges.find((e) => e.to === "context");
+    expect(m?.label).toBe("context cap");
+    expect(m?.removed).toBe(12);
+  });
+
+  it("reports a genuinely empty short side as zero, not as absent", () => {
+    // Zero shorts is a MEASUREMENT on this lens -- no short credit candidates
+    // exist in the pool -- and is the single most important fact about the
+    // credit book. It must not render as an em-dash "not carried".
+    const by = Object.fromEntries(f.nodes.map((n) => [n.id, n]));
+    expect(by.context).toMatchObject({ total: 11, long: 11, short: 0 });
+    expect(by.ideas).toMatchObject({ total: 3, long: 3, short: 0 });
+    expect(by.published).toMatchObject({ total: 3, long: 3, short: 0 });
+  });
+
+  it("says the sizer funded everything, and claims no turnover it does not have", () => {
+    const sizer = f.edges.find((e) => e.to === "published");
+    expect(sizer?.removed).toBeNull();
+    expect(sizer?.notable).toBeFalsy();
+    expect(sizer?.detail).toContain("funded every position");
+    // No previous credit book exists, so realised_turnover is null. The edge
+    // must not print "against a null cap" or invent a percentage.
+    expect(sizer?.detail).not.toMatch(/null|NaN|undefined/);
+  });
+
+  it("does not claim the agent hit five-and-five on a three-name book", () => {
+    expect(f.agentHitTarget).toBe(false);
+    expect(funnelHeadline(f)).toBeNull();
   });
 });
 

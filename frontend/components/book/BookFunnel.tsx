@@ -190,7 +190,11 @@ export default function BookFunnel({
                         color: edge.notable ? "var(--warning)" : "var(--text-tertiary)",
                       }}
                     >
-                      {edge.removed !== null ? `−${edge.removed}` : ""} {edge.label}
+                      {/* `−0` is noise, not information: an edge that removed
+                          nothing should read as a step, not as a cost of zero.
+                          Live on the credit lens, where the agent took all three
+                          available ideas. */}
+                      {edge.removed ? `−${edge.removed}` : ""} {edge.label}
                     </span>
                   </div>
                 )}
@@ -243,7 +247,7 @@ export default function BookFunnel({
                 }}
               >
                 {edge.label}
-                {edge.removed !== null ? ` · −${edge.removed}` : ""}
+                {edge.removed ? ` · −${edge.removed}` : ""}
               </dt>
               <dd className="m-0 text-text-secondary">
                 {edge.detail}

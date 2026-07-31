@@ -59,6 +59,42 @@ function ShockChips({
   );
 }
 
+// Auto table layout hands surplus width to the column with the widest content,
+// which here is `Scenario` — and its content is capped at 62ch for measure, so
+// at 1440 that column took half the table and parked ~380px of nothing between
+// a scenario's name and its own return. The value columns are pinned to their
+// content and the trailing action column absorbs the surplus, which keeps a
+// label and the figures describing it in one scannable block and moves the slack
+// to the one place a row can carry it: ahead of a right-aligned button, where a
+// trailing action sits anyway.
+//
+// It needs FIXED layout to work, which is the part that took two measured
+// attempts. Under auto layout a `w-full` absorber on the trailing column wins
+// outright — the browser resolves the percentage first and starves every other
+// column to min-content, including ones with a specified width. Measured at
+// 1440: Scenario asked for 34rem and got 179px, the description wrapped to
+// ~143px, and every row grew to eight lines. Several times worse than the gap it
+// was meant to close, and identical to eye whether the width was declared or
+// not, which is why it was measured rather than looked at.
+//
+// Under `table-fixed` the declared widths are honoured and the ONE column
+// without a width takes the remainder — so the absorber is the absence of a
+// class, not `w-full`.
+//
+// All of it gated at `wide` (1424px). Below that there is no surplus to park —
+// the table is at its 720px floor and scrolling — and pinning would only raise
+// the floor, making a phone scroll further to reach the same numbers.
+const COLUMNS = [
+  { label: "Scenario", width: "wide:w-[34rem]" },
+  { label: "Book return", width: "wide:w-[8.5rem]" },
+  { label: "P&L ($M)", width: "wide:w-[8.5rem]" },
+  // 8rem, not 7: under `table-fixed` a column cannot grow for its content, and
+  // the vocabulary is low / moderate / high / severe — the live book is all LOW,
+  // so a column sized by eye today would clip the first MODERATE run.
+  { label: "Severity", width: "wide:w-[8rem]" },
+  { label: "", width: "" },
+];
+
 function ScenarioRow({
   scenario,
   index,
@@ -238,7 +274,7 @@ export function StressScenarios({
             <StressScenarioChart scenarios={rows} />
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[13px] min-w-[720px]">
+            <table className="w-full border-collapse text-[13px] min-w-[720px] wide:table-fixed">
               <caption className="sr-only">
                 Estimated book return and P&amp;L under each stress scenario, sorted
                 worst first. Each row expands to the per-position contribution
@@ -246,15 +282,15 @@ export function StressScenarios({
               </caption>
               <thead>
                 <tr>
-                  {["Scenario", "Book return", "P&L ($M)", "Severity", ""].map((h, i) => (
+                  {COLUMNS.map((col, i) => (
                     <th
-                      key={h || `col-${i}`}
+                      key={col.label || `col-${i}`}
                       scope="col"
                       className={`px-[18px] py-[7px] text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border-strong bg-bg-elevated ${
                         i === 0 ? "text-left" : "text-right"
-                      }`}
+                      } ${col.width}`}
                     >
-                      {h}
+                      {col.label}
                     </th>
                   ))}
                 </tr>

@@ -52,7 +52,16 @@ import AnswerCards from "@/components/book/AnswerCards";
 // changes is only which of them are offered as a place to jump to.
 const BOOK_SECTIONS = [
   { id: "holdings", label: "Holdings" },
-  { id: "solidity", label: "How solid" },
+  // "Evidence", not "How solid". The three panels under it are: were the books
+  // we published RIGHT (pick outcomes), how much of the book CHANGED since the
+  // last run (turnover), and does the same input reproduce the same book
+  // (replication). That is the evidence about this book — including when it is
+  // unflattering, which on this run it is: 71% of the name set churned and not
+  // one claim has resolved yet. "How solid" asserts a verdict the section does
+  // not have; "Evidence" names what is actually there and lets it read either
+  // way. It is also the word this repo already uses for the fuller version of
+  // the same thing, at /method/evidence.
+  { id: "solidity", label: "Evidence" },
   // "Sizing & not taken", not "Sizing". The row is two columns and the label
   // named one of them; the candidate list is the taller half. It also avoids
   // repeating the sidebar, where "Sizing" is the PHASE this whole page is — a
@@ -1477,7 +1486,7 @@ function BookPageInner() {
           )}
 
 
-          {/* ── How solid is this book? ──────────────────────────────────── */}
+          {/* ── The evidence about this book ─────────────────────────────── */}
           {/* Four independent readings of one question, side by side so they read
               as what they are: corroboration.
 
@@ -1511,7 +1520,7 @@ function BookPageInner() {
               clipped and goal 7 is untouched. */}
           </section>
 
-          <section id="solidity" aria-label="How solid this book is">
+          <section id="solidity" aria-label="Evidence about this book">
           {/* THREE PANELS, THREE COLUMNS — and the arithmetic above still holds.
               `PoolDepth` used to be the fourth. It answered "why not five and
               five?" with counts and bars; `BookFunnel` above answers it as the

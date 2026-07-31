@@ -9,8 +9,12 @@ published run, not composed for this document.
 ## Q1 — $100M across long and short trades
 
 The system returns **nine positions: four long, five short**, at **44.4% gross** and
-**−7.7% net**. It is not constrained to five a side, and it did not deploy the full $100M.
-Both facts are answers rather than omissions, and I take them in turn after the book.
+**−7.7% net**, with $55.6M in cash.
+
+It selected **five and five.** The tenth position — a 20% EM-credit long, the largest in the
+book — was removed by the day-over-day turnover cap during sizing, not by the screen. That is
+worth the space it gets below, because a system whose risk controls visibly cost it a position
+is telling you something a clean five-and-five would have hidden.
 
 A portfolio manager does not reach for five longs and five shorts. They reach for a process,
 and the picks are what falls out of the end of it. So the answer below is that process in the
@@ -89,13 +93,40 @@ beneficiary leg. **SMH + GEV** is one theme expressed through two different fact
 exposures. **BABA + PDD** is deliberately *not* one idea twice: the pair was checked against
 the correlation cluster and PDD was included because it sits outside it.
 
-### Why four longs and not five
+### Why four longs and not five — the risk control took the fifth
 
-The screen produced 42 candidates, capped to 30 for the reasoning step. From those 30 the
-engine took nine. There is no rule requiring five a side, and manufacturing a fifth long to
-match the shape of the question would mean holding a position that did not clear the bar.
-An unfilled slot and a bad idea are different failures, and the book prefers the first.
-`/book`'s "not taken" tab shows what was in the pool and screened out; nothing is hidden.
+**The agent selected five and five.** Its chosen book was ten names: long UNH, SMH, GEV, F and
+**EMB**; short BABA, GLD, NOC, PDD, UNG. EMB — hard-currency EM sovereign credit, the
+representative of a correlated fixed-income complex — was sized at **20%, the single-name cap,
+the largest position in the book.**
+
+The optimizer then deleted it. `optimizer_result` records the act plainly:
+
+> `"zeroed": ["EMB"]` · `"binding_constraints": ["turnover at cap"]`
+> `"realised_turnover": 0.59999997` against a `"turnover_cap": 0.6`
+
+Realised turnover landed within three parts in ten million of the limit. **35.2 percentage
+points of that 60 were `forced_exit_turnover`** — unwinding yesterday's book — leaving roughly
+25 points to fund everything new. EMB at 20% did not fit in what remained.
+
+So the honest answer is not "only four ideas cleared the bar." It is that **five did, and a
+risk control refused to fund the fifth.** That is a more useful thing to know about a system
+than a clean five-and-five would have been:
+
+- The pool was not short of long ideas. Of 30 candidates reaching the reasoning step, 19 were
+  long and 11 short — and after collapsing correlated names into single ideas, **10 independent
+  long ideas against 7 short**. The long side was the *deeper* one.
+- The cap that removed EMB is the same cap in phase 01, and it exists because turnover was
+  measured at 92.7% costing ~35%/yr. It was not tuned to produce this book; it was set from a
+  loss already taken, and this is what it costs when it binds.
+- Nothing here is inferred. `heuristic_weights` holds the agent's ten-name book, `picks` holds
+  the nine that survived sizing, and `zeroed` names the difference. The system does not present
+  the four-long book as though it were what it wanted.
+
+The system also audits its own shortfall. `independent_ideas.long.shortfall` reads
+`{held: 4, available: 5, empty_slots: 1, passed_over: [EMB, …], named: [EMB], satisfied: true}`
+— it detected the empty slot, checked whether the published thesis accounted for the idea that
+could have filled it, and passed only because EMB is named there.
 
 ### Why 44% gross and not 100%
 

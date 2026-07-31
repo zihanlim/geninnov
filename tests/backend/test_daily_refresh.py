@@ -1216,12 +1216,23 @@ def test_run_date_is_utc_not_the_local_calendar_date():
     run's 9-pick book sat at 2026-07-25, so /risk computed on positions from one date
     under a header naming the other (ADR-0069).
     """
-    from datetime import datetime, timezone
+    from datetime import date, datetime, timezone
     os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
     os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
     from daily_refresh import utc_run_date
 
-    assert utc_run_date() == datetime.now(timezone.utc).date()
+    # Passed an explicit instant, not compared against the live clock. The bare
+    # comparison this replaces would have become TIME-OF-DAY FLAKY: between 00:00 and
+    # ~05:00 UTC the drift correction below deliberately returns the New York date, so
+    # the assertion held only when CI happened to run outside that window.
+    at_2130 = datetime(2026, 7, 30, 21, 30, tzinfo=timezone.utc)   # the scheduled slot
+    assert utc_run_date(at_2130) == date(2026, 7, 30)
+    # 06:00 SGT on the 25th IS 22:00 UTC on the 24th — the exact instant that produced
+    # the live 07-24/07-25 split. UTC keeps them one date.
+    at_0600_sgt = datetime(2026, 7, 24, 22, 0, tzinfo=timezone.utc)
+    assert utc_run_date(at_0600_sgt) == date(2026, 7, 24)
+    # And with no argument it still reads the UTC clock rather than the local one.
+    assert utc_run_date().year >= 2026
 
 
 def test_run_date_does_not_read_the_local_clock():
@@ -1241,8 +1252,10 @@ def test_run_date_does_not_read_the_local_clock():
     # for the wrong reason.
     src = inspect.getsource(utc_run_date)
     body = src.rsplit('"""', 1)[-1]
-    assert "datetime.now(timezone.utc).date()" in body
+    assert "datetime.now(timezone.utc)" in body
     assert "date.today()" not in body
+    # The drift correction must be in the body too, not only described in the prose.
+    assert "astimezone" in body
 
 
 def test_main_uses_the_utc_helper():
@@ -1367,3 +1380,79 @@ def test_a_book_with_too_little_history_says_so_too():
     out = dr._compare_to_benchmark(pd.Series([0.01]))
     assert out["computed"] is False
     assert "at least two" in out["reason"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# run_date survives a run that drifts past UTC midnight
+#
+# The cron slot is 21:30 UTC, but GitHub does not guarantee it: measured starts were
+# 22:35 (07-30) and 22:28 (07-29), so the job runs ~1 hour late as a matter of course
+# and has ~90 minutes of headroom before 00:00 UTC. A run that used the rest of it
+# would stamp the NEXT date while pricing the SAME session's close — which makes
+# ADR-0090's entry price ("the close on run_date, the last price it could have acted
+# on") a price the book never saw. This is the pinning of that correction, and of the
+# fact that it changes nothing else.
+
+def _run_date(iso_utc: str):
+    from datetime import datetime, timezone
+    os.environ.setdefault("SUPABASE_URL", "https://mock.supabase.co")
+    os.environ.setdefault("SUPABASE_SERVICE_KEY", "mock-key")
+    from daily_refresh import utc_run_date
+
+    return utc_run_date(datetime.fromisoformat(iso_utc).replace(tzinfo=timezone.utc))
+
+
+def test_an_on_time_run_is_unchanged_on_both_sides_of_dst():
+    """The invariant that matters most: the scheduled path must not move.
+
+    21:30 UTC is 17:30 EDT in summer and 16:30 EST in winter — the same calendar day in
+    both zones either way, so the correction never fires for an on-time run.
+    """
+    from datetime import date
+
+    assert _run_date("2026-07-30T21:30") == date(2026, 7, 30)   # EDT
+    assert _run_date("2026-01-15T21:30") == date(2026, 1, 15)   # EST
+    # The observed ~1h drift is still comfortably inside the same UTC day.
+    assert _run_date("2026-07-30T22:35") == date(2026, 7, 30)
+
+
+def test_a_run_that_crosses_utc_midnight_keeps_the_session_it_priced():
+    """00:30 UTC Friday is 20:30 Thursday in New York — after Thursday's close, so the
+    book is Thursday's however late the runner got to it."""
+    from datetime import date
+
+    assert _run_date("2026-07-31T00:30") == date(2026, 7, 30)
+    assert _run_date("2026-07-31T03:00") == date(2026, 7, 30)
+    # Winter: New York is UTC-5, so the window is an hour wider.
+    assert _run_date("2026-01-16T04:30") == date(2026, 1, 15)
+
+
+def test_it_works_on_the_dst_boundary_without_a_hardcoded_offset():
+    """`zoneinfo`, not a fixed −4/−5. The US switched to EDT on 2026-03-08, so a run in
+    the small hours either side of it must resolve against the offset in force that day —
+    which is the whole reason this is not arithmetic on a constant."""
+    from datetime import date
+
+    assert _run_date("2026-03-07T02:00") == date(2026, 3, 6)    # still EST
+    assert _run_date("2026-03-10T02:00") == date(2026, 3, 9)    # now EDT
+
+
+def test_a_daytime_run_still_stamps_today():
+    """Deliberately NOT changed. A fuller "the trading date whose close has passed" rule
+    would stamp yesterday here — truthful about the price the book is built from, but it
+    would overwrite a settled, already-published book whose claims may be resolving.
+    Creating a premature row for today is the lesser harm, and ADR-0203/0205 grade and
+    disclose the superseded claims that result."""
+    from datetime import date
+
+    assert _run_date("2026-07-30T08:43") == date(2026, 7, 30)   # the live ad-hoc slot
+    assert _run_date("2026-07-31T15:00") == date(2026, 7, 31)
+
+
+def test_the_sgt_instant_that_caused_adr_0069_still_resolves_to_one_date():
+    """06:00 SGT on the 25th and 21:30 UTC on the 24th are the same instant. The live
+    split wrote 38 positions at 07-24 under a 9-pick book at 07-25."""
+    from datetime import date
+
+    assert _run_date("2026-07-24T22:00") == date(2026, 7, 24)   # 06:00 SGT on the 25th
+    assert _run_date("2026-07-24T21:30") == date(2026, 7, 24)   # 05:30 SGT on the 25th

@@ -7,7 +7,8 @@ daily P&L, and risk metric pipeline (Phase 3 of the spec).
 """
 import os
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 # Line-buffer stdout, or this log tells you nothing until the process exits.
@@ -2630,7 +2631,14 @@ def _load_spx_returns(lookback_days: int) -> "pd.Series | None":
     return returns
 
 
-def utc_run_date() -> date:
+# The exchange whose close the book is priced from, and when it closes. Named rather
+# than inlined because `utc_run_date` and any future market-calendar work must agree
+# about which market "the close" means.
+_US_MARKET_TZ = ZoneInfo("America/New_York")
+_US_EQUITY_CLOSE = time(16, 0)
+
+
+def utc_run_date(now: datetime | None = None) -> date:
     """The run's date, in UTC — the same date the scheduled job would stamp.
 
     `date.today()` is the LOCAL calendar date, and the scheduled job
@@ -2649,8 +2657,45 @@ def utc_run_date() -> date:
     UTC also matches the trading date the book is for: 21:30 UTC is 17:30 ET, the same
     calendar day in both zones, so this changes nothing about the scheduled run and only
     brings ad-hoc local runs into line with it (ADR-0069).
+
+    THE ONE CASE WHERE UTC ALONE IS WRONG: A RUN THAT DRIFTS PAST UTC MIDNIGHT.
+    That sentence above — "the same calendar day in both zones" — holds for a run that
+    fires ON TIME. GitHub cron does not guarantee that: measured starts were 22:35 UTC
+    (07-30) and 22:28 (07-29) against a 21:30 slot, so the job routinely runs ~1 hour
+    late, leaving ~90 minutes before 00:00 UTC. A run that drifted the rest of the way
+    would stamp the NEXT date while pricing the SAME session's close — labelling
+    Thursday's book Friday, which then makes ADR-0090's entry price ("the close on
+    run_date, the last price it could have acted on") a price the book never saw.
+    So when we are past UTC midnight but New York is still on the previous day AND that
+    day's close has passed, the book belongs to the New York date.
+
+    `zoneinfo` rather than a fixed offset, so DST needs no maintenance: the US close is
+    20:00 UTC in EDT and 21:00 UTC in EST, and only the tz database knows which applies
+    on a given date.
+
+    DELIBERATELY NARROW. It corrects the drift case and nothing else:
+
+      * an ON-TIME scheduled run is byte-identical — 21:30 UTC is 17:30 EDT / 16:30 EST,
+        same calendar day, so the first branch never fires;
+      * a mid-morning ad-hoc run still stamps today. Under a fuller "the trading date
+        whose close has passed" rule it would stamp YESTERDAY — truthful about the price
+        it is built from, but it would then OVERWRITE a settled, already-published book
+        whose claims may be resolving. Creating a premature row for today is the lesser
+        harm, and ADR-0203/0205 already grade and disclose the superseded claims that
+        result;
+      * holidays are not handled. There is no market calendar here, so a run on
+        Thanksgiving stamps Thanksgiving. Unchanged from before, and stated rather than
+        implied.
     """
-    return datetime.now(timezone.utc).date()
+    now = now or datetime.now(timezone.utc)
+    ny = now.astimezone(_US_MARKET_TZ)
+    # The `>= close` guard is provably true whenever the dates differ — New York is
+    # UTC-4/-5, so a UTC date ahead of the NY date puts NY between 18:00 and 23:59. It is
+    # kept because it states the REASON (the session this run follows has closed) rather
+    # than leaning on an offset that a tz change would silently invalidate.
+    if ny.date() < now.date() and ny.time() >= _US_EQUITY_CLOSE:
+        return ny.date()
+    return now.date()
 
 
 def run_credit_lens_book(

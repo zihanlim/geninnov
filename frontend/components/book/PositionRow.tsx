@@ -18,7 +18,7 @@ import Link from "next/link";
 import CitationList, { Citation } from "@/components/CitationList";
 import EdgeBars from "@/components/book/EdgeBars";
 import SizingChainView from "@/components/book/SizingChainView";
-import { StepNumbered } from "@/components/book/StepNumbered";
+import { StepLine } from "@/components/book/StepNumbered";
 import type { WorkedExampleStep } from "@/lib/book/workedExample";
 import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import { type IndependentIdeas } from "@/components/book/PoolDepth";
@@ -431,19 +431,21 @@ export function PositionRow({
               <h4 className="m-0 mb-2 text-[10.5px] uppercase tracking-[0.08em] text-text-tertiary">
                 How this position was derived
               </h4>
-              {/* TWO columns at most, never four. The standalone panel this
-                  replaces was full-page width, where four across worked; a row
-                  lives inside the Longs/Shorts pair, so each table is ~660px and
-                  four steps across it gave each ~150px — prose wrapping to two
-                  and three words a line. Measured at 1440: 2 columns is ~320px a
-                  step, which the sentence fits. */}
-              <ol className="m-0 p-0 list-none grid sm:grid-cols-2 gap-3">
+              {/* FOUR LINES, not four cards. Cards were tried first and made the
+                  expander unreadable: each carried a paragraph of methodology
+                  that is identical on all nine rows, so opening a position put
+                  ~40 lines of general explanation above the thesis, and the two
+                  things that actually differ per position — the figure and its
+                  source — were the smallest text in the block.
+
+                  As a chain the whole derivation is four lines and reads as what
+                  it is: ingestion, scoring, sizing, attribution, each with the
+                  number it produced. The cards below expand every one of these
+                  in full; this is the index, not a second copy of them. */}
+              <ol className="m-0 p-0 list-none divide-y divide-border rounded-md border border-border bg-bg-primary px-3 py-1">
                 {lineage.map((step) => (
-                  <li
-                    key={step.number}
-                    className="min-w-0 rounded-md border border-border bg-bg-primary p-3"
-                  >
-                    <StepNumbered step={step} />
+                  <li key={step.number} className="min-w-0">
+                    <StepLine step={step} />
                   </li>
                 ))}
               </ol>

@@ -68,10 +68,12 @@ applies to all nine positions instead of to whichever had the largest edge.
 - The anchor is `position-${asset}`, keyed on the ticker, not on the composite
   open-key (`${section}-${asset}-${index}`). An anchor carrying a rank would break the
   moment a position changed rank between runs.
-- **Two columns, never four**, and this is measured rather than styled. The panel was
+- ~~**Two columns, never four**, and this is measured rather than styled. The panel was
   full-page width, where four steps across worked. A row lives inside the Longs/Shorts
   pair, so each table is ~660px at 1440 and four steps across gave each ~150px — prose
-  wrapping to two and three words a line. Two columns is ~320px a step.
+  wrapping to two and three words a line. Two columns is ~320px a step.~~
+  **Superseded the same day — see the correction below. The column count was the wrong
+  question; the prose should not have been in the row at all.**
 - **`scrollIntoView({ block: "start" })`, with `scroll-mt-24` on the row.** `center`
   was tried first and put the reader in the middle of the EdgeScore bars with the four
   steps scrolled off the top — a chip that promised a derivation and delivered the
@@ -80,3 +82,35 @@ applies to all nine positions instead of to whichever had the largest edge.
 - `lib/book/workedExample.ts` and `StepNumbered` are untouched and still tested;
   `pickWorkedExamplePosition` is now unused by the app and kept only for its tests,
   which is worth revisiting when something else needs it or nothing does.
+
+## Correction, 2026-07-31 (same day, appended not rewritten)
+
+The first version moved the steps into the row **as cards, with their prose**, and the
+result was worse than the panel it replaced: the row expander became unreadable.
+
+The reason is in `buildWorkedExample`, and I should have read it before choosing a
+layout. **`step.prose` is methodology, not measurement.** Steps 1 and 2 are constant
+string literals; 3 and 4 branch only on whether the data exists. It is the same four
+paragraphs on every position. What differs per position is the **formula** and the
+**source** — two short lines.
+
+So the row was rendering ~40 lines, of which ~32 were a general explanation of the
+pipeline repeated nine times over, and the two things a reader opened the row to see
+were the smallest text in the block. Arguing about two columns versus four was
+optimising the layout of content that did not belong there.
+
+The steps are now **four lines**, one per stage, via a new `StepLine` export:
+number, title, figure, source. `StepNumbered` is unchanged and still used where a full
+step belongs. The prose survives as the `title` attribute — acceptable for a
+*definition* and not for a *citation*, which is why the source line stays visible
+(design goal 1).
+
+What this buys, beyond fitting: the derivation now reads as a **chain** —
+`535.05 → EdgeScore 0.21 → $5.1M → −0.51%` — which is the thing ADR-0081 wanted from
+pipeline order in the first place, and which four prose cards actively obscured. The
+detailed instruments below (EdgeBars, SizingChainView, the scenario lines) expand every
+one of these; the chain is the index, not a second copy.
+
+Found by capturing the page and looking at it, not by reasoning about it. That is twice
+in one panel — the funnel's "context cap" mislabel was the same failure — and both
+times the fix was to read the data the component was rendering.

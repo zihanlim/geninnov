@@ -14,6 +14,59 @@
 import type { WorkedExampleStep } from "@/lib/book/workedExample";
 import { Reconciliation } from "@/components/Reconciliation";
 
+/**
+ * The same step, as ONE LINE, for a context that repeats it.
+ *
+ * `step.prose` is METHODOLOGY, not measurement: steps 1 and 2 are constant
+ * strings and 3 and 4 branch only on whether the data exists. It is the same
+ * paragraph on every position. Rendered full-size inside a row expander that is
+ * already nine cards deep, it put four identical paragraphs between the reader
+ * and the position they opened \u2014 the prose was 80% of the block and 0% of the
+ * per-position content, which is the formula and the source.
+ *
+ * So the compact form drops the prose and keeps what differs: number, title,
+ * figure, source. The prose survives as the `title` attribute \u2014 acceptable here
+ * and NOT for the source line, because a definition may sit behind a hover and a
+ * citation may not (design goal 1).
+ */
+export function StepLine({ step }: { step: WorkedExampleStep }) {
+  const isGap = !step.sourcePersisted || step.formula.startsWith("\u2014");
+  return (
+    <div
+      className="grid grid-cols-[1.25rem_1fr] gap-x-2 gap-y-0.5 py-1.5"
+      data-testid={`worked-example-step-${step.number}`}
+      data-step-number={step.number}
+      title={step.prose}
+    >
+      <span
+        aria-hidden="true"
+        className="flex items-center justify-center w-5 h-5 rounded-full border border-accent text-[10px] font-semibold text-accent leading-none mt-[1px]"
+      >
+        {step.number}
+      </span>
+      <div className="min-w-0">
+        <span className="text-[12px] font-semibold text-text-primary">
+          {step.title}
+        </span>{" "}
+        <span
+          className={`num text-[12px] whitespace-pre-wrap ${isGap ? "text-text-tertiary" : "text-text-primary"}`}
+        >
+          {step.formula}
+        </span>
+        {step.formulaGap && (
+          <span className="text-[11px] text-text-tertiary"> {step.formulaGap}</span>
+        )}
+        <div className="text-[10.5px] text-text-tertiary num leading-[1.4]">
+          {step.sourceColumn}
+          {!step.sourcePersisted && step.sourceGap && (
+            <span className="ml-1">{"\u2014 "}{step.sourceGap}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function StepNumbered({ step }: { step: WorkedExampleStep }) {
   const isGap = !step.sourcePersisted || step.formula.startsWith("\u2014");
   return (

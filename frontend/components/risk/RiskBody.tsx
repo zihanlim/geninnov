@@ -980,6 +980,12 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
     return typeof n === "number" ? n > 0 : undefined;
   }, [data.analyticsRow]);
 
+  // This book's own HHI, or null when the run predates the field (ADR-0208).
+  const lensHhi = useMemo<number | null>(() => {
+    const v = bookMetrics?.concentration_hhi;
+    return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+  }, [bookMetrics]);
+
   const cfgMap = useMemo(() => configMap(data.config), [data.config]);
   const factorMap = useMemo(() => factorsByAsset(data.factors), [data.factors]);
 
@@ -1005,7 +1011,21 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       var95Usd: data.risk?.var_95 ?? null,
       cvar95Usd: data.risk?.cvar_95 ?? null,
       beta: data.risk?.beta ?? null,
-      hhi: data.risk?.concentration_hhi ?? null,
+      // The book's OWN concentration when it has one, the lens-less table otherwise.
+      //
+      // `portfolio_risk.concentration_hhi` has no lens column (ADR-0194), so this row
+      // showed the multi-asset book's 1,174 / 2,000 "OK" on the credit page — over a
+      // three-name book whose own HHI is 3,600, a breach. Of every lens-less row that
+      // is the most inverted: a VaR from another book is at least *a* risk number,
+      // while a DIVERSIFICATION figure from a nine-name book reads as reassurance
+      // about a three-name one.
+      //
+      // `> 0` rather than a null check, deliberately: the agent's placeholder
+      // BookMetrics carries 0.0, and a real HHI over a non-empty book is at least
+      // 10 000/N, so zero can only mean "not computed". That lets an old row fall back
+      // to exactly today's behaviour without threading `computed` through the payload.
+      hhi: lensHhi ?? data.risk?.concentration_hhi ?? null,
+      hhiSource: lensHhi !== null ? "book_metrics" : "portfolio_risk",
       grossExposure: bookMetrics?.gross_exposure ?? null,
       netExposure: bookMetrics?.net_exposure ?? null,
       maxDrawdown: drawdown?.maxDrawdown ?? null,
@@ -1026,7 +1046,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       shortSideAvailable,
     };
     return buildLimitBoard(inputs);
-  }, [cfgMap, data.risk, data.returns.length, bookMetrics, drawdown, capData, data.analyticsRow]);
+  }, [cfgMap, data.risk, data.returns.length, bookMetrics, lensHhi, drawdown, capData, data.analyticsRow]);
 
   const limitCoverageNote = useMemo(() => {
     const missing: string[] = [];

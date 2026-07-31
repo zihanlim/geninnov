@@ -333,6 +333,13 @@ export interface LimitBoardInputs {
   grossExposure: number | null;
   netExposure: number | null;
   /**
+   * Which table the `hhi` value above came from, so the row can cite what it actually
+   * read. `book_metrics` is the lens-following field (ADR-0208); `portfolio_risk` is
+   * the lens-less fallback for a row written before it existed. Omitted = fallback,
+   * which is what every historical row is.
+   */
+  hhiSource?: "book_metrics" | "portfolio_risk";
+  /**
    * Did THIS RUN's candidate pool contain a short side?
    *
    * `false` makes the net-exposure band not-applicable: a book with no short
@@ -513,8 +520,18 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
         label: "Concentration (HHI)",
         unit: "score",
         limitSource: "house_default",
-        note: "Herfindahl–Hirschman index of position weights on the 0–10 000 (DOJ) scale: 10 000/N is fully diversified, 10 000 is a single name; the 2 000 ceiling ≈ five equal names. From portfolio_risk.concentration_hhi.",
-        source: "portfolio_risk.concentration_hhi",
+        note:
+          "Herfindahl–Hirschman index of position weights on the 0–10 000 (DOJ) scale: " +
+          "10 000/N is fully diversified, 10 000 is a single name; the 2 000 ceiling is " +
+          "exactly 10 000/5, i.e. “hold at least five roughly-equal names”, so a " +
+          "book of four or fewer breaches it by construction.",
+        // Cites the table actually read. The lens-following field is preferred; the
+        // lens-less one is the fallback, and a reader must be able to tell which they
+        // are looking at, because only one of them is this book's.
+        source:
+          inp.hhiSource === "book_metrics"
+            ? "book_metrics.concentration_hhi"
+            : "portfolio_risk.concentration_hhi",
       },
     },
     {

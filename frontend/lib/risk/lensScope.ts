@@ -152,6 +152,12 @@ export const PANEL_SCOPE: Record<string, PanelSources> = {
       "portfolio_risk.var_95",
       "portfolio_risk.cvar_95",
       "portfolio_risk.beta",
+      // Either table, depending on the run. ADR-0208 made this figure lens-following
+      // (`book_metrics.concentration_hhi`); the lens-less column is the fallback for a
+      // row written before that field existed, so a reader on an older run is still
+      // seeing the multi-asset book's number here and the chip must keep saying so.
+      // The row itself cites whichever it actually read.
+      "research_recommendations.book_metrics.concentration_hhi",
       "portfolio_risk.concentration_hhi",
       "portfolio_returns.cumulative_return",
       "research_recommendations.book_metrics",
@@ -204,6 +210,12 @@ export const PANEL_SCOPE: Record<string, PanelSources> = {
       "portfolio_risk.var_95",
       "portfolio_risk.cvar_95",
       "portfolio_risk.beta",
+      // Either table, depending on the run. ADR-0208 made this figure lens-following
+      // (`book_metrics.concentration_hhi`); the lens-less column is the fallback for a
+      // row written before that field existed, so a reader on an older run is still
+      // seeing the multi-asset book's number here and the chip must keep saying so.
+      // The row itself cites whichever it actually read.
+      "research_recommendations.book_metrics.concentration_hhi",
       "portfolio_risk.concentration_hhi",
       "portfolio_returns.cumulative_return",
       "research_recommendations.book_metrics",

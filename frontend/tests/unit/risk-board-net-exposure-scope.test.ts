@@ -155,3 +155,50 @@ describe("the band still governs everywhere else", () => {
     expect(na).toEqual(["net_exposure"]);
   });
 });
+
+/**
+ * Concentration follows the lens, and cites which table it read (ADR-0208).
+ *
+ * `portfolio_risk.concentration_hhi` has no lens column (ADR-0194), so the board showed
+ * the MULTI-ASSET book's 1,174 / 2,000 — stamped **OK** — on the credit page, over a
+ * three-name book whose own HHI is 3,600 and a breach. Of every lens-less row there it is
+ * the most inverted: a VaR borrowed from another book is at least *a* risk number, while a
+ * DIVERSIFICATION figure borrowed from a nine-name book reads as reassurance about a
+ * three-name one.
+ *
+ * Note this is a COVERAGE gap, not an applicability one — unlike the net band above, the
+ * limit genuinely applies to the credit book and its value is well defined. So the answer
+ * is to compute it, not to mark it N/A.
+ */
+describe("concentration follows the lens", () => {
+  it("prefers the book's own figure and says so", () => {
+    const rows = buildLimitBoard({
+      ...CREDIT,
+      hhi: 3600,
+      hhiSource: "book_metrics",
+    });
+    const row = rowFor(rows, "hhi");
+    expect(row.value).toBe(3600);
+    expect(row.status).toBe("breached");
+    expect(row.source).toBe("book_metrics.concentration_hhi");
+  });
+
+  it("falls back to the lens-less column and cites THAT", () => {
+    // A row written before the field existed must behave exactly as it did before, and
+    // must not claim to be the book's own figure.
+    const row = rowFor(buildLimitBoard({ ...CREDIT, hhi: 1174 }), "hhi");
+    expect(row.value).toBe(1174);
+    expect(row.status).toBe("ok");
+    expect(row.source).toBe("portfolio_risk.concentration_hhi");
+  });
+
+  it("states the limit as a minimum name count, not just an index", () => {
+    // 2 000 is exactly 10 000/5, so the limit IS "hold at least five roughly-equal
+    // names" — which is what makes the credit book's breach redundant with the
+    // correlation-complex cap rather than new information. A reader who cannot decode
+    // the index can still act on the sentence.
+    const row = rowFor(buildLimitBoard({ ...CREDIT, hhi: 3600 }), "hhi");
+    expect(row.note).toContain("five roughly-equal names");
+    expect(row.note).toContain("four or fewer");
+  });
+});

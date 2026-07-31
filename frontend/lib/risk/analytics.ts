@@ -92,6 +92,20 @@ export interface BookMetrics {
   short_weight?: number | null;
   sector_weights?: Record<string, number> | null;
   geo_weights?: Record<string, number> | null;
+  /**
+   * The book's OWN Herfindahl, 0–10 000, |weight| normalised by gross (ADR-0208).
+   *
+   * Lens-FOLLOWING, unlike `portfolio_risk.concentration_hhi`, which has no lens
+   * column (ADR-0194) and so showed the multi-asset book's 1,174 on every lens —
+   * "OK" over a three-name credit book whose own figure is 3,600 and a breach.
+   *
+   * Absent on rows written before this field existed, and `0` on the placeholder
+   * `BookMetrics` the agent builds when it has no factor exposures. Both mean "not
+   * computed": a real HHI over a non-empty book is at least 10 000/N, so it can
+   * never legitimately be 0, which lets the risk board fall back without threading
+   * `computed` through the payload.
+   */
+  concentration_hhi?: number | null;
 }
 
 export interface CorrelationSummary {

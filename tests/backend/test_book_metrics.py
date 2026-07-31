@@ -17,6 +17,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 
 from backend.services.book_metrics import (
+    book_metrics_to_dict,
     compute_book_metrics,
     compute_correlation_matrix,
     correlation_warning,
@@ -680,3 +681,101 @@ def test_no_tickers_is_silent():
     from backend.services.book_metrics import moving_average_context
 
     assert moving_average_context([]) == {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────────
+# Concentration, per lens (ADR-0208)
+#
+# `portfolio_risk.concentration_hhi` has no lens column (ADR-0194), so the risk board
+# showed the MULTI-ASSET book's HHI on every lens: 1,174 against a 2,000 limit, stamped
+# OK, over the three-name credit book whose own figure is 3,600 and a breach. Of every
+# lens-less row on that page it is the most inverted — a VaR borrowed from another book
+# is at least *a* risk number, while a DIVERSIFICATION figure borrowed from a nine-name
+# book reads as reassurance about a three-name one.
+#
+# The formula is imported from risk_engine, not restated, so these tests are really
+# pinning two things: that the field is populated and follows the picks, and that it
+# agrees with the lens-less column it is replacing wherever both are defined.
+
+class TestConcentrationHhi:
+    def _bm(self, picks):
+        return compute_book_metrics(
+            picks=picks, factor_exposures={}, total_capital=100_000_000.0
+        )
+
+    def test_reproduces_the_live_multi_asset_figure(self):
+        """The cross-check that matters: the new lens-following field must agree with
+        the lens-less column it replaces. `portfolio_risk.concentration_hhi` read
+        1173.57 for the 2026-07-30 multi-asset book."""
+        picks = [
+            {"asset": "BABA", "direction": "short", "weight": 0.07496609},
+            {"asset": "UNH", "direction": "long", "weight": 0.05743257},
+            {"asset": "GLD", "direction": "short", "weight": 0.05586448},
+            {"asset": "NOC", "direction": "short", "weight": 0.0513113},
+            {"asset": "SMH", "direction": "long", "weight": 0.04680472},
+            {"asset": "GEV", "direction": "long", "weight": 0.04495841},
+            {"asset": "PDD", "direction": "short", "weight": 0.0400984},
+            {"asset": "UNG", "direction": "short", "weight": 0.03814303},
+            {"asset": "F", "direction": "long", "weight": 0.03431895},
+        ]
+        assert self._bm(picks).concentration_hhi == pytest.approx(1173.57, abs=1.0)
+
+    def test_the_live_credit_book_breaches_the_2000_limit(self):
+        """3 names at 40/40/20 of gross. The figure the credit page could not show."""
+        picks = [
+            {"asset": "EMB", "direction": "long", "weight": 0.2},
+            {"asset": "BIL", "direction": "long", "weight": 0.2},
+            {"asset": "BKLN", "direction": "long", "weight": 0.09999999},
+        ]
+        hhi = self._bm(picks).concentration_hhi
+        assert hhi == pytest.approx(3600, abs=1.0)
+        assert hhi > 2000, "a three-name book must breach a five-name limit"
+
+    def test_cash_does_not_dilute_it(self):
+        """Normalised by GROSS, so under-deployment cannot masquerade as
+        diversification. Two books with identical shapes and different gross must read
+        the same — otherwise holding cash would improve the concentration score, which
+        is the bug risk_engine._hhi's docstring records (a live book read 425, below its
+        own 1,111 nine-name floor: impossible for a real HHI)."""
+        names = ['TLT', 'IEF', 'SHY', 'AGG', 'LQD']
+        half = [{"asset": a, "direction": "long", "weight": 0.1} for a in names]
+        full = [{"asset": a, "direction": "long", "weight": 0.2} for a in names]
+        assert self._bm(half).concentration_hhi == pytest.approx(
+            self._bm(full).concentration_hhi, abs=1e-6
+        )
+        # Five equal names is exactly the 2 000 limit — 10 000/5.
+        assert self._bm(half).concentration_hhi == pytest.approx(2000, abs=1e-6)
+
+    def test_the_limit_is_a_minimum_name_count(self):
+        """2 000 is arithmetically "hold at least five roughly-equal names": N equal
+        names give exactly 10 000/N. Pinned because it is the reason the credit book's
+        breach is redundant with the correlation-complex cap rather than new
+        information — both say the pool offered three ideas."""
+        pool = ['TLT', 'IEF', 'SHY', 'AGG', 'LQD', 'HYG', 'JNK', 'BKLN', 'ANGL', 'EMB']
+        for n, expected in ((2, 5000), (3, 3333), (4, 2500), (5, 2000), (10, 1000)):
+            picks = [
+                {"asset": a, "direction": "long", "weight": 1.0 / n}
+                for a in pool[:n]
+            ]
+            assert self._bm(picks).concentration_hhi == pytest.approx(expected, abs=1.0)
+
+    def test_direction_does_not_change_it(self):
+        """|weight| — a short position concentrates the book exactly as much as a long
+        one of the same size. (What HHI therefore does NOT measure is whether two
+        positions hedge each other; that is the correlation matrix's job.)"""
+        quad = ["TLT", "IEF", "SHY", "AGG"]
+        longs = [{"asset": a, "direction": "long", "weight": 0.25} for a in quad]
+        mixed = [
+            {"asset": a, "direction": d, "weight": 0.25}
+            for a, d in zip(quad, ["long", "short", "long", "short"])
+        ]
+        assert self._bm(longs).concentration_hhi == pytest.approx(
+            self._bm(mixed).concentration_hhi, abs=1e-6
+        )
+
+    def test_it_is_persisted(self):
+        """A figure computed and not persisted is a figure the page cannot read."""
+        picks = [{"asset": "EMB", "direction": "long", "weight": 0.2}]
+        d = book_metrics_to_dict(self._bm(picks))
+        assert "concentration_hhi" in d
+        assert d["concentration_hhi"] == pytest.approx(10000, abs=1e-6)

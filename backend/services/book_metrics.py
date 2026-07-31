@@ -232,6 +232,12 @@ class BookMetrics:
     weight_violations: list[str]         # names exceeding single-name cap
     high_correlation_pairs: list[tuple[str, str, float]]  # [(asset_a, asset_b, corr)]
     computed: bool                 # True if all fields are populated
+    # 0-10000, |weight| normalised by GROSS (ADR-0208). LAST, and defaulted, so the
+    # several call sites that build this object by hand keep working — it is a derived
+    # figure, and making six existing constructions fail to add one would be churn for
+    # no safety. 0.0 is the not-computed sentinel: a real HHI over a non-empty book is
+    # at least 10000/N, so it can never legitimately be zero.
+    concentration_hhi: float = 0.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -258,6 +264,31 @@ def compute_book_metrics(
     short_w = sum(p.get("weight", 0) for p in shorts)
     gross = long_w + short_w
     net = long_w - short_w
+
+    # Concentration, HERE rather than in risk_engine, because this is the one place the
+    # LENS's own picks are in scope.
+    #
+    # `portfolio_risk.concentration_hhi` has no lens column (ADR-0194), so on
+    # /mandate?lens=credit the board showed the MULTI-ASSET book's 1,174 against a 2,000
+    # limit and stamped it OK — over a three-name book whose own HHI is 3,600, a breach.
+    # A diversification figure borrowed from a nine-name book is the most inverted thing
+    # that page could say about a three-name one: every other lens-less row is at least
+    # *a* risk number, while this one reads as reassurance pointing the wrong way.
+    #
+    # The function is IMPORTED from risk_engine, not restated. `_hhi` there already fixed
+    # the basis question — |weight| normalised by gross, so cash cannot dilute the index
+    # (its docstring records the live book reading 425, below its own 1,111 nine-name
+    # floor, which is impossible for a real HHI) — and a second copy of that reasoning is
+    # how the two answers drift apart.
+    #
+    # Note what the 2,000 limit arithmetically IS: 10000/N for N equal names, so 2,000 is
+    # "hold at least five roughly-equal names". A book with four or fewer breaches by
+    # construction. That makes the credit book's breach redundant with the correlation
+    # complex cap — both say the pool offered three ideas — and redundancy between a
+    # concentration limit and a diversification cap is agreement, not noise.
+    from .risk_engine import _hhi
+
+    hhi = _hhi([{"weight": p.get("weight", 0.0)} for p in picks])
 
     # Value-weighted factor exposure
     factors = ["beta_mkt", "beta_smb", "beta_hml", "beta_rmw", "beta_cma", "beta_umd"]
@@ -348,6 +379,7 @@ def compute_book_metrics(
         geo_violations=geo_violations,
         weight_violations=weight_violations,
         high_correlation_pairs=[],   # filled by compute_correlation_matrix
+        concentration_hhi=hhi,
         computed=True,
     )
 
@@ -703,6 +735,13 @@ def book_metrics_to_dict(bm: BookMetrics) -> dict:
         "short_weight": bm.short_weight,
         "sector_weights": dict(bm.sector_weights),
         "geo_weights": dict(bm.geo_weights),
+        # The book's OWN concentration, so it follows the lens.
+        # `portfolio_risk.concentration_hhi` has no lens column (ADR-0194), so the risk
+        # board showed the multi-asset book's figure on every lens — 1,174 / 2,000 "OK"
+        # over the three-name credit book, whose own HHI is 3,600 and a breach. Persisted
+        # here rather than added to portfolio_risk because that table is deliberately
+        # single-book, and a second book must not write into the first book's record.
+        "concentration_hhi": bm.concentration_hhi,
     }
 
 

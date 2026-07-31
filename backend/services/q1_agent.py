@@ -1072,7 +1072,13 @@ def compute_book_metrics_node(state: Q1State) -> Q1State:
         gross_exposure=0.0, net_exposure=0.0, long_weight=0.0, short_weight=0.0,
         sector_weights={}, geo_weights={},
         sector_violations=[], geo_violations=[], weight_violations=[],
-        high_correlation_pairs=[], computed=False,
+        high_correlation_pairs=[],
+        # 0.0 is the placeholder convention this whole object already uses, and
+        # `computed=False` is the signal. It is also a safe sentinel downstream: a
+        # real HHI over a non-empty book is at least 10000/N, so it can never be 0,
+        # which lets the risk board tell 'not computed' from a genuine reading
+        # without threading `computed` through the payload.
+        concentration_hhi=0.0, computed=False,
     )
     if enriched_picks and factor_exp:
         bm = compute_book_metrics(

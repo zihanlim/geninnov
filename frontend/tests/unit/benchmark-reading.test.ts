@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeDownCapture } from "@/lib/risk/benchmarkReading";
+import { describeDownCapture, MIN_CAPTURE_DAYS } from "@/lib/risk/benchmarkReading";
 
 describe("describeDownCapture", () => {
   it("reads a negative capture as the claim holding", () => {
@@ -28,19 +28,38 @@ describe("describeDownCapture", () => {
     expect(describeDownCapture(0.9999, 20)!.verdict).toBe("dampened");
   });
 
-  it("caveats a verdict drawn from very few down days", () => {
-    // The number still renders; only the CLAIM about it is qualified.
+  it("WITHHOLDS the verdict on very few down days rather than caveating it", () => {
+    // CHANGED, and the change is the point. This used to return `claim_holds` with
+    // " Measured over 2 down days, which describes those days rather than the book."
+    // appended — leading with "the book's central claim holding" and trailing the
+    // limitation, which is the order that gets the claim remembered and the caveat
+    // skimmed. The module header always said the thin case "withholds the CLAIM"; now
+    // it does.
     const thin = describeDownCapture(-0.5, 2)!;
-    expect(thin.verdict).toBe("claim_holds");
+    expect(thin.verdict).toBe("too_thin");
     expect(thin.text).toContain("2 down days");
-    expect(thin.text).toContain("rather than the book");
+    expect(thin.text).not.toContain("central claim holding");
+    expect(thin.text).not.toContain("rose while the benchmark fell");
+  });
 
-    const ample = describeDownCapture(-0.5, 40)!;
-    expect(ample.text).not.toContain("rather than the book");
+  it("withholds on a thin sample whatever the value would have said", () => {
+    // Not just the flattering direction. A book that fell HARDER than the benchmark
+    // over one day must not be convicted on that day either — the sample bound is
+    // about the sample, not about which answer it gives.
+    for (const v of [-0.5, 0.4, 1.3]) {
+      expect(describeDownCapture(v, 1)!.verdict, `value ${v}`).toBe("too_thin");
+    }
+  });
+
+  it("publishes a verdict once the sample clears the floor", () => {
+    expect(describeDownCapture(-0.5, MIN_CAPTURE_DAYS)!.verdict).toBe("claim_holds");
+    expect(describeDownCapture(-0.5, MIN_CAPTURE_DAYS - 1)!.verdict).toBe("too_thin");
   });
 
   it("singularises one down day", () => {
-    expect(describeDownCapture(0.5, 1)!.text).toContain("1 down day,");
+    const r = describeDownCapture(0.5, 1)!;
+    expect(r.text).toContain("1 down day is");
+    expect(r.text).not.toContain("1 down days");
   });
 
   it("returns null rather than a verdict when there is no number", () => {

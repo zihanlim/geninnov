@@ -237,14 +237,63 @@ export default function BookFunnel({
                     style={{ gridColumn: edgeCol, gridRow: 1 }}
                     data-testid={`funnel-edge-${node.id}`}
                   >
+                    {/* An ARROW, not a rule: the chain has a direction and a
+                        bare line does not carry one. Drawn with borders rather
+                        than a glyph on purpose — `▶`/`▼` are the long/short
+                        marks in this very panel's own node splits (`▲L 29
+                        ▼S 13`), and a triangle of the same family in the
+                        connector would read as a side rather than as flow
+                        (goal 3). A CSS triangle is unmistakably a line's end. */}
                     <div
-                      className="shrink-0 lg:w-full lg:h-0 h-6 w-0 border-l lg:border-l-0 lg:border-t"
-                      style={{
-                        borderColor: edge.notable ? "var(--warning)" : "var(--border)",
-                        borderWidth: edge.notable ? 2 : 1,
-                      }}
+                      className="hidden lg:flex items-center w-full shrink-0"
                       aria-hidden
-                    />
+                    >
+                      <div
+                        className="grow"
+                        style={{
+                          borderTopStyle: "solid",
+                          borderTopColor: edge.notable
+                            ? "var(--warning)"
+                            : "var(--border)",
+                          borderTopWidth: edge.notable ? 2 : 1,
+                        }}
+                      />
+                      <div
+                        className="w-0 h-0 shrink-0"
+                        style={{
+                          borderTop: "4px solid transparent",
+                          borderBottom: "4px solid transparent",
+                          borderLeft: `6px solid ${
+                            edge.notable ? "var(--warning)" : "var(--border)"
+                          }`,
+                        }}
+                      />
+                    </div>
+                    <div
+                      className="flex lg:hidden flex-col items-center h-6 shrink-0"
+                      aria-hidden
+                    >
+                      <div
+                        className="grow"
+                        style={{
+                          borderLeftStyle: "solid",
+                          borderLeftColor: edge.notable
+                            ? "var(--warning)"
+                            : "var(--border)",
+                          borderLeftWidth: edge.notable ? 2 : 1,
+                        }}
+                      />
+                      <div
+                        className="w-0 h-0 shrink-0"
+                        style={{
+                          borderLeft: "4px solid transparent",
+                          borderRight: "4px solid transparent",
+                          borderTop: `6px solid ${
+                            edge.notable ? "var(--warning)" : "var(--border)"
+                          }`,
+                        }}
+                      />
+                    </div>
                     {/* A BUTTON, not a span with a `title`. The card below opens
                         on hover AND on focus, so it is reachable by keyboard and
                         by tap; a `title` attribute is neither, and a hover-only

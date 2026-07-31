@@ -158,6 +158,23 @@ nothing else is. It cannot touch a legitimately-void row (different reason text)
 touch a `hit`/`miss`/`flat`, and expires on its own: after this change no new row can be
 written with that reason for a non-trading day.
 
+### Addendum 2026-08-01 — the repair, as run
+
+`scripts/repair_calendar_voids.py`, dry-run by default. Applied once, measured:
+
+| | before | after |
+|---|---|---|
+| rows in `pick_outcomes` | 80 | **80** — the denominator did not move |
+| verdicts | 70 pending, 10 void | **80 pending** |
+| `void_rate` (published) | **1.0 — "the spec could not score any of what matured"** | n/a, nothing has matured |
+
+All ten entered at the Friday 2026-07-24 close (UNH 420.74, XLE 59.62, NOC 542.24 — cross-checked
+against an independent price pull), `void_reason` and `resolved_at` cleared. `pending` is the
+correct destination: they mature 2026-08-24 and the nightly resolver grades them there, by
+the ordinary path. Verified idempotent both ways afterwards — the resolver re-voids none of
+them, and the repair itself finds nothing on a second run because its predicate is anchored
+to a string the fixed code cannot emit.
+
 ## Consequences
 
 - **An eighth of the forward record becomes gradeable.** The ten 07-25 claims mature

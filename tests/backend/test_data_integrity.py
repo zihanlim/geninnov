@@ -1007,3 +1007,114 @@ def test_a_null_lens_counts_as_multi_asset():
 
     flags = check_second_lens_published([{"run_date": "2026-07-31", "lens": None}], [], enabled=True)
     assert len(flags) == 1, "a NULL-lens row is the multi-asset book, so credit is missing"
+
+
+# ─────────────────────────────────────────────────────────────────────────────────
+# A per-ASSET beta is not the book's tilt
+#
+# THE FALSE POSITIVE THIS FIXES. The published 2026-07-30 thesis said:
+#
+#     "book has higher long-side beta exposure via SMH (mkt 1.80) and GEV (mkt 1.61)"
+#
+# Both figures are exactly right — `factor_exposures` for that run holds beta_mkt 1.8014
+# for SMH and 1.6104 for GEV. They are PER-ASSET betas, and the guard was comparing them
+# against `book_metrics.beta_mkt` (+0.1447), the value-weighted BOOK tilt. Different
+# quantities, so the comparison was never meaningful — and it failed check_data_integrity
+# every single night, which is worse than a missing check: a guard that always cries wolf
+# drowns the real findings beside it. Naming a position's own beta is also exactly what
+# ADR-0075 asked the model to start doing, so this punished the fix for an earlier defect.
+#
+# The load-bearing test is the second one: the scoping must not blind ADR-0071's catch.
+
+_LIVE_0730_TILTS = {
+    "beta_mkt": 0.1446882436920108, "beta_hml": 0.1139012742632606,
+    "beta_rmw": 0.1644173830233286, "beta_cma": -0.4565642572892558,
+    "beta_smb": 0.133053621302763, "beta_umd": 0.0,
+}
+
+
+def _live0730(text):
+    return {
+        "run_date": "2026-07-30",
+        "book_view": text,
+        "book_risks": [],
+        "book_metrics": {"factor_tilts": _LIVE_0730_TILTS},
+        "picks": [{"asset": a} for a in ("SMH", "GEV", "BABA", "UNH", "GLD")],
+    }
+
+
+def test_a_per_asset_beta_is_not_flagged_as_a_book_tilt():
+    from scripts.check_data_integrity import check_factor_tilt_claims
+
+    row = _live0730(
+        "book has higher long-side beta exposure via SMH (mkt 1.80) and GEV (mkt 1.61), "
+        "likely worse than pool baseline; shorts provide only modest offset."
+    )
+    # BOTH names, not just the first: an earlier attempt scoped SMH correctly and still
+    # flagged GEV, because the look-back window for GEV's `mkt` contains "1.80)" and the
+    # decimal point was being read as a full stop.
+    assert check_factor_tilt_claims(row) == []
+
+
+def test_the_scoping_does_not_blind_adr_0071s_catch():
+    """The regression that would matter most. The 2026-07-25 thesis said "factor tilts
+    favoring value (HML +0.27) and quality (RMW +0.35) at market-neutral (Mkt -0.02)"
+    against a book at HML +0.32 / RMW +0.43 / Mkt -0.50. No ticker precedes any of those
+    three figures, so all three must still fire."""
+    from scripts.check_data_integrity import check_factor_tilt_claims
+
+    row = _tiltrow(
+        book_view="factor tilts favoring value (HML +0.27) and quality (RMW +0.35) "
+                  "at market-neutral (Mkt -0.02)"
+    )
+    flags = check_factor_tilt_claims(row)
+    assert len(flags) == 3, flags
+    joined = " ".join(flags)
+    for alias in ("HML", "RMW", "MKT"):
+        assert alias in joined
+
+
+def test_a_decimal_point_is_not_a_sentence_boundary():
+    """Pinned directly, because this is what the first fix got wrong. `.` followed by a
+    DIGIT is a decimal; `.` followed by whitespace ends a subject."""
+    from scripts.check_data_integrity import _scoped_to_asset
+
+    tickers = {"SMH", "GEV"}
+    text = "via SMH (mkt 1.80) and GEV (mkt 1.61)"
+    positions = [i for i in range(len(text)) if text.startswith("mkt", i)]
+    assert len(positions) == 2
+    for at in positions:
+        assert _scoped_to_asset(text, at, tickers), text[max(0, at - 18):at]
+
+
+def test_a_book_level_claim_after_a_full_stop_is_still_judged():
+    """The sentence boundary is what keeps the scoping honest — otherwise naming any
+    ticker anywhere would buy a licence to misstate the book's tilt just after it."""
+    from scripts.check_data_integrity import check_factor_tilt_claims
+
+    row = _live0730("We size into SMH. Book mkt tilt is -0.50 overall.")
+    assert len(check_factor_tilt_claims(row)) == 1
+
+
+def test_an_unknown_token_does_not_buy_scoping():
+    """VIX, OAS, HY and IG are not positions. Using ASSETS rather than a
+    capitalised-word regex is what makes that true."""
+    from scripts.check_data_integrity import check_factor_tilt_claims
+
+    assert len(check_factor_tilt_claims(_live0730("VIX mkt 1.80 is not a position."))) == 1
+
+
+def test_a_correct_book_level_restatement_stays_silent():
+    from scripts.check_data_integrity import check_factor_tilt_claims
+
+    assert check_factor_tilt_claims(_live0730("The book carries mkt +0.14 and hml +0.11.")) == []
+
+
+def test_the_ticker_universe_falls_back_to_the_books_own_picks():
+    """If `book_metrics` cannot be imported (it pulls pandas and yfinance), the guard must
+    degrade to a SMALLER universe rather than to none — keeping a false positive rather
+    than inventing a false negative."""
+    from scripts.check_data_integrity import _known_tickers
+
+    universe = _known_tickers({"picks": [{"asset": "SMH"}, {"asset": "GEV"}]})
+    assert "SMH" in universe and "GEV" in universe

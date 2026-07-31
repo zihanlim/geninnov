@@ -325,6 +325,74 @@ _FACTOR_ALIASES = {
 }
 
 
+def _known_tickers(rec_row: dict | None) -> set[str]:
+    """The instrument universe, for telling a per-NAME beta from a per-BOOK tilt.
+
+    From `ASSETS` — book_metrics' canonical per-ticker record — rather than a regex for
+    capitalised words, which would match VIX, OAS, HY, IG and every other upper-case token
+    a macro thesis is full of, and would hand out scoping to things that are not positions.
+
+    Lazily imported: `book_metrics` pulls pandas and yfinance at module level, and this
+    module is also run for cheap checks. Falls back to the book's own picks if that import
+    is unavailable, so the guard degrades to a SMALLER universe rather than to none — the
+    direction that keeps a false positive rather than inventing a false negative.
+    """
+    try:
+        from backend.services.book_metrics import ASSETS
+
+        return set(ASSETS)
+    except Exception:
+        return {
+            str(p.get("asset"))
+            for p in ((rec_row or {}).get("picks") or [])
+            if p.get("asset")
+        }
+
+
+def _scoped_to_asset(text: str, alias_start: int, tickers: set[str]) -> bool:
+    """Is this factor figure attributed to a NAMED INSTRUMENT rather than to the book?
+
+    THE FALSE POSITIVE THIS EXISTS TO KILL. On 2026-07-30 the published thesis said:
+
+        "book has higher long-side beta exposure via SMH (mkt 1.80) and GEV (mkt 1.61)"
+
+    Both figures are exactly right — `factor_exposures` for that run holds beta_mkt
+    **1.8014** for SMH and **1.6104** for GEV. They are PER-ASSET betas, and this guard was
+    comparing them against `book_metrics.beta_mkt` (+0.1447), the value-weighted BOOK tilt.
+    Different quantities, so the comparison was never meaningful — and it failed
+    `check_data_integrity` every single night, which is worse than a missing check: a guard
+    that always cries wolf is a guard nobody reads, and it drowned the real findings beside
+    it. Naming a position's own beta is also precisely what ADR-0075 asked the model to
+    start doing, so this was punishing the fix for an earlier defect.
+
+    THE RULE: a known ticker within a short look-back, with nothing sentence-ending between
+    it and the factor word.
+
+        "SMH (mkt 1.80)"            -> scoped, skipped
+        "GEV's mkt 1.61"            -> scoped, skipped
+        "...SMH. Book mkt is -0.50" -> NOT scoped; the full stop ends the subject, so the
+                                       figure is still judged against the book
+        "VIX mkt 1.80"              -> NOT scoped; VIX is not an instrument in ASSETS
+
+    The sentence-boundary condition is what keeps ADR-0071's original catch alive: the
+    2026-07-25 thesis said *"factor tilts favoring value (HML +0.27) and quality (RMW
+    +0.35) at market-neutral (Mkt -0.02)"* against a book at HML +0.32 / RMW +0.43 / Mkt
+    **-0.50**, and no ticker precedes any of those three figures, so all three still fire.
+    """
+    window = text[max(0, alias_start - 18):alias_start]
+    # A sentence boundary means whatever ticker preceded it is not this figure's subject.
+    #
+    # Punctuation FOLLOWED BY WHITESPACE, not the bare character: a decimal point is not a
+    # full stop. Testing for "." alone made the second figure in
+    # `SMH (mkt 1.80) and GEV (mkt 1.61)` unscoped — the look-back window for GEV's `mkt`
+    # contains "1.80)", whose decimal point read as the end of a sentence, so GEV kept
+    # being flagged while SMH was correctly skipped. Caught by testing both names rather
+    # than the first one.
+    if re.search(r"[.;!?]\s", window):
+        return False
+    return any(re.search(rf"\b{re.escape(t)}\b", window) for t in tickers)
+
+
 def check_factor_tilt_claims(
     rec_row: dict | None,
     tol: float = 0.05,
@@ -367,18 +435,22 @@ def check_factor_tilt_claims(
         return []
 
     run = rec_row.get("run_date", "?")
+    tickers = _known_tickers(rec_row)
     out: list[str] = []
     for key, aliases in _FACTOR_ALIASES.items():
         actual = tilts.get(key)
         if not isinstance(actual, (int, float)) or isinstance(actual, bool):
             continue
-        # One flag per factor, however many ways the prose names it.
+        # One flag per factor, however many ways the prose names it. A figure attributed
+        # to a NAMED INSTRUMENT is that instrument's own beta and is not the book's tilt —
+        # see `_scoped_to_asset` for the live 2026-07-30 case this stops flagging.
         mismatch = next(
             (
                 (alias, claimed)
                 for alias in aliases
-                for claimed in _numbers_after(alias, text)
+                for claimed, at in _numbers_after(alias, text)
                 if abs(claimed - float(actual)) > tol
+                and not _scoped_to_asset(text, at, tickers)
             ),
             None,
         )
@@ -488,17 +560,21 @@ def check_regime_characterisation_claims(
     return out
 
 
-def _numbers_after(alias: str, text: str) -> list[float]:
+def _numbers_after(alias: str, text: str) -> list[tuple[float, int]]:
     """Numbers attached to ``alias`` — "HML +0.27", "Mkt -0.02", "market beta of 0.14".
 
     The gap class excludes digits, so the scan cannot leap over an intervening number
     and attribute a stranger's figure to this factor.
+
+    Returns (value, alias_start) rather than bare values, because the caller needs to
+    ask whether the figure was attributed to a NAMED INSTRUMENT — a question about
+    position in the text, not about the number (see `_scoped_to_asset`).
     """
     pat = rf"\b{re.escape(alias)}\b[^0-9+\-]{{0,12}}([+-]?\d*\.?\d+)"
-    found = []
+    found: list[tuple[float, int]] = []
     for m in re.finditer(pat, text, re.IGNORECASE):
         try:
-            found.append(float(m.group(1)))
+            found.append((float(m.group(1)), m.start()))
         except ValueError:
             continue
     return found

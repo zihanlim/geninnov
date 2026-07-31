@@ -909,3 +909,101 @@ def test_no_rows_is_not_a_failure():
 
     assert check_matured_claims_were_resolved([], now=_ORACLE) == []
     assert check_matured_claims_were_resolved(None, now=_ORACLE) == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────────
+# The second book published, or it did not (ADR-0194)
+#
+# L5b is the LAST statement in daily_refresh.main() and wraps its own body, so a failure
+# there leaves the multi-asset book published, the run reporting success, and the credit
+# book simply absent. Nothing asserted it:
+#
+#   * `check_stalled_stages` cannot — L5b's except branch records status="failure", which
+#     is TERMINAL, and that check only looks for started-and-never-finished;
+#   * and the ABSENCE case is worse than the failure case. If L5b never runs there is no
+#     pipeline_runs row to carry a status, and no expected-stage list contains L5b. Live
+#     evidence: the 2026-07-30 run has six stage rows (L0-L5), no L2b or L5b, and no
+#     surface complained.
+
+def _rec(run_date, lens):
+    return {"run_date": run_date, "lens": lens}
+
+
+def _l5b(run_date, status, error=None):
+    return {"run_date": run_date, "stage": "L5b", "status": status, "error": error}
+
+
+def test_silent_when_both_lenses_published():
+    from scripts.check_data_integrity import check_second_lens_published
+
+    rows = [_rec("2026-07-31", "multi_asset"), _rec("2026-07-31", "credit")]
+    assert check_second_lens_published(rows, [], enabled=True) == []
+
+
+def test_flags_a_missing_credit_book_and_names_l5bs_recorded_error():
+    """The absence is what a reader needs; the error is what tells them why. A guard that
+    reported the first without the second would send someone to logs that may have
+    rotated."""
+    from scripts.check_data_integrity import check_second_lens_published
+
+    rows = [_rec("2026-07-31", "multi_asset")]
+    stages = [_l5b("2026-07-31", "failure", "RateLimitError: 429 quota exhausted")]
+    flags = check_second_lens_published(rows, stages, enabled=True)
+    assert len(flags) == 1
+    assert "2026-07-31" in flags[0]
+    assert "credit" in flags[0]
+    assert "429" in flags[0]          # the reason travels with the absence
+    assert "status='failure'" in flags[0]
+
+
+def test_says_so_when_l5b_never_started_at_all():
+    """The worse case, and the one with no status to report: no row means the phase was
+    never reached, which is a different repair from a failed one."""
+    from scripts.check_data_integrity import check_second_lens_published
+
+    flags = check_second_lens_published([_rec("2026-07-31", "multi_asset")], [], enabled=True)
+    assert len(flags) == 1
+    assert "no L5b row" in flags[0]
+    assert "RUN_CREDIT_LENS" in flags[0]
+
+
+def test_disabled_lens_is_not_a_failure():
+    """Switching the lens off must not produce a nightly failure about a book nobody
+    asked for. `daily_refresh` reads the same env var the same way."""
+    from scripts.check_data_integrity import check_second_lens_published
+
+    rows = [_rec("2026-07-31", "multi_asset")]
+    assert check_second_lens_published(rows, [], enabled=False) == []
+
+
+def test_no_book_at_all_is_not_this_guards_job():
+    """"The run published nothing" is a different and louder failure, and the book-level
+    checks already own it. Reporting it here too would double-count one outage."""
+    from scripts.check_data_integrity import check_second_lens_published
+
+    assert check_second_lens_published([], [], enabled=True) == []
+    assert check_second_lens_published(None, [], enabled=True) == []
+    # A credit-only row is not a multi-asset book either.
+    assert check_second_lens_published([_rec("2026-07-31", "credit")], [], enabled=True) == []
+
+
+def test_only_the_latest_run_date_is_judged():
+    """Most history predates the in-pipeline L5b entirely, so looking further back would
+    report a gap that was never a promise."""
+    from scripts.check_data_integrity import check_second_lens_published
+
+    rows = [
+        _rec("2026-07-31", "multi_asset"), _rec("2026-07-31", "credit"),
+        _rec("2026-07-24", "multi_asset"),          # no credit book that far back
+        _rec("2026-07-23", "multi_asset"),
+    ]
+    assert check_second_lens_published(rows, [], enabled=True) == []
+
+
+def test_a_null_lens_counts_as_multi_asset():
+    """Migration 062 backfilled exactly one NULL-lens row, and it means multi_asset —
+    the same rule lensView.ts applies on the frontend."""
+    from scripts.check_data_integrity import check_second_lens_published
+
+    flags = check_second_lens_published([{"run_date": "2026-07-31", "lens": None}], [], enabled=True)
+    assert len(flags) == 1, "a NULL-lens row is the multi-asset book, so credit is missing"

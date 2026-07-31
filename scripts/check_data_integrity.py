@@ -1054,6 +1054,82 @@ def check_matured_claims_were_resolved(
     return out
 
 
+def check_second_lens_published(
+    rec_rows: list[dict] | None,
+    stage_rows: list[dict] | None = None,
+    enabled: bool | None = None,
+) -> list[str]:
+    """Did the second book publish, when it was supposed to?
+
+    L5b (the credit-lens book, ADR-0194) is the LAST statement in
+    `daily_refresh.main()`. Its own body is wrapped, so a failure there cannot take the
+    run down — the multi-asset book is already published and untouched. Which is exactly
+    what makes it invisible: the run reports success, the site serves a book, and the
+    second book is simply absent.
+
+    Nothing asserted it. `check_stalled_stages` cannot: L5b's except branch records
+    `status="failure"`, which is TERMINAL, and that check only looks for stages that
+    started and never finished. And the ABSENCE case is worse than the failure case —
+    if L5b never runs at all there is no `pipeline_runs` row to have a status, and no
+    expected-stage list contains L5b, so nothing anywhere notices. Live evidence: the
+    2026-07-30 run has six stage rows (L0-L5) and no L2b or L5b, and no surface
+    complained.
+
+    Two facts, deliberately reported together. The absence is what a reader needs to
+    know; L5b's recorded `error` is what tells them why, and a guard that reports the
+    first without the second sends someone to read logs that may already have rotated.
+
+    Gated on RUN_CREDIT_LENS, which `daily_refresh` reads the same way and which nothing
+    in the workflow sets — so both processes see the same default of enabled. Switching
+    the lens off must not produce a nightly failure about a book nobody asked for.
+
+    Scoped to the LATEST run_date only. Most history predates the in-pipeline L5b
+    entirely, so checking further back would report a gap that was never a promise.
+    """
+    if enabled is None:
+        enabled = os.environ.get("RUN_CREDIT_LENS", "1") not in ("0", "false", "False", "")
+    if not enabled or not rec_rows:
+        return []
+
+    dates = [str(r.get("run_date")) for r in rec_rows if r.get("run_date")]
+    if not dates:
+        return []
+    latest = max(dates)
+    lenses = {
+        str(r.get("lens") or "multi_asset")
+        for r in rec_rows
+        if str(r.get("run_date")) == latest
+    }
+    # Not this guard's job: "no book at all" is a different and louder failure, and the
+    # book-level checks above already own it.
+    if "multi_asset" not in lenses or "credit" in lenses:
+        return []
+
+    reason = ""
+    for row in stage_rows or []:
+        if str(row.get("run_date")) == latest and str(row.get("stage")) == "L5b":
+            status = str(row.get("status") or "unknown")
+            err = str(row.get("error") or "").strip()
+            reason = (
+                f" L5b recorded status={status!r}"
+                + (f": {err[:200]}" if err else " with no error recorded")
+                + "."
+            )
+            break
+    else:
+        reason = (
+            " There is no L5b row in pipeline_runs for that date at all, so the phase did"
+            " not start — check that main() reached it and that RUN_CREDIT_LENS was set."
+        )
+
+    return [
+        f"the {latest} book published for multi_asset but NOT for the credit lens, so the"
+        f" second book is missing and the run still reported success (ADR-0194 publishes"
+        f" it for inspection; L5b is the last statement in main() and guards its own body,"
+        f" which is why this fails silently)." + reason
+    ]
+
+
 def check_stalled_stages(
     rows: list[dict] | None,
     now: "datetime | None" = None,
@@ -1414,7 +1490,7 @@ def main() -> int:
     # A stage that began and never finished means that run published nothing.
     stage_rows = (
         sb.table("pipeline_runs")
-        .select("run_date, stage, status, started_at")
+        .select("run_date, stage, status, started_at, error")
         .order("started_at", desc=True)
         .limit(60)
         .execute()
@@ -1429,6 +1505,29 @@ def main() -> int:
         print("\nRe-run the pipeline for that date; the site is serving an older run.")
         return 1
     print("✓ No pipeline stage is stuck mid-run.")
+
+    # Did the SECOND book publish? L5b is the last statement in daily_refresh.main() and
+    # guards its own body, so a failure there leaves the multi-asset book published, the
+    # run reporting success, and the credit book simply absent. Its own read, because the
+    # rec_rows read above is pinned to lens=multi_asset and so cannot see which lenses
+    # published — which is the entire question here.
+    lens_rows = (
+        sb.table("research_recommendations")
+        .select("run_date, lens")
+        .order("run_date", desc=True)
+        .limit(12)
+        .execute()
+        .data
+    )
+    missing_lens = check_second_lens_published(lens_rows, stage_rows)
+    if missing_lens:
+        print("✗ DATA INTEGRITY CHECK FAILED — the second book did not publish:")
+        for f in missing_lens:
+            print(f"  - {f}")
+        print("\nThe multi-asset book is unaffected. Re-run with RUN_CREDIT_LENS=1, or "
+              "set it to 0 if the credit lens is deliberately off.")
+        return 1
+    print("✓ Every lens that was due to publish has a book for the latest run.")
 
     # Recorded but never graded — the mirror of the published-but-unrecorded check inside
     # run_book_checks. Its own read here, and NOT in run_book_checks, for two reasons:

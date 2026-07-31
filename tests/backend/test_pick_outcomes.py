@@ -9,15 +9,17 @@ The traps this pins, in order of how much damage each would do:
 """
 
 import sys, os
-from datetime import date
+from datetime import date, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from backend.services.pick_outcomes import (
     DEFAULT_HORIZON_DAYS,
+    ENTRY_LOOKBACK_DAYS,
     SPEC_VERSION,
     Outcome,
     build_scorecard,
+    commitment_rows,
     direction_sign,
     expected_exit_date,
     resolve_pick,
@@ -100,6 +102,124 @@ def test_exit_is_counted_in_trading_observations_not_calendar_days():
     assert out.exit_date == closes[3][0]
 
 
+# ─── a run_date the market never opened (ADR-0210) ────────────────────────────
+#
+# The entry rule read "the close ON run_date" literally, so a book published on a day
+# with no session voided its ENTIRE claim set for a calendar reason. Measured on the live
+# table 2026-07-31: all 10 claims from Saturday 2026-07-25 were `void` with "no close on
+# run_date 2026-07-25" — ARKK BABA GDX NOC NUE PDD SHY SVXY UNH XLE, every one a liquid
+# US name with a perfectly good Friday close.
+#
+# These are the four cases that matter, and two of them are boundaries: the bound must be
+# loose enough for the longest real market closure and tight enough that a DELISTED name
+# never gets a stale entry price and a fabricated verdict.
+
+def _with_gap(start: date, prices: list[float], skip: set[date]) -> list[tuple[date, float]]:
+    """Weekday closes with `skip` dates absent — a market holiday, which `_series` (all
+    weekdays) cannot express and which is the case the GitHub cron actually walks into."""
+    return [(d, p) for d, p in _series(start, prices) if d not in skip]
+
+
+def test_a_saturday_run_date_enters_at_fridays_close_and_is_not_void():
+    """The live 2026-07-25 defect. The book was published on a Saturday; Friday's close is
+    the last price it could have acted on, which is what the spec has always said."""
+    # Mon 20th .. Fri 24th, then 21 observations from Mon the 27th.
+    closes = _series(date(2026, 7, 20), [1.0, 2.0, 3.0, 4.0, 200.0] + [300.0] * 21)
+    out = resolve_pick(date(2026, 7, 25), "XLE", "long", closes, horizon_days=21)
+
+    assert out.verdict == "hit", f"voided a Saturday book: {out.void_reason}"
+    assert out.entry_price == 200.0, "the entry is Friday's close, not an earlier bar"
+    assert out.entry_date == date(2026, 7, 24)
+    # The horizon is unchanged by the look-back: still 21 observations after run_date, so
+    # a Saturday book is not silently graded over a shorter window than a Friday one.
+    assert out.exit_date == date(2026, 8, 24)
+    assert out.expected_exit_date == date(2026, 8, 24), "matches the live row's stored value"
+
+
+def test_a_weekday_holiday_run_date_enters_at_the_prior_session():
+    """`30 21 * * 1-5` fires on Thanksgiving. GitHub cron has no market calendar, so this
+    is the AUTOMATED path walking into the same defect — not just a manual weekend run."""
+    thanksgiving = date(2026, 11, 26)
+    closes = _with_gap(date(2026, 11, 23), [1.0, 2.0, 55.0, 0.0] + [60.0] * 22,
+                       skip={thanksgiving})
+    out = resolve_pick(thanksgiving, "SPY", "long", closes, horizon_days=21)
+
+    assert out.verdict == "hit", f"voided a holiday book: {out.void_reason}"
+    assert out.entry_date == date(2026, 11, 25) and out.entry_price == 55.0
+
+
+def test_the_lookback_reaches_a_monday_holiday_back_over_the_weekend():
+    """Labor Day 2026-09-07 is a Monday: the prior session is Friday the 4th, THREE
+    calendar days back. This is the worst case the US calendar produces, so it is the case
+    the bound has to clear — a bound of 2 would pass every other test in this section."""
+    labor_day = date(2026, 9, 7)
+    closes = _with_gap(date(2026, 9, 1), [1.0, 2.0, 3.0, 77.0, 0.0] + [80.0] * 22,
+                       skip={labor_day})
+    out = resolve_pick(labor_day, "SPY", "long", closes, horizon_days=21)
+
+    assert out.entry_date == date(2026, 9, 4), "did not reach back over the weekend"
+    assert (labor_day - out.entry_date).days == 3
+    assert out.verdict == "hit"
+
+
+@pytest.mark.parametrize(
+    "gap_days, resolves",
+    [
+        (3, True),    # the real worst case above
+        (4, True),    # the bound itself, inclusive
+        (5, False),   # past it: a gap the calendar cannot explain
+    ],
+)
+def test_the_lookback_bound_is_the_calendar_and_not_more(gap_days, resolves):
+    """The bound is what separates a closed market from a DEAD TICKER, and getting it
+    wrong is asymmetric: too tight re-creates the void bug, too loose grades a delisted
+    name against whatever price it last printed — a fabricated hit or miss, which is worse
+    than a void because a void is honest about not knowing."""
+    run = date(2026, 7, 30)
+    entry_bar = run - timedelta(days=gap_days)
+    closes = [(entry_bar, 100.0)] + _series(date(2026, 7, 31), [110.0] * 22)
+
+    out = resolve_pick(run, "MAYBE", "long", closes, horizon_days=21)
+
+    if resolves:
+        assert out.verdict == "hit" and out.entry_date == entry_bar
+    else:
+        assert out.verdict == "void", "a 5-day gap is a data problem, not a holiday"
+        assert out.entry_price is None, "a stale price must never become an entry"
+
+
+def test_a_void_for_a_missing_entry_names_the_window_it_searched():
+    """The old reason ("no close on run_date X") was true and useless — it read as a fact
+    about the name when it was a fact about the calendar, which is why 10 rows sat
+    mislabelled for days. The replacement states what was actually looked for."""
+    closes = _series(date(2026, 8, 10), [100.0] * 25)      # starts well after run_date
+    out = resolve_pick(date(2026, 7, 24), "DEAD", "long", closes, horizon_days=21)
+
+    assert out.verdict == "void"
+    assert "DEAD" in out.void_reason
+    assert "2026-07-20..2026-07-24" in out.void_reason, out.void_reason
+
+
+def test_a_bar_after_run_date_is_never_the_entry():
+    """The look-back reaches BACKWARD only. Entering at a price published after the book
+    would score it against information it did not have — the error the exact-date match
+    was protecting against, and it still has to hold."""
+    closes = _series(date(2026, 7, 27), [999.0] + [1000.0] * 25)
+    out = resolve_pick(date(2026, 7, 25), "XLE", "long", closes, horizon_days=21)
+
+    assert out.verdict == "void" and out.entry_price is None
+
+
+def test_the_publication_path_is_unchanged_by_the_lookback():
+    """`commitment_rows` calls this with an empty series and no clock, and DEPENDS on
+    getting `pending` back. The entry search now scans a window instead of testing one
+    date; over an empty series both find nothing, and that must stay true."""
+    out = resolve_pick(date(2026, 7, 25), "NEW", "long", [], horizon_days=21)
+    assert out.verdict == "pending" and out.void_reason is None
+    rows = commitment_rows(date(2026, 7, 25), [{"asset": "NEW", "direction": "long"}])
+    assert [r["verdict"] for r in rows] == ["pending"]
+
+
 # ─── pending vs void: two different absences ─────────────────────────────────
 
 def test_an_immature_pick_is_pending_not_void_and_not_a_miss():
@@ -117,7 +237,9 @@ def test_a_missing_entry_with_later_prices_is_void_with_a_reason():
     closes = _series(date(2026, 7, 27), [100.0] * 25)
     out = resolve_pick(date(2026, 7, 24), "DELISTED", "long", closes, horizon_days=21)
     assert out.verdict == "void"
-    assert "no close on run_date" in out.void_reason
+    # The look-back window, not the bare run_date: the reason has to distinguish "this name
+    # had no price" from "the market was shut", which is the whole of ADR-0210.
+    assert "no close for DELISTED" in out.void_reason
 
 
 def test_an_empty_series_is_pending_not_void():

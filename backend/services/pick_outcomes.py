@@ -8,9 +8,20 @@ the platform actually published. This module is the forward half.
 
 THE SPEC (v1), fixed 2026-07-26, while nothing had matured:
 
-    entry   = the close on run_date. The pipeline runs at 21:30 UTC after the US
-              close, so run_date's close is the last price observable when the book
-              was published, and therefore the only honest entry.
+    entry   = the last close AT OR BEFORE run_date, reaching back at most
+              ENTRY_LOOKBACK_DAYS. The pipeline runs at 21:30 UTC after the US close,
+              so that close is the last price observable when the book was published,
+              and therefore the only honest entry.
+
+              The clause after the comma has always been the rule; "the close ON
+              run_date" was a description of the ordinary case that the code took
+              literally, and on a run_date the market never opened the two diverge.
+              Measured 2026-07-31: **all 10 claims from 2026-07-25 -- a SATURDAY --
+              were `void` for "no close on run_date"**, every one of them a liquid US
+              name (ARKK BABA GDX NOC NUE PDD SHY SVXY UNH XLE) whose Friday close is
+              exactly the last price that book could have acted on. Nothing was wrong
+              with the prices; the entry rule demanded a bar the calendar cannot
+              produce. See ADR-0210.
     exit    = the close HORIZON_DAYS trading observations later.
     signed  = (exit / entry - 1) * (+1 long, -1 short)
     verdict = hit if signed > 0, miss if signed < 0, flat if exactly 0,
@@ -59,6 +70,28 @@ SPEC_VERSION = "v1"
 # `scripts/check_data_integrity.py` uses a SHORTER grace (7) so a human sees the
 # stall before the record takes a terminal verdict.
 VOID_GRACE_DAYS = 10
+
+# How far before run_date the entry may reach to find the last actionable close.
+#
+# DERIVED from the US market calendar, not fitted. The bound exists because the two
+# errors are asymmetric and only one of them is recoverable:
+#
+#   too TIGHT — a book published over a long weekend voids its whole claim set for a
+#               calendar reason, which is the defect this constant exists to fix, only
+#               narrower. A void is terminal, so it cannot be walked back.
+#   too LOOSE — a DELISTED name whose series stopped months ago gets an entry price
+#               from whenever it last traded, and grades against it. That fabricates a
+#               hit or a miss, which is strictly worse than a void: void is honest
+#               about not knowing, a stale-price verdict is a number that looks real.
+#
+# So the bound is the longest gap the calendar can put between run_date and the
+# preceding session, and no more. Enumerated over the NYSE calendar, the worst case is
+# a run_date on the SUNDAY after a Friday holiday (Good Friday 2026-04-03 -> a 04-05
+# run_date reaches Thursday 04-02) = 3 calendar days. A Monday holiday reaches the
+# previous Friday = 3. Christmas 2026 falls on a Friday, so a Sunday 12-27 run_date
+# reaches Thursday 12-24 = 3. 4 is that maximum plus one day of margin; beyond it a
+# missing bar is a data problem rather than a calendar one, and void is the right answer.
+ENTRY_LOOKBACK_DAYS = 4
 
 
 @dataclass
@@ -204,9 +237,17 @@ def resolve_pick(
 ) -> Outcome:
     """Resolve one pick against a price series.
 
-    `closes` is (date, close) ascending; it may span any range. The entry is the
-    observation ON run_date, and the exit is the `horizon_days`-th observation strictly
-    after it, so the count is in TRADING days and needs no market calendar.
+    `closes` is (date, close) ascending; it may span any range. The entry is the LAST
+    observation at or before run_date within ENTRY_LOOKBACK_DAYS, and the exit is the
+    `horizon_days`-th observation strictly after run_date, so the count is in TRADING
+    days and needs no market calendar.
+
+    CALLERS MUST FETCH FROM `run_date - ENTRY_LOOKBACK_DAYS`, not from run_date. A window
+    that starts at run_date cannot contain the prior session's close, so a Saturday
+    run_date would still void for want of a bar that was simply never downloaded --
+    the same defect surviving in the half of it that no unit test can see, because a test
+    hands this function a series it built itself. `scripts/resolve_outcomes.py` pads its
+    download by exactly this constant for this reason.
 
     A pick the series cannot score comes back `void` with a reason, or `pending` when it
     simply has not matured yet. Neither is a miss, and conflating either with one would
@@ -244,14 +285,30 @@ def resolve_pick(
     sign = direction_sign(direction)
     series = sorted(closes)
 
-    entry = next(((d, p) for d, p in series if d == run_date), None)
+    # The LAST bar at or before run_date, not a bar stamped exactly run_date. `series` is
+    # ascending, so reversed() yields the latest candidate first. On a trading run_date
+    # this finds run_date's own close and is identical to an equality test; on a Saturday,
+    # a Sunday, or a weekday holiday the GitHub cron does not know about, it finds the
+    # prior session's close -- which is what "the last price it could have acted on" means
+    # on a day the market never opened (ADR-0210).
+    floor = run_date - timedelta(days=ENTRY_LOOKBACK_DAYS)
+    entry = next(((d, p) for d, p in reversed(series) if floor <= d <= run_date), None)
     if entry is None:
-        # No observation on the publication date at all. Distinguish "the market was
-        # shut / this name has no history" from "not matured yet": if later prices
-        # exist, the entry is genuinely missing and no future run will supply it.
+        # No observation in the entry window at all. Distinguish "this name has no
+        # history / stopped trading before it was picked" from "not matured yet": if
+        # later prices exist, the entry is genuinely missing and no future run will
+        # supply it.
         if any(d > run_date for d, _ in series):
-            return Outcome(**base, verdict="void",
-                           void_reason=f"no close on run_date {run_date.isoformat()}")
+            return Outcome(
+                **base, verdict="void",
+                # States the WINDOW searched, not just the date. The old wording ("no
+                # close on run_date X") was true and useless: it read as a fact about
+                # the name when it was a fact about the calendar.
+                void_reason=(
+                    f"no close for {asset} in {floor.isoformat()}..{run_date.isoformat()}"
+                    f" (entry window ending run_date)"
+                ),
+            )
         if overdue:
             # An EMPTY series long past maturity — delisted, symbol retired, or a
             # ticker that never resolved. Migration 043 and ADR-0090 both name this
@@ -271,6 +328,9 @@ def resolve_pick(
         return Outcome(**base, verdict="void",
                        void_reason=f"entry close is {entry_price!r}, not a usable price")
 
+    # Keyed on run_date, and `d > entry_date` would be the same set: the entry is the LAST
+    # bar at or before run_date, so no bar can lie strictly between the two. Left on
+    # run_date so the entry fix changes the entry and nothing about the exit arithmetic.
     after = [(d, p) for d, p in series if d > run_date]
     if len(after) < horizon_days:
         if overdue:

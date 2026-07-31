@@ -30,13 +30,14 @@ Two properties, and the second is the one a future refactor is most likely to br
 
 import os
 import sys
-from datetime import date
+from datetime import date, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import pytest  # noqa: E402
 
 from backend.services.pick_outcomes import (  # noqa: E402
+    ENTRY_LOOKBACK_DAYS,
     SPEC_VERSION,
     VOID_GRACE_DAYS,
     expected_exit_date,
@@ -296,6 +297,37 @@ def test_resolved_at_is_stamped_on_a_verdict(monkeypatch, store, past_grace):
     ro.resolve_pass(sb, 21, past_grace, dry_run=False)
     stamps = {r["resolved_at"] for w in sb.writes for r in w["rows"]}
     assert stamps == {past_grace.isoformat()}
+
+
+# ── The download window (ADR-0210's other half) ─────────────────────────────────
+
+def test_the_download_reaches_back_far_enough_to_hold_an_entry(monkeypatch, store,
+                                                              past_grace):
+    """`resolve_pick` now enters at the last close AT OR BEFORE run_date — so the fetch has
+    to contain that bar. A window starting AT the earliest run_date cannot: for a
+    non-trading run_date the prior session's close sits one day outside it.
+
+    This is the half of ADR-0210 that no `resolve_pick` test can reach, because a unit test
+    hands that function a series it built itself and is therefore free of the download's
+    boundary. Fixing only the lookup would leave the earliest book voiding live while every
+    test passed — so this asserts the argument the resolver actually passes.
+    """
+    seen: dict = {}
+
+    def _spy(tickers, start, horizon):
+        seen["start"] = start
+        return _prices(tickers, start, horizon)
+
+    monkeypatch.setattr(ro, "fetch_closes", _spy)
+    sb = _Client(store)
+
+    ro.resolve_pass(sb, 21, past_grace, dry_run=False)
+
+    earliest = min(date.fromisoformat(r["run_date"]) for r in store["pick_outcomes"])
+    assert seen["start"] <= earliest - timedelta(days=ENTRY_LOOKBACK_DAYS), (
+        f"download starts {seen['start']} for an earliest claim on {earliest}: the entry "
+        "look-back window is not inside the fetch, so that claim cannot be entered"
+    )
 
 
 # ── Pass 1 keeps the two jobs dropping it would have retired ─────────────────────

@@ -47,6 +47,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.services.pick_outcomes import (  # noqa: E402
     DEFAULT_HORIZON_DAYS,
+    ENTRY_LOOKBACK_DAYS,
     SPEC_VERSION,
     build_scorecard,
     commitment_rows,
@@ -237,7 +238,13 @@ def resolve_pass(sb, horizon_days: int, as_of: date, dry_run: bool) -> int:
 
     start = earliest_run_date(gradeable)
     tickers = sorted({str(r["asset"]) for r in gradeable if r.get("asset")})
-    closes = fetch_closes(tickers, start, horizon_days)
+    # PADDED BACK BY THE ENTRY LOOK-BACK, and this is half of ADR-0210's fix rather than
+    # defensive slack. `resolve_pick` now takes the last close AT OR BEFORE run_date, so a
+    # window starting AT the earliest run_date cannot supply an entry for that claim when
+    # its run_date is a non-trading day: the prior session's bar is outside the download.
+    # Fixing only the lookup would pass every unit test -- a test builds its own series --
+    # and still void the earliest book live. The two halves ship together or neither works.
+    closes = fetch_closes(tickers, start - timedelta(days=ENTRY_LOOKBACK_DAYS), horizon_days)
 
     # A FAILED FETCH MUST NEVER VOID ANYTHING. `fetch_closes` returns {} when yf.download
     # fails, and pass 2 now voids an empty series past its grace window — so one outage

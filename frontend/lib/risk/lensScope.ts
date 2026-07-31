@@ -81,6 +81,95 @@ export const LENS_NEUTRAL_TABLES: readonly string[] = [
   "theme_signals_history",
 ];
 
+/**
+ * The JSONB payload columns of `research_recommendations`, which IS keyed on
+ * (run_date, lens) since migration 062.
+ *
+ * A row citing one of these is the ACTIVE lens's own figure. They are named
+ * without their parent table throughout the codebase — `LimitDef.source` reads
+ * `book_metrics.net_exposure`, not
+ * `research_recommendations.book_metrics.net_exposure` — because the pages
+ * destructure the payload before handing it to a builder, and the short form is
+ * what the reader sees under the row. That is exactly why this list has to
+ * exist: `book_metrics` looks like a table name and is not one, so a reader
+ * cannot tell it from `portfolio_risk` by shape.
+ */
+export const LENS_FOLLOWING_FIELDS: readonly string[] = [
+  "research_recommendations",
+  "book_metrics",
+  "cap_utilisation",
+  "optimizer_result",
+  "scenario_results",
+  "correlation_pairs",
+  "risk_decomposition",
+  "monte_carlo_var",
+  "var_forecast",
+  "weights_backtest",
+  "sanctions_exposure",
+  "positioning_crowding",
+  "independent_ideas",
+];
+
+/**
+ * Which book ONE ROW's value belongs to, decided from the `table.column` string
+ * the row already prints under itself.
+ *
+ *   published    — names a lens-less table. The multi-asset book's figure,
+ *                  whatever `?lens=` says.
+ *   book         — names a lens-following payload field or a lens-neutral
+ *                  table. The active lens's own figure; nothing to disclose.
+ *   unclassified — names neither. See `sourceProvenance` for why this is a
+ *                  state and not an error.
+ */
+export type SourceProvenance = "published" | "book" | "unclassified";
+
+/**
+ * Classify a `LimitDef.source`-style provenance string.
+ *
+ * Tokenised rather than prefix-matched, because these strings are not always a
+ * bare `table.column`: the VaR row reads `portfolio_risk.var_95 /
+ * total_capital`, a ratio over two columns of one table, and matching on the
+ * text before the first `.` would work by accident today and break the first
+ * time a row cites a denominator from somewhere else.
+ *
+ * PUBLISHED WINS A TIE, deliberately. A source naming both a lens-less table
+ * and a lens-following field is a row that is itself part multi-asset, and the
+ * whole point of marking a row is that a reader should not have to hold "some
+ * of this one is the other book" in their head unmarked.
+ *
+ * `unclassified` is fail-loud, the same choice `scopeOf` makes: a source
+ * nobody has classified gets MARKED rather than silently passed as the active
+ * lens's own. The two possible defaults are not symmetric — default to "book"
+ * and a new lens-less row ships unmarked under a credit heading, which is the
+ * defect this module exists to prevent, reintroduced by an omission.
+ * `tests/unit/lens-scope.test.ts` asserts no row the live board builds is
+ * unclassified today, so this is a backstop and not a live state.
+ */
+export function sourceProvenance(source: string): SourceProvenance {
+  const tokens = source.split(/[^A-Za-z0-9_]+/).filter(Boolean);
+  if (tokens.some((t) => LENS_LESS_TABLES.includes(t))) return "published";
+  if (
+    tokens.some(
+      (t) => LENS_FOLLOWING_FIELDS.includes(t) || LENS_NEUTRAL_TABLES.includes(t),
+    )
+  ) {
+    return "book";
+  }
+  return "unclassified";
+}
+
+/**
+ * Should THIS ROW carry a "still the multi-asset book" tag right now?
+ *
+ * The row-level twin of `showScopeNote`, and it holds the same contract: false
+ * for every source under the default lens, so a page with no `?lens=` in the
+ * URL renders byte-for-byte as it did before row tagging existed.
+ */
+export function showSourceScopeNote(lens: string, source: string): boolean {
+  if (lens === DEFAULT_LENS) return false;
+  return sourceProvenance(source) !== "book";
+}
+
 export interface PanelSources {
   scope: LensScope;
   /**

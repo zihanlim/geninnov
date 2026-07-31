@@ -1484,10 +1484,15 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
               analytics row, in one table, under one heading, with one OK/BREACH
               column. Inside the section wrapper, so the grid cell is untouched. */}
           <ScopeNote lens={data.resolvedLens} panel="RiskLimitBoard" />
+          {/* The lens goes IN as well, because the chip above can only say the
+              board is part multi-asset — the board itself is the only thing that
+              knows which five of its eleven rows are the half it means, and the
+              banner sends the reader here to find out. */}
           <RiskLimitBoard
             loading={data.loading}
             rows={limitBoard}
             coverageNote={limitCoverageNote}
+            lens={data.resolvedLens}
           />
         </section>
 

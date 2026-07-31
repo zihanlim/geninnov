@@ -34,6 +34,25 @@
 // `LimitDef.source` became its own field and renders under every row (goal 1).
 // The `value / limit` pair reads as a pair because the intro says so — the same
 // idiom, and the same justification, as the CapUtilisation bars beside it.
+//
+// WHY THE ROWS CARRY THEIR OWN LENS TAG
+// -------------------------------------
+// Under a non-default lens this board is `scope: "mixed"` (lib/risk/lensScope.ts):
+// five of eleven rows are valued from the lens-less tables and six from the
+// lens-following analytics row, in one list, under one heading, with one
+// OK/BREACH column. `LensScopeBanner` says so at the top of the page and points
+// the reader here — "Which rows are which is in each panel's own marker" — and
+// until now the panel's marker was a chip that named the panel's TABLES and left
+// the reader to work the rows out.
+//
+// They could, but only by knowing something that is not on screen: that
+// `portfolio_risk` has no lens column and `book_metrics` is a JSONB field of one
+// that does. `row.source` was already printed under every row (goal 1); what was
+// missing was the translation from a table name to whose book it is. So the tag
+// renders beside the source it qualifies, at the same size and in the same ink —
+// the reader arriving from the banner is already LOOKING for it, so it does not
+// need to shout, and five loud chips down a quarter-width column is the noise
+// design goal 7 warns about.
 
 "use client";
 import {
@@ -43,6 +62,9 @@ import {
 } from "@/lib/risk/riskBoard";
 import { LIMIT_STATUS_CHIPS } from "@/lib/risk/riskChips";
 import { isNum } from "@/lib/risk/analytics";
+import { DEFAULT_LENS } from "@/lib/book/lensView";
+import { lensLabel } from "@/components/LensSelector";
+import { showSourceScopeNote, sourceProvenance } from "@/lib/risk/lensScope";
 import { Ident } from "./SectionGap";
 
 function fmtByUnit(v: number | null, unit: LimitRow["unit"]): string {
@@ -97,18 +119,63 @@ function UtilBar({ row }: { row: LimitRow }) {
   );
 }
 
+/**
+ * "This row's value is the multi-asset book's" — beside the source it qualifies.
+ *
+ * Gates on the LENS itself rather than trusting the call site, the same
+ * invariant `LensScopeChip` holds: `showSourceScopeNote` is false for every
+ * source at the default lens, so no tag can reach the page a live submission is
+ * shown from, whatever a caller passes.
+ *
+ * Neutral ink, not `--warning`. Nothing here is broken — a limit measured on the
+ * multi-asset book is working exactly as ADR-0194 designed it and saying so — and
+ * design goal 3 fences the attention register for the day something really is
+ * wrong. `text-text-secondary` is one step out of the source line's tertiary,
+ * which separates the claim from the table name without borrowing a semantic.
+ * It also lands in prose type beside the mono source, so the two do not read as
+ * one string.
+ */
+function RowScopeTag({ lens, source }: { lens: string; source: string }) {
+  if (!showSourceScopeNote(lens, source)) return null;
+  const unclassified = sourceProvenance(source) === "unclassified";
+  return (
+    <span
+      role="note"
+      data-testid="limit-row-scope-tag"
+      className="text-text-secondary"
+      title={
+        unclassified
+          ? `${source} is not classified in lib/risk/lensScope.ts, so this row is treated as the multi-asset published book until it is. Assume this value is not the ${lensLabel(lens)} book's.`
+          : `${source} has no lens column (ADR-0194 — a second book must not write into the first book's record), so this value is the multi-asset published book's, not the ${lensLabel(lens)} book's. The limit beside it still governs; the measurement is another book's.`
+      }
+    >
+      {" · multi-asset"}
+    </span>
+  );
+}
+
 export function RiskLimitBoard({
   loading,
   rows,
   coverageNote,
+  lens = DEFAULT_LENS,
 }: {
   loading: boolean;
   rows: LimitRow[];
   /** One-line note on which inputs were unavailable, if any. */
   coverageNote?: string | null;
+  /**
+   * The lens the page resolved to. Defaults to `multi_asset`, so a call site
+   * that has not been taught about lenses renders exactly as it did before —
+   * which is also the only correct behaviour for a page pinned to the default.
+   */
+  lens?: string;
 }) {
   const counts = countByStatus(rows);
   const anyConfig = rows.some((r) => r.limitSource === "scoring_config");
+  // The rows whose VALUE is the multi-asset book's. Empty at the default lens
+  // by contract, so every branch below collapses to the pre-lens rendering.
+  const scoped = rows.filter((r) => showSourceScopeNote(lens, r.source));
 
   return (
     // h-full + flex column: the mandate row aligns its three cards top and
@@ -146,6 +213,24 @@ export function RiskLimitBoard({
               The mandate
             </a>
             ; the line under each row is where its value was read from.
+            {/* The split, stated as a count before the reader meets the tags.
+                "Some of these rows are another book's" is the sentence the page
+                banner already refuses to stop at, and a per-row tag with no
+                total leaves a reader unable to tell a board they have finished
+                checking from one they have only partly read. */}
+            {scoped.length > 0 && (
+              <>
+                {" "}
+                <span className="text-text-primary">
+                  {scoped.length} of these {rows.length} rows
+                </span>{" "}
+                are valued from tables with no lens column, so they are the
+                multi-asset published book&rsquo;s whatever lens is selected —
+                each is tagged <span className="num">· multi-asset</span> under
+                the row. The other {rows.length - scoped.length} are the{" "}
+                {lensLabel(lens)} book&rsquo;s own. Every LIMIT applies to both.
+              </>
+            )}
           </p>
 
           <ul
@@ -235,11 +320,15 @@ export function RiskLimitBoard({
                     </p>
                   )}
 
-                  {/* Where the VALUE came from, then where the LIMIT came from —
-                      two different facts, which is why both are here and neither
-                      stands in for the other. */}
+                  {/* Where the VALUE came from, WHOSE BOOK that makes it, then
+                      where the LIMIT came from — three different facts, which is
+                      why all three are here and none stands in for the others.
+                      The scope tag sits between them because it qualifies the
+                      source on its left, not the limit on its right: the limit
+                      governs this book either way. */}
                   <div className="mt-1.5 text-[10px] leading-[1.4] text-text-tertiary [overflow-wrap:anywhere]">
                     <span className="num">{row.source}</span>
+                    <RowScopeTag lens={lens} source={row.source} />
                     <span
                       title={
                         row.limitSource === "scoring_config"

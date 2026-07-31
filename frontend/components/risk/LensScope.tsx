@@ -25,13 +25,8 @@
 
 import { Ident } from "@/components/risk/SectionGap";
 import { DEFAULT_LENS } from "@/lib/book/lensView";
-import { LENS_OPTIONS } from "@/components/LensSelector";
+import { lensLabel } from "@/components/LensSelector";
 import { LENS_LESS_TABLES, PANEL_SCOPE, panelLabel, scopeOf } from "@/lib/risk/lensScope";
-
-/** The reader-facing name of a lens, falling back to the raw value. */
-function lensLabel(lens: string): string {
-  return LENS_OPTIONS.find((o) => o.value === lens)?.label ?? lens;
-}
 
 /**
  * The page-level statement of the boundary, rendered once under the header.

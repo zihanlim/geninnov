@@ -31,6 +31,18 @@ export const LENS_OPTIONS: LensOption[] = [
   { value: "commodity", label: "Commodity", description: "Metals / energy" },
 ];
 
+/**
+ * The reader-facing name of a lens, falling back to the raw value.
+ *
+ * Exported because three surfaces now name a lens in prose — the scope banner,
+ * the scope chip and the risk-limit board's intro — and a second copy of this
+ * lookup is a second place "Credit Lens" can come to disagree with the control
+ * the reader clicked.
+ */
+export function lensLabel(lens: string): string {
+  return LENS_OPTIONS.find((o) => o.value === lens)?.label ?? lens;
+}
+
 export default function LensSelector({
   value,
   onChange,

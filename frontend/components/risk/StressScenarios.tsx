@@ -218,15 +218,25 @@ export function StressScenarios({
               probability: `scenario_results` persists a severity label and an
               estimated return, and weighting them here would fabricate the one
               number the page does not have (goal 1). */}
-          <p className="m-0 mb-2 text-[11.5px] leading-[1.6] text-text-tertiary max-w-[95ch]">
-            These scenarios are <strong>not probability-weighted</strong>. Each is
-            an independent what-if, not a draw from a distribution, so they do not
-            sum and the worst is not an expected loss — it is the largest of six
-            hypotheticals.{" "}
-            <Ident>research_recommendations.scenario_results</Ident> persists a
-            severity label and an estimated return, and no likelihood.
-          </p>
-          <StressScenarioChart scenarios={rows} />
+          {/* `.card` carries no padding — every child insets itself by 18px: the
+              worst-case strip above, the table cells below, the footnote, and
+              SectionGap / SectionSkeleton on the other two branches. These two
+              were the exception, sitting flush against the card border while
+              everything around them was inset, so the section read as two
+              different cards stacked. The inset also pulls ChartFrame's own
+              border-t off the card edge, which is what distinguishes it from the
+              structural full-bleed rules either side of it. */}
+          <div className="px-[18px] pt-3 pb-4">
+            <p className="m-0 mb-2 text-[11.5px] leading-[1.6] text-text-tertiary max-w-[95ch]">
+              These scenarios are <strong>not probability-weighted</strong>. Each is
+              an independent what-if, not a draw from a distribution, so they do not
+              sum and the worst is not an expected loss — it is the largest of six
+              hypotheticals.{" "}
+              <Ident>research_recommendations.scenario_results</Ident> persists a
+              severity label and an estimated return, and no likelihood.
+            </p>
+            <StressScenarioChart scenarios={rows} />
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[13px] min-w-[720px]">
               <caption className="sr-only">

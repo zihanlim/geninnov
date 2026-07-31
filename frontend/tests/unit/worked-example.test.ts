@@ -13,6 +13,8 @@
 // available here. The React wrapper renders this object 1:1, so a shape change
 // is the single thing that can break either the panel or the test.
 
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildWorkedExample,
@@ -91,26 +93,36 @@ describe("buildWorkedExample \u2014 every field the row carries is surfaced", ()
   });
 
   it("names the table.column each step traces to", () => {
-    expect(full.steps[0].sourceColumn).toMatch(/^filings\.xbrl_facts/);
-    expect(full.steps[1].sourceColumn).toMatch(/^research_recommendations\.theme_edges/);
-    expect(full.steps[2].sourceColumn).toMatch(/^portfolio_positions\.weight$/);
+    // ADR-0198 — every one of these is the table the figure ABOVE it is read
+    // from, verified against the module that reads it. Three of the four used to
+    // name the stitch comp's invented schema instead.
+    expect(full.steps[0].sourceColumn).toBe(
+      "research_recommendations.picks[].ma_context"
+    );
+    expect(full.steps[1].sourceColumn).toBe("theme_signals_history.edge_score");
+    expect(full.steps[2].sourceColumn).toBe(
+      "research_recommendations.picks[].notional"
+    );
     expect(full.steps[3].sourceColumn).toMatch(/^research_recommendations\.scenario_results/);
   });
 
-  it("renders the ma_context figure in step 1 when present", () => {
-    // The lineage trail is not yet persisted (step 1 source column reports
-    // sourcePersisted: false), but the ma_context row is a real, persisted figure
-    // for the position and the panel renders it with the honest explainGap.
+  it("renders the ma_context figure in step 1 and counts it as persisted", () => {
+    // ma_context IS persisted, on the pick — `finalise_book_analytics` writes it.
+    // The step used to report sourcePersisted: false while rendering it, because
+    // it was citing a filings table that does not exist in any migration.
     expect(full.steps[0].formula).toMatch(/last = 95\.42/);
     expect(full.steps[0].formula).toMatch(/200d MA/);
-    expect(full.steps[0].sourcePersisted).toBe(false);
-    expect(full.steps[0].sourceGap).toMatch(/Lineage trail is not yet persisted/);
+    expect(full.steps[0].sourcePersisted).toBe(true);
+    expect(full.steps[0].sourceGap).toBeUndefined();
   });
 
-  it("renders the theme score in step 2", () => {
-    expect(full.steps[1].formula).toBe("Theme_Score = 0.94");
+  it("renders the theme EdgeScore in step 2 without claiming an LLM produced it", () => {
+    expect(full.steps[1].formula).toBe("EdgeScore = 0.94");
     expect(full.steps[1].sourcePersisted).toBe(true);
     expect(full.steps[1].sourceGap).toBeUndefined();
+    // The number is deterministic (ADR-0036) and signed. Both were misstated.
+    expect(full.steps[1].prose).not.toMatch(/LLM/i);
+    expect(full.steps[1].prose).not.toMatch(/\[0, 1\]/);
   });
 
   it("renders the sizing display in step 3 and marks it conviction-based", () => {
@@ -142,10 +154,10 @@ describe("buildWorkedExample \u2014 absence renders as em-dash + explainGap (ADR
     });
     expect(out.steps[0].formula).toBe("\u2014");
     expect(out.steps[0].formulaGap).toMatch(/ma_context/);
-    // Source column is fixed (the lineage trail is not yet persisted); what
-    // changes is whether the gap is shown, and it is.
+    // The column is the same either way; what changes is whether THIS position
+    // has a value in it, and the gap names why it might not.
     expect(out.steps[0].sourcePersisted).toBe(false);
-    expect(out.steps[0].sourceGap).toMatch(/Lineage trail/);
+    expect(out.steps[0].sourceGap).toMatch(/finalise_book_analytics/);
   });
 
   it("step 2 falls back to em-dash + explainGap when theme_score is null", () => {
@@ -157,7 +169,7 @@ describe("buildWorkedExample \u2014 absence renders as em-dash + explainGap (ADR
       primaryScenario: null,
     });
     expect(out.steps[1].formula).toBe("\u2014");
-    expect(out.steps[1].formulaGap).toMatch(/theme_edges has no row/);
+    expect(out.steps[1].formulaGap).toMatch(/theme_signals_history carries no row/);
     expect(out.steps[1].sourcePersisted).toBe(false);
   });
 
@@ -187,21 +199,128 @@ describe("buildWorkedExample \u2014 absence renders as em-dash + explainGap (ADR
   });
 });
 
-describe("buildWorkedExample \u2014 no fabricated citations", () => {
-  it("never invents a source column for a missing value", () => {
-    const out = buildWorkedExample({
-      pick: FULL_PICK,
-      maContext: null,
-      themeScore: null,
-      sizing: { display: "\u2014", convictionBased: false },
-      primaryScenario: null,
-    });
-    for (const s of out.steps) {
-      // The source column strings are deliberately stable so the test catches a
-      // accidental retype (e.g. swapping `theme_edges.score` for the fictional
-      // `l5_agent.theme_score` the model used to fill in).
-      expect(s.sourceColumn).not.toMatch(/l5_agent/);
-      expect(s.sourceColumn).not.toMatch(/CIK_/);
+describe("buildWorkedExample \u2014 no fabricated citations (ADR-0198)", () => {
+  // This block used to be a two-string denylist: `l5_agent` and `CIK_`, the two
+  // fabrications someone had already noticed. It passed for four months while
+  // three of the four steps cited `filings.xbrl_facts`, `theme_edges` and a
+  // portfolio_positions column the figure was not read from \u2014 a denylist can
+  // only catch the invention you thought of first.
+  //
+  // So: derive the allowed set from the schema itself. Same move as
+  // risk-thresholds.test.ts parsing risk_engine.py \u2014 an expectation read off an
+  // artefact cannot drift from it silently.
+  // TABLE, AND ITS COLUMN. A table-only check would have passed the fabrication
+  // that prompted this: `research_recommendations.theme_edges.score` hides an
+  // invented sub-object under a table that does exist. The first segment after
+  // the table is checked against that table's real columns; anything deeper is a
+  // path INSIDE a jsonb column (`picks[].ma_context`) and is not verifiable from
+  // the DDL — stated here rather than silently skipped.
+  const MIGRATIONS = path.resolve(__dirname, "../../../supabase/migrations");
+  const SCHEMA = readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith(".sql"))
+    .map((f) => readFileSync(path.join(MIGRATIONS, f), "utf8"))
+    .join("\n");
+
+  // Words that open a table-constraint line rather than name a column.
+  const NOT_A_COLUMN = new Set([
+    "primary",
+    "unique",
+    "foreign",
+    "constraint",
+    "check",
+    "exclude",
+    "like",
+  ]);
+  // Array.from, not spread: tsconfig targets below es2015 here, and spreading a
+  // matchAll iterator is a TS2802 the vitest run would not have caught.
+  const matches = (re: RegExp, s: string) => Array.from(s.matchAll(re));
+
+  const COLUMNS = new Map<string, Set<string>>();
+  const table = (t: string): Set<string> => {
+    const k = t.toLowerCase();
+    if (!COLUMNS.has(k)) COLUMNS.set(k, new Set());
+    return COLUMNS.get(k)!;
+  };
+
+  for (const m of matches(
+    /create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?([a-z_]+)\s*\(([\s\S]*?)\n\s*\);/gi,
+    SCHEMA
+  )) {
+    const cols = table(m[1]);
+    for (const line of m[2].split("\n")) {
+      // `<name> <type>` — a column definition, as against `PRIMARY KEY (…)`.
+      const col = /^\s*([a-z_][a-z0-9_]*)\s+[a-z]/i.exec(line);
+      if (col && !NOT_A_COLUMN.has(col[1].toLowerCase()))
+        cols.add(col[1].toLowerCase());
+    }
+  }
+  // ADD COLUMN runs, which is how most of this schema grew after 001.
+  for (const m of matches(
+    /alter\s+table\s+(?:if\s+exists\s+)?(?:public\.)?([a-z_]+)([\s\S]*?);/gi,
+    SCHEMA
+  )) {
+    const cols = table(m[1]);
+    for (const c of matches(
+      /add\s+column\s+(?:if\s+not\s+exists\s+)?([a-z_][a-z0-9_]*)/gi,
+      m[2]
+    ))
+      cols.add(c[1].toLowerCase());
+  }
+  // Migration 008 renamed the two L5 tables in place; their columns were declared
+  // under the old name, so carry them over or every L5 citation fails.
+  for (const m of matches(
+    /alter\s+table\s+(?:public\.)?([a-z_]+)\s+rename\s+to\s+([a-z_]+)/gi,
+    SCHEMA
+  )) {
+    const from = COLUMNS.get(m[1].toLowerCase());
+    if (from) for (const c of Array.from(from)) table(m[2]).add(c);
+  }
+
+  it("reads a non-trivial schema out of the migrations", () => {
+    // Guards the guard: a bad path or a changed regex would empty COLUMNS and
+    // turn every assertion below into a vacuous pass.
+    expect(COLUMNS.size).toBeGreaterThan(20);
+    expect(COLUMNS.get("research_recommendations")?.has("picks")).toBe(true);
+    expect(COLUMNS.get("theme_signals_history")?.has("edge_score")).toBe(true);
+    expect(COLUMNS.has("filings")).toBe(false);
+    // The exact fabrication this ADR removed, as a column of the real table it
+    // was hiding under.
+    expect(COLUMNS.get("research_recommendations")?.has("theme_edges")).toBe(
+      false
+    );
+  });
+
+  it("cites only tables and columns that exist in the migrations", () => {
+    for (const inputs of [
+      {
+        maContext: FULL_PICK.ma_context,
+        themeScore: 0.94,
+        sizing: { display: "$8.8M", convictionBased: true },
+        primaryScenario: { label: "VIX Spike (+15pts)", contribution: "+0.32%" },
+      },
+      // The gap path too: a step that cannot render its figure still prints its
+      // source line, so an invented table is just as public when the value is null.
+      {
+        maContext: null,
+        themeScore: null,
+        sizing: { display: "\u2014", convictionBased: false },
+        primaryScenario: null,
+      },
+    ]) {
+      const out = buildWorkedExample({ pick: FULL_PICK, ...inputs });
+      for (const s of out.steps) {
+        const [cited, field] = s.sourceColumn.split(".");
+        const cols = COLUMNS.get(cited);
+        expect(
+          cols,
+          `step ${s.number} cites "${s.sourceColumn}" \u2014 no migration creates a table named "${cited}"`
+        ).toBeDefined();
+        const column = (field ?? "").replace(/\[\]$/, "");
+        expect(
+          cols?.has(column),
+          `step ${s.number} cites "${s.sourceColumn}" \u2014 "${cited}" has no column "${column}"`
+        ).toBe(true);
+      }
     }
   });
 });

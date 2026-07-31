@@ -103,7 +103,15 @@ export interface PrimaryScenarioInput {
 
 /** Per-position sizing final \u2014 what the book actually holds. */
 export interface SizingFinalInput {
-  /** The final size as rendered on the page, e.g. `"0.066 (6.6%)"`. */
+  /**
+   * The LAST line of the sizing chain as rendered on /book, e.g. `"$8.8M"`.
+   *
+   * The chain ends on the NOTIONAL, not on the weight (`buildSizingChain` pushes
+   * final weight \u2192 signed weight \u2192 notional, and the caller hands over
+   * `steps[steps.length - 1]`). Step 3's `sourceColumn` names the notional for
+   * that reason. If a caller ever passes the weight line instead, the citation
+   * has to move with it \u2014 ADR-0198 is the whole point.
+   */
   display: string;
   /** `true` if the sizing was conviction-based; `false` if hype-sized fallback. */
   convictionBased: boolean;
@@ -158,54 +166,69 @@ export function buildWorkedExample(input: {
   const steps: WorkedExampleStep[] = [
     {
       number: 1,
+      // ADR-0198 \u2014 this step used to cite `filings.xbrl_facts.concept_value` and
+      // describe a parsed 10-Q. Neither exists: there is no filings table in any
+      // migration, and this pipeline ingests news headlines plus price/macro
+      // series. Both came from the stitch comp ADR-0081 was triaged from, which
+      // is the same import ADR-0083 caught inventing a Kelly formula one field
+      // over. What the step actually renders is the ma_context row.
       title: "Raw ingestion",
       prose:
-        "Filing parsed; a single key figure is extracted to anchor the theme scoring.",
-      // Step 1 source column is not yet persisted. We render the ma_context
-      // number in its place \u2014 a real persisted figure for this position \u2014 with
-      // an honest explainGap that names the missing lineage column.
+        "The name's last close against its 200-day mean \u2014 the raw price series the disqualifier reads (ADR-0078). Ingestion here is news headlines and price/macro series, not filings, so there is no document-level trail behind this figure and none is promised.",
       formula: maContext
         ? `last = ${maContext.last.toFixed(2)}  // ${maContext.pct_from_ma.toFixed(1)}% from ${maContext.window}d MA`
         : "\u2014",
       formulaGap: maContext
         ? undefined
-        : "Position has no ma_context row in portfolio_positions; the 200-day-MA disqualifier was not computed for this name (ADR-0078).",
-      sourceColumn: "filings.xbrl_facts.concept_value",
-      sourcePersisted: false,
-      sourceGap:
-        "Lineage trail is not yet persisted end-to-end. Step 1 currently borrows the ma_context row (portfolio_positions.ma_context) as the closest persisted figure for this position; the dedicated filings.xbrl_facts column lands in a follow-up ADR.",
+        : "This position carries no ma_context on its picks[] row; the 200-day-MA disqualifier was not computed for this name (ADR-0078).",
+      sourceColumn: "research_recommendations.picks[].ma_context",
+      sourcePersisted: !!maContext,
+      sourceGap: maContext
+        ? undefined
+        : "`finalise_book_analytics` writes ma_context per pick when the price fetch returns; the fetch is wrapped, so a failure costs this panel rather than the run. Re-run the pipeline.",
     },
     {
       number: 2,
+      // ADR-0198 \u2014 `research_recommendations.theme_edges` is in no migration and
+      // no backend module; the number below is read by `fetchThemeEdge` from
+      // `theme_signals_history`. The prose was wrong in three further ways: no
+      // LLM produces it, it is not computed over filings, and it is signed on
+      // [-1, +1] rather than normalised to [0, 1] \u2014 `edge_direction` reads its
+      // sign to choose long / short / abstain.
       title: "Theme scoring",
       prose:
-        "LLM evaluation of the position filings against the theme vector, normalised to [0, 1].",
+        "The theme's EdgeScore: a weighted mean of trend, regime, carry, value and sentiment, renormalised over the components that actually exist (ADR-0036). Deterministic and signed on [-1, +1] \u2014 its sign is the side.",
       formula:
         themeScore === null
           ? "\u2014"
-          : `Theme_Score = ${themeScore.toFixed(2)}`,
+          : `EdgeScore = ${themeScore.toFixed(2)}`,
       formulaGap:
         themeScore === null
-          ? "research_recommendations.theme_edges has no row for this theme on the latest run_date; theme scoring did not produce a value."
+          ? "theme_signals_history carries no row with an edge_score for this theme; theme scoring did not produce a value."
           : undefined,
-      sourceColumn: "research_recommendations.theme_edges.score",
+      sourceColumn: "theme_signals_history.edge_score",
       sourcePersisted: themeScore !== null,
       sourceGap:
         themeScore === null
-          ? "Run the daily_refresh pipeline to populate theme_edges for this theme."
+          ? "Run scripts/daily_refresh.py \u2014 the L1/L4 stage writes edge_score per theme per run_date."
           : undefined,
     },
     {
       number: 3,
+      // ADR-0198 \u2014 `portfolio_positions.weight` is a real column, but it is not
+      // this figure's. The caller hands over the sizing chain's LAST step, which
+      // is the notional, and every input to that chain comes off the published
+      // pick. A citation to the held book under a figure read from the published
+      // one is the failure ADR-0040 already paid for once.
       title: "Position sizing",
       prose: sizing.convictionBased
-        ? "Conviction \u00d7 inverse-vol, normalised across the book, clamped by single-name / sector / geo caps."
+        ? "Conviction \u00d7 inverse-vol, normalised across the book and clamped by the single-name / sector / geo caps, then struck against the book's capital as a dollar notional \u2014 the figure below is that last line."
         : "HypeScore rank fallback (ADR-0053) \u2014 conviction was not persisted, so the size cannot be traced to an EdgeScore.",
       formula: sizing.display,
       formulaGap: sizing.convictionBased
         ? undefined
         : "The size below is hype-sized, not conviction-sized. The dedicated SizingChainView above already shows this with a warning banner; this step repeats it so the lineage is honest end-to-end.",
-      sourceColumn: "portfolio_positions.weight",
+      sourceColumn: "research_recommendations.picks[].notional",
       sourcePersisted: true,
     },
     {

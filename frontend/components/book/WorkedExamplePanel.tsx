@@ -1,9 +1,16 @@
 ﻿// frontend/components/book/WorkedExamplePanel.tsx
 //
-// ADR-0081 - an open-by-default lineage panel on `/book` that renders the
-// complete five-step path from raw signal to scenario contribution. It remains
-// a native `<details>` so a reader can collapse it after scanning the evidence.
-// The steps use a responsive grid to keep the open state compact.
+// The lineage trail for ONE position per page load - the highest-|EdgeScore|
+// pick, first long on a tie (`pickWorkedExamplePosition`). It surfaces data the
+// row above already carries, in the order the pipeline performed it; it replaces
+// no primitive on that row (ADR-0081).
+//
+// FOUR steps, not five, and OPEN by default against ADR-0081's collapsed. The
+// open state is deliberate - it arrived with the responsive grid that keeps the
+// steps compact when open - but ADR-0081 decided the opposite with a stated
+// reason, so the change is recorded in ADR-0198 rather than left as a header
+// comment attributing it to an ADR that says otherwise. That mis-attribution is
+// how the panel's fabricated source columns survived two reviews.
 
 import { useMemo } from "react";
 import { DisclosureChevron } from "@/components/DisclosureChevron";

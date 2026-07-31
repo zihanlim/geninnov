@@ -294,11 +294,23 @@ export default function BookFunnel({
           {published && (
             <>
               {" "}
-              Select a ticker to trace that position through the pipeline, step by step,
-              in the panel below. A name the sizer did not fund has no published row and
-              so has no lineage to show; it appears on the step that removed it.
+              Select a ticker to open that position, with its own derivation, beside
+              the book. A name the sizer did not fund has no published row and so has no
+              lineage to show; it appears on the step that removed it.
             </>
-          )}
+          )}{" "}
+          {/* The first edge names only the stages that REMOVED something, which is the
+              right summary and an incomplete audit: on this run six of the seven screen
+              stages removed nothing, and "the factor R-squared filter removed 0" is a
+              fact a reader checking the screen needs. That listing exists, collapsed,
+              under Audit — so point at it rather than reprinting it here or leaving two
+              views of one dataset unaware of each other. */}
+          The screen&rsquo;s remaining stages, including those that removed nothing, are
+          listed per stage under{" "}
+          <a href="#audit" className="text-accent hover:underline">
+            Audit &rarr; Screening funnel
+          </a>
+          .
         </p>
       </div>
     </section>

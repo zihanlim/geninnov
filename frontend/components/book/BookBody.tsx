@@ -1615,9 +1615,13 @@ function BookPageInner() {
           <section id="audit" aria-label="Audit detail">
           <CollapsibleSection
             title="Screening funnel"
+            // Says what this is FOR now that `From pool to book` renders the same
+            // screen as a chain: that panel names only the stages which removed
+            // something, and this is every stage including the ones that did not.
+            // Without the distinction the two read as the same table twice.
             summary={
               rec.screening_funnel && rec.screening_funnel.length > 0
-                ? `${rec.screening_funnel[rec.screening_funnel.length - 1]?.remaining ?? "—"} names cleared ${rec.screening_funnel.length} filters`
+                ? `all ${rec.screening_funnel.length} stages, including those that removed nothing — ${rec.screening_funnel[rec.screening_funnel.length - 1]?.remaining ?? "—"} names cleared`
                 : "how the universe was filtered to the book"
             }
           >

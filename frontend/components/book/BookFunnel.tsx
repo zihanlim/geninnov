@@ -43,6 +43,10 @@ import {
   type FunnelNode,
 } from "@/lib/book/bookFunnel";
 
+/** The table every node but one reads from. Stated once under the chain so each
+ *  card can show only the column, which is the part that differs. */
+const SHARED_TABLE = "research_recommendations";
+
 /** Long/short split as glyph + letter + count. Colour is the third signal. */
 function Split({ long, short }: { long: number | null; short: number | null }) {
   if (long === null && short === null) return null;
@@ -103,9 +107,20 @@ function Node({
         </>
       )}
       {children}
-      {/* Goal 1: the figure names the column it came from, on the same card. */}
-      <div className="text-[10px] text-text-tertiary num mt-auto pt-1 break-all">
-        {node.source}
+      {/* Goal 1: the figure names the column it came from, on the same card.
+          `break-all` split every one of these mid-word at a ~200px column
+          (`research_recommendations.scree | ning_funnel`, `pick | s`), which is
+          a citation a reader has to reassemble before they can check it. The
+          shared table prefix is stated ONCE under the chain instead, so each
+          card carries the part that differs; a source on another table keeps its
+          full name and is the only place a table appears up here. */}
+      <div className="text-[10px] text-text-tertiary num mt-auto pt-1 leading-[1.45]">
+        {node.source.split(" + ").map((s, i) => (
+          <span key={s} className="block">
+            {i > 0 ? "+ " : ""}
+            {s.startsWith(SHARED_TABLE + ".") ? s.slice(SHARED_TABLE.length + 1) : s}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -262,13 +277,22 @@ export default function BookFunnel({
           ))}
         </dl>
 
-        {published && (
-          <p className="m-0 mt-4 text-[11px] text-text-tertiary leading-[1.55] max-w-[80ch]">
-            Select a ticker above to trace that position through the pipeline, step by
-            step, in the panel below. A name the sizer did not fund has no published
-            row and so has no lineage to show; it appears on the step that removed it.
-          </p>
-        )}
+        {/* The table the columns above belong to. Goal 1 asks that a reader can
+            follow any figure to its origin without asking; the cards carry the
+            column and this carries the table, which is the same claim split
+            across two lines rather than repeated five times. */}
+        <p className="m-0 mt-4 text-[11px] text-text-tertiary leading-[1.55] max-w-[80ch]">
+          Columns above are on <span className="num">{SHARED_TABLE}</span> for the
+          published run unless another table is named.
+          {published && (
+            <>
+              {" "}
+              Select a ticker to trace that position through the pipeline, step by step,
+              in the panel below. A name the sizer did not fund has no published row and
+              so has no lineage to show; it appears on the step that removed it.
+            </>
+          )}
+        </p>
       </div>
     </section>
   );

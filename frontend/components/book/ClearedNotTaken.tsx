@@ -104,6 +104,8 @@ export default function ClearedNotTaken({
   themeNames,
   correlations = {},
   poolLimit = CANDIDATE_POOL_LIMIT,
+  lensPool = null,
+  lensLabel,
 }: {
   candidates: CandidateRow[];
   /** Assets in today's book. */
@@ -116,8 +118,33 @@ export default function ClearedNotTaken({
   /** Row cap the candidate query was fetched under. When the pool comes back at
    *  exactly this size the list is truncated, not complete, and says so. */
   poolLimit?: number;
+  /**
+   * The (asset, side) pool THIS book's lens actually screened, or null for no
+   * restriction. `trade_candidates` has no lens column — it is the one L1 pool
+   * shared by every lens — so without this the credit book listed 31 names its
+   * own screening funnel had already removed, on the same page that says the
+   * pool held 11. Built by `lib/book/candidatePool.ts` from the lens-keyed
+   * `independent_ideas` row; see that module's header for why the pool is taken
+   * from the book's own record rather than from a ticker list.
+   *
+   * Applied here rather than by the caller so ONE component owns both the list
+   * and the count under it. Filtering upstream would have left the truncation
+   * check comparing a filtered length against the raw query's row cap, which is
+   * how "the list is complete" and "the query was capped" start disagreeing.
+   */
+  lensPool?: Set<string> | null;
+  /** How this book's lens is named in the exclusion line. Absent under the
+   *  default lens, where there is no exclusion line to write. */
+  lensLabel?: string;
 }) {
-  const notTaken = candidates
+  // In-lens first, then held. Both counts below are stated against the in-lens
+  // pool, because that is the pool this book was chosen from.
+  const inLens = lensPool
+    ? candidates.filter((c) => lensPool.has(`${c.asset}::${c.direction}`))
+    : candidates;
+  const excludedByLens = candidates.length - inLens.length;
+
+  const notTaken = inLens
     .filter((c) => !heldAssets.has(c.asset))
     .sort((a, b) => {
       // Shorts first — that is the side the book is thin on and the side a reader
@@ -349,6 +376,10 @@ export default function ClearedNotTaken({
       {/* End-of-list terminator. Without it "that is the whole candidate set" and
           "the query hit its row cap" render identically — Goal 2's null-vs-zero
           distinction applied to list LENGTH rather than to a single cell. */}
+      {/* The cap is checked against the RAW query length, not the in-lens one: a
+          capped query is a capped query whichever lens reads it, and comparing a
+          filtered count to the row cap would report a truncated pool as
+          complete. */}
       {candidates.length >= poolLimit ? (
         <p className="m-0 px-[18px] py-2 text-[11px] leading-[1.6] text-warning">
           List truncated — the candidate query returned {candidates.length} rows,
@@ -357,8 +388,25 @@ export default function ClearedNotTaken({
         </p>
       ) : (
         <p className="m-0 px-[18px] py-2 text-[11px] leading-[1.6] text-text-tertiary">
-          End of list — {notTaken.length} not taken, of {candidates.length}{" "}
+          End of list — {notTaken.length} not taken, of {inLens.length}{" "}
           candidates screened this run.
+        </p>
+      )}
+
+      {/* The excluded names, counted rather than dropped in silence. `trade_candidates`
+          is the one L1 pool every lens shares, so a reader who knows the pool ran
+          to 42 needs to be told where the other 31 went — and told that they were
+          never candidates for THIS book rather than candidates it declined. That
+          distinction is the whole point of the panel. */}
+      {excludedByLens > 0 && (
+        <p className="m-0 px-[18px] pb-2 text-[11px] leading-[1.6] text-text-tertiary">
+          A further {excludedByLens} name{excludedByLens === 1 ? "" : "s"} in the
+          shared L1 pool{" "}
+          {excludedByLens === 1 ? "sits" : "sit"} outside the
+          {lensLabel ? ` ${lensLabel}` : ""} lens and{" "}
+          {excludedByLens === 1 ? "is" : "are"} not listed. They were removed by
+          the lens stage of the screening funnel above, so they never cleared this
+          book&rsquo;s screen — they are not names it declined.
         </p>
       )}
     </CollapsibleSection>

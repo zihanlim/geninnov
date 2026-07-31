@@ -225,7 +225,7 @@ def test_scorecard_ignores_other_horizons():
 # ─────────────────────────────────────────────────────────────────────────────────
 # `as_of` — the clock that tells "not matured yet" from "matured and unpriceable"
 #
-# ADR-0204. `resolve_pick` was a pure function with no notion of now, so it could only
+# ADR-0205. `resolve_pick` was a pure function with no notion of now, so it could only
 # ever answer `pending` for a claim whose price series never arrives: an empty series, or
 # one that stops short of the horizon. A name delisted five days into a 21-day horizon has
 # five observations forever. The row therefore sat `pending` in perpetuity — recorded,

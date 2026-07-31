@@ -1,6 +1,6 @@
 """Record published picks as claims, then resolve the recorded claims against the spec.
 
-TWO PASSES, TWO WRITE DISCIPLINES, AND THE SPLIT IS THE POINT (ADR-0204).
+TWO PASSES, TWO WRITE DISCIPLINES, AND THE SPLIT IS THE POINT (ADR-0205).
 
   1. RECORD THE COMMITMENT — reads `research_recommendations` (lens-scoped), writes
      INSERT-IF-ABSENT, `pending` only. Every published pick gets a row as soon as its
@@ -32,7 +32,7 @@ Usage:
 
 Requires SUPABASE_URL + SUPABASE_SERVICE_KEY (the table is anon-read-only).
 See ADR-0090 (the instrument), ADR-0117 (the recording guarantee), ADR-0203 (why
-superseded claims are counted and not removed), ADR-0204 (this split).
+superseded claims are counted and not removed), ADR-0205 (this split).
 """
 
 from __future__ import annotations
@@ -259,7 +259,7 @@ def resolve_pass(sb, horizon_days: int, as_of: date, dry_run: bool) -> int:
         outcome = resolve_pick(
             rd, str(asset), str(direction), closes.get(str(asset), []),
             horizon_days=int(row.get("horizon_days") or horizon_days),
-            # The ROW's spec, never the module constant — see ADR-0204.
+            # The ROW's spec, never the module constant — see ADR-0205.
             spec_version=str(row.get("spec_version") or SPEC_VERSION),
             as_of=as_of,
         )

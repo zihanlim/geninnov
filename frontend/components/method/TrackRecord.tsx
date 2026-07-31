@@ -114,7 +114,7 @@ export default function TrackRecord({
                 // "8 books· incl." to a screen reader, to Ctrl+F and in a copy-paste.
                 // The space has to be a character, not a margin.
                 className="ml-1"
-                title={`${tr.superseded} of these picks are not in the book finally published for their run_date — the pipeline re-ran and replaced the book the same day (book_revisions, trigger_type=pipeline_rerun). They stay in the denominator on purpose: a published claim cannot leave it because the book was later replaced. This is why the claim count exceeds the picks visible on /book for those dates.`}
+                title={`${tr.superseded} of these picks are not in the book finally published for their run_date — the pipeline re-ran and replaced the book the same day (book_revisions, trigger_type=pipeline_rerun). They stay in the denominator on purpose: a published claim cannot leave it because the book was later replaced. And they are GRADED like any other claim, so once they mature they count in the hit rate below (ADR-0205) — resolution reads the record of what was claimed, not the book that is still published. This is why the claim count exceeds the picks visible on /book for those dates.`}
               >
                 {" · "}incl. {tr.superseded} from books later replaced
               </span>

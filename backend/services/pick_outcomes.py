@@ -216,7 +216,7 @@ def resolve_pick(
     the spec that graded it rather than with whatever the module constant happens to be
     today. It is part of the table's conflict key, so defaulting it here would, the day
     SPEC_VERSION becomes "v2", grade a v1 claim with v2 arithmetic and write it as a NEW
-    row — abandoning the v1 row as permanently `pending`. See ADR-0204.
+    row — abandoning the v1 row as permanently `pending`. See ADR-0205.
 
     `as_of` is the clock, and it is OPTIONAL because this function is called from two
     places with opposite needs:
@@ -399,7 +399,7 @@ def commitment_rows(
     fetching prices can. Publication and commitment then succeed or fail together.
 
     That depends on `resolve_pick` being called with NO `as_of`, and now says so. With a
-    clock supplied, an empty series past maturity is `void` (ADR-0204) — correct for the
+    clock supplied, an empty series past maturity is `void` (ADR-0205) — correct for the
     resolver, and catastrophic here: back-recording a claim for an older book would write
     it in already voided, having never been a live commitment. The call below passes five
     positional arguments and no `as_of` deliberately.

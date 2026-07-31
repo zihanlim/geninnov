@@ -829,7 +829,7 @@ def test_every_check_runs_even_when_an_earlier_one_fails():
 # turned out to be permanently `pending`: the resolver derived its claim set from the
 # CURRENT book, so a pick whose book was replaced by a later run on the same run_date was
 # never in the set again. Unfalsifiable, on the table whose ADR is titled "a published
-# pick must be falsifiable" (ADR-0203, ADR-0204).
+# pick must be falsifiable" (ADR-0203, ADR-0205).
 #
 # Three states, and the reason they are three rather than one is that collapsing them
 # would report a spec migration as a data defect.

@@ -967,7 +967,7 @@ def check_matured_claims_were_resolved(
     ~80 live claims turned out to be permanently `pending`: the resolver derived its claim
     set from the CURRENT book, so a pick whose book was replaced by a later run on the
     same run_date was never in the set. Unfalsifiable, on the table whose ADR is titled
-    "a published pick must be falsifiable" (ADR-0203, ADR-0204).
+    "a published pick must be falsifiable" (ADR-0203, ADR-0205).
 
     The two failures are mirror images and neither implies the other, which is why both
     guards exist: a claim can be published-but-unrecorded (nothing to grade) or
@@ -1034,14 +1034,14 @@ def check_matured_claims_were_resolved(
             f"days ago (on or before {cutoff.isoformat()}) and are still `pending`, so "
             f"nothing has graded them: " + ", ".join(sorted(overdue_current)[:12])
             + ("..." if len(overdue_current) > 12 else "")
-            + ". Repair with `python -m scripts.resolve_outcomes` (ADR-0204)."
+            + ". Repair with `python -m scripts.resolve_outcomes` (ADR-0205)."
         )
     if overdue_retired:
         out.append(
             f"NOTE (not a failure): {len(overdue_retired)} matured claim(s) are recorded "
             f"under a spec this code is not ({_SPEC}), so they need a resolver for that "
             f"spec rather than a re-run: " + ", ".join(sorted(overdue_retired)[:12])
-            + ("..." if len(overdue_retired) > 12 else "") + " (ADR-0204)."
+            + ("..." if len(overdue_retired) > 12 else "") + " (ADR-0205)."
         )
     if undated:
         out.append(

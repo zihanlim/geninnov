@@ -13,9 +13,10 @@ WHAT IT REFUSES TO DO, and why each refusal matters more than the feature:
   * It never edits a published book. A veto acts on the NEXT run. `pick_outcomes`
     anchors `entry` to the close on `run_date` (ADR-0090), so substituting a name
     into an already-published book would score the substitute from a price that
-    preceded the decision — and `resolve_outcomes.py` re-derives its claims from
-    current `picks`, so the replaced name would quietly stop being resolved.
-    Together that is a track record an operator could launder by editing history.
+    preceded the decision — a track record an operator could launder by editing
+    history. (This once cited a second harm, that a replaced name would quietly
+    stop being resolved; ADR-0205 made resolution read the RECORD rather than the
+    current picks, so that no longer happens. The hindsight-price harm stands.)
   * It never DELETES a veto. `--revoke` sets `revoked_at` and demands a reason, so
     "why is this name back?" stays answerable.
   * It will not write a veto with no reason. The DB enforces this too; the check

@@ -1,5 +1,5 @@
 """
-Resolution reads the RECORD of what was claimed, not what is still published (ADR-0204).
+Resolution reads the RECORD of what was claimed, not what is still published (ADR-0205).
 
 THE DEFECT THIS PINS, and the fixture is the live one that exposed it.
 

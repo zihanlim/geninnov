@@ -10,13 +10,18 @@ and no threshold encodes it. This module is where that judgement enters, with a
 reason attached and an audit trail behind it.
 
 WHY IT ACTS FORWARD ONLY.
-`pick_outcomes` anchors `entry` to the close on `run_date` (ADR-0090), and
-`scripts/resolve_outcomes.py` re-derives its claim set from the CURRENT `picks` on
-every run. So editing a published book to remove a name would (a) stop that name
-being resolved at all and (b) let a substitute inherit an entry price from before
-the decision — a free look at hindsight. A veto therefore changes what the NEXT
-run may choose and never touches a row that has been published. The published book
-stays the book of record (ADR-0040).
+`pick_outcomes` anchors `entry` to the close on `run_date` (ADR-0090), so editing a
+published book to remove a name would let a substitute inherit an entry price from
+before the decision — a free look at hindsight. A veto therefore changes what the
+NEXT run may choose and never touches a row that has been published. The published
+book stays the book of record (ADR-0040).
+
+This used to name a SECOND harm — that `resolve_outcomes.py` re-derived its claim
+set from the CURRENT `picks`, so a removed name would stop being resolved at all.
+That is no longer true (ADR-0205): resolution now reads the RECORD of what was
+claimed, so a name removed from a later book keeps resolving from its own row. The
+hindsight-entry-price harm above is unaffected and carries this decision on its
+own.
 
 Pure by construction: every function here takes rows and returns rows. The Supabase
 read lives in `fetch_active_vetoes`, which is the only thing in this file that

@@ -50,10 +50,11 @@ import type { OptimizerResult, SizingMethod } from "@/lib/book/sizingProvenance"
 import TrackRecordPanel from "@/components/book/TrackRecordPanel";
 import { type IndependentIdeas } from "@/components/book/PoolDepth";
 import BookFunnel from "@/components/book/BookFunnel";
-import { WorkedExamplePanel } from "@/components/book/WorkedExamplePanel";
-import type {
-  PrimaryScenarioInput,
-  SizingFinalInput,
+import {
+  buildWorkedExample,
+  type PrimaryScenarioInput,
+  type SizingFinalInput,
+  type WorkedExampleStep,
 } from "@/lib/book/workedExample";
 import {
   distinguishPosition,
@@ -247,12 +248,11 @@ function BookPageInner() {
   const searchParams = useSearchParams();
   const requestedLens = searchParams.get("lens");
   const [lens, setLensState] = useState<Lens>(DEFAULT_LENS);
-  // Which position `WorkedExamplePanel` traces, chosen from `BookFunnel`'s
-  // published node. NOT in the URL, unlike the lens: the lens selects a BOOK and
-  // is worth sending to someone; this selects which of nine rows a panel expands,
-  // and putting it in the query string would make every click a history entry.
-  // Null means "the panel's own default" (highest |EdgeScore|, ADR-0081).
-  const [lineageAsset, setLineageAsset] = useState<string | null>(null);
+  // NOTE: there is deliberately NO second selection state here. A ticker chip in
+  // the funnel opens the position's OWN row, which is where its lineage now
+  // lives, so the chip writes `openAsset` — the same state the row's `+` writes.
+  // Two states would let the chip and the row disagree about which position is
+  // expanded. `selectFromFunnel` is defined below, beside `rowKeyForAsset`.
   // What the toggle may offer. Starts as just the default so the control does
   // not flash a five-lens picker before the real answer loads; narrowed to
   // whatever `research_recommendations` actually has for today's run_date.
@@ -773,6 +773,82 @@ function BookPageInner() {
     [rec]
   );
 
+  // ── The lineage, per position ─────────────────────────────────────────────
+  // ADR-0081 put this in its own panel, for ONE position per page load, chosen
+  // by highest |EdgeScore|. That panel sat below a table of nine positions whose
+  // rows already expand to the same eight instruments -- ma_context, EdgeBars,
+  // SizingChainView, per-scenario stress, factor betas -- so it was a fifth copy
+  // of data every row carried, plus an editorial "which position is most
+  // interesting?" choice nothing on the page disclosed.
+  //
+  // Its one real contribution was ORDER: the row shows those instruments in the
+  // order the code was written, and the lineage shows them in the order the
+  // pipeline performed them. Order is worth keeping; a separate panel is not. So
+  // the four steps open each row, and every held position has its own.
+  const lineageForAsset = useCallback(
+    (asset: string) => {
+      const pick = pickByAsset[asset];
+      if (!pick) return null;
+      const themeScore =
+        pick.theme_id && edgeByTheme[pick.theme_id]
+          ? edgeByTheme[pick.theme_id]?.edge_score ?? null
+          : null;
+      try {
+        return buildWorkedExample({
+          pick,
+          maContext: maContextForAsset(asset),
+          themeScore,
+          sizing: sizingForAsset(asset),
+          primaryScenario: primaryScenarioForAsset(asset),
+        }).steps;
+      } catch {
+        // A row that cannot build its lineage still renders every other
+        // instrument. Losing the whole position because one derivation threw
+        // would be a worse failure than losing the derivation.
+        return null;
+      }
+    },
+    [pickByAsset, edgeByTheme, maContextForAsset, sizingForAsset, primaryScenarioForAsset]
+  );
+
+  // Which row the funnel's ticker chips open. The open key is composed of the
+  // section title, the asset and its index WITHIN that section, so it cannot be
+  // derived from the asset alone -- and a chip that opened the wrong row would
+  // be worse than one that opened none.
+  const rowKeyForAsset = useCallback(
+    (asset: string): string | null => {
+      const li = longs.findIndex((p) => p.asset === asset);
+      if (li >= 0) return `Longs-${asset}-${li}`;
+      const si = shorts.findIndex((p) => p.asset === asset);
+      if (si >= 0) return `Shorts-${asset}-${si}`;
+      return null;
+    },
+    [longs, shorts]
+  );
+
+  /** A funnel chip: open that position's row and bring it into view. */
+  const selectFromFunnel = useCallback(
+    (asset: string) => {
+      const key = rowKeyForAsset(asset);
+      if (!key) return;
+      setOpenAsset(key);
+      // Scrolled on the NEXT frame, after the state lands, so the row is already
+      // expanded when it arrives rather than growing under the reader.
+      //
+      // `start`, NOT `center`. An opened row is ~900px tall and centring it put
+      // the reader in the middle of the EdgeScore bars with the four lineage
+      // steps — the thing the chip promised — scrolled off the top. The row
+      // carries `scroll-mt-24` so `start` clears the sticky top bar rather than
+      // tucking the position's own name under it.
+      requestAnimationFrame(() => {
+        document
+          .getElementById(`position-${asset}`)
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    },
+    [rowKeyForAsset, setOpenAsset]
+  );
+
   const focusHeldOut = focusIsKnown && focusPicks.length === 0;
 
   // No `overflow-x-hidden` on the <main> below. With overflow-x hidden and
@@ -1163,6 +1239,7 @@ function BookPageInner() {
                 picks={longs}
                 openAsset={openAsset}
                 setOpenAsset={setOpenAsset}
+                lineageForAsset={lineageForAsset}
                 citations={citations}
                 repl={repl}
                 bookRunDate={rec.run_date}
@@ -1186,6 +1263,7 @@ function BookPageInner() {
                 picks={shorts}
                 openAsset={openAsset}
                 setOpenAsset={setOpenAsset}
+                lineageForAsset={lineageForAsset}
                 citations={citations}
                 repl={repl}
                 bookRunDate={rec.run_date}
@@ -1255,22 +1333,13 @@ function BookPageInner() {
                   picks: rec.picks,
                   optimizerResult: rec.optimizer_result ?? null,
                 }}
-                selectedAsset={lineageAsset}
-                onSelectAsset={setLineageAsset}
+                selectedAsset={
+                  openAsset ? openAsset.split("-").slice(1, -1).join("-") : null
+                }
+                onSelectAsset={selectFromFunnel}
               />
 
-              {/* ADR-0081 — Worked example lineage panel. Additive, collapsed by default
-                  (a native `<details>`), rendered only when there are picks. Same data
-                  the rows above already show, in the order the pipeline performed it. */}
-              <WorkedExamplePanel
-                picks={rec.picks}
-                edgeByAsset={edgeByAsset}
-                edgeByTheme={edgeByTheme}
-                maContextForAsset={maContextForAsset}
-                sizingForAsset={sizingForAsset}
-                primaryScenarioForAsset={primaryScenarioForAsset}
-                selectedAsset={lineageAsset}
-              />
+
             </>
           )}
 
@@ -1626,6 +1695,7 @@ function PositionSection({
   picks,
   openAsset,
   setOpenAsset,
+  lineageForAsset,
   citations,
   advisory,
   capByAsset,
@@ -1650,6 +1720,8 @@ function PositionSection({
   picks: Pick[];
   openAsset: string | null;
   setOpenAsset: (a: string | null) => void;
+  /** The four pipeline steps for one asset, built once in BookBody. */
+  lineageForAsset: (asset: string) => WorkedExampleStep[] | null;
   citations?: Citation[];
   repl?: ReplicationNames | null;
   bookRunDate?: string | null;
@@ -1745,6 +1817,7 @@ function PositionSection({
                     : `${title}-${p.asset}-${i}`
                 )
               }
+              lineage={lineageForAsset(p.asset)}
               citations={citations}
               repl={repl}
               bookRunDate={bookRunDate}

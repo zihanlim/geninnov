@@ -18,6 +18,8 @@ import Link from "next/link";
 import CitationList, { Citation } from "@/components/CitationList";
 import EdgeBars from "@/components/book/EdgeBars";
 import SizingChainView from "@/components/book/SizingChainView";
+import { StepNumbered } from "@/components/book/StepNumbered";
+import type { WorkedExampleStep } from "@/lib/book/workedExample";
 import PositionMarginalRisk from "@/components/book/PositionMarginalRisk";
 import { type IndependentIdeas } from "@/components/book/PoolDepth";
 import type { CandidateRow } from "@/components/book/ClearedNotTaken";
@@ -109,6 +111,7 @@ export function PositionRow({
   correlationPairs,
   ideas,
   scenarios,
+  lineage,
   repl,
   bookRunDate,
   clearedAlternatives,
@@ -129,6 +132,8 @@ export function PositionRow({
   correlationPairs: CorrelationPairLite[] | null;
   ideas: IndependentIdeas | null;
   scenarios: ScenarioResult[];
+  /** The four pipeline steps for THIS position, or null if not derivable. */
+  lineage?: WorkedExampleStep[] | null;
   repl?: ReplicationNames | null;
   bookRunDate?: string | null;
   /**
@@ -241,7 +246,16 @@ export function PositionRow({
     .filter((s) => s.line);
 
   return (
-    <div className="border-b border-border last:border-b-0">
+    // `id` so `BookFunnel`'s ticker chips can scroll here after opening the row.
+    // On the asset, not on the composite open-key: the chip knows a ticker, and
+    // an anchor keyed by section-and-index would break the moment a position
+    // changed rank between runs.
+    <div
+      id={`position-${pick.asset}`}
+      // scroll-mt so `scrollIntoView({block:"start"})` from a funnel chip lands
+      // the row's own name below the sticky top bar instead of under it.
+      className="border-b border-border last:border-b-0 scroll-mt-24"
+    >
       {/* A div, not a button: the theme name is an <a>, which cannot be nested
           inside a <button>. Keyboard + ARIA are wired by hand to keep the row a
           single toggle target while the inner link stays independently focusable. */}
@@ -395,6 +409,46 @@ export function PositionRow({
 
       {open && (
         <div className="px-[18px] pb-5 pt-1 bg-bg-elevated/40">
+          {/* ── The lineage, first ─────────────────────────────────────────────
+              The four steps the pipeline actually performed, in the order it
+              performed them: ingestion -> theme scoring -> sizing -> risk
+              attribution. Everything below this restates parts of it in the
+              order the code was written, which is what ADR-0081 was reacting to
+              when it built a separate panel for one position. The order was the
+              contribution; the separate panel was not, so the steps open the row
+              and every held position has its own.
+
+              Rendered only when the derivation succeeded. A row whose lineage
+              could not be built still shows every instrument below — losing the
+              whole position because one derivation threw would be the worse
+              failure. */}
+          {lineage && lineage.length > 0 && (
+            <section
+              aria-label={`How ${pick.asset} was derived`}
+              data-testid="row-lineage"
+              className="mb-4"
+            >
+              <h4 className="m-0 mb-2 text-[10.5px] uppercase tracking-[0.08em] text-text-tertiary">
+                How this position was derived
+              </h4>
+              {/* TWO columns at most, never four. The standalone panel this
+                  replaces was full-page width, where four across worked; a row
+                  lives inside the Longs/Shorts pair, so each table is ~660px and
+                  four steps across it gave each ~150px — prose wrapping to two
+                  and three words a line. Measured at 1440: 2 columns is ~320px a
+                  step, which the sentence fits. */}
+              <ol className="m-0 p-0 list-none grid sm:grid-cols-2 gap-3">
+                {lineage.map((step) => (
+                  <li
+                    key={step.number}
+                    className="min-w-0 rounded-md border border-border bg-bg-primary p-3"
+                  >
+                    <StepNumbered step={step} />
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
           {/*
             Expanded-panel layout: a flat grid where each SubCard is placed on
             an explicit `lg:row-start-N` / `lg:col-start-N` cell.

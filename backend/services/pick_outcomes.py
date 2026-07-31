@@ -43,6 +43,23 @@ DEFAULT_HORIZON_DAYS = 21
 
 SPEC_VERSION = "v1"
 
+# How long past its expected maturity a claim may sit unpriceable before the spec
+# gives up and voids it.
+#
+# DERIVED, not fitted. `expected_exit_date` counts business days and ignores market
+# holidays (see its docstring), so the true maturity is always LATER than the
+# estimate, never earlier. At most 2 US market holidays fall inside any
+# 21-business-day window, which pushes the real exit out by up to 2 trading days
+# ~ 4 calendar days. 10 leaves margin for a skipped nightly run on top of that.
+#
+# The direction of the error matters: too SHORT and a live pick is voided while its
+# price series was merely late, which is unfixable once a void is terminal. Too long
+# and a dead claim sits `pending` a few extra days, which the integrity guard
+# reports. So this is deliberately generous, and the guard in
+# `scripts/check_data_integrity.py` uses a SHORTER grace (7) so a human sees the
+# stall before the record takes a terminal verdict.
+VOID_GRACE_DAYS = 10
+
 
 @dataclass
 class Outcome:
@@ -109,12 +126,81 @@ def expected_exit_date(run_date: date, horizon_days: int = DEFAULT_HORIZON_DAYS)
     return d
 
 
+# ── Which recorded claims a resolve pass should grade ────────────────────────────
+#
+# Pure, and here rather than in `scripts/resolve_outcomes.py`, because ADR-0090 §Decision
+# already draws that line: this module "holds the logic as pure functions" and the script
+# "runs it". The claim-set construction was the one part of the resolver that ignored the
+# split, which is also why the defect it contained was untestable.
+
+def _as_date(value) -> Optional[date]:
+    """A `date` from a date or an ISO string; None when it is neither.
+
+    Supabase hands dates back as strings, and a row that has been round-tripped
+    through the client has strings where a locally-built row has dates. Both must work
+    or the helpers below are only correct in tests.
+    """
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def is_gradeable(row: dict, current_spec: str = SPEC_VERSION) -> bool:
+    """Can THIS code grade this recorded claim?
+
+    False for a claim recorded under a spec this code is not. Today there is one spec, so
+    this is always true; the day there is a v2, grading a v1 row with v2 arithmetic would
+    be a changed exam applied retroactively, and writing it under the new spec_version
+    would abandon the v1 row (it is in the conflict key). Refusing is the honest answer,
+    and the caller reports the refusal rather than swallowing it.
+    """
+    return (row.get("spec_version") or current_spec) == current_spec
+
+
+def eligible_for_resolution(
+    rows: Iterable[dict],
+    current_spec: str = SPEC_VERSION,
+) -> tuple[list[dict], list[dict]]:
+    """Split recorded claims into (gradeable, skipped-for-a-foreign-spec).
+
+    Takes rows already filtered to `verdict = 'pending'` by the query — terminal rows are
+    excluded THERE rather than here, because that exclusion is what stops a resolved
+    verdict being re-written (ADR-0117's "insert-if-absent, never upsert", applied to the
+    resolver's own upsert for the first time), and it belongs in the query so the fetch
+    window shrinks with it.
+
+    Returns two lists rather than filtering silently: a claim this code declines to grade
+    is a fact a reader needs, not a row to drop.
+    """
+    gradeable: list[dict] = []
+    skipped: list[dict] = []
+    for row in rows:
+        (gradeable if is_gradeable(row, current_spec) else skipped).append(row)
+    return gradeable, skipped
+
+
+def earliest_run_date(rows: Iterable[dict]) -> Optional[date]:
+    """The oldest `run_date` among the given claims — the start of the price window a
+    resolve pass needs, and no earlier. Scoped to the claims actually being graded, so a
+    table that grows for years does not widen every night's download.
+    """
+    dates = [d for d in (_as_date(r.get("run_date")) for r in rows) if d is not None]
+    return min(dates) if dates else None
+
+
 def resolve_pick(
     run_date: date,
     asset: str,
     direction: str,
     closes: Sequence[tuple[date, float]],
     horizon_days: int = DEFAULT_HORIZON_DAYS,
+    spec_version: str = SPEC_VERSION,
+    as_of: Optional[date] = None,
 ) -> Outcome:
     """Resolve one pick against a price series.
 
@@ -125,12 +211,35 @@ def resolve_pick(
     A pick the series cannot score comes back `void` with a reason, or `pending` when it
     simply has not matured yet. Neither is a miss, and conflating either with one would
     flatter or damage the record for a reason that has nothing to do with the call.
+
+    `spec_version` is carried so a row read BACK from `pick_outcomes` is re-stamped with
+    the spec that graded it rather than with whatever the module constant happens to be
+    today. It is part of the table's conflict key, so defaulting it here would, the day
+    SPEC_VERSION becomes "v2", grade a v1 claim with v2 arithmetic and write it as a NEW
+    row — abandoning the v1 row as permanently `pending`. See ADR-0204.
+
+    `as_of` is the clock, and it is OPTIONAL because this function is called from two
+    places with opposite needs:
+
+      None (the default)  — `commitment_rows` calls this with an empty series at
+                            publication and DEPENDS on getting `pending` back. Behaviour
+                            with `as_of=None` is byte-identical to before this parameter
+                            existed.
+      a date              — the resolver supplies today. Past
+                            `expected_exit_date + VOID_GRACE_DAYS`, a claim the series
+                            still cannot score is `void` rather than `pending`, because
+                            at that point "not matured yet" is no longer a possible
+                            explanation and a claim that can never resolve is not
+                            falsifiable (ADR-0090's whole subject).
     """
     exp = expected_exit_date(run_date, horizon_days)
     base = dict(
         run_date=run_date, asset=asset, direction=direction,
-        horizon_days=horizon_days, expected_exit_date=exp,
+        horizon_days=horizon_days, spec_version=spec_version, expected_exit_date=exp,
     )
+    # "Matured long enough ago that a missing price is a dead claim, not a slow one."
+    # False whenever `as_of` is None, which is what preserves the publication path.
+    overdue = as_of is not None and as_of > exp + timedelta(days=VOID_GRACE_DAYS)
 
     sign = direction_sign(direction)
     series = sorted(closes)
@@ -143,6 +252,18 @@ def resolve_pick(
         if any(d > run_date for d, _ in series):
             return Outcome(**base, verdict="void",
                            void_reason=f"no close on run_date {run_date.isoformat()}")
+        if overdue:
+            # An EMPTY series long past maturity — delisted, symbol retired, or a
+            # ticker that never resolved. Migration 043 and ADR-0090 both name this
+            # ("no price history, delisted") as a void; the code simply never reached
+            # it, because without a clock it could not tell this from immaturity.
+            return Outcome(
+                **base, verdict="void",
+                void_reason=(
+                    f"no price observations for {asset} on or after "
+                    f"{run_date.isoformat()} as of {as_of.isoformat()}"
+                ),
+            )
         return Outcome(**base, verdict="pending")
 
     entry_date, entry_price = entry
@@ -152,6 +273,20 @@ def resolve_pick(
 
     after = [(d, p) for d, p in series if d > run_date]
     if len(after) < horizon_days:
+        if overdue:
+            # Priced at entry, then the series stops short. A name delisted five days
+            # into a 21-day horizon has 5 observations forever, so without this it is
+            # `pending` in perpetuity. The reason states the shortfall and where the
+            # series ends, so the void is checkable rather than asserted.
+            last = after[-1][0].isoformat() if after else run_date.isoformat()
+            return Outcome(
+                **base, verdict="void",
+                void_reason=(
+                    f"only {len(after)} of {horizon_days} observations after "
+                    f"{run_date.isoformat()}; series ends {last}"
+                ),
+                entry_price=entry_price, entry_date=entry_date,
+            )
         # Not enough observations YET. Pending, not void — a later run resolves it.
         return Outcome(**base, verdict="pending",
                        entry_price=entry_price, entry_date=entry_date)
@@ -262,6 +397,12 @@ def commitment_rows(
     Needs no network and no prices, which is the point: `resolve_pick` on an empty series
     already returns `pending`, so recording a commitment cannot fail for the reasons
     fetching prices can. Publication and commitment then succeed or fail together.
+
+    That depends on `resolve_pick` being called with NO `as_of`, and now says so. With a
+    clock supplied, an empty series past maturity is `void` (ADR-0204) — correct for the
+    resolver, and catastrophic here: back-recording a claim for an older book would write
+    it in already voided, having never been a live commitment. The call below passes five
+    positional arguments and no `as_of` deliberately.
 
     Deduped on (asset, direction): a book upserts on `run_date`, so a name may appear
     once per book, and a duplicate inside one book would double-count the denominator.

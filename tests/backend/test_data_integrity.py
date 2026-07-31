@@ -819,3 +819,93 @@ def test_every_check_runs_even_when_an_earlier_one_fails():
     results = run_book_checks(_three_defect_row(), [], None)
     assert len(results) == 7
     assert all(isinstance(ok, str) and ok for _, _, ok in results)
+
+
+# ─────────────────────────────────────────────────────────────────────────────────
+# Recorded but never graded — the mirror of check_published_claims_are_on_the_record
+#
+# That guard asks *is every published claim recorded*, and caught 9 of 32 missing on
+# 2026-07-27. Nothing asked the reverse until 2026-07-31, when 20 of ~80 live claims
+# turned out to be permanently `pending`: the resolver derived its claim set from the
+# CURRENT book, so a pick whose book was replaced by a later run on the same run_date was
+# never in the set again. Unfalsifiable, on the table whose ADR is titled "a published
+# pick must be falsifiable" (ADR-0203, ADR-0204).
+#
+# Three states, and the reason they are three rather than one is that collapsing them
+# would report a spec migration as a data defect.
+
+_ORACLE = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)   # cutoff at grace 7 = 08-25
+
+
+def _pending(asset="ARKK", exp="2026-08-20", spec=None, verdict="pending",
+             run="2026-07-30", direction="short"):
+    from backend.services.pick_outcomes import SPEC_VERSION
+    return {
+        "run_date": run, "asset": asset, "direction": direction,
+        "spec_version": SPEC_VERSION if spec is None else spec,
+        "verdict": verdict, "expected_exit_date": exp,
+    }
+
+
+def test_flags_the_live_20_claims_that_matured_and_were_never_graded():
+    from scripts.check_data_integrity import check_matured_claims_were_resolved
+
+    rows = [_pending(asset=a) for a in ("ARKK", "JD", "MSFT", "NUE")]
+    flags = check_matured_claims_were_resolved(rows, now=_ORACLE)
+    assert len(flags) == 1
+    assert "4 recorded claim(s)" in flags[0]
+    for a in ("ARKK", "JD", "MSFT", "NUE"):
+        assert a in flags[0]
+    # Names the repair, like its forward sibling does.
+    assert "resolve_outcomes" in flags[0]
+
+
+def test_a_claim_inside_the_grace_window_is_slow_not_stalled():
+    # A void is terminal, so the guard must not cry before the price feed has had a
+    # reasonable chance. Grace here (7) is deliberately shorter than the resolver's void
+    # tolerance (10), so a human sees the stall while the claim can still be graded.
+    from scripts.check_data_integrity import check_matured_claims_were_resolved
+
+    assert check_matured_claims_were_resolved([_pending(exp="2026-08-28")], now=_ORACLE) == []
+
+
+def test_an_unmatured_claim_is_not_flagged():
+    from scripts.check_data_integrity import check_matured_claims_were_resolved
+
+    assert check_matured_claims_were_resolved([_pending(exp="2026-12-01")], now=_ORACLE) == []
+
+
+def test_a_terminal_verdict_is_never_flagged():
+    from scripts.check_data_integrity import check_matured_claims_were_resolved
+
+    rows = [_pending(verdict=v) for v in ("hit", "miss", "flat", "void")]
+    assert check_matured_claims_were_resolved(rows, now=_ORACLE) == []
+
+
+def test_a_retired_spec_is_reported_but_is_not_a_failure():
+    # It needs a resolver for that spec, not a re-run, so calling it a data defect would
+    # send an operator to the wrong repair.
+    from scripts.check_data_integrity import check_matured_claims_were_resolved
+
+    flags = check_matured_claims_were_resolved([_pending(spec="v0")], now=_ORACLE)
+    assert len(flags) == 1
+    assert flags[0].startswith("NOTE")
+    assert "v0" in flags[0]
+
+
+def test_a_missing_expected_exit_date_is_reported_as_unknown_not_skipped():
+    # Every row pick_outcomes.to_row writes has one, so a NULL is a hand-inserted row —
+    # the single case where silence would hide the whole class.
+    from scripts.check_data_integrity import check_matured_claims_were_resolved
+
+    flags = check_matured_claims_were_resolved([_pending(exp=None)], now=_ORACLE)
+    assert len(flags) == 1
+    assert "no expected_exit_date" in flags[0]
+    assert "ARKK" in flags[0]
+
+
+def test_no_rows_is_not_a_failure():
+    from scripts.check_data_integrity import check_matured_claims_were_resolved
+
+    assert check_matured_claims_were_resolved([], now=_ORACLE) == []
+    assert check_matured_claims_were_resolved(None, now=_ORACLE) == []

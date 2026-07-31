@@ -955,6 +955,105 @@ def check_published_claims_are_on_the_record(
     ]
 
 
+def check_matured_claims_were_resolved(
+    outcome_rows: list[dict] | None,
+    now: "datetime | None" = None,
+    grace_days: int = 7,
+) -> list[str]:
+    """The other half of `check_published_claims_are_on_the_record`.
+
+    That one asks *is every published claim recorded*. This asks the reverse — **is every
+    recorded claim eventually graded** — and nothing asked it until 2026-07-31, when 20 of
+    ~80 live claims turned out to be permanently `pending`: the resolver derived its claim
+    set from the CURRENT book, so a pick whose book was replaced by a later run on the
+    same run_date was never in the set. Unfalsifiable, on the table whose ADR is titled
+    "a published pick must be falsifiable" (ADR-0203, ADR-0204).
+
+    The two failures are mirror images and neither implies the other, which is why both
+    guards exist: a claim can be published-but-unrecorded (nothing to grade) or
+    recorded-but-ungraded (nothing grading it).
+
+    THREE STATES, because collapsing them would report a spec migration as a data defect:
+      - matured past grace, on the CURRENT spec -> a real failure, name every row
+      - matured past grace, on a RETIRED spec  -> reported, not failed; it needs a
+        resolver for that spec, not a re-run
+      - no `expected_exit_date` at all         -> reported as unknown, never skipped.
+        Every row `Outcome.to_row` writes has one, so a NULL is a hand-inserted row and
+        the single case where silence would hide the whole class.
+
+    `grace_days` is 7 against the resolver's `VOID_GRACE_DAYS = 10`, deliberately: this
+    should complain BEFORE the resolver's tolerance expires, so a human sees the stall
+    while the claim can still be graded rather than after it has taken a terminal void.
+    """
+    # Imported inside the function, like `check_stalled_stages` below — this module keeps
+    # datetime local so the pure checks above it stay importable without it.
+    from datetime import date as _date, datetime, timedelta, timezone
+
+    from backend.services.pick_outcomes import SPEC_VERSION as _SPEC
+
+    def _parse_date(value):
+        if isinstance(value, _date):
+            return value
+        if isinstance(value, str) and value:
+            try:
+                return datetime.fromisoformat(value[:10]).date()
+            except ValueError:
+                return None
+        return None
+
+    if not outcome_rows:
+        return []
+    now = now or datetime.now(timezone.utc)
+    today = now.date()
+    cutoff = today - timedelta(days=grace_days)
+
+    overdue_current: list[str] = []
+    overdue_retired: list[str] = []
+    undated: list[str] = []
+
+    for row in outcome_rows:
+        if (row.get("verdict") or "pending") != "pending":
+            continue
+        who = f"{row.get('run_date')} {row.get('direction')} {row.get('asset')}"
+        exp_raw = row.get("expected_exit_date")
+        exp = _parse_date(exp_raw) if exp_raw else None
+        if exp is None:
+            undated.append(who)
+            continue
+        if exp > cutoff:
+            continue                      # not matured, or inside grace
+        spec = str(row.get("spec_version") or _SPEC)
+        (overdue_current if spec == _SPEC else overdue_retired).append(
+            who if spec == _SPEC else f"{who} [spec {spec}]"
+        )
+
+    out: list[str] = []
+    if overdue_current:
+        out.append(
+            f"{len(overdue_current)} recorded claim(s) matured more than {grace_days} "
+            f"days ago (on or before {cutoff.isoformat()}) and are still `pending`, so "
+            f"nothing has graded them: " + ", ".join(sorted(overdue_current)[:12])
+            + ("..." if len(overdue_current) > 12 else "")
+            + ". Repair with `python -m scripts.resolve_outcomes` (ADR-0204)."
+        )
+    if overdue_retired:
+        out.append(
+            f"NOTE (not a failure): {len(overdue_retired)} matured claim(s) are recorded "
+            f"under a spec this code is not ({_SPEC}), so they need a resolver for that "
+            f"spec rather than a re-run: " + ", ".join(sorted(overdue_retired)[:12])
+            + ("..." if len(overdue_retired) > 12 else "") + " (ADR-0204)."
+        )
+    if undated:
+        out.append(
+            f"{len(undated)} pending claim(s) carry no expected_exit_date, so whether "
+            f"they have matured cannot be determined: " + ", ".join(sorted(undated)[:12])
+            + ("..." if len(undated) > 12 else "")
+            + ". Every row written by pick_outcomes.to_row has one, so these were "
+            "inserted by hand."
+        )
+    return out
+
+
 def check_stalled_stages(
     rows: list[dict] | None,
     now: "datetime | None" = None,
@@ -1330,6 +1429,33 @@ def main() -> int:
         print("\nRe-run the pipeline for that date; the site is serving an older run.")
         return 1
     print("✓ No pipeline stage is stuck mid-run.")
+
+    # Recorded but never graded — the mirror of the published-but-unrecorded check inside
+    # run_book_checks. Its own read here, and NOT in run_book_checks, for two reasons:
+    # this is a statement about the whole table rather than about one run_date, and that
+    # function's result length is asserted in tests/backend/test_data_integrity.py.
+    # Filtered to `pending` in the query so it reads the index migration 043 built.
+    pending_rows = (
+        sb.table("pick_outcomes")
+        .select("run_date, asset, direction, spec_version, verdict, expected_exit_date")
+        .eq("verdict", "pending")
+        .order("expected_exit_date")
+        .limit(1000)
+        .execute()
+        .data
+    )
+    ungraded = check_matured_claims_were_resolved(pending_rows)
+    hard = [f for f in ungraded if not f.startswith("NOTE")]
+    for f in ungraded:
+        if f.startswith("NOTE"):
+            print(f"  - {f}")
+    if hard:
+        print("✗ DATA INTEGRITY CHECK FAILED — a recorded claim matured and was never "
+              "graded:")
+        for f in hard:
+            print(f"  - {f}")
+        return 1
+    print("✓ Every matured claim on the record has been graded.")
 
     if failed:
         return 1

@@ -155,6 +155,7 @@ export function TrendPlot({
   yMax: yMaxProp,
   labelInside = false,
   colors,
+  runDates,
 }: {
   series: TrendSeries[];
   width?: number;
@@ -183,6 +184,15 @@ export function TrendPlot({
    *  scatter) give a phrase one colour across both (ADR-0178) rather than
    *  each chart picking its own independently. */
   colors?: Map<string, string>;
+  /** Every day the CORPUS was measured, not just the days these series have a
+   *  point on. The two differ whenever a plotted phrase fell below the document
+   *  floor on a day that ran, and the axis rug is a claim about the RUN — so
+   *  taking it from the plotted series would mark a measured day as missing and
+   *  let the caption tell a reader the archive published nothing that day. Live
+   *  on 2026-07-30 the top-5 union was 14 days against the corpus's 21. Falls
+   *  back to the series' own union, which is right wherever every series is
+   *  present on every run (`ThemeTrends`). */
+  runDates?: string[];
 }) {
   const [tooltip, setTooltip] = useState<{ screenX: number; screenY: number; text: string; color: string; dateX: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -192,12 +202,42 @@ export function TrendPlot({
   // One shared date axis across every series, so two lines at the same x are the
   // same day. Building each line against its own point count would compress a
   // sparse series to fill the plot and make it look denser than it is.
+  // Union of what is plotted and what was measured. `runDates` alone would drop
+  // a plotted point sitting outside it; the plotted union alone is the rug bug
+  // this prop exists to fix. Taking both means the domain covers every point
+  // drawn AND every day the reader is told about.
   const dates = Array.from(
-    new Set(series.flatMap((s) => s.points.map((p) => p.run_date))),
+    new Set([
+      ...series.flatMap((s) => s.points.map((p) => p.run_date)),
+      ...(runDates ?? []),
+    ]),
   ).sort();
   if (dates.length < 2) return null;
 
-  const xIndex = new Map(dates.map((d, i) => [d, i]));
+  // X IS CALENDAR TIME, NOT RUN INDEX.
+  //
+  // This was `xIndex.get(d) / (dates.length - 1)` — every run evenly spaced,
+  // under an axis labelled with two DATES. Neither series this plot renders is
+  // sampled daily. On 2026-07-30 the `archive` corpus had **21 run dates
+  // across 31 calendar days**: a 5-day hole at 2026-07-01..04, a 4-day one at
+  // 07-15..17, and 07-12/13 and 07-25 missing besides; `theme_signals_history`
+  // is missing 07-26. Ordinal spacing drew the 5-day hole and the 07-29→07-30
+  // step at exactly the same width, so a line that was flat for five unmeasured
+  // days and a line that moved overnight had identical slopes. That is not a
+  // rendering preference — an axis that claims dates and delivers ranks makes
+  // every gradient on the chart a different quantity than the reader thinks.
+  //
+  // Parsed as UTC midnight explicitly. `Date.parse("2026-07-30")` is UTC by
+  // spec but `new Date("2026-07-30T00:00:00")` is LOCAL, and mixing the two
+  // shifts a point by a day for any reader west of Greenwich — on an axis whose
+  // whole job is now which day a point sits on.
+  const DAY_MS = 86_400_000;
+  const asDay = (d: string) => Date.parse(`${d}T00:00:00Z`) / DAY_MS;
+  const day0 = asDay(dates[0]);
+  // Days ELAPSED, not days observed: the denominator has to be the calendar
+  // span or the scale is ordinal again with extra steps. Floored at 1 so a
+  // two-run series on consecutive days cannot divide by zero.
+  const daySpan = Math.max(1, asDay(dates[dates.length - 1]) - day0);
   // Zero is always in frame: share of voice is a proportion of a fixed whole, and
   // a y-axis floating above zero would exaggerate every wobble. `yMaxProp` skips
   // this series' own max entirely when supplied — a shared axis means neither
@@ -207,7 +247,7 @@ export function TrendPlot({
   const ticks = niceTicks(0, yMax, 4);
 
   const x = (d: string) =>
-    plotLeft + ((xIndex.get(d) ?? 0) / (dates.length - 1)) * plotWidth;
+    plotLeft + ((asDay(d) - day0) / daySpan) * plotWidth;
   const y = (v: number) =>
     plotTop + plotHeight - clamp(v / yMax, 0, 1) * plotHeight;
 
@@ -245,9 +285,15 @@ export function TrendPlot({
         viewBox={`0 0 ${width} ${height}`}
         className="w-full h-auto"
         role="img"
-        aria-label={`Share of voice over ${dates.length} runs for ${series
+        // Runs AND days, because since the axis became calendar time the two
+        // are different numbers and the difference is the point: 21 runs over
+        // 31 days is a chart with ten holes in it, and a reader who cannot see
+        // the plot gets that from nowhere else.
+        aria-label={`Share of voice for ${series
           .map((s) => s.phrase)
-          .join(", ")}`}
+          .join(", ")} — ${dates.length} days with data across ${
+          daySpan + 1
+        } calendar days, ${firstDate} to ${lastDate}`}
         onMouseLeave={() => setTooltip(null)}
       >
         {ticks.map((v) => (
@@ -280,6 +326,30 @@ export function TrendPlot({
         >
           share
         </text>
+
+        {/* One tick per DAY THAT WAS MEASURED, along the baseline. The calendar
+            scale above puts a gap in the right place; this is what says a gap
+            is there at all. Without it the reader sees a long straight segment
+            and cannot tell a narrative that held steady for five days from five
+            days the archive published nothing — the line looks identical either
+            way, because a line chart interpolates and has no vocabulary for
+            "not sampled".
+
+            The per-point circles do not cover this. They are per SERIES, so a
+            phrase that fell below the document floor on a day the corpus was
+            collected is missing a circle on a day that was measured; the rug is
+            the union across every plotted series and answers the question about
+            the RUN rather than about one phrase. */}
+        {dates.map((d) => (
+          <line
+            key={`x-${d}`}
+            x1={x(d)}
+            x2={x(d)}
+            y1={plotTop + plotHeight}
+            y2={plotTop + plotHeight + 3}
+            stroke="var(--border)"
+          />
+        ))}
 
         <text x={plotLeft} y={height - 8} fill="var(--text-tertiary)" fontSize="9" className="num">
           {firstDate}
@@ -1052,9 +1122,26 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
   );
   // For the trend plot only — the scatter below needs no run count, it plots
   // one day. A trajectory needs at least two.
-  const runs = series
-    ? new Set(series.flatMap((s) => s.points.map((p) => p.run_date))).size
-    : 0;
+  // Every day the corpus was measured — the union across ALL tracked phrases,
+  // not just the five the trend plot draws. `runs` gated the plot on having ≥2;
+  // `runDates` is the same set, handed to the plot so its axis rug marks the
+  // days that RAN rather than the days the top five happened to survive.
+  const runDates = series
+    ? Array.from(
+        new Set(series.flatMap((s) => s.points.map((p) => p.run_date))),
+      ).sort()
+    : [];
+  const runs = runDates.length;
+  // Calendar days the plot spans, which is NOT `runs` — that difference is the
+  // whole reason the axis stopped being ordinal, so the caption states both.
+  const calendarSpan =
+    runs >= 2
+      ? Math.round(
+          (Date.parse(`${runDates[runs - 1]}T00:00:00Z`) -
+            Date.parse(`${runDates[0]}T00:00:00Z`)) /
+            86_400_000,
+        ) + 1
+      : runs;
 
   return (
     <div className="card flex flex-col flex-1">
@@ -1207,6 +1294,7 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                     </h4>
                     <TrendPlot
                       series={top}
+                      runDates={runDates}
                       width={S_WIDTH}
                       height={S_HEIGHT}
                       plotRight={16}
@@ -1220,7 +1308,13 @@ export default function NarrativeTrends({ shared }: { shared?: NarrativeSeriesSt
                       is routinely financial-writing register
                       (&ldquo;earnings&rdquo;, &ldquo;price&rdquo;,
                       &ldquo;q2&rdquo;), which is why the detection plane
-                      below judges by breakout, not by volume alone.
+                      below judges by breakout, not by volume alone. Spacing
+                      is calendar time, and the ticks below the axis are the
+                      days the archive recorded any tracked phrase &mdash;{" "}
+                      <span className="num">{runs}</span> of the{" "}
+                      <span className="num">{calendarSpan}</span> days shown.
+                      A wide stretch between ticks is silence in the corpus,
+                      not a narrative holding steady.
                     </p>
                   </div>
                 )}

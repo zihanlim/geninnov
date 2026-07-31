@@ -824,7 +824,14 @@ describe("DetectionScatter — the detector's honesty (ADR-0146)", () => {
       path.resolve(__dirname, "../../components/NarrativeTrends.tsx"),
       "utf8",
     );
-    const callSite = src.slice(src.indexOf("<TrendPlot\n"), src.indexOf("<TrendPlot\n") + 320);
+    // Sliced to the element's own closing `/>`, not to a fixed character
+    // count. It was `+ 320`, which is a measurement of the call site as it
+    // happened to be written: adding `runDates` pushed `colors={topColors}`
+    // past the window and failed a test about props that were all still there.
+    // A window that shrinks every time the thing it inspects grows tests the
+    // length of the call site rather than its contents.
+    const from = src.indexOf("<TrendPlot\n");
+    const callSite = src.slice(from, src.indexOf("/>", from));
     expect(callSite).toContain("series={top}");
     expect(callSite).toContain("width={S_WIDTH}");
     expect(callSite).toContain("height={S_HEIGHT}");
@@ -832,6 +839,10 @@ describe("DetectionScatter — the detector's honesty (ADR-0146)", () => {
     expect(callSite).toContain("yMax={sharedShareMax}");
     expect(callSite).toContain("labelInside");
     expect(callSite).toContain("colors={topColors}");
+    // The axis rug is a claim about which days the CORPUS ran, so it must be
+    // fed the union over every tracked phrase — not the plotted five, whose
+    // own union was 14 days against the corpus's 21 on 2026-07-30.
+    expect(callSite).toContain("runDates={runDates}");
   });
 
   it("also renders a share-over-time trend above the plane (ADR-0175)", () => {

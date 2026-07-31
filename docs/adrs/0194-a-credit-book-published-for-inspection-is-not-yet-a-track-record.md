@@ -141,13 +141,27 @@ second LLM call can be switched off without a code change if quota gets tight.
 
 - **Both books now exist for 2026-07-30 and are independently readable** —
   `research_recommendations` and `book_holdings` each carry one row/set per lens, verified by
-  SQL after the live run (not merely by the migration file existing).
-- **The multi-asset book is provably unaffected.** Its `research_recommendations` row and
-  `book_holdings` rows are byte-identical to the pre-credit-run snapshot
-  (`.superpowers/sdd/2026-07-31-credit-rates-exposures/booksnap/`), including on an
-  OVERLAPPING ticker held at a different weight by each lens — the sharpest version of the
-  coexistence claim, and the one the test suite asserts directly rather than by absence of an
-  error.
+  SQL after the live run (not merely by the migration file existing). The live credit book:
+  **long EMB 20%, long BKLN 10%, long BIL 20%** — 3 positions, 50% gross, `verified=true` after
+  2 citation-guardrail retries (the LLM's first two attempts claimed a 3-name short side the
+  day's credit/rates candidate pool did not have — every credit/rates ticker present in the
+  2026-07-30 pool (AGG, ANGL, BIL, BKLN, EMB, HYG, IEF, JNK, LQD, SHY, TLT) was long-side only,
+  so the guardrail correctly rejected the overclaim rather than let it publish). Of the 3 held
+  names, **2 clear `|beta/se| >= 2` on at least one leg** — EMB on both legs (t_ig=-2.55,
+  t_qual=-2.09) and BIL on the quality leg (t_qual=+2.06) — BKLN does not (t_ig=-1.48,
+  t_qual=-1.99, narrowly short of the bar).
+- **The multi-asset book is provably unaffected.** An MD5 hash of its full
+  `research_recommendations` row and of its `book_holdings` rows, taken immediately before the
+  credit run and again after, are **identical** — the fresh, load-bearing proof, taken at the
+  moment of the write. (The task's own pre-flight snapshot,
+  `.superpowers/sdd/2026-07-31-credit-rates-exposures/booksnap/`, had already gone stale by the
+  time the credit run executed — a concurrent session republished the primary book in the
+  interim, swapping ARKK/MSFT/NUE/JD for F/UNH/PDD/NOC — which is exactly why the hash was
+  taken fresh rather than trusted from a file captured hours earlier; that swap is unrelated to
+  this change, which only reads and writes what it is told to.) `tests/backend/test_book_per_lens.py`
+  asserts the same property on an OVERLAPPING ticker held at a different weight by each lens —
+  the sharpest version of the coexistence claim, and the one that does not depend on which run
+  happened to execute first on a given day.
 - **This is a debt, taken on deliberately, not an oversight.** The credit book has no forward
   track record. It cannot yet be asked "was this book right?" the way `/method`'s
   ADR-0090 panel asks it of the multi-asset book. Starting one means a `pick_outcomes`-shaped

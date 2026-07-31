@@ -1548,7 +1548,15 @@ function BookPageInner() {
               phase-4 link. They are siblings inside a grid, not one section with
               two halves — an anchor that lands on half a row is still an anchor
               that lands where it says. */}
-          <div className="grid lg:grid-cols-2 gap-6 mb-6 [&>*]:mb-0 [&>*]:min-w-0">
+          <div className="grid lg:grid-cols-2 gap-6 mb-6 items-start [&>*]:min-w-0">
+          {/* LEFT COLUMN. Sizing is 610px against the candidate list's 2075px, so
+              pairing them alone left ~1465px of empty space under it. The roster
+              and the book risks fill that column instead of whitespace — and they
+              belong there on meaning as well as on height: sizing, what the screen
+              passed over, what the themes abstained on and what could break the
+              book are all the page's account of ITSELF, against the right column's
+              single question of which names were held back. */}
+          <div className="flex flex-col gap-6 [&>*]:mb-0 [&>*]:min-w-0">
           <section id="sizing" className="card" aria-label="Sizing">
             <div className="card-header">
               <h2 className="card-title m-0">Sizing</h2>
@@ -1570,29 +1578,6 @@ function BookPageInner() {
             />
             </div>
           </section>
-
-          <section
-            id="not-taken"
-            aria-label="Cleared the screen but not taken"
-            className="[&_details]:!mb-0"
-          >
-              <ClearedNotTaken
-                candidates={candidates}
-                heldAssets={new Set((rec?.picks ?? []).map((p) => p.asset))}
-                heldDirections={Object.fromEntries(
-                  (rec?.picks ?? []).map((p) => [p.asset, p.direction])
-                )}
-                themeNames={themeNames}
-                correlations={rec?.candidate_correlations ?? {}}
-                // `trade_candidates` has no lens column — it is the single L1 pool
-                // every lens screens from — so the panel has to be told which of
-                // those names THIS book's lens admitted. Null under a lens that
-                // removed nothing, which is what keeps the default page unchanged.
-                pool={pool}
-                lensLabel={lens === DEFAULT_LENS ? undefined : lens}
-              />
-          </section>
-          </div>
 
           {/* The abstention roster loses its old partner to the pairing above. It
               answers "what themes scored but did not trade" — the same exclusion
@@ -1657,6 +1642,32 @@ function BookPageInner() {
               </CollapsibleSection>
             )}
           </section>
+          </div>
+
+          <section
+            id="not-taken"
+            aria-label="Cleared the screen but not taken"
+            className="[&_details]:!mb-0"
+          >
+              <ClearedNotTaken
+                candidates={candidates}
+                heldAssets={new Set((rec?.picks ?? []).map((p) => p.asset))}
+                heldDirections={Object.fromEntries(
+                  (rec?.picks ?? []).map((p) => [p.asset, p.direction])
+                )}
+                themeNames={themeNames}
+                correlations={rec?.candidate_correlations ?? {}}
+                // `trade_candidates` has no lens column — it is the single L1 pool
+                // every lens screens from — so the panel has to be told which of
+                // those names THIS book's lens admitted. Null under a lens that
+                // removed nothing, which is what keeps the default page unchanged.
+                pool={pool}
+                lensLabel={lens === DEFAULT_LENS ? undefined : lens}
+              />
+          </section>
+          </div>
+
+
 
           <div className="mt-6 text-[12px] text-text-secondary">
             Stress scenarios and correlation structure for this book are on{" "}

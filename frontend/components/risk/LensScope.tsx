@@ -79,30 +79,51 @@ export function LensScopeBanner({
           multi-asset book
         </span>
       </div>
-      <div className="p-[18px] pt-3 text-[12.5px] text-text-secondary leading-[1.65] max-w-[92ch]">
+      {/* TWO COLUMNS, because one 92ch measure inside a 1344px card left 700px of
+          it empty and stacked four paragraphs into a 292px tower (measured at
+          1440 and 1280 — the body was 644px at both, so the dead space GREW with
+          the viewport). The split is editorial rather than decorative: WHICH
+          panels are excepted on the left, WHY they are on the right. The left is
+          what a reader acts on and the right is the standing explanation, so a
+          reader who has read the right column once never needs it again.
+
+          Each column keeps its own `max-w-[92ch]` — this fills the card, it does
+          not abandon the measure. At 1440 a column is ~650px (~80ch); the cap
+          only binds past ~1500px of card, which is where a single column would
+          have started running long anyway. `min-w-0` because the right column
+          holds seven inline `Ident` table names and a grid cell defaults to
+          min-content: without it the longest identifier sets the column width
+          and pushes the left one under it. Single column below `lg`, where two
+          would each be under 45ch. */}
+      <div className="p-[18px] pt-3 text-[12.5px] text-text-secondary leading-[1.65]">
         {panels.length > 0 ? (
-          <>
-            <p className="m-0">
-              Every figure below is read from the {lensLabel(lens)} book published
-              for this run, with these exceptions.
-            </p>
-            {wholly.length > 0 && (
-              <p className="m-0 mt-2">
-                Entirely the <strong>multi-asset</strong> published book —
-                nothing in them follows the lens:{" "}
-                <span className="text-text-primary">{wholly.join(", ")}</span>.
+          <div className="grid gap-x-9 gap-y-2 lg:grid-cols-2 [&>*]:min-w-0">
+            <div className="max-w-[92ch]">
+              <p className="m-0">
+                Every figure below is read from the {lensLabel(lens)} book
+                published for this run, with these exceptions.
               </p>
-            )}
-            {partly.length > 0 && (
-              <p className="m-0 mt-2">
-                <strong>Part multi-asset</strong> — some rows follow the lens and
-                the rest are the multi-asset book&rsquo;s, inside one panel under
-                one heading:{" "}
-                <span className="text-text-primary">{partly.join(", ")}</span>.
-                Which rows are which is in each panel&rsquo;s own marker.
-              </p>
-            )}
-            <p className="m-0 mt-2">
+              {wholly.length > 0 && (
+                <p className="m-0 mt-2">
+                  Entirely the <strong>multi-asset</strong> published book —
+                  nothing in them follows the lens:{" "}
+                  <span className="text-text-primary">{wholly.join(", ")}</span>.
+                </p>
+              )}
+              {partly.length > 0 && (
+                <p className="m-0 mt-2">
+                  <strong>Part multi-asset</strong> — some rows follow the lens
+                  and the rest are the multi-asset book&rsquo;s, inside one panel
+                  under one heading:{" "}
+                  <span className="text-text-primary">{partly.join(", ")}</span>.
+                  Which rows are which is in each panel&rsquo;s own marker.
+                </p>
+              )}
+            </div>
+            {/* `m-0`, not `mt-2`: at one column the grid's own `gap-y-2` already
+                supplies exactly that gap, and at two it would push this column
+                8px below the one beside it for no reason. */}
+            <p className="m-0 max-w-[92ch]">
               The multi-asset figures among them are sourced from{" "}
               {LENS_LESS_TABLES.map((t, i) => (
                 <span key={t}>
@@ -119,9 +140,11 @@ export function LensScopeBanner({
               book&rsquo;s risk, drawdown or record — it is the multi-asset
               book&rsquo;s, shown beside it.
             </p>
-          </>
+          </div>
         ) : (
-          <p className="m-0">
+          // One sentence and nothing to pair it with — a two-column grid here
+          // would be a half-empty row, which is the defect above in miniature.
+          <p className="m-0 max-w-[92ch]">
             Every figure below is read from the {lensLabel(lens)} book published
             for this run. No panel on this page draws on the lens-less tables
             (ADR-0194), so nothing here is the multi-asset book&rsquo;s.

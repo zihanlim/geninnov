@@ -266,10 +266,24 @@ export default function BookFunnel({
                 {/* This step's account of itself, under its own connector. */}
                 {i > 0 && edge && (
                   <div
-                    className="min-w-0 text-[11.5px] leading-[1.55] lg:px-2 lg:text-center"
-                    style={{ gridColumn: `${edgeCol} / span 2`, gridRow: 2 }}
+                    // CENTRED ON THE CONNECTOR, which is why the span starts one
+                    // track EARLIER than the connector's own. Spanning
+                    // `edgeCol / span 2` and centring put the block's midpoint
+                    // between the connector and the next node, so the two
+                    // `−12 context cap` labels — the one on the line and the one
+                    // heading its explanation — sat at different x. Spanning
+                    // node-connector-node makes the cell symmetric about the
+                    // connector, because both node tracks are 1fr.
+                    //
+                    // Adjacent cells therefore SHARE a track (1-3, 3-5, 5-7,
+                    // 7-9) and overlap as grid areas. They do not overlap as
+                    // ink: the content is capped and centred inside, so each
+                    // block occupies the middle of its own three tracks.
+                    className="min-w-0 text-[11.5px] leading-[1.55] lg:text-center"
+                    style={{ gridColumn: `${edgeCol - 1} / span 3`, gridRow: 2 }}
                     data-testid={`funnel-detail-${node.id}`}
                   >
+                    <div className="lg:max-w-[17rem] lg:mx-auto">
                     <div
                       className="num text-[10px] uppercase tracking-[0.08em] mb-1"
                       style={{
@@ -297,6 +311,7 @@ export default function BookFunnel({
                         ))}
                       </ul>
                     ) : null}
+                    </div>
                   </div>
                 )}
               </Fragment>

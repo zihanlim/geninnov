@@ -88,15 +88,53 @@ verdict rather than as a caveat on a number it prints anyway.
 
 The engine takes a `lens` parameter that filters the tradeable universe by asset class. The
 same run, under the credit lens, produces a different book — and the comparison is the most
-useful thing in this document.
+useful thing in this document. Both books are live and readable side by side: `/book`,
+`/mandate` and `/risk` all take `?lens=credit`, so the credit book can be inspected for
+mandate compliance and stress behaviour, not merely for what it holds.
 
 |  | Multi-asset | Credit |
 |---|---|---|
-| Positions | 9 (4L / 5S) | 3 (long-only) |
+| Positions | 9 (4L / 5S) | 3 (long-only: EMB, BIL, BKLN) |
 | Gross | 44.4% | 50.0% |
+| Net | −7.7% | **+50.0%** |
 | Names with a **measurable** credit beta | **1 of 9** | **2 of 3** |
 
-The credit book is thin, and it says so itself. Its published thesis opens:
+### The credit book is not thin by choice — it is capped out
+
+The most informative line in the credit run is its list of binding constraints:
+
+> `["EMB at single-name cap", "BIL at single-name cap", "Credit at sector cap",`
+> `"long::0 at correlation complex cap"]`
+
+Four caps bind at once. Two names sit at the 20% single-name limit, the credit **sector** sits
+at its 30% limit, and a correlation complex has absorbed one name's allowance. The book stops
+at 50% gross because the mandate's own diversification rules will not let $100M into three
+instruments — not because the screen ran out of conviction. Compare the multi-asset book, where
+exactly one constraint binds (turnover).
+
+That is the quantitative form of the argument below: **the methodology transfers, the
+instrument universe does not yet.** Diversification caps are the right rules, and they are the
+rules that a three-ETF universe cannot satisfy.
+
+### And it breaches a limit — which is the governance working
+
+The credit book runs **+50.0% net against a 30% net-exposure limit — 167% of it.** A long-only
+book cannot be net-neutral, so this follows directly from having no short side.
+
+It is worth being precise about what kind of breach this is. Net exposure is **monitored, not
+enforced**: it is reported, not entered into the optimizer as a solver constraint. Every
+*enforced* cap — single name, sector, correlation complex — holds exactly, which is why they
+appear in the binding list rather than being violated. So the same run demonstrates both halves
+of the distinction: the solver could not breach what it was given to obey, and the system
+reports the limit it was not given to obey rather than quietly omitting it.
+
+A credit book I would actually run has a short side and does not have this problem. This one is
+published with the breach visible on `/mandate?lens=credit`.
+
+### Why there is no short side at all
+
+The caps explain the size. They do not explain the direction, and the book states that reason
+itself. Its published thesis opens:
 
 > *"The book is a long-only credit allocation — no short candidates exist in the pool, so a
 > long/short structure is not constructible from this screen."*
@@ -132,3 +170,11 @@ build next.
 - **Betas are empirical, not analytic.** A regression coefficient over 252 days is not a
   cash-flow-weighted spread duration, and one estimated over 2023–2026 has seen one broad
   regime.
+- **The credit lens does not reach everything on the risk pages.** Realised return, the held
+  positions and the forward record have one series each, belonging to the multi-asset book —
+  a second book must not write into the first book's record. So on `/risk?lens=credit` the
+  stress matrix, VaR, correlation and factor tilt are the credit book's, while a handful of
+  panels are still the multi-asset book's. Those are marked on screen, panel by panel, and
+  named in a banner at the top. The marking is per panel, not per figure: one or two panels
+  put both books' numbers in a single row, distinguished only by each figure's source line.
+  `/attribution` offers no lens at all rather than label the multi-asset record as credit.

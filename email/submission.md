@@ -12,7 +12,64 @@ The system returns **nine positions: four long, five short**, at **44.4% gross**
 **−7.7% net**. It is not constrained to five a side, and it did not deploy the full $100M.
 Both facts are answers rather than omissions, and I take them in turn after the book.
 
-### The book
+A portfolio manager does not reach for five longs and five shorts. They reach for a process,
+and the picks are what falls out of the end of it. So the answer below is that process in the
+order it actually runs — and each phase is a live destination in the product, not a section of
+this document.
+
+### 01 — Mandate · *what am I solving for, and inside which limits?* → `/mandate`
+
+$100M. **Enforced** — entered into the optimizer as solver constraints, so a published book
+cannot breach them:
+
+| Limit | Value | Source |
+|---|---|---|
+| Single name | 20% | `scoring_config.max_single_name_weight` |
+| Sector | 30% | `scoring_config.max_sector_weight` |
+| Geography | 35% | `scoring_config.max_geo_weight` |
+| Gross exposure | 100% | A ceiling reached from below, not a target |
+| Correlation complex | 20% | Names correlated ≥ 0.70 share one name's allowance |
+| Crowded-name cap | ×0.5 | A name that specs already crowd gets half its single-name cap |
+| Turnover, day-over-day | 60% | `scoring_config.max_turnover` |
+
+Everything else on the risk board — VaR, CVaR, drawdown, net exposure, beta, HHI — is
+**monitored, not enforced**: reported so a reader can see it, binding nothing in the solver.
+That distinction is the first thing the mandate states, because a reader who cannot tell a hard
+constraint from a watched number cannot tell a governance breach from ordinary variance. It
+matters again in the credit section below, where a monitored limit is breached and every
+enforced one holds.
+
+### 02 — Alpha · *what is moving, and what does consensus not see yet?* → `/`
+
+**42 candidates** cleared the L1 screen, of which **11 came from themes below the attention
+gate** — admitted anyway because the name's own |EdgeScore| was decisive. Attention chooses
+what we look at; it does not decide what is tradable. That is a standing rule (ADR-0046), not a
+one-off override. The pool is ordered by conviction before truncation, so the truncation cannot
+quietly re-impose the gate it exists to overrule.
+
+### 03 — Risk & scenario · *what could go wrong, and what would it cost?* → `/risk`
+
+Six calibrated shocks, worst first. Both tails are modelled deliberately: a net-short book is
+not automatically safe on a crash, and it is not automatically safe on a melt-up either.
+
+| Scenario | Book return |
+|---|---|
+| **VIX Spike (>30)** | **−1.86%** |
+| Supply Shock (chokepoint closure) | −1.52% |
+| Credit Widening (+150bp OAS) | −1.07% |
+| USD Strength (+5% DXY) | −0.91% |
+| Rate Shock (+50bp) | −0.32% |
+| **Melt-up / Squeeze (SPX +10%)** | **+1.03%** |
+
+Ex-ante VaR (95%, 1-day) **$1.04M**; CVaR **$1.30M**; HHI 1174. **No correlation pair cleared
+the 0.70 threshold**, so on this measure nine positions are nine distinct ideas rather than
+fewer bets wearing more tickers.
+
+Every figure here is ex-ante — a pure function of the recommended weights and a 252-day
+covariance estimate. It is what this book *would* risk if held, not what running the strategy
+has cost.
+
+### 04 — Construction · *given the edge and the budget, what weights?* → `/book`
 
 | | Asset | Weight | Theme | Why |
 |---|---|---|---|---|
@@ -37,18 +94,42 @@ the correlation cluster and PDD was included because it sits outside it.
 The screen produced 42 candidates, capped to 30 for the reasoning step. From those 30 the
 engine took nine. There is no rule requiring five a side, and manufacturing a fifth long to
 match the shape of the question would mean holding a position that did not clear the bar.
-The honest count is four.
+An unfilled slot and a bad idea are different failures, and the book prefers the first.
+`/book`'s "not taken" tab shows what was in the pool and screened out; nothing is hidden.
 
 ### Why 44% gross and not 100%
 
 `binding_constraints` on the run reads **`["turnover at cap"]`**, with realised turnover at
 exactly **60.0%** against a 60% limit. The day-over-day turnover cap bound. The system
-declined to trade through it and held the balance in cash.
+declined to trade through it and held **$55.6M in cash**.
 
 This is the mandate working. An earlier version of this book ran at **92.7% mean daily
 turnover, peaking at 200%**, which cost ~35%/yr annualised — turning a −1.26% gross result
 into −2.01% net. The cap exists because that was measured, and this run is what it looks
 like when it binds.
+
+### 05 — Execution · *can this be put on without the impact eating the thesis?* → `/execution`
+
+**The one phase this system does not perform, stated as a boundary rather than an omission.**
+
+The published book is a *recommendation*, not a held position — nobody has paid to put it on.
+There is no fill price, no borrow cost and no market-impact model anywhere in it, and inventing
+one to make the page look complete would be worse than leaving it empty: a fabricated fill
+looks exactly like a measurement. What the phase *would* need — a broker connection, borrow
+availability per short, an impact model beyond the linear turnover cost already priced — is
+named on the page rather than quietly absent.
+
+### 06 — Attribution · *was the thesis right, or was the sizing wrong?* → `/attribution`
+
+Every published pick is scored against a **pipeline-assigned 21-trading-day horizon**, resolved
+from the actual close — never a horizon the model picks for itself, which would let it choose
+its own exam. Picks are written as `pending` at publication, so the denominator exists before
+any outcome does.
+
+The record is short, and it is honest about being short. What this page has already produced is
+the measurement that changed the mandate: at 92.7% mean turnover the cost of reconstituting the
+book each run turned a −1.26% gross result into −2.01% net. The 60% cap in phase 01 exists
+because of that number, and phase 04 above is what it looks like binding.
 
 ### What the book is *not* exposed to
 

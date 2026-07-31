@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import TopBar from "@/components/TopBar";
@@ -50,7 +51,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <SideRail />
           <div className="min-w-0">{children}</div>
         </div>
-        <LiveFeed />
+        {/* Suspense, because `LiveFeed` calls `useSearchParams` to learn whether a
+            non-default `?lens=` is on screen (it qualifies its "Held tickers" count
+            when one is). A client component reading search params under a server
+            layout has to sit behind a boundary or `next build` bails out of static
+            rendering for every route — this is a ROOT layout, so that would be all
+            of them. Same reason `BookShell` wraps `BookPageInner`.
+            No fallback: the strip is fixed chrome at the foot of the page and
+            already renders em-dashes until its own fetch lands, so a skeleton here
+            would only add a second flash of different placeholder. */}
+        <Suspense fallback={null}>
+          <LiveFeed />
+        </Suspense>
       </body>
     </html>
   );

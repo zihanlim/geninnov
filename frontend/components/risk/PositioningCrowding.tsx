@@ -290,9 +290,24 @@ export function PositioningCrowding({
             unwinding — and never a reason to <em>hold</em> a position. Since{" "}
             <Ident>ADR-0110</Ident> it is a reason to hold <em>less</em>: a position at a
             speculator extreme has its single-name limit tightened, which constrains size
-            without asserting anything about its return. Positions with no futures contract —
-            four fifths of this book — are sized exactly as they would be without the check,
-            so read the coverage figure above before reading the verdict. Source:{" "}
+            without asserting anything about its return. Positions with no futures contract
+            {/* Counted, not asserted. This read "four fifths of this book", which was the
+                multi-asset book's 7-of-9 written down as prose — and on the credit book,
+                where 3 of 3 positions are unobservable and the crowding cap therefore sized
+                NOTHING, it understated a total coverage gap as a known 80% and contradicted
+                the panel's own 0/3 strip forty lines above it. `lensScope.ts` classifies
+                this panel `book` and that is correct: every FIGURE here follows the lens.
+                A hardcoded numeral in copy is invisible to a module that classifies table
+                reads, which is exactly how this survived. */}
+            {total > 0 && (
+              <>
+                {" "}
+                — {x.unobservable.length} of {total}{" "}
+                {total === 1 ? "position" : "positions"} here
+              </>
+            )}{" "}
+            — are sized exactly as they would be without the check, so read the coverage
+            figure above before reading the verdict. Source:{" "}
             <Ident>research_recommendations.positioning_crowding</Ident>, and{" "}
             <Ident>research_recommendations.optimizer_result.crowding</Ident> for what it
             actually sized.

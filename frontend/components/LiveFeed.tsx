@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { DEFAULT_LENS, isLens } from "@/lib/book/lensView";
 import { assessStaleness } from "@/lib/freshness";
 import {
   assessPipeline,
@@ -36,6 +38,13 @@ const DOT: Record<Health, string> = {
 };
 
 export default function LiveFeed() {
+  // The lens the URL is asserting, when it is a real one and not the default.
+  // Null on every default-lens page, which is what keeps the qualifier below off
+  // the default site entirely. See the note at its render.
+  const lensParam = useSearchParams().get("lens");
+  const otherBook =
+    isLens(lensParam) && lensParam !== DEFAULT_LENS ? lensParam : null;
+
   const [runs, setRuns] = useState<PipelineRun[] | null>(null);
   const [themes, setThemes] = useState<number | null>(null);
   const [recon, setRecon] = useState<Reconciliation | null>(null);
@@ -162,6 +171,32 @@ export default function LiveFeed() {
               ? recon.positionCount
               : recon.bookCount}
         </span>
+        {/* Which book that counts, but ONLY when a second one is on screen to
+            confuse it with.
+
+            This strip is global chrome: one instance in the root layout renders
+            under every route, including `/book?lens=credit`, where the body shows
+            3 positions and this said "Held tickers 9". A reader reconciles that as
+            "the book holds 9 and I am being shown 3", or as a stale strip. Neither
+            is true — the count is right, it is just the MULTI-ASSET book's, which
+            the read above pins deliberately because this strip reports the nightly
+            run and ADR-0194 makes the multi-asset book the record.
+
+            Conditional rather than always-on, for the same reason `showScopeNote`
+            is false at multi_asset (ADR-0197): under the default lens there is no
+            second book, "the book" is unambiguous, and a qualifier on every page of
+            the default site would be noise on the one view a submission is read
+            from. `isLens` gates it so `?lens=garbage` — which every page resolves
+            to the default book — does not claim a lens that published nothing. */}
+        {otherBook && (
+          <span
+            className="text-text-tertiary"
+            title={`This count is the multi-asset book's, on every page. It is read from research_recommendations at lens=multi_asset because this strip reports the nightly pipeline run, whose published record is the multi-asset book (ADR-0194) — it does not follow the ?lens=${otherBook} in the URL. The ${otherBook} book's own position count is on /book.`}
+          >
+            {" "}
+            (multi-asset)
+          </span>
+        )}
         {recon && !recon.reconciled && !recon.bookMissing && (
           <span
             style={{ color: "var(--warning)" }}

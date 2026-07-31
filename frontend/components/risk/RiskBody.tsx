@@ -155,7 +155,13 @@ const PHASE_COPY: Record<RiskPhase, { title: string; lede: string }> = {
     title: "Risk & Scenario",
     lede:
       "What could go wrong, how much it would cost, and where the damage is " +
-      "concentrated. Six calibrated shocks worst-first, per-position risk " +
+      // No count. This said "Six calibrated shocks", the multi-asset book's number;
+      // the credit book carries seven (S7_fallen_angel, ADR-0192). This lede is a
+      // static string in a phase-config map with no access to the fetched row, so
+      // the count cannot be made to follow the lens here — and the panel's own
+      // header already states it from the data. A numeral that cannot be derived
+      // does not belong in copy that outlives the run it described.
+      "concentrated. Calibrated shocks worst-first, per-position risk " +
       "attribution, correlation and attention crowding, and factor tilt. Every " +
       "figure here is EX-ANTE: it is a pure function of the recommended weights " +
       "and a 252-day covariance estimate, so it answers what this book would risk " +
@@ -1115,9 +1121,23 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         fine={
           !lensEnabled && lensOffered.length > 1 ? (
             <>
-              This page reports the multi-asset book only: the forward record and
+              This page reports the multi-asset book only. The forward record and
               the realised return series have no lens column (ADR-0194), so there
-              is no per-lens version of them to show.
+              is no per-lens version of them to show
+              {/* The exception, named, because the old sentence ended at "no
+                  per-lens version of them to show" and that is FALSE for one panel
+                  here. `weights_backtest` lives on `research_recommendations`, which
+                  migration 062 keyed on (run_date, lens), and the credit book
+                  publishes its own: +4.13% cumulative at Sharpe 1.88 against the
+                  multi-asset +13.23% at 1.42 on the 2026-07-30 run. The pin still
+                  holds — `lensEnabled` is false on this phase, so the read is
+                  multi_asset — but a reader was being told a figure does not exist
+                  when what is true is that this page is not showing it. Those are
+                  different claims, and only one of them is checkable. */}
+              {" "}
+              — with one exception: the weights backtest below <em>is</em> published
+              per lens, and the figures here are the multi-asset book&rsquo;s. The
+              other lens&rsquo;s is on <Ident>/book</Ident> under that lens.
             </>
           ) : undefined
         }

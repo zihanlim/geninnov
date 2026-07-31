@@ -266,8 +266,16 @@ export function StressScenarios({
             <p className="m-0 mb-2 text-[11.5px] leading-[1.6] text-text-tertiary max-w-[95ch]">
               These scenarios are <strong>not probability-weighted</strong>. Each is
               an independent what-if, not a draw from a distribution, so they do not
-              sum and the worst is not an expected loss — it is the largest of six
-              hypotheticals.{" "}
+              sum and the worst is not an expected loss — it is the largest of{" "}
+              {/* `rows.length`, not a literal. This said "six", which is the
+                  MULTI-ASSET book's scenario count: the credit book carries seven,
+                  because S7_fallen_angel (ADR-0192) exists only where credit betas
+                  clear their standard error. So the sentence excluded the one
+                  scenario that exists BECAUSE this is the credit book, three lines
+                  under a card header already reading "7 calibrated shocks" — which
+                  this file's own header promises is "read off the data, never
+                  hardcoded here". True of the header, false of this footnote. */}
+              {rows.length} hypothetical{rows.length === 1 ? "" : "s"}.{" "}
               <Ident>research_recommendations.scenario_results</Ident> persists a
               severity label and an estimated return, and no likelihood.
             </p>

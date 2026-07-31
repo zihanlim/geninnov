@@ -137,8 +137,15 @@ export default function AnswerCards({
             <>No scenario results are persisted for this run, so the downside is unmeasured — not zero.</>
           ) : (
             <>
-              Worst of the five stresses: {worstLabel ?? "unlabelled scenario"}. This is
-              a modelled estimate, not a realised loss.
+              {/* No count. This read "the five stresses" and was wrong under BOTH
+                  lenses — the multi-asset book carries six scenarios and the credit
+                  book seven (S7_fallen_angel, ADR-0192, exists only under a credit
+                  mandate). Stating the number here would mean threading a count prop
+                  through from BookBody for a figure the reader can see enumerated on
+                  /risk; naming the scenario and where the full set lives is the same
+                  information without a numeral that can go stale. */}
+              Worst of the persisted stresses: {worstLabel ?? "unlabelled scenario"}.
+              This is a modelled estimate, not a realised loss.
             </>
           )
         }

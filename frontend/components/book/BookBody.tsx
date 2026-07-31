@@ -1533,7 +1533,23 @@ function BookPageInner() {
               differently from its neighbours, which made "how was this sized"
               read as an aside rather than as one of the page's instruments. The
               `id` stays on the outer element for the reason above. */}
-          <section id="sizing" className="card mb-6" aria-label="Sizing">
+          </section>
+
+          {/* ── Sizing | Cleared the screen ─────────────────────────────────
+              Paired at the owner's direction. The two are very different heights
+              — 610px against 2075px on this run — so the Sizing card stretches
+              and carries empty space below its content. That is the accepted
+              cost of the pairing, chosen deliberately over collapsing the
+              candidate list or capping it behind an inner scrollbar (which
+              goal 7 rules out).
+
+              Both keep their own `<section>` and their own id, so `#sizing` and
+              `#not-taken` still resolve for SectionNav and for the process map's
+              phase-4 link. They are siblings inside a grid, not one section with
+              two halves — an anchor that lands on half a row is still an anchor
+              that lands where it says. */}
+          <div className="grid lg:grid-cols-2 gap-6 mb-6 [&>*]:mb-0 [&>*]:min-w-0">
+          <section id="sizing" className="card" aria-label="Sizing">
             <div className="card-header">
               <h2 className="card-title m-0">Sizing</h2>
               <span className="text-[11px] text-text-tertiary">
@@ -1555,21 +1571,11 @@ function BookPageInner() {
             </div>
           </section>
 
-          {/* ── Abstention roster ───────────────────────────────────────── */}
-          </section>
-
-          <section id="not-taken" aria-label="Cleared the screen but not taken">
-          {/* Two-column grid: one panel answers "what passed every screen still
-              isn''t in the book", the other "what themes scored but didn''t trade".
-              They are different cuts of the same exclusion set, and the side-by-side
-              makes the relationship visible. The ClearedNotTaken collapses to a header
-              when no candidate is worth surfacing; the AbstentionRoster is always
-              full because the theme roster is finite. The grid stretches the collapsible
-              shell, but the chevron + summary line still drive the eye to the
-              actionable content. `gap-6` matches the rhythm of the 2x2 solidity grid
-              above, so the two pairings read as the same template. */}
-          <div className="grid lg:grid-cols-2 gap-6 mb-6">
-            <div className="min-w-0 [&_details]:!mb-0">
+          <section
+            id="not-taken"
+            aria-label="Cleared the screen but not taken"
+            className="[&_details]:!mb-0"
+          >
               <ClearedNotTaken
                 candidates={candidates}
                 heldAssets={new Set((rec?.picks ?? []).map((p) => p.asset))}
@@ -1585,8 +1591,15 @@ function BookPageInner() {
                 pool={pool}
                 lensLabel={lens === DEFAULT_LENS ? undefined : lens}
               />
-            </div>
-            <div className="min-w-0 [&>section]:!mb-0">
+          </section>
+          </div>
+
+          {/* The abstention roster loses its old partner to the pairing above. It
+              answers "what themes scored but did not trade" — the same exclusion
+              question one level up, at theme rather than name grain — so it reads
+              on its own, full width, rather than being paired with something it
+              is not a cut of. */}
+          <div className="mb-6 [&>section]:!mb-0">
               <AbstentionRoster
                 edgeByTheme={allEdgeByTheme}
                 themeNames={themeNames}
@@ -1618,11 +1631,7 @@ function BookPageInner() {
                   (p) => Boolean(p.theme_id) || Boolean(posEdgeByAsset[p.asset]?.theme_id),
                 )}
               />
-            </div>
           </div>
-
-          {/* ── Screening funnel (collapsed — audit detail) ────────────── */}
-          </section>
 
           <section id="audit" aria-label="Audit detail">
           {/* The screening funnel table used to live here. It is now a

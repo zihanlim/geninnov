@@ -17,7 +17,9 @@
 // only — spacing, suggestion layout, and who supplies the heading. It changes
 // nothing about what is asked, what is fetched, or what is rendered back.
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { DEFAULT_LENS, isLens } from "@/lib/book/lensView";
 import ReasoningStep from "@/components/chat/ReasoningStep";
 import VerifiedProse from "@/components/chat/VerifiedProse";
 import { EmptyState } from "@/components/status/EmptyState";
@@ -41,6 +43,41 @@ const SUGGESTIONS = [
   "Which stress scenario hurts this book most?",
   "How much did the book turn over since the previous run?",
 ];
+
+/**
+ * "Ask answers about the multi-asset book" — shown only when the page behind it is
+ * showing a different one.
+ *
+ * `lib/chat/tools.ts` reads `research_recommendations` at a hardcoded
+ * `lens: "multi_asset"` (ADR-0194: the credit book has no track record and is not
+ * part of the falsifiable set), and `AskDock` puts this console in the TopBar of
+ * EVERY page. So on `/book?lens=credit` a reader could take Ask's own suggested
+ * question — "Why is the largest position sized the way it is?" — and get an
+ * answer about a book with different positions, in a window floating over the one
+ * they were reading. The tool does expose `book.lens` as a citable field, so an
+ * answer CAN name the lens; nothing makes it, and a reader should not have to
+ * notice its absence.
+ *
+ * Not a fix to the pin, which is deliberate. A fix to the silence around it.
+ */
+function BookScopeNote() {
+  const lensParam = useSearchParams().get("lens");
+  const otherBook =
+    isLens(lensParam) && lensParam !== DEFAULT_LENS ? lensParam : null;
+  if (!otherBook) return null;
+  return (
+    <p
+      role="note"
+      className="m-0 mb-4 text-[11.5px] leading-[1.6] text-text-tertiary"
+      data-testid="ask-book-scope"
+    >
+      You are viewing the <strong>{otherBook}</strong> book, but Ask answers from the{" "}
+      <strong>multi-asset</strong> book — the only one it reads (ADR-0194). Positions,
+      exposures and risk figures in the answers below are that book&rsquo;s, not the
+      one on the page behind this.
+    </p>
+  );
+}
 
 export default function AskConsole({
   compact = false,
@@ -114,6 +151,15 @@ export default function AskConsole({
 
   return (
     <>
+      {/* Which book Ask is talking about, when the page behind it is a different one.
+          `Suspense` is scoped to this note rather than to the console or the nav:
+          `BookScopeNote` reads search params, and a client component doing that under
+          the ROOT layout (which is where `AskDock` mounts this) bails static rendering
+          out for every route unless it sits behind a boundary. A one-line note that
+          appears a beat late is harmless; a nav or a composer that does is not. */}
+      <Suspense fallback={null}>
+        <BookScopeNote />
+      </Suspense>
       {empty && (
         <ul
           className={`list-none p-0 m-0 grid gap-2 ${

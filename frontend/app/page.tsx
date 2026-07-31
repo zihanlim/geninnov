@@ -1,5 +1,7 @@
 "use client";
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { DEFAULT_LENS, isLens } from "@/lib/book/lensView";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import RegimeHero from "@/components/RegimeHero";
@@ -160,6 +162,15 @@ export default function ConvictionPage() {
 }
 
 function ConvictionPageInner() {
+  // This page is pinned to the multi-asset book and has no lens control: `?lens=`
+  // reaches it only by a bookmark, a shared link, or a machine reading llms.txt,
+  // since SideRail navigation emits bare routes. When it DOES arrive, the factor
+  // tilt below is the multi-asset book's and says so. Null on every ordinary
+  // visit, so the default homepage is byte-identical. Safe here without a new
+  // boundary: `ConvictionPage` already wraps this component in <Suspense>.
+  const lensParam = useSearchParams().get("lens");
+  const otherBook =
+    isLens(lensParam) && lensParam !== DEFAULT_LENS ? lensParam : null;
   const [themes, setThemes] = useState<ConvictionTheme[]>([]);
   const [regime, setRegime] = useState<Regime | null>(null);
   const [factors, setFactors] = useState<Factor[]>([]);
@@ -575,6 +586,7 @@ function ConvictionPageInner() {
               direction. */}
           <div className="mb-4">
             <RegimeHero
+              otherBook={otherBook}
               cycle={regime?.cycle ?? "—"}
               sentiment={regime?.sentiment ?? "—"}
               headline={regimeHeadline(regime)}

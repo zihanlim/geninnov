@@ -59,6 +59,7 @@ export default function AbstentionRoster({
   thresholdIsLive,
   focusThemeId = null,
   tradedThemeIds,
+  tradedKnown = true,
 }: {
   edgeByTheme: Record<string, ThemeEdge>;
   themeNames: Record<string, string>;
@@ -70,6 +71,24 @@ export default function AbstentionRoster({
   /** Themes that actually put a position in today's book. Excluded from the
    *  roster no matter how flat their average edge looks — see abstainedThemes. */
   tradedThemeIds?: Set<string>;
+  /**
+   * Could the caller determine what traded at all?
+   *
+   * `tradedThemeIds` has two indistinguishable empty states and they are opposite
+   * claims: "nothing below the bar traded" and "we cannot tell what traded". Under
+   * a non-multi-asset lens it is the second — L5's credit picks carry no
+   * `theme_id` (the /book header renders "No pick carries a theme_id" for exactly
+   * this reason) and the `portfolio_positions` fallback holds only the multi-asset
+   * names, so both terms of the lookup are null and the set arrives empty.
+   *
+   * That silently disables the ONE guard this panel has: the ADR-0039/0046
+   * exclusion added to stop it listing a theme as "scored, not traded" beside that
+   * theme's own position. Nothing false renders today (no credit pick sits below
+   * the bar), but the first credit book that trades a sub-threshold theme would be
+   * told it held out of it. An inert guard that looks live is worse than an absent
+   * one, so the panel states the gap instead of trusting an empty set.
+   */
+  tradedKnown?: boolean;
 }) {
   const roster = abstainedThemes(edgeByTheme, themeNames, abstainThreshold, tradedThemeIds);
   const scored = Object.values(edgeByTheme).filter(
@@ -136,6 +155,18 @@ export default function AbstentionRoster({
               title="scoring_config.edge_abstain_threshold was not readable; using the migration-024 default."
             >
               (default)
+            </span>
+          )}
+          {/* The exclusion is what makes "not traded" a claim rather than a guess,
+              and under a lens whose picks carry no theme_id it cannot run. Marked
+              rather than silently trusted — an empty tradedThemeIds and an unknown
+              one are opposite claims wearing the same shape. */}
+          {!tradedKnown && (
+            <span
+              className="text-warning ml-1"
+              title="This book's picks carry no theme_id, and portfolio_positions holds the multi-asset book's names, so which themes traded could not be determined. Every scored theme below the bar is listed — including any this book may actually hold a position in."
+            >
+              (traded set unknown)
             </span>
           )}
         </span>

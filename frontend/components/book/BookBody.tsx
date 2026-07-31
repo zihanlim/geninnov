@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import LensSelector, { type Lens } from "@/components/LensSelector";
-import { resolveLens } from "@/lib/book/lensView";
+import { lensHref, resolveLens } from "@/lib/book/lensView";
 // DEFAULT_LENS comes from lensProbe rather than lensView on purpose: it is
 // re-exported there so the fallback a caller applies to an empty `lenses` and
 // the probe that produced that emptiness arrive from one import.
@@ -937,7 +937,9 @@ function BookPageInner() {
                   </a>
                 )}
                 <Link
-                  href="/book"
+                  // Keeps the reader on the book they were reading. Clearing a
+                  // ?theme= filter silently switched them to the multi-asset book.
+                  href={lensHref("/book", lens)}
                   className="text-text-tertiary hover:text-text-secondary whitespace-nowrap"
                 >
                   Clear
@@ -1076,6 +1078,11 @@ function BookPageInner() {
               then what they mean. Every figure here is read from the same `rec`
               the panels below render, so nothing can disagree with anything. */}
           <AnswerCards
+            // Two of the four cards link out to /risk and /mandate, both of which
+            // honour ?lens= since ADR-0197. Without this, the credit book's own
+            // worst-stress and binding-cap figures anchored to the multi-asset
+            // book's pages, unmarked.
+            lens={lens}
             current={(rec.picks ?? []).map((p) => p.asset).filter(Boolean)}
             previous={prevBook?.assets ?? null}
             previousDate={prevBook?.date ?? null}
@@ -1149,6 +1156,7 @@ function BookPageInner() {
                   on a 375px phone instead of letting each row's ScrollArea scroll. */}
               <div className="grid wide:grid-cols-2 gap-6 items-start [&>*]:mb-0 [&>*]:min-w-0 mb-6">
               <PositionSection
+                lens={lens}
                 title="Longs"
                 glyph="▲"
                 color="var(--long)"
@@ -1171,6 +1179,7 @@ function BookPageInner() {
                 clearedByHeldAsset={clearedByHeldAsset}
               />
               <PositionSection
+                lens={lens}
                 title="Shorts"
                 glyph="▼"
                 color="var(--short)"
@@ -1411,6 +1420,14 @@ function BookPageInner() {
                   )
                 }
                 focusThemeId={focusHeldOut ? focusThemeId : null}
+                // Whether the set above means anything. Both terms of its lookup are
+                // null under a lens whose picks carry no theme_id (credit's do not) and
+                // whose names are absent from the multi-asset portfolio_positions — so
+                // it arrives EMPTY, which the roster would otherwise read as "nothing
+                // below the bar traded". Opposite claims, same shape.
+                tradedKnown={(rec.picks ?? []).some(
+                  (p) => Boolean(p.theme_id) || Boolean(posEdgeByAsset[p.asset]?.theme_id),
+                )}
               />
             </div>
           </div>
@@ -1504,19 +1521,44 @@ function BookPageInner() {
 
           <div className="mt-6 text-[12px] text-text-secondary">
             Stress scenarios and correlation structure for this book are on{" "}
-            <Link href="/risk" className="text-accent hover:underline">
+            {/* `lensHref`, because the sentence says "for THIS BOOK" and both
+                destinations have had their own `?lens=` since ADR-0197 — a bare
+                link resolved them to multi_asset, making the sentence false the
+                moment a second book existed. `/method` below stays bare on
+                purpose: it is a process map with no book figure, so a lens there
+                would be a parameter the page ignores, which looks answered and is
+                worse than no lens. Both return the bare path under the default
+                lens, so the default page's hrefs are unchanged. */}
+            <Link href={lensHref("/risk", lens)} className="text-accent hover:underline">
               Risk
             </Link>
             , and cap headroom against the mandate is on{" "}
-            <Link href="/mandate" className="text-accent hover:underline">
+            <Link href={lensHref("/mandate", lens)} className="text-accent hover:underline">
               Mandate
             </Link>
             . The scoring method behind every number is on{" "}
             <Link href="/method" className="text-accent hover:underline">
               Method
             </Link>
-            . To edit a copy of this book — drop a name, resize it, add one it passed
-            on — open the{" "}
+            {/* "this book" only when this book is the one the workbench seeds from.
+                The workbench reads `research_recommendations` at a hardcoded
+                `lens=multi_asset` (app/workbench/page.tsx) and — unlike /risk and
+                /mandate above — CANNOT be handed a lens, so there is nothing to
+                pass and the sentence itself has to stop over-claiming. Under the
+                credit book, "edit a copy of this book" offered a reader the
+                9-name multi-asset book: they would drop EMB and find themselves
+                editing SMH, GEV, F and UNH. */}
+            {lens === DEFAULT_LENS ? (
+              <>
+                . To edit a copy of this book — drop a name, resize it, add one it
+                passed on — open the{" "}
+              </>
+            ) : (
+              <>
+                . To edit a copy of the <strong>multi-asset</strong> book — not this
+                one; the workbench seeds from the multi-asset book only — open the{" "}
+              </>
+            )}
             <Link href="/workbench" className="text-accent hover:underline">
               Workbench
             </Link>
@@ -1600,6 +1642,7 @@ function PositionSection({
   emptyNote,
   emptySeverity,
   clearedByHeldAsset,
+  lens,
 }: {
   title: string;
   glyph: string;
@@ -1627,6 +1670,9 @@ function PositionSection({
    *  rather than a screening outcome worth flagging. */
   emptySeverity?: "info" | "warning";
   clearedByHeldAsset: Map<string, CandidateRow[]>;
+  /** Carried only so `PositionRow`'s one outbound /risk link keeps the
+   *  reader on the book they are reading. */
+  lens?: string | null;
 }) {
   return (
     <section className="mb-6">
@@ -1688,6 +1734,7 @@ function PositionSection({
           {picks.map((p, i) => (
             <PositionRow
               key={`${p.asset}-${i}`}
+              lens={lens}
               pick={p}
               rank={i + 1}
               open={openAsset === `${title}-${p.asset}-${i}`}

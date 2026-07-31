@@ -187,11 +187,20 @@ function WorkbenchPageInner() {
           mandate&rsquo;s caps move.
         </p>
         <p className="m-0 mt-2 text-text-tertiary text-[12px] leading-[1.5]">
+          {/* "the MULTI-ASSET book", named. The read twelve lines up is a hardcoded
+              `.eq("lens", "multi_asset")` and its comment says so — but the comment
+              is not on screen, and this sentence said "the book" as though there
+              were one. /book links here saying "edit a copy of this book", so a
+              reader arriving from the credit book was handed the 9-name multi-asset
+              portfolio to edit. Unconditional, unlike the LiveFeed and RegimeHero
+              qualifiers: this page has no lens in its URL to gate on, and the
+              ambiguity is in the noun itself. */}
           Seeded from the{" "}
           <Link href="/book" className="text-accent hover:underline">
-            book
+            multi-asset book
           </Link>{" "}
-          published <span className="num">{runDate ?? "—"}</span>. Limits come from{" "}
+          published <span className="num">{runDate ?? "—"}</span> — the workbench
+          seeds from that book only, whichever lens you came from. Limits come from{" "}
           <Link href="/mandate" className="text-accent hover:underline">
             the mandate
           </Link>

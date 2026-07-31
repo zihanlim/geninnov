@@ -231,7 +231,9 @@ export default function ClearedNotTaken({
         against a position already on. Between the two the name is a genuinely
         independent idea that was passed over — worth asking about. Whether the
         thesis actually accounts for what the book declined is stated in{" "}
-        <strong>Pool depth</strong> above, measured rather than assumed.
+        {/* `Pool depth` was replaced by `BookFunnel` (ADR-0199); the panel this
+            sentence pointed at no longer exists under that name. */}
+        the <strong>pool-to-book funnel</strong> above, measured rather than assumed.
       </p>
 
       <ScrollArea hint={false}>

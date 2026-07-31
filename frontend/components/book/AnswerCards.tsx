@@ -22,6 +22,7 @@
 
 import type { ReactNode } from "react";
 import { Card, listOf, pctOf, usdM } from "@/components/AnswerRow";
+import { lensHref } from "@/lib/book/lensView";
 
 // `Card`, the grid and the formatters moved to components/AnswerRow.tsx so the five
 // other phase routes could compose their own rows against the same contract
@@ -47,6 +48,7 @@ export default function AnswerCards({
   worstReturn,
   bindingCaps,
   capsKnown,
+  lens,
 }: {
   current: string[];
   /** null = no previous run persisted, which is NOT "nothing changed". */
@@ -62,6 +64,19 @@ export default function AnswerCards({
   /** Did cap_utilisation load at all? Distinguishes "nothing binding" from
    *  "we do not know", which are different claims (goal 2). */
   capsKnown: boolean;
+  /**
+   * The lens these figures are the book of, carried into the two cards that link
+   * OUT to /risk and /mandate.
+   *
+   * Both cards state a figure that IS this lens's — the worst stress and the
+   * binding cap — and anchor it to a page that has had its own `?lens=` control
+   * since ADR-0197. Without the lens the reader clicks the credit book's own
+   * −1.9% and arrives at the multi-asset stress table, which carries no marker
+   * because a URL with no `?lens=` makes `showScopeNote` false for every panel
+   * there. `lensHref` returns the bare path for the default lens, so the default
+   * page's hrefs do not change.
+   */
+  lens?: string | null;
 }) {
   const prevSet = new Set(previous ?? []);
   const curSet = new Set(current);
@@ -128,7 +143,7 @@ export default function AnswerCards({
 
       <Card
         label="What kills you"
-        href="/risk#stress"
+        href={lensHref("/risk#stress", lens)}
         source="research_recommendations.scenario_results"
         tone={worstReturn !== null && worstReturn < 0 ? "warning" : "default"}
         figure={worstReturn === null ? null : <>{pct(worstReturn)}</>}
@@ -153,7 +168,7 @@ export default function AnswerCards({
 
       <Card
         label="What's binding"
-        href="/mandate#limits"
+        href={lensHref("/mandate#limits", lens)}
         source="research_recommendations.cap_utilisation"
         tone={bindingCaps.length > 0 ? "warning" : "default"}
         figure={

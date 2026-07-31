@@ -9,6 +9,15 @@ interface RegimeHeroProps {
   cycleSubtext?: string;
   volSubtext?: string;
   factors?: Factor[];
+  /**
+   * The non-default lens the URL is asserting, when there is one.
+   *
+   * A PROP rather than a `useSearchParams` call, so this component stays
+   * presentational and needs no Suspense boundary of its own — the homepage
+   * already has one around `ConvictionPageInner`, which is where the param is
+   * read. Only used to qualify the factor-tilt heading; see the note there.
+   */
+  otherBook?: string | null;
   cycleLabel?: string;
   volLabel?: string;
   /** Optional date to scope the regime inputs panel to a specific run. */
@@ -69,6 +78,7 @@ function FactorBar({ name, beta }: Factor) {
 }
 
 export default function RegimeHero({
+  otherBook,
   cycle,
   sentiment,
   headline,
@@ -129,8 +139,18 @@ export default function RegimeHero({
       </div>
 
       <div>
+        {/* "of book" was unambiguous until a second book existed. This reads
+            `portfolio_factor_exposure` over `portfolio_positions` — the HELD book,
+            which per ADR-0194 is the multi-asset one and has no lens column — while
+            the credit book publishes its own tilt in `book_metrics.factor_tilts`
+            that disagrees in SIGN on two factors (HML +0.11 → −0.04, CMA −0.46 →
+            +0.08 on the 2026-07-30 run). This page ignores `?lens=` entirely, so a
+            reader who put `credit` in the URL was shown a strongly anti-CMA book
+            and told it was "of book". The qualifier appears only when the URL
+            asserts another lens — the same gate LiveFeed uses — so the default
+            homepage is unchanged. */}
         <div className="text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-2.5">
-          Factor tilt of book
+          Factor tilt of {otherBook ? "the multi-asset book" : "book"}
         </div>
         {factors.length > 0 ? (
           <>

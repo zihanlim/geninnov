@@ -59,7 +59,18 @@ export function mandateAnswerCards({
   const capitalAtRisk: AnswerCard = {
     label: "Mandate in use",
     href: "#limits",
-    source: "research_recommendations.book_metrics.gross_exposure",
+    // Both tables, because the consequence sentence spends both: the percentage is
+    // `book_metrics.gross_exposure` (lens-following) and every dollar figure beside
+    // it — deployed, cash, the $100.0M base — is that percentage times
+    // `portfolio_risk.total_capital`, which is lens-LESS. Declaring only the first
+    // left the card's dollars sourced to a table they do not come from. The value
+    // is 100,000,000 under both books today, so nothing on screen was false; the
+    // source line was incomplete, which on a page whose whole subject is provenance
+    // is its own defect.
+    source:
+      capital === null
+        ? "research_recommendations.book_metrics.gross_exposure"
+        : "research_recommendations.book_metrics.gross_exposure × portfolio_risk.total_capital",
     figure: gross === null ? null : <>{pctOf(gross)} gross</>,
     consequence:
       gross === null ? (
@@ -87,7 +98,26 @@ export function mandateAnswerCards({
   const tightestCard: AnswerCard = {
     label: "Closest to binding",
     href: "#limits",
-    source: "scoring_config × portfolio_positions",
+    // The TIGHTEST ROW'S own source, not a fixed pair — and this card never read
+    // `portfolio_positions` at all. `mandateAnswerCards` takes `limitRows`,
+    // `capState`, `bookMetrics` and `totalCapital`; there is no positions input in
+    // the signature.
+    //
+    // The stale literal was not merely imprecise, it inverted the card's meaning
+    // under a lens. `portfolio_positions` is LENS-LESS (ADR-0194), so the scope
+    // banner names it among the tables that "are the multi-asset published book,
+    // not the Credit Lens book" — while the figure above it is read from
+    // `book_metrics.net_exposure`, which FOLLOWS the lens. On the 2026-07-30
+    // credit book that figure is a 167% breach of the 30% net limit (net 0.50);
+    // the multi-asset book sits at 26% and breaches nothing. So the source line
+    // invited a reader to discount the credit book's own breach — the only breach
+    // on the page — as some other book's number.
+    //
+    // `LimitDef.source` (ADR-0180) already states where each observed value comes
+    // from, and the limit board renders it per row. Reading it here means the card
+    // and the row it links to cannot disagree, and a limit added later needs no
+    // edit in this file.
+    source: t ? `scoring_config × ${t.source}` : "scoring_config",
     tone: t && t.utilisation !== null && t.utilisation >= 0.9 ? "warning" : "default",
     figure: t ? (
       <>

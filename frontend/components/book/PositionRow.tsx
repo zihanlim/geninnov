@@ -56,6 +56,7 @@ import {
 } from "@/lib/book/format";
 import type { CapRow, Pick, ScenarioResult } from "@/lib/book/types";
 import { BOOK_ROW_GRID, BOOK_ROW_MIN_W } from "@/lib/book/grid";
+import { lensHref } from "@/lib/book/lensView";
 
 function SubHead({
   children,
@@ -111,6 +112,7 @@ export function PositionRow({
   repl,
   bookRunDate,
   clearedAlternatives,
+  lens,
 }: {
   pick: Pick;
   rank: number;
@@ -138,6 +140,16 @@ export function PositionRow({
    * renders nothing.
    */
   clearedAlternatives?: CandidateRow[];
+  /**
+   * The lens this row's book is, for the one link that leaves the page.
+   *
+   * `/risk` has carried its own `?lens=` since ADR-0197, so a bare link sent a
+   * reader of the credit book to the multi-asset stress table — and with no
+   * `?lens=` in the URL that destination shows no marker, because
+   * `showScopeNote` is false at the default lens. `lensHref` emits the bare
+   * path under the default lens, so nothing changes there.
+   */
+  lens?: string | null;
 }) {
   const isLong = pick.direction === "long";
   const dirColor = isLong ? "var(--long)" : "var(--short)";
@@ -599,7 +611,7 @@ export function PositionRow({
                   <code className="num">
                     research_recommendations.scenario_results
                   </code>
-                  ; see <Link href="/risk#stress" className="text-accent">Risk</Link>.
+                  ; see <Link href={lensHref("/risk#stress", lens)} className="text-accent">Risk</Link>.
                 </p>
               )}
               </SubCard>

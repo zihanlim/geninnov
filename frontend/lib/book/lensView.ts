@@ -68,3 +68,37 @@ export function resolveLens(
   if (isLens(requested) && available.includes(requested)) return requested;
   return DEFAULT_LENS;
 }
+
+/**
+ * A path that carries the reader's lens with them.
+ *
+ * WHY THIS EXISTS. `/book` says "stress scenarios for THIS BOOK are on Risk" and
+ * linked to a bare `/risk`. That was harmless while `/risk` and `/mandate` were
+ * pinned to multi_asset — the sentence was about the only book there was. ADR-0197
+ * gave both a working `?lens=` control, and a bare `/risk` resolves to
+ * `DEFAULT_LENS`, so from that moment the sentence became false: a reader on the
+ * credit book clicked its own worst-case loss and landed on the multi-asset book's
+ * stress table. With no `?lens=` in the URL, `showScopeNote` is false for every
+ * panel there, so the destination carries no marker either — the switch is
+ * completely silent. A cross-page link is the one place a lens can be dropped
+ * without any figure changing to give it away.
+ *
+ * Returns `path` UNCHANGED — by identity — for the default lens, an unrecognised
+ * string, or null. So every href on the default site is byte-for-byte what it was,
+ * and `?lens=garbage` is not propagated onward as though it named a book.
+ *
+ * The fragment is re-appended AFTER the query, because `/risk#stress?lens=credit`
+ * is a fragment called `stress?lens=credit` and would silently do nothing.
+ *
+ * Only for destinations that can actually honour a lens. `/method` (a process map
+ * with no book figure) and `/workbench` (pinned, and its read cannot take a lens)
+ * must NOT be wrapped in this — a lens in a URL the page ignores is a worse lie
+ * than no lens at all, because it looks answered.
+ */
+export function lensHref(path: string, lens: string | null | undefined): string {
+  if (!isLens(lens) || lens === DEFAULT_LENS) return path;
+  const hashAt = path.indexOf("#");
+  const base = hashAt === -1 ? path : path.slice(0, hashAt);
+  const hash = hashAt === -1 ? "" : path.slice(hashAt);
+  return `${base}${base.includes("?") ? "&" : "?"}lens=${lens}${hash}`;
+}

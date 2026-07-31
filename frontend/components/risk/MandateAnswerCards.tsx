@@ -34,7 +34,19 @@ import type { LimitRow } from "@/lib/risk/riskBoard";
 
 /** The limit closest to its ceiling, breaches first. Null when nothing is measurable. */
 function tightest(rows: LimitRow[]): LimitRow | null {
-  const measurable = rows.filter((r) => typeof r.utilisation === "number");
+  // A not-applicable limit is excluded, and this is the load-bearing half of that
+  // status. The net-exposure band read 167% on the long-only credit book — the
+  // highest utilisation on the page — so it WAS this card's headline: "Closest to
+  // binding: Net exposure 167%", in warning colour, about a limit that governs
+  // nothing and that no long-only book could satisfy. It displaced the limits that
+  // genuinely bind (two single-name caps and the sector cap, all at 100%).
+  //
+  // Filtering on `utilisation` alone would not do it: the utilisation is deliberately
+  // kept on the row so the board can still show |net| against the band. It is the
+  // VERDICT that is withheld, so the verdict is what has to be filtered.
+  const measurable = rows.filter(
+    (r) => typeof r.utilisation === "number" && r.status !== "not_applicable",
+  );
   if (measurable.length === 0) return null;
   return measurable.reduce((hi, r) => (r.utilisation! > hi.utilisation! ? r : hi));
 }

@@ -111,7 +111,15 @@ export function configNum(
 // Risk-limit board
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type LimitStatus = "ok" | "near" | "breached" | "unknown";
+/**
+ * `not_applicable` is NOT `unknown`. Unknown means the value is withheld (below its
+ * declared minimum sample). Not-applicable means the value is known exactly and the
+ * LIMIT does not govern this book — measured, never assumed. Today the only case is
+ * the net-exposure band against a run whose candidate pool had no short side: a
+ * long-only book cannot sit inside a +/-30% net band, so scoring it as a breach
+ * spends the alarm register on a book working exactly as designed (ADR-0197).
+ */
+export type LimitStatus = "ok" | "near" | "breached" | "not_applicable" | "unknown";
 
 /**
  * Where a limit sits and how it is measured. `higherIsWorse` says whether
@@ -152,6 +160,12 @@ export interface LimitRow extends LimitDef {
   /** limit − value in native units; negative once breached. Null when unmeasurable. */
   headroom: number | null;
   status: LimitStatus;
+  /**
+   * Why this limit does not govern this book. Set only with `status:
+   * "not_applicable"`, and required with it — an inapplicable limit whose reason is
+   * missing is indistinguishable from a bug that swallowed the status.
+   */
+  inapplicableReason?: string;
 }
 
 /**
@@ -304,7 +318,8 @@ const STATUS_ORDER: Record<LimitStatus, number> = {
   breached: 0,
   near: 1,
   ok: 2,
-  unknown: 3,
+  not_applicable: 3,
+  unknown: 4,
 };
 
 export interface LimitBoardInputs {
@@ -317,6 +332,26 @@ export interface LimitBoardInputs {
   /** From book_metrics — decimals. */
   grossExposure: number | null;
   netExposure: number | null;
+  /**
+   * Did THIS RUN's candidate pool contain a short side?
+   *
+   * `false` makes the net-exposure band not-applicable: a book with no short
+   * candidates cannot sit inside a +/-30% net band, so |net| = gross by
+   * construction and scoring it as a breach reports a book working as designed.
+   * The credit lens on 2026-07-30 was long-only and read 167% of the band — the
+   * only breach on /mandate.
+   *
+   * MEASURED, NOT ASSUMED, and per RUN rather than per lens. The credit universe
+   * CAN produce shorts (L1 sets direction from sign(TradeScore), and HYG/LQD/JNK/
+   * TLT could all come through short); it happened to be empty on that run. So
+   * this is read from `independent_ideas.short.count`, and the band goes back to
+   * being live the first day a credit short appears. A blanket per-lens exemption
+   * would be a mandate that quietly relaxes itself.
+   *
+   * `null`/undefined = unrecorded, and the band is scored normally. Absence of
+   * evidence must not switch a limit off.
+   */
+  shortSideAvailable?: boolean | null;
   /** Worst peak-to-trough on the realised curve, a negative decimal, or null. */
   maxDrawdown: number | null;
   /** Peak utilisation observed per cap group (max over rows), decimals. */
@@ -537,6 +572,15 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
     const util = value !== null && isNum(limit) && limit !== 0 ? value / limit : null;
     const headroom =
       value !== null && isNum(limit) ? snapHeadroom(limit - value, limit) : null;
+
+    // The net-exposure band does not govern a book with no short candidates. The
+    // VALUE and the UTILISATION are kept — |net| 50% against a 30% band is real and
+    // worth reading — and only the VERDICT is withheld, because it is the judgement
+    // that would be wrong, not the measurement. `statusFor` never returns
+    // `not_applicable`: it is a fact about the pool, which a utilisation cannot see.
+    const inapplicable =
+      def.key === "net_exposure" && inp.shortSideAvailable === false;
+
     return {
       ...def,
       limitSource: source,
@@ -544,7 +588,17 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
       limit,
       utilisation: util,
       headroom,
-      status: statusFor(util),
+      status: inapplicable ? "not_applicable" : statusFor(util),
+      ...(inapplicable
+        ? {
+            inapplicableReason:
+              "This run's candidate pool had no short side, so the book is long-only " +
+              "and |net| equals gross by construction. A long/short band cannot be " +
+              "satisfied by a book that had nothing to short. Measured from " +
+              "research_recommendations.independent_ideas.short.count, per run — the " +
+              "band applies again the first run a short candidate appears.",
+          }
+        : {}),
     };
   });
 
@@ -557,7 +611,9 @@ export function buildLimitBoard(inp: LimitBoardInputs): LimitRow[] {
 }
 
 export function countByStatus(rows: LimitRow[]): Record<LimitStatus, number> {
-  const c: Record<LimitStatus, number> = { breached: 0, near: 0, ok: 0, unknown: 0 };
+  const c: Record<LimitStatus, number> = {
+    breached: 0, near: 0, ok: 0, not_applicable: 0, unknown: 0,
+  };
   for (const r of rows) c[r.status] += 1;
   return c;
 }

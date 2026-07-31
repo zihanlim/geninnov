@@ -243,7 +243,11 @@ const ANALYTICS_COLUMNS =
   // risk on are the names the book actually holds (ADR-0040).
   // optimizer_result: ADR-0173's realised_turnover / turnover_cap for the mandate
   // limit board, and cov_shrinkage_intensity for the Risk answer row's disclosure.
-  "run_date, lens, scenario_results, correlation_pairs, cap_utilisation, book_metrics, picks, sanctions_exposure, positioning_crowding, risk_decomposition, monte_carlo_var, var_forecast, weights_backtest, optimizer_result";
+  // independent_ideas: only `short.count`, and only to learn whether THIS RUN had a
+  // short side at all. A book with no short candidates cannot sit inside a +/-30%
+  // net band, so the band is reported not-applicable rather than as the breach it
+  // read as on the long-only credit book (167%, the only breach on the page).
+  "run_date, lens, scenario_results, correlation_pairs, cap_utilisation, book_metrics, picks, sanctions_exposure, positioning_crowding, risk_decomposition, monte_carlo_var, var_forecast, weights_backtest, optimizer_result, independent_ideas";
 const BASE_COLUMNS = "run_date, lens";
 const RISK_COLUMNS =
   "run_date, updated_at, total_capital, var_95, cvar_95, sharpe, beta, concentration_hhi, numeric_derivations, var_95_historical, es_95_historical, sortino, max_drawdown, calmar, tracking_error, information_ratio, benchmark_comparison, conditional_vol";
@@ -964,6 +968,18 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
     [correlationState],
   );
 
+  // Did this run's pool have a short side? Read from the count ADR-0056 already
+  // persists, NOT from the published picks: a book can hold zero shorts because the
+  // agent declined every one it was shown, which is a selection the net band SHOULD
+  // still judge. `short.count === 0` is the stronger statement — there was nothing to
+  // short — and that is the only case where a long/short band cannot apply.
+  //
+  // `undefined` when the field is absent, so an older row is scored exactly as before.
+  const shortSideAvailable = useMemo<boolean | undefined>(() => {
+    const n = data.analyticsRow?.independent_ideas?.short?.count;
+    return typeof n === "number" ? n > 0 : undefined;
+  }, [data.analyticsRow]);
+
   const cfgMap = useMemo(() => configMap(data.config), [data.config]);
   const factorMap = useMemo(() => factorsByAsset(data.factors), [data.factors]);
 
@@ -1004,6 +1020,10 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       // needs NO history, unlike VaR/CVaR/beta above: it is a function of today's
       // weights and yesterday's, not a statistical estimate.
       realisedTurnover: data.analyticsRow?.optimizer_result?.realised_turnover ?? null,
+      // Whether the net-exposure band governs this book at all. `undefined` when the
+      // field is absent (a row predating ADR-0056), which scores the band normally —
+      // a missing measurement must not switch a limit off.
+      shortSideAvailable,
     };
     return buildLimitBoard(inputs);
   }, [cfgMap, data.risk, data.returns.length, bookMetrics, drawdown, capData, data.analyticsRow]);

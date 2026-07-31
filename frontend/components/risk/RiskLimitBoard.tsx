@@ -223,6 +223,18 @@ export function RiskLimitBoard({
                     </span>
                   </div>
 
+                  {/* Why the limit does not govern this book, when it does not.
+                      In the row, not a tooltip: a reader seeing an N/A chip on a
+                      published risk limit will ask why, and an answer they have to
+                      hover for is invisible on touch and absent from Ctrl+F (goal 1).
+                      Rendered ABOVE the source line so the scope statement precedes
+                      the provenance, since the provenance is still true either way. */}
+                  {row.status === "not_applicable" && row.inapplicableReason && (
+                    <p className="mt-1.5 mb-0 text-[10px] leading-[1.45] text-text-secondary [overflow-wrap:anywhere]">
+                      {row.inapplicableReason}
+                    </p>
+                  )}
+
                   {/* Where the VALUE came from, then where the LIMIT came from —
                       two different facts, which is why both are here and neither
                       stands in for the other. */}

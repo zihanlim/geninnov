@@ -62,6 +62,16 @@ export const LIMIT_STATUS_CHIPS: Record<LimitStatus, RiskChip> = {
     cls: "bg-bg-elevated text-text-primary border border-border-strong",
     fill: "var(--text-tertiary)",
   },
+  // Deliberately the quietest chip on the board, and deliberately NOT "NO DATA":
+  // the value is known exactly, it is the limit that does not govern this book. A
+  // reader who sees NO DATA looks for a broken pipeline; this one should read as a
+  // scope statement. Same neutral pairing as `ok` minus the border emphasis, so it
+  // recedes rather than competing with the limits that do bind.
+  not_applicable: {
+    label: "N/A",
+    cls: "bg-bg-elevated text-text-tertiary border border-border",
+    fill: "var(--border-strong)",
+  },
   unknown: {
     label: "NO DATA",
     cls: "bg-bg-elevated text-text-secondary border border-border",

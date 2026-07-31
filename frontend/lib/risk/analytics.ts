@@ -139,6 +139,19 @@ export interface ResearchAnalyticsRow {
    *  cov_shrinkage_intensity. Typed in full at lib/book/sizingProvenance.ts — that
    *  is the single source, imported rather than restated so the two cannot drift. */
   optimizer_result?: OptimizerResult | null;
+  /**
+   * ADR-0056's independent-idea counts per side. Only `short.count` is read on /risk,
+   * and only to answer whether THIS RUN's pool had a short side at all — a book with
+   * nothing to short cannot sit inside a long/short net band, so the band is reported
+   * not-applicable rather than as a breach (see `LimitBoardInputs.shortSideAvailable`).
+   * Fully typed as `IndependentIdeas` in components/book/PoolDepth.tsx; narrowed here
+   * to the two fields this page touches rather than importing a book component's type
+   * into the risk layer.
+   */
+  independent_ideas?: {
+    short?: { count?: number | null } | null;
+    long?: { count?: number | null } | null;
+  } | null;
 }
 
 /** `research_recommendations.weights_backtest` (migration 048). */

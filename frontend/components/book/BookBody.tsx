@@ -22,7 +22,6 @@ import {
   type ThemeEdge,
 } from "@/lib/themeSignals";
 import ThesisBlock from "@/components/research/ThesisBlock";
-import CollapsibleSection from "@/components/CollapsibleSection";
 import SectionNav from "@/components/SectionNav";
 import AnswerCards from "@/components/book/AnswerCards";
 
@@ -1625,21 +1624,26 @@ function BookPageInner() {
               screen: one dataset, one location, and the per-stage detail
               attached to the chain it details rather than in another tab. */}
 
-          {/* ── Book risks (collapsed — expand for the tail risks) ─────── */}
+          {/* ── Book risks ──────────────────────────────────────────────────
+              NOT collapsible, and no longer a `CollapsibleSection` at all. It
+              was one, opened by default; a disclosure that always starts open
+              and has no reason to be closed is a control with nothing behind it
+              — design goal 5, affordances match capability.
+
+              What it is, is five sentences on how this book breaks, on a page
+              whose whole job is to be doubted. That is not audit detail a reader
+              opts into; it is the panel this section exists for. A plain card,
+              like every other instrument here. */}
           {canRenderAdvisoryBody(advisory) &&
             rec.book_risks &&
             rec.book_risks.length > 0 && (
-              <CollapsibleSection
-                title="Cross-cutting book risks"
-                summary={`${rec.book_risks.length} things that could break the book`}
-                // Open on arrival. It is five sentences about how this book
-                // breaks, on a page whose job is to be doubted — the one panel
-                // here a reader should not have to opt into. It stays a
-                // `CollapsibleSection` rather than becoming plain markup so it
-                // can still be closed, and so it keeps the same shell as its
-                // neighbours.
-                defaultOpen
-              >
+              <div className="card mb-0">
+                <div className="card-header">
+                  <h2 className="card-title m-0">Cross-cutting book risks</h2>
+                  <span className="text-[11px] text-text-tertiary">
+                    {rec.book_risks.length} things that could break the book
+                  </span>
+                </div>
                 <div className="card-body">
                   {/* Marked rows, not bullets. A held ticker opens that
                       position; one that cleared the screen and is NOT held is
@@ -1658,7 +1662,7 @@ function BookPageInner() {
                     onSelectAsset={selectFromFunnel}
                   />
                 </div>
-              </CollapsibleSection>
+              </div>
             )}
           </section>
           </div>

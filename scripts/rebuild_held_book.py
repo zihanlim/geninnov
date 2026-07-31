@@ -73,9 +73,15 @@ def main() -> int:
     import yfinance as yf
 
     sb = create_client(url, key)
+    # ADR-0194 (migration 062): research_recommendations can now hold a second,
+    # non-multi_asset row for the same run_date (e.g. the credit lens). This script
+    # rebuilds the MULTI-ASSET held book's history only — book_holdings_performance
+    # has no lens column and is multi_asset-only by definition — so the read is
+    # scoped explicitly rather than picking up whichever lens's row sorts first.
     books = (
         sb.table("research_recommendations")
         .select("run_date, picks")
+        .eq("lens", "multi_asset")
         .order("run_date", desc=False)
         .execute()
         .data
@@ -143,6 +149,7 @@ def main() -> int:
         rows_hold.extend(
             {
                 "run_date": run_date,
+                "lens": "multi_asset",
                 "asset": asset,
                 "signed_weight": weight,
                 "target_weight": target.get(asset),
@@ -168,8 +175,14 @@ def main() -> int:
     # is already there. An upsert writes the names that ARE held and says nothing
     # about the ones that are not, so a name dropped between two runs of this script
     # keeps its row and the date becomes a union of every book ever written for it.
+    #
+    # Scoped to lens='multi_asset' (migration 062) — this script only ever rebuilds
+    # the multi-asset held book, and an unscoped delete on `run_date` alone would
+    # also wipe a coexisting credit-lens book_holdings row for the same date.
     for row in rows_perf:
-        sb.table("book_holdings").delete().eq("run_date", row["run_date"]).execute()
+        sb.table("book_holdings").delete().eq("run_date", row["run_date"]).eq(
+            "lens", "multi_asset"
+        ).execute()
     for i in range(0, len(rows_hold), 500):
         sb.table("book_holdings").insert(rows_hold[i : i + 500]).execute()
     print(f"\nwrote {len(rows_perf)} performance rows and {len(rows_hold)} holdings rows")

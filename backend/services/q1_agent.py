@@ -3678,6 +3678,12 @@ def _record_book_revisions(sb, run_date: str, new_row: dict) -> None:
 
     Imported lazily so the guard stays importable without this module's dependencies, the
     same convention `check_data_integrity` uses for its q1_agent import.
+
+    ADR-0194: only ever called for the multi_asset lens (book_revisions is one of the
+    four tables that stay multi-asset-only), but the read is scoped to lens='multi_asset'
+    explicitly anyway — `research_recommendations` now holds up to one row per lens for
+    the same run_date, and an unscoped `.eq("run_date", ...)` could otherwise resolve
+    ambiguously to whichever row Postgres happens to return first.
     """
     from .book_revisions import PIPELINE_RERUN, diff_books, summarise
 
@@ -3685,6 +3691,7 @@ def _record_book_revisions(sb, run_date: str, new_row: dict) -> None:
         sb.table("research_recommendations")
         .select("picks, book_metrics, book_view, scenario_results")
         .eq("run_date", run_date)
+        .eq("lens", "multi_asset")
         .limit(1)
         .execute()
         .data
@@ -3697,6 +3704,62 @@ def _record_book_revisions(sb, run_date: str, new_row: dict) -> None:
     print(f"[_persist_to_supabase] {summarise(revisions)}")
     if revisions:
         sb.table("book_revisions").insert([r.to_row() for r in revisions]).execute()
+
+
+def _persist_book_holdings(sb, state: Q1State) -> None:
+    """Write the current picks as a `book_holdings` snapshot, keyed by (run_date, lens, asset).
+
+    signed_weight == target_weight here — no turnover-cost tracking, no NAV, no
+    carried-forward position. That accounting lives in
+    `scripts/daily_refresh.py::extend_held_book`, which runs AFTER this (multi_asset
+    only) and overwrites these rows with the real held book. For every other lens —
+    e.g. credit — this write is the ONLY thing `book_holdings` ever gets: the book is
+    published for inspection, not carried forward as a position with a P&L series
+    (ADR-0194). `book_holdings_performance`, which the P&L series would live in, has
+    no lens column and must stay multi_asset-only.
+
+    Delete-then-insert, scoped to (run_date, lens) — an upsert alone would leave a
+    name dropped on a rerun as a stale row forever, the same failure mode
+    `extend_held_book` and `rank_and_persist_trade_candidates` already guard against
+    elsewhere in this codebase.
+    """
+    picks = state.get("picks") or []
+    if not picks:
+        return
+
+    run_date = state["run_date"]
+    lens = state.get("lens", "multi_asset")
+
+    rows = []
+    for pick in picks:
+        asset = pick.get("asset")
+        if not asset:
+            continue
+        weight = pick.get("signed_weight")
+        if weight is None:
+            raw = pick.get("weight")
+            if raw is None:
+                continue
+            weight = -abs(float(raw)) if pick.get("direction") == "short" else abs(float(raw))
+        weight = float(weight)
+        rows.append({
+            "run_date": run_date,
+            "lens": lens,
+            "asset": asset,
+            "signed_weight": weight,
+            "target_weight": weight,
+        })
+    if not rows:
+        return
+
+    # Delete first, so a name dropped between reruns of the same (run_date, lens)
+    # does not survive as a stale row forever (the same union-of-every-run failure
+    # `extend_held_book` documents for the multi_asset case) — then upsert, on the
+    # new (run_date, lens, asset) key from migration 062, rather than plain insert,
+    # so this call is itself idempotent if retried.
+    sb.table("book_holdings").delete().eq("run_date", run_date).eq("lens", lens).execute()
+    sb.table("book_holdings").upsert(rows, on_conflict="run_date,lens,asset").execute()
+    print(f"[_persist_to_supabase] wrote {len(rows)} book_holdings row(s) for {run_date} (lens={lens})")
 
 
 def _persist_to_supabase(state: Q1State) -> bool:
@@ -3745,6 +3808,11 @@ def _persist_to_supabase(state: Q1State) -> bool:
             "book_risks": state.get("book_risks", []),
             "agent_run_id": agent_run_id,
             "advisory_derivation": state["advisory_derivation"],
+            # ADR-0194: which lens this book was built under. Part of the base row (not
+            # only analytics_row) because it is also the upsert's conflict target
+            # (run_date, lens) — a fallback write with no lens value would silently
+            # collide with whichever lens happened to insert first.
+            "lens": state.get("lens", "multi_asset"),
         }
 
         # Structured book analytics (migration 022). These are the artefacts the
@@ -3810,25 +3878,36 @@ def _persist_to_supabase(state: Q1State) -> bool:
             "weights_backtest": state.get("weights_backtest_final"),
         }
 
+        lens = state.get("lens", "multi_asset")
+
         # Record WHAT this upsert is about to overwrite, before it overwrites it.
         #
-        # The upsert below is `on_conflict="run_date"`, so a second run for the same date
-        # replaces the published book in place and no prior version survives. On
-        # 2026-07-26 `research_agent_runs` held 17 runs for run_date 2026-07-25 and 25 for
-        # 2026-07-24 — every one that reached persist overwrote a published book with no
-        # trace. Read-then-diff, so a reader who quoted a figure can find out it moved.
+        # The upsert below is `on_conflict="run_date,lens"` (migration 062), so a
+        # second run for the same (date, lens) replaces the published book in place
+        # and no prior version survives. On 2026-07-26 `research_agent_runs` held 17
+        # runs for run_date 2026-07-25 and 25 for 2026-07-24 — every one that reached
+        # persist overwrote a published book with no trace. Read-then-diff, so a
+        # reader who quoted a figure can find out it moved.
         #
         # Deliberately non-fatal and BEFORE the write: this reports on the book, it does
         # not produce one, and a logging failure must never cost a run that was otherwise
         # ready to publish. See ADR-0093.
-        try:
-            _record_book_revisions(sb, run_date, analytics_row)
-        except Exception as exc:  # noqa: BLE001 — see above
-            print(f"[_persist_to_supabase] revision log skipped ({exc.__class__.__name__}): {exc}")
+        #
+        # ADR-0194: book_revisions is one of the four tables that stay MULTI-ASSET
+        # ONLY — it diffs "the published book" against its own history, and a credit
+        # lens has no single published history to diff against (it coexists with,
+        # never replaces, the multi_asset row). Gated here rather than only by the
+        # call site in daily_refresh.py because this function is the ONE shared
+        # persist path both lenses run through.
+        if lens == "multi_asset":
+            try:
+                _record_book_revisions(sb, run_date, analytics_row)
+            except Exception as exc:  # noqa: BLE001 — see above
+                print(f"[_persist_to_supabase] revision log skipped ({exc.__class__.__name__}): {exc}")
 
         try:
             sb.table("research_recommendations").upsert(
-                analytics_row, on_conflict="run_date"
+                analytics_row, on_conflict="run_date,lens"
             ).execute()
         except Exception as exc:
             # Migration 021 not applied yet — persist the legacy shape rather
@@ -3840,8 +3919,22 @@ def _persist_to_supabase(state: Q1State) -> bool:
                 f"Falling back to legacy row — /risk will render unavailable."
             )
             sb.table("research_recommendations").upsert(
-                base_row, on_conflict="run_date"
+                base_row, on_conflict="run_date,lens"
             ).execute()
+
+        # The book_holdings snapshot (migration 056/062) — signed_weight == target,
+        # no turnover/cost tracking. Written for EVERY lens. For multi_asset,
+        # `scripts/daily_refresh.py::extend_held_book` runs afterwards and overwrites
+        # these rows with the ACTUAL held book (cost-aware, NAV-compounding); for
+        # every other lens this write is the only thing book_holdings ever gets —
+        # see ADR-0194 on why a non-multi_asset book has no held-book P&L series.
+        try:
+            _persist_book_holdings(sb, state)
+        except Exception as exc:  # noqa: BLE001 — an analytic must never cost the run
+            print(
+                f"[_persist_to_supabase] book_holdings snapshot skipped "
+                f"({exc.__class__.__name__}): {exc}. Apply migration 062."
+            )
 
         # The mandate-free signal, as its own rows (migration 055 / ADR-0148).
         #
@@ -3850,13 +3943,19 @@ def _persist_to_supabase(state: Q1State) -> bool:
         # decision, so a signal write that fails must not cost a run that already
         # produced a publishable book. The reverse ordering would let a missing
         # migration 055 take down the whole pipeline.
-        try:
-            _persist_signal(sb, state)
-        except Exception as exc:  # noqa: BLE001 — see above
-            print(
-                f"[_persist_to_supabase] signal rows skipped "
-                f"({exc.__class__.__name__}): {exc}. Apply migration 055."
-            )
+        #
+        # ADR-0194: book_signal is multi-asset-only. Its UNIQUE(run_date, asset,
+        # direction) has no lens column, so a second lens writing the same
+        # (asset, direction) would collide with or silently overwrite the primary
+        # book's signal row for a name both lenses happen to hold.
+        if lens == "multi_asset":
+            try:
+                _persist_signal(sb, state)
+            except Exception as exc:  # noqa: BLE001 — see above
+                print(
+                    f"[_persist_to_supabase] signal rows skipped "
+                    f"({exc.__class__.__name__}): {exc}. Apply migration 055."
+                )
 
         return True
     except Exception as exc:
@@ -3974,7 +4073,7 @@ def reason_and_verify_with_retries(
 
 
 def _fetch_previous_held_weights(
-    supabase_url: str, supabase_key: str, run_date: date,
+    supabase_url: str, supabase_key: str, run_date: date, lens: str = "multi_asset",
 ) -> dict[str, float]:
     """Yesterday's PUBLISHED book, signed — the baseline the turnover cap measures
     against (ADR-0173).
@@ -3989,6 +4088,14 @@ def _fetch_previous_held_weights(
     BEFORE `extend_held_book` — which only has today's picks to read once THIS run
     has published them. So at the moment this executes, `book_holdings`'s latest row
     is still genuinely yesterday's, not today's about to be overwritten.
+
+    `lens` (ADR-0194, migration 062): `book_holdings_performance` has no lens column
+    and is ALWAYS the multi_asset held book's history, so `prev_date` is always a
+    multi_asset publication date. The second query is scoped to THIS run's lens —
+    for multi_asset that is exactly yesterday's held book; for any other lens (e.g.
+    credit) it is that lens's own prior snapshot on the same date, if one exists, and
+    correctly comes back empty otherwise (no history yet is "no prior book", not a
+    borrowed baseline from a different mandate).
 
     Degrades to `{}` on any failure, exactly like `fetch_active_vetoes`: an
     unreachable table must not stop a book being published, and the read is
@@ -4015,6 +4122,7 @@ def _fetch_previous_held_weights(
             sb.table("book_holdings")
             .select("asset, signed_weight")
             .eq("run_date", prev_date)
+            .eq("lens", lens)
             .execute()
             .data
         ) or []
@@ -4126,7 +4234,7 @@ def run_q1_agent(
     # are: `size_positions` stays a pure function of state, testable with no
     # credentials, and the network read happens once per run rather than inside a
     # node several unit tests call directly with a minimal mock state.
-    weights_held = _fetch_previous_held_weights(supabase_url, supabase_key, run_date)
+    weights_held = _fetch_previous_held_weights(supabase_url, supabase_key, run_date, lens)
     if weights_held:
         print(f"[run_q1_agent] Turnover measured against {len(weights_held)} held "
               f"position(s) from the prior book.")

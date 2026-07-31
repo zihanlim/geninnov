@@ -1153,10 +1153,16 @@ def main() -> int:
     # the inverted-curve claim — three defects that were all present in the same published
     # thesis on the same day, surfaced one per run because the guard stopped at the first.
     # A reader of the output could not tell "one defect" from "the first of several".
+    # ADR-0194 (migration 062): scoped to lens='multi_asset' — a run_date can now
+    # carry a second row for the credit lens, and this guard checks the PUBLISHED
+    # (multi-asset) book specifically. Without the filter, `order by run_date desc,
+    # limit 1` has no tiebreaker between two rows sharing the same run_date and
+    # could check the wrong lens's book.
     rec_rows = (
         sb.table("research_recommendations")
         .select("run_date, book_view, book_risks, independent_ideas, picks, "
                 "book_metrics, cap_utilisation")
+        .eq("lens", "multi_asset")
         .order("run_date", desc=True)
         .limit(1)
         .execute()

@@ -1653,7 +1653,19 @@ def record_published_claims(agent_result: dict | None, run_date: date) -> int:
     Never raises. A book that is published but unrecorded is bad; a book that fails to
     publish because its bookkeeping fell over is worse. The gap is loud in the log and
     `check_data_integrity` fails on it separately.
+
+    ADR-0194: multi_asset only. `pick_outcomes` is the multi-asset book's forward
+    track record and must never gain a second book's claims for the same date — the
+    credit lens is published for inspection, not entered into it. Belt-and-suspenders
+    with the call site (only the primary flow calls this function at all): `lens` is
+    echoed on every `run_q1_agent` result, so this checks it directly rather than
+    trusting that no future caller ever passes it a non-multi_asset result.
     """
+    lens = (agent_result or {}).get("lens", "multi_asset")
+    if lens != "multi_asset":
+        print(f"[{run_date}] [L5] lens='{lens}' — not recording claims (ADR-0194: "
+              f"pick_outcomes is multi_asset-only).")
+        return 0
     picks = (agent_result or {}).get("picks") or []
     if not picks:
         return 0
@@ -2310,12 +2322,20 @@ def extend_held_book(run_date: date) -> None:
     prev_date = prev[0]["run_date"] if prev else None
     prev_nav = float(prev[0]["nav"]) if prev and prev[0].get("nav") is not None else None
 
+    # Both queries below are scoped to lens='multi_asset' (ADR-0194, migration 062):
+    # `research_recommendations` and `book_holdings` can now each carry a second row
+    # for the same date (the credit lens), and this function is the MULTI-ASSET held
+    # book's accounting specifically — book_holdings_performance has no lens column
+    # and stays multi_asset-only by definition. An unscoped read here could pick up
+    # the credit book's holdings as "yesterday's" baseline, or its picks as "today's"
+    # book to hold.
     previous_held: dict[str, float] = {}
     if prev_date:
         for row in (
             supabase.table("book_holdings")
             .select("asset, signed_weight")
             .eq("run_date", prev_date)
+            .eq("lens", "multi_asset")
             .execute()
             .data
             or []
@@ -2326,6 +2346,7 @@ def extend_held_book(run_date: date) -> None:
         supabase.table("research_recommendations")
         .select("picks")
         .eq("run_date", run_str)
+        .eq("lens", "multi_asset")
         .limit(1)
         .execute()
         .data
@@ -2404,12 +2425,19 @@ def extend_held_book(run_date: date) -> None:
     #
     # This mirrors what the pipeline already does for `portfolio_positions`: clear
     # the run_date, then write it.
-    supabase.table("book_holdings").delete().eq("run_date", run_str).execute()
+    #
+    # Scoped to lens='multi_asset' (ADR-0194, migration 062): an unscoped delete on
+    # `run_date` alone would also remove a coexisting credit-lens book_holdings row
+    # for the same date.
+    supabase.table("book_holdings").delete().eq("run_date", run_str).eq(
+        "lens", "multi_asset"
+    ).execute()
     if out["held"]:
         supabase.table("book_holdings").insert(
             [
                 {
                     "run_date": run_str,
+                    "lens": "multi_asset",
                     "asset": asset,
                     "signed_weight": weight,
                     "target_weight": target.get(asset),
@@ -2623,6 +2651,108 @@ def utc_run_date() -> date:
     brings ad-hoc local runs into line with it (ADR-0069).
     """
     return datetime.now(timezone.utc).date()
+
+
+def run_credit_lens_book(
+    run_date: date,
+    macro_snapshot: dict,
+    regime,
+    positioned: list,
+    risk_metrics: dict,
+    cfg: ScoringConfig,
+    _run_q1_agent=None,
+) -> dict | None:
+    """Run L5 a SECOND time under lens="credit" — its own `pipeline_runs` stage
+    (`L5b`), mirroring the L2/L2b phase shape (ADR-0194).
+
+    The resulting book COEXISTS with the primary multi_asset book published earlier
+    in this same run_date, rather than replacing it — migration 062 keys
+    `research_recommendations` and `book_holdings` by (run_date, lens).
+
+    This DOUBLES the day's L5 LLM spend, which is shared with /ask's quota (see
+    CLAUDE.md) — `RUN_CREDIT_LENS` lets it be switched off without a code change if
+    quota gets tight. Defaults to enabled.
+
+    Deliberately minimal, and NOT a copy of the primary L5 phase in `main()`: no
+    `record_published_claims` (`pick_outcomes` is multi_asset-only — ADR-0090's
+    denominator must not gain a second book), no
+    `reconcile_positions_to_published_book` / risk-and-return recompute (those
+    describe the PUBLISHED `portfolio_positions` book, which stays multi_asset),
+    and no `extend_held_book` (`book_holdings_performance` has no lens column and
+    stays multi_asset-only). `run_q1_agent`'s own persist path
+    (`q1_agent._persist_to_supabase`) still writes `research_recommendations` and a
+    `book_holdings` snapshot for the credit lens — see ADR-0194 for why a
+    non-multi_asset book gets a snapshot but no held-book P&L series.
+
+    THE CREDIT RUN MUST NEVER DAMAGE THE PRIMARY BOOK: by the time this is called,
+    the multi_asset book has already been fully persisted (and, for its held-book
+    accounting, `extend_held_book` has already run) — so the try/except here is
+    deliberately broad. A MiniMax 429 (the shared /ask quota exhausted) or any other
+    failure is logged, recorded as a `pipeline_runs` failure, and otherwise ignored:
+    this function never raises.
+
+    `_run_q1_agent` is an injection seam for tests — production always uses the
+    default, which lazy-imports `run_q1_agent` exactly like the primary L5 phase
+    does (so this module stays importable without langchain/anthropic installed).
+    """
+    if os.environ.get("RUN_CREDIT_LENS", "1") in ("0", "false", "False", ""):
+        print(f"[{run_date}] [L5b] RUN_CREDIT_LENS disabled — skipping credit-lens book.")
+        return None
+
+    if _run_q1_agent is None:
+        from backend.services.q1_agent import run_q1_agent as _run_q1_agent
+
+    l5b_started = datetime.now(timezone.utc)
+    l5b_id = run_id_for(run_date, stage="L5b")
+    try:
+        record_pipeline_run(supabase, l5b_id, "started", run_date=run_date, stage="L5b")
+    except Exception as exc:
+        print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
+
+    try:
+        print(f"[{run_date}] [L5b] Running credit-lens Q1 agent...")
+        credit_result = _run_q1_agent(
+            run_date=run_date,
+            supabase_url=SUPABASE_URL,
+            supabase_key=SUPABASE_KEY,
+            macro_snapshot=macro_snapshot,
+            regime=regime,
+            candidates=positioned,
+            risk_metrics=risk_metrics,
+            cfg=cfg,
+            lens="credit",
+            mandate=load_mandate(),
+        )
+        if credit_result:
+            print(f"[{run_date}] [L5b] Credit-lens book persisted "
+                  f"({len(credit_result.get('picks') or [])} picks).")
+        else:
+            print(f"[{run_date}] [L5b] Credit-lens agent declined to produce output "
+                  f"(fallback active).")
+        try:
+            record_pipeline_run(
+                supabase, l5b_id, "success", run_date=run_date, stage="L5b",
+                duration_s=(datetime.now(timezone.utc) - l5b_started).total_seconds(),
+            )
+        except Exception as exc:
+            print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
+        return credit_result
+    except Exception as exc:
+        import traceback as _tb
+        _trace = _tb.format_exc()
+        print(f"[{run_date}] [L5b] Credit-lens agent failed "
+              f"({exc.__class__.__name__}): skipping. The primary multi_asset "
+              f"book is untouched.")
+        print(_trace)
+        try:
+            record_pipeline_run(
+                supabase, l5b_id, "failure", run_date=run_date, stage="L5b",
+                duration_s=(datetime.now(timezone.utc) - l5b_started).total_seconds(),
+                error=str(exc),
+            )
+        except Exception as rec_exc:
+            print(f"[pipeline_runs] record failed ({rec_exc.__class__.__name__}): {rec_exc}")
+        return None
 
 
 # ─── Main orchestration ──────────────────────────────────────────────────────
@@ -2963,6 +3093,9 @@ def main():
             # swallow here left every stage stuck at 'partial' in
             # production with nothing to show why.
             print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
+
+    # ── Phase 5b: L5b — credit-lens second book (ADR-0194) ──────────────────────
+    run_credit_lens_book(run_date, macro_snapshot, regime, positioned, risk_metrics, cfg)
 
     print(f"[{run_date}] Daily refresh complete.")
 

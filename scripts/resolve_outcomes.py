@@ -112,9 +112,19 @@ def main() -> int:
     from supabase import create_client
     sb = create_client(url, key)
 
+    # ADR-0194 (migration 062): a run_date can now carry a second, non-multi_asset
+    # row (e.g. the credit lens), which coexists with but is NEVER entered into
+    # pick_outcomes — ADR-0090's falsifiable track record is multi-asset only, and
+    # its whole premise is that the denominator is fixed BEFORE any outcome is
+    # known. Scoped here, not only at the point picks are first recorded: this
+    # script derives its own claim set independently from `research_recommendations`
+    # rather than reading back `pick_outcomes`, so an unscoped read would resolve
+    # (and upsert) outcomes for credit-lens picks that were never committed as
+    # pending in the first place.
     books = (
         sb.table("research_recommendations")
         .select("run_date, picks")
+        .eq("lens", "multi_asset")
         .order("run_date")
         .execute()
         .data

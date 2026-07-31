@@ -206,7 +206,7 @@ export default function BookFunnel({
                     only place a removal is named, so it is never decoration. */}
                 {i > 0 && edge && (
                   <div
-                    className="flex lg:flex-col items-center justify-center gap-1 py-1 lg:py-0 lg:px-1"
+                    className="relative group flex lg:flex-col items-center justify-center gap-1 py-1 lg:py-0 lg:px-1"
                     style={{ gridColumn: edgeCol, gridRow: 1 }}
                     data-testid={`funnel-edge-${node.id}`}
                   >
@@ -218,14 +218,61 @@ export default function BookFunnel({
                       }}
                       aria-hidden
                     />
-                    <span
-                      className="text-[10px] num whitespace-nowrap"
+                    {/* A BUTTON, not a span with a `title`. The card below opens
+                        on hover AND on focus, so it is reachable by keyboard and
+                        by tap; a `title` attribute is neither, and a hover-only
+                        affordance on a touch screen is a fact the reader simply
+                        cannot get to. */}
+                    <button
+                      type="button"
+                      aria-describedby={`funnel-tip-${node.id}`}
+                      className="text-[10px] num whitespace-nowrap underline decoration-dotted underline-offset-2 rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                       style={{
                         color: edge.notable ? "var(--warning)" : "var(--text-tertiary)",
                       }}
                     >
                       {edge.removed ? `−${edge.removed}` : ""} {edge.label}
-                    </span>
+                    </button>
+                    <div
+                      role="tooltip"
+                      id={`funnel-tip-${node.id}`}
+                      data-testid={`funnel-detail-${node.id}`}
+                      // Centred on the connector and BELOW it, so it never covers
+                      // the number it explains. `invisible` rather than unmounted:
+                      // the text stays in the DOM, so Ctrl-F still finds "turnover
+                      // at cap" and a screen reader can reach it through
+                      // aria-describedby.
+                      // Pointer events stay ON. The card is a child of the same `group`, so
+                      // hovering INTO it keeps it open — which is what lets a reader
+                      // select the complex chips or the turnover figures rather than
+                      // watching them vanish as the cursor arrives.
+                      className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 transition-opacity absolute left-1/2 -translate-x-1/2 top-full mt-2 z-30 w-[19rem] max-w-[80vw] text-left card p-3 shadow-lg"
+                    >
+                      <div
+                        className="num text-[10px] uppercase tracking-[0.08em] mb-1"
+                        style={{
+                          color: edge.notable ? "var(--warning)" : "var(--text-tertiary)",
+                        }}
+                      >
+                        {edge.removed ? `−${edge.removed} ` : ""}
+                        {edge.label}
+                      </div>
+                      <p className="m-0 text-[11.5px] leading-[1.55] text-text-secondary">
+                        {edge.detail}
+                      </p>
+                      {edge.names?.length ? (
+                        <ul className="m-0 mt-1.5 p-0 list-none flex flex-col gap-1">
+                          {edge.names.map((n) => (
+                            <li
+                              key={n}
+                              className="num text-[10.5px] text-text-tertiary rounded border border-border px-1.5 py-[2px] break-words"
+                            >
+                              {n}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
                   </div>
                 )}
 
@@ -263,57 +310,6 @@ export default function BookFunnel({
                   </Node>
                 </div>
 
-                {/* This step's account of itself, under its own connector. */}
-                {i > 0 && edge && (
-                  <div
-                    // CENTRED ON THE CONNECTOR, which is why the span starts one
-                    // track EARLIER than the connector's own. Spanning
-                    // `edgeCol / span 2` and centring put the block's midpoint
-                    // between the connector and the next node, so the two
-                    // `−12 context cap` labels — the one on the line and the one
-                    // heading its explanation — sat at different x. Spanning
-                    // node-connector-node makes the cell symmetric about the
-                    // connector, because both node tracks are 1fr.
-                    //
-                    // Adjacent cells therefore SHARE a track (1-3, 3-5, 5-7,
-                    // 7-9) and overlap as grid areas. They do not overlap as
-                    // ink: the content is capped and centred inside, so each
-                    // block occupies the middle of its own three tracks.
-                    className="min-w-0 text-[11.5px] leading-[1.55] lg:text-center"
-                    style={{ gridColumn: `${edgeCol - 1} / span 3`, gridRow: 2 }}
-                    data-testid={`funnel-detail-${node.id}`}
-                  >
-                    <div className="lg:max-w-[17rem] lg:mx-auto">
-                    <div
-                      className="num text-[10px] uppercase tracking-[0.08em] mb-1"
-                      style={{
-                        color: edge.notable ? "var(--warning)" : "var(--text-tertiary)",
-                      }}
-                    >
-                      {edge.removed ? `−${edge.removed} ` : ""}
-                      {edge.label}
-                    </div>
-                    {/* The PROSE stays left-aligned inside a centred block. A
-                        centred paragraph gives every line a different starting
-                        x, so the eye has to re-find the left edge on each one —
-                        which is the opposite of what centring the block was for.
-                        The label and the chips centre; the sentences do not. */}
-                    <p className="m-0 text-text-secondary text-left">{edge.detail}</p>
-                    {edge.names?.length ? (
-                      <ul className="m-0 mt-1.5 p-0 list-none flex flex-col gap-1 lg:items-center">
-                        {edge.names.map((n) => (
-                          <li
-                            key={n}
-                            className="num text-[10.5px] text-text-tertiary rounded border border-border px-1.5 py-[2px] break-words"
-                          >
-                            {n}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    </div>
-                  </div>
-                )}
               </Fragment>
             );
           })}

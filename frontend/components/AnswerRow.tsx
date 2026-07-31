@@ -53,6 +53,22 @@ export interface AnswerCard {
   consequence: ReactNode;
   /** `table.column` the figure was read from (goal 1). */
   source: string;
+  /**
+   * "This card's FIGURE is the multi-asset book's" — set only under a non-default
+   * lens, and only when the figure itself is lens-less (ADR-0211's row-level
+   * disclosure, one altitude up).
+   *
+   * Set by the card BUILDER, not derived here from `source`, because `source` and
+   * `figure` are not always the same scope. `mandateAnswerCards`' first card is
+   * sourced `book_metrics.gross_exposure × portfolio_risk.total_capital` — the
+   * headline `48% gross` follows the lens and only the dollars in the consequence
+   * sentence are lens-less (and identical under both books, being the mandate size).
+   * Running `sourceProvenance` over that string returns "published" on the
+   * published-wins-a-tie rule, which is right for one value in a table row and wrong
+   * for a headline that does follow the lens. The builder knows which figure it put
+   * on the card; this component does not.
+   */
+  scopeNote?: string;
   /** Anchor or route the figure drills into. Must resolve on the page that renders
    *  this row — `answer-rows.test.tsx` asserts every href has a target, after
    *  `phases.test.ts` passed on an anchor that existed only as a `data-testid`. */
@@ -60,7 +76,15 @@ export interface AnswerCard {
   tone?: "default" | "warning";
 }
 
-export function Card({ label, figure, consequence, source, href, tone = "default" }: AnswerCard) {
+export function Card({
+  label,
+  figure,
+  consequence,
+  source,
+  href,
+  tone = "default",
+  scopeNote,
+}: AnswerCard) {
   const figureCls =
     tone === "warning"
       ? "num text-[22px] font-semibold leading-[1.15] text-warning"
@@ -91,6 +115,20 @@ export function Card({ label, figure, consequence, source, href, tone = "default
             Predates the column narrowing; that just made it wider of the mark. */}
         <div className="text-[10px] text-text-tertiary num mt-0.5 [overflow-wrap:anywhere]">
           {source}
+          {/* Same idiom, register and ink as the limit board's row tag: prose type
+              beside the mono identifier, neutral rather than --warning, because
+              nothing here is broken (ADR-0194 working as designed). A reader who has
+              met one has met both. */}
+          {scopeNote && (
+            <span
+              role="note"
+              data-testid="answer-card-scope"
+              className="font-sans text-text-secondary"
+              title={scopeNote}
+            >
+              {" · multi-asset"}
+            </span>
+          )}
         </div>
       </div>
     </div>

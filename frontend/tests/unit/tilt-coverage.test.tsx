@@ -34,7 +34,9 @@ const bm = (extra: Partial<BookMetrics> = {}): BookMetrics => ({
 });
 
 const render = (value: BookMetrics) =>
-  renderToStaticMarkup(<BookFactorTilt state={{ status: "ok", value }} />);
+  renderToStaticMarkup(
+    <BookFactorTilt state={{ status: "ok", value, runDate: "2026-07-30" }} />,
+  );
 
 describe("position coverage", () => {
   it("names the share of gross the betas describe when it is partial", () => {

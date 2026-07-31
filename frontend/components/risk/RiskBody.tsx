@@ -1411,6 +1411,10 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
               capState,
               bookMetrics,
               totalCapital: data.risk?.total_capital ?? null,
+              // "Closest to binding" names whichever limit is tightest, which can be
+              // a lens-less one — so the card needs the lens to know whether the
+              // limit it just named is this book's (ADR-0211).
+              lens: data.resolvedLens,
             })}
           />
         </>

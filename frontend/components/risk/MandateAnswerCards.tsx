@@ -31,6 +31,8 @@ import type { AnswerCard } from "@/components/AnswerRow";
 import { pctOf, usdM } from "@/components/AnswerRow";
 import type { AnalyticsState, BookMetrics, CapUtilisation } from "@/lib/risk/analytics";
 import type { LimitRow } from "@/lib/risk/riskBoard";
+import { DEFAULT_LENS } from "@/lib/book/lensView";
+import { showSourceScopeNote } from "@/lib/risk/lensScope";
 
 /** The limit closest to its ceiling, breaches first. Null when nothing is measurable. */
 function tightest(rows: LimitRow[]): LimitRow | null {
@@ -56,11 +58,15 @@ export function mandateAnswerCards({
   capState,
   bookMetrics,
   totalCapital,
+  lens = DEFAULT_LENS,
 }: {
   limitRows: LimitRow[];
   capState: AnalyticsState<CapUtilisation>;
   bookMetrics: BookMetrics | null;
   totalCapital: number | null;
+  /** Defaults to multi_asset, so a caller that has not been taught about lenses
+   *  produces exactly the cards it did before. */
+  lens?: string;
 }): AnswerCard[] {
   const gross = bookMetrics?.gross_exposure ?? null;
   const capital = totalCapital ?? null;
@@ -130,6 +136,25 @@ export function mandateAnswerCards({
     // and the row it links to cannot disagree, and a limit added later needs no
     // edit in this file.
     source: t ? `scoring_config × ${t.source}` : "scoring_config",
+    // THE ONE CARD HERE THAT CAN BE ANOTHER BOOK'S, and the only one whose scope
+    // changes with the DATA rather than with the code.
+    //
+    // The other three are fixed: card 1's headline is `book_metrics.gross_exposure`
+    // and card 4's is `cap_utilisation.violations` — both lens-following — while
+    // card 3 reads `scoring_config`, which is lens-neutral. This card's figure is
+    // whichever limit happens to be tightest, so under `?lens=credit` it is the
+    // credit book's cap on one run and the multi-asset book's VaR or drawdown on the
+    // next, with the same heading over it either way.
+    //
+    // That heading is a VERDICT — "Closest to binding" — and an unmarked verdict
+    // computed on another book's measurement is precisely what ADR-0211 exists to
+    // stop one altitude below, on the board this card links into. Measured on the
+    // 2026-07-30 credit book the tightest row is `cap_utilisation.single_name`, so
+    // nothing renders today; the mark appears the first run a lens-less row wins.
+    scopeNote:
+      t && showSourceScopeNote(lens, t.source)
+        ? `${t.source} has no lens column (ADR-0194), so the limit named here is the multi-asset published book's — the tightest of THIS book's own limits may be a different one.`
+        : undefined,
     tone: t && t.utilisation !== null && t.utilisation >= 0.9 ? "warning" : "default",
     figure: t ? (
       <>

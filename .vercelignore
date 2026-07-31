@@ -1,0 +1,60 @@
+# What Vercel must NOT upload.
+#
+# WHY THIS FILE EXISTS. Every git-push deployment of this repo failed, for weeks,
+# with:
+#
+#     LAMBDA_SIZE_EXCEEDED
+#     Total bundle size (516.86 MB) exceeds the maximum function size (500 MB)
+#
+# Vercel treats the REPO ROOT as the deployment root (root vercel.json builds the
+# frontend, but it does not move the root). It therefore auto-detects
+# `api/compute/size.py` as a Python serverless function and installs the root
+# `requirements.txt` to build it — cvxpy with its solver binaries, plus scipy,
+# pandas, numpy and yfinance. That is 516.86 MB before any of our code, and the
+# ceiling is 500 MB.
+#
+# The failure was invisible for two reasons worth recording. CI runs pytest only,
+# so a red Vercel build never fails a check; and the live site kept working
+# because it was being served by a MANUAL `vercel deploy` from `frontend/`, which
+# never sees `api/`. So `main` was undeployable while the URL looked healthy.
+#
+# WHAT EXCLUDING `api/` COSTS, precisely: nothing that currently works. ADR-0149
+# shipped `api/compute/size.py` labelled "NOT YET DEPLOYED: first deploy must
+# reproduce published weights bit-for-bit" — and it never has been deployed,
+# because of this exact limit. Excluding it makes that state explicit instead of
+# leaving it as a build that fails every night. `Workbench.tsx` fetches
+# `/api/compute/size` and will 404, which is what it already does in production.
+#
+# The real fix is one of:
+#   1. set the Vercel project's Root Directory to `frontend`, so Vercel never
+#      sees the Python tree at all (cleanest — a dashboard setting, not a file);
+#   2. drop `yfinance` from requirements.txt, which needs `book_metrics` to split
+#      its asset records from its price helpers — requirements.txt's own comment
+#      already names this as the blocker;
+#   3. move the solver behind a service that is not a 500 MB lambda.
+# Until one of those happens, this file is what makes `main` deployable.
+
+# The Python serverless function and its dependency manifest.
+api/
+requirements.txt
+
+# The pipeline. Never served; only inflates the upload.
+backend/
+scripts/
+tests/
+supabase/
+
+# Documentation, research and scratch. Not part of any build.
+docs/
+research/
+email/
+stitch_review/
+stitch_remix_of_auralis_saas_landing_page/
+__pycache__/
+*.pyc
+.venv/
+.venv-*/
+
+# Large binaries that must never reach a deployment.
+*.zip
+*.pdf

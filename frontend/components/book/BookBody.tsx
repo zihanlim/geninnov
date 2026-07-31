@@ -50,6 +50,7 @@ import type { OptimizerResult, SizingMethod } from "@/lib/book/sizingProvenance"
 import TrackRecordPanel from "@/components/book/TrackRecordPanel";
 import { type IndependentIdeas } from "@/components/book/PoolDepth";
 import BookFunnel from "@/components/book/BookFunnel";
+import BookRisks from "@/components/book/BookRisks";
 import PositionDrawer from "@/components/book/PositionDrawer";
 import {
   buildWorkedExample,
@@ -1640,11 +1641,22 @@ function BookPageInner() {
                 defaultOpen
               >
                 <div className="card-body">
-                  <ul className="m-0 pl-[18px] leading-[1.8] text-text-primary text-[13.5px]">
-                    {rec.book_risks.map((r, i) => (
-                      <li key={i}>{r}</li>
-                    ))}
-                  </ul>
+                  {/* Marked rows, not bullets. A held ticker opens that
+                      position; one that cleared the screen and is NOT held is
+                      marked as such — the distinction the prose carries only by
+                      being read end to end. See lib/book/bookRisks.ts for why no
+                      figure is lifted out of the sentences. */}
+                  <BookRisks
+                    risks={rec.book_risks}
+                    heldAssets={new Set((rec.picks ?? []).map((p) => p.asset))}
+                    knownAssets={
+                      new Set([
+                        ...(rec.picks ?? []).map((p) => p.asset),
+                        ...candidates.map((c) => c.asset),
+                      ])
+                    }
+                    onSelectAsset={selectFromFunnel}
+                  />
                 </div>
               </CollapsibleSection>
             )}

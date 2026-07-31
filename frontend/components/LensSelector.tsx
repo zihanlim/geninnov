@@ -22,7 +22,7 @@ interface LensOption {
   description: string;
 }
 
-const LENS_OPTIONS: LensOption[] = [
+export const LENS_OPTIONS: LensOption[] = [
   { value: "multi_asset", label: "Multi-Asset", description: "Default · all asset classes" },
   { value: "credit", label: "Credit Lens", description: "Credit + rates only" },
   { value: "rates", label: "Rates Only", description: "Duration & curve trades" },
@@ -34,17 +34,28 @@ const LENS_OPTIONS: LensOption[] = [
 export default function LensSelector({
   value,
   onChange,
+  lenses,
 }: {
   value: Lens;
   onChange: (lens: Lens) => void;
+  /**
+   * Restrict the rendered buttons to these lenses, in `LENS_OPTIONS`' order.
+   * Omit for the full six-lens set (ADR-0015's asset-class filter). /book
+   * passes only the lenses with a published book for today's run_date —
+   * offering a lens with no book is worse than not offering it at all.
+   */
+  lenses?: Lens[];
 }) {
-  const activeLabel = LENS_OPTIONS.find((opt) => opt.value === value)?.label ?? value;
+  const options = lenses
+    ? LENS_OPTIONS.filter((opt) => lenses.includes(opt.value))
+    : LENS_OPTIONS;
+  const activeLabel = options.find((opt) => opt.value === value)?.label ?? value;
   return (
     <div className="inline-flex items-stretch rounded-md border border-border bg-bg-elevated overflow-hidden">
       <span data-testid="lens-active" className="sr-only">
         {activeLabel}
       </span>
-      {LENS_OPTIONS.map((opt, idx) => {
+      {options.map((opt, idx) => {
         const isActive = opt.value === value;
         return (
           <button

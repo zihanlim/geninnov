@@ -56,9 +56,14 @@ export default function LiveFeed() {
       // to the picks — so mid-reconcile it showed "Held tickers 40" while /book held
       // 9. Count the published book, and disclose the positions divergence the way
       // /risk does rather than hide it (bookOfRecord.ts: the check is the disagreement).
+      // Migration 062 keyed this table on (run_date, lens); the reconciliation
+      // strip is about the published multi-asset book, so the read is explicit
+      // rather than depending on whichever row Postgres returns first for a
+      // run_date that now carries two books.
       supabase
         .from("research_recommendations")
         .select("picks")
+        .eq("lens", "multi_asset")
         .order("run_date", { ascending: false })
         .limit(1),
     ]).then(([runRes, themeRes, posRes, bookRes]) => {

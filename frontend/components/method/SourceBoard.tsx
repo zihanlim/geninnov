@@ -57,7 +57,12 @@ async function fetchObservations(): Promise<{
         .order("trading_date", { ascending: false }).limit(1),
       supabase.from("factor_exposures").select("created_at")
         .order("created_at", { ascending: false }).limit(1),
+      // Migration 062 keyed this table on (run_date, lens) — a run_date can now carry
+      // both the multi-asset and the credit-lens book. /method reports on the
+      // multi-asset book only, so the read is explicit rather than depending on
+      // whichever row Postgres returns first for a tied run_date.
       supabase.from("research_recommendations").select("positioning_crowding")
+        .eq("lens", "multi_asset")
         .order("run_date", { ascending: false }).limit(1),
     ]);
 

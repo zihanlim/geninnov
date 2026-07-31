@@ -1,8 +1,10 @@
 "use client";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import LensSelector, { type Lens } from "@/components/LensSelector";
+import { DEFAULT_LENS, availableLensesForLatestRun, resolveLens } from "@/lib/book/lensView";
 import CitationList, { Citation } from "@/components/CitationList";
 import PageHeader from "@/components/PageHeader";
 import { EmptyState, QueryErrorState } from "@/components/status/EmptyState";
@@ -230,8 +232,51 @@ function BookPageInner() {
   const [loading, setLoading] = useState(true);
   const [openAsset, setOpenAsset] = useState<string | null>(null);
 
+  // ── Lens (?lens=credit) ──────────────────────────────────────────────────
+  // Migration 062 lets more than one book share a run_date, keyed by lens.
+  // Selection lives in the URL so the view is linkable — a reviewer must be
+  // able to send someone the credit book directly (/book?lens=credit).
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const requestedLens = searchParams.get("lens");
+  const [lens, setLensState] = useState<Lens>(DEFAULT_LENS);
+  // What the toggle may offer. Starts as just the default so the control does
+  // not flash a five-lens picker before the real answer loads; narrowed to
+  // whatever `research_recommendations` actually has for today's run_date.
+  const [availableLenses, setAvailableLenses] = useState<Lens[]>([DEFAULT_LENS]);
+
+  const setLens = useCallback(
+    (next: Lens) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === DEFAULT_LENS) params.delete("lens");
+      else params.set("lens", next);
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname, searchParams]
+  );
+
   useEffect(() => {
     async function load() {
+      // Which lens to query, resolved BEFORE the book itself is fetched. Migration
+      // 062 keyed research_recommendations on (run_date, lens), so a run_date can
+      // now carry more than one book — reading it without a lens filter is exactly
+      // the ambiguity this resolves. A lightweight (run_date, lens) probe is enough
+      // to know what today's run_date published without pulling every column twice.
+      const lensRowsRes = await supabase
+        .from("research_recommendations")
+        .select("run_date, lens")
+        .order("run_date", { ascending: false })
+        .limit(40);
+      const { lenses } = availableLensesForLatestRun(
+        (lensRowsRes.data as { run_date: string | null; lens: string | null }[] | null) ?? []
+      );
+      const offered = lenses.length ? lenses : [DEFAULT_LENS];
+      const resolved = resolveLens(requestedLens, offered);
+      setAvailableLenses(offered);
+      setLensState(resolved);
+
       // The book row, the live scoring weights, the per-position edge columns,
       // and the full theme roster are independent reads — fire them together.
       const [recRes, cfgRes, posRes, themesRes, candRes] = await Promise.all([
@@ -240,9 +285,14 @@ function BookPageInner() {
           .select(
             "run_date, picks, book_view, book_risks, agent_run_id, advisory_derivation, book_metrics, scenario_results, cap_utilisation, screening_funnel, correlation_pairs, candidate_correlations, independent_ideas, lens, sizing_method, sizing_reason, optimizer_result, efficient_frontier, heuristic_weights, rebalance_cost"
           )
+          .eq("lens", resolved)
           .order("run_date", { ascending: false })
-          // Two rows, not one: the second is the previous run_date, which is what
-          // "would you get the same answer tomorrow?" is measured against.
+          // Two rows, not one: the second is the previous run_date FOR THIS LENS,
+          // which is what "would you get the same answer tomorrow?" is measured
+          // against. Filtering by lens first is what keeps this a same-lens pair
+          // now that a run_date can carry two books — unfiltered, a day with both
+          // the multi-asset and credit book published could return two rows for
+          // TODAY under one lens rather than today-and-yesterday.
           .limit(2),
         supabase.from("scoring_config").select("param_name, value"),
         supabase
@@ -374,8 +424,12 @@ function BookPageInner() {
       }
       setLoading(false);
     }
+    setLoading(true);
     load();
-  }, []);
+    // requestedLens, not `lens`: `lens` is set INSIDE this effect from the
+    // resolved value, so depending on it would be depending on its own output.
+    // requestedLens is the URL's raw ?lens= value, the actual external input.
+  }, [requestedLens]);
 
   const longs = useMemo(
     () => (rec?.picks ?? []).filter((p) => p.direction === "long"),
@@ -576,7 +630,7 @@ function BookPageInner() {
   // the deep-link is meaningful: name the theme's positions if it holds any, or
   // — the case that used to dead-end silently on an abstained theme — say plainly
   // that it was held out and point at the abstention roster.
-  const focusThemeId = useSearchParams().get("theme");
+  const focusThemeId = searchParams.get("theme");
   const focusName = focusThemeId ? themeNames[focusThemeId] ?? null : null;
   // Picks store the theme NAME (`theme`), not the theme_id — theme_id is null on
   // L5 output — so match on the name resolved from the URL's id, with theme_id as
@@ -704,9 +758,23 @@ function BookPageInner() {
             value: rec?.run_date ?? "—",
             warn: staleness.stale,
           },
-          { label: "Lens", value: rec?.lens ?? "—", capitalize: true },
+          { label: "Lens", value: lens, capitalize: true },
         ]}
       />
+
+      {/* The lens toggle. Only rendered when more than one lens actually has a
+          published book for today's run_date (per the resolution above) — a
+          control offering a book that does not exist is worse than no control.
+          Selection lives in the URL via setLens, so /book?lens=credit is
+          linkable and shareable on its own. */}
+      {availableLenses.length > 1 && (
+        <div className="mb-6 flex items-center gap-2">
+          <span className="text-[11px] uppercase tracking-[0.08em] text-text-tertiary">
+            Book
+          </span>
+          <LensSelector value={lens} onChange={setLens} lenses={availableLenses} />
+        </div>
+      )}
 
       {/* A dead run is invisible otherwise: the page keeps rendering the last book
           it has, with a date nobody reads as a warning. On 2026-07-24 the pipeline
@@ -892,8 +960,16 @@ function BookPageInner() {
             <Stat
               label="Longs / Shorts"
               value={`${longs.length} / ${shorts.length}`}
-              hint="Split of the two sides"
-              warn={shorts.length === 0 && longs.length > 0}
+              hint={
+                // A long-only book is a design property of a non-multi-asset lens
+                // (ADR-0194 — the credit lens's pool had no short candidates), not
+                // a screening failure, so it gets the calm hint rather than the
+                // warning styling reserved for the multi-asset mandate below.
+                shorts.length === 0 && longs.length > 0 && lens !== "multi_asset"
+                  ? "This lens is long-only by design — see the thesis above for why."
+                  : "Split of the two sides"
+              }
+              warn={shorts.length === 0 && longs.length > 0 && lens === "multi_asset"}
               warnHint="A long-only book is not a long-short book"
             />
             <Stat
@@ -1065,7 +1141,12 @@ function BookPageInner() {
                 correlationPairs={correlationPairs}
                 ideas={rec?.independent_ideas ?? null}
                 scenarios={rec.scenario_results ?? []}
-                emptyNote="This book has no short positions. A $100M long-short mandate with zero shorts carries full directional market exposure — check the screening funnel for why no theme produced a negative TradeScore."
+                emptyNote={
+                  lens === "multi_asset"
+                    ? "This book has no short positions. A $100M long-short mandate with zero shorts carries full directional market exposure — check the screening funnel for why no theme produced a negative TradeScore."
+                    : "This lens's mandate is long-only — no short candidates existed in the pool, so a long/short structure is not constructible from this screen. See the thesis above for the agent's own account of why."
+                }
+                emptySeverity={lens === "multi_asset" ? undefined : "info"}
                 clearedByHeldAsset={clearedByHeldAsset}
               />
               </div>
@@ -1143,7 +1224,7 @@ function BookPageInner() {
           {/* ── Did the books we already published turn out right? (ADR-0090) ─
               The instrument lived only on /method, two clicks from the claims it
               grades. This is the summary at the point of the claim. */}
-          <TrackRecordPanel />
+          <TrackRecordPanel lens={lens} />
 
           {/* ── Turnover vs the previous run ─────────────────────────────── */}
           <BookTurnover
@@ -1160,7 +1241,7 @@ function BookPageInner() {
           />
 
           {/* ── Same inputs, run again: agent churn as against market churn ─ */}
-          <Replication />
+          <Replication lens={lens} />
           </div>
 
           {/* ── Which sizing produced these weights, and what the other one
@@ -1423,6 +1504,7 @@ function PositionSection({
   repl,
   bookRunDate,
   emptyNote,
+  emptySeverity,
   clearedByHeldAsset,
 }: {
   title: string;
@@ -1445,6 +1527,11 @@ function PositionSection({
   ideas: IndependentIdeas | null;
   scenarios: ScenarioResult[];
   emptyNote?: string;
+  /** Defaults to "warning" when `emptyNote` is set, "info" otherwise — the
+   *  multi-asset mandate's own long-standing behaviour. Pass "info" explicitly
+   *  when the empty side is a mandate's BY-DESIGN shape (a long-only lens)
+   *  rather than a screening outcome worth flagging. */
+  emptySeverity?: "info" | "warning";
   clearedByHeldAsset: Map<string, CandidateRow[]>;
 }) {
   return (
@@ -1464,7 +1551,7 @@ function PositionSection({
               `The sized book contains no ${title.toLowerCase()} positions.`
             }
             source="research_recommendations.picks"
-            severity={emptyNote ? "warning" : "info"}
+            severity={emptySeverity ?? (emptyNote ? "warning" : "info")}
             compact
           />
         </div>

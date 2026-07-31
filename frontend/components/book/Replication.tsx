@@ -45,11 +45,17 @@ const fmtPct = (v: number | null) =>
 /** Strip the L:/S: prefix the harness uses for signed names. */
 const pretty = (n: string) => n.replace(/^([LS]):/, (_m, s) => (s === "S" ? "short " : "long "));
 
-export default function Replication() {
+export default function Replication({ lens = "multi_asset" }: { lens?: string }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // scripts/replication_test.py has only ever run the multi-asset mandate —
+    // there is no per-lens harness, so a credit-lens read would show this
+    // page's OWN reproducibility numbers next to positions they were never
+    // measured against. Nothing to fetch for another lens; render an explicit
+    // absence instead.
+    if (lens !== "multi_asset") return;
     supabase
       .from("backtest_results")
       .select("metric_name, realized_value, end_date, notes")
@@ -60,7 +66,26 @@ export default function Replication() {
         if (e) setError(e.message);
         else setRows((data ?? []) as Row[]);
       });
-  }, []);
+  }, [lens]);
+
+  if (lens !== "multi_asset") {
+    return (
+      <div className="card mb-6">
+        <div className="card-header">
+          <span className="card-title">
+            Same inputs, run again — how much of the book changes
+          </span>
+        </div>
+        <div className="px-[18px] py-3.5">
+          <p className="m-0 text-[12px] text-text-secondary leading-[1.6]">
+            <code className="num">scripts/replication_test.py</code> has only ever
+            harnessed the multi-asset mandate — there is no reproducibility measurement
+            for the {lens} lens to show here.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (

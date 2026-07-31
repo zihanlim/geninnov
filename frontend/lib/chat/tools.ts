@@ -56,7 +56,16 @@ async function latestBook(
       // every tool sees the same book row — a second select would let two tools answer from
       // two different runs if one landed mid-publication.
       "risk_decomposition, monte_carlo_var, var_forecast, sizing_method, sizing_reason, optimizer_result, heuristic_weights, rebalance_cost",
-    { order: { column: "run_date", ascending: false }, limit },
+    {
+      order: { column: "run_date", ascending: false },
+      limit,
+      // Migration 062 re-keyed this table on (run_date, lens) — more than one row can
+      // now exist per run_date. /ask and the MCP server only ever discuss the
+      // multi-asset book (the credit lens has no track record and is not part of
+      // this contract yet — ADR-0194), so the read is explicit rather than
+      // depending on whichever row Postgres returns first for a tied run_date.
+      eq: { lens: "multi_asset" },
+    },
   );
 }
 

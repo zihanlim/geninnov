@@ -56,7 +56,12 @@ export default function AskPage() {
     let cancelled = false;
     supabase
       .from("research_recommendations")
+      // Migration 062 keyed this table on (run_date, lens); /ask only ever
+      // discusses the multi-asset book (ADR-0194), so the read is explicit
+      // rather than depending on whichever row Postgres returns first for a
+      // run_date that now carries two books.
       .select("run_date, picks, book_metrics")
+      .eq("lens", "multi_asset")
       .order("created_at", { ascending: false })
       .limit(1)
       .then(({ data }) => {

@@ -100,11 +100,18 @@ export function panelClaim(tr: TrackRecord): PanelClaim {
   };
 }
 
-export default function TrackRecordPanel() {
+export default function TrackRecordPanel({ lens = "multi_asset" }: { lens?: string }) {
   const [rows, setRows] = useState<PickOutcomeRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // pick_outcomes carries NO lens column at all (ADR-0194) — it is the
+    // multi-asset book's forward record and nothing else's, on purpose: a
+    // second lens sharing the fixed-at-publication denominator would let
+    // either book's misses hide behind the other's count. So there is
+    // nothing to fetch for any other lens; the render below states that
+    // absence instead.
+    if (lens !== "multi_asset") return;
     supabase
       .from("pick_outcomes")
       // One string literal, not a concatenation — supabase-js infers the row type from
@@ -117,7 +124,26 @@ export default function TrackRecordPanel() {
         if (e) setError(e.message);
         else setRows((data ?? []) as PickOutcomeRow[]);
       });
-  }, []);
+  }, [lens]);
+
+  if (lens !== "multi_asset") {
+    return (
+      <div className="card mb-6">
+        <div className="card-header flex-wrap gap-2">
+          <span className="card-title">Were the published books right?</span>
+        </div>
+        <div className="px-[18px] py-3.5">
+          <p className="m-0 text-[12px] text-text-secondary leading-[1.6]">
+            <strong>No track record yet.</strong> The forward record
+            (<code className="num">pick_outcomes</code>, ADR-0090) is multi-asset-only
+            by design (ADR-0194): the {lens} lens is published for inspection, not yet
+            added to the falsifiable resolution set, so there is no hit rate to show
+            for it here.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (

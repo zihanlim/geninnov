@@ -271,9 +271,15 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         outcomesRes,
       
       ] = await Promise.all([
+        // Migration 062 keyed this table on (run_date, lens): a run_date can now
+        // carry both the multi-asset and the credit-lens book. /risk, /mandate and
+        // /attribution are hardcoded to the multi-asset book by design (ADR-0194 —
+        // the credit book has no track record), so every read below is explicit
+        // about lens rather than depending on whichever row Postgres returns first.
         supabase
           .from("research_recommendations")
           .select(ANALYTICS_COLUMNS)
+          .eq("lens", "multi_asset")
           .order("run_date", { ascending: false })
           .limit(1),
         // Minimal probe: succeeds even when the migration-022 columns are absent,
@@ -281,6 +287,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         supabase
           .from("research_recommendations")
           .select(BASE_COLUMNS)
+          .eq("lens", "multi_asset")
           .order("run_date", { ascending: false })
           .limit(1),
         // Two rows: the latest metrics and the prior run for signed deltas.

@@ -67,9 +67,14 @@ function WorkbenchPageInner() {
   useEffect(() => {
     async function load() {
       const [bookRes, sigRes, candRes] = await Promise.all([
+        // Migration 062 keyed this table on (run_date, lens); the workbench seeds
+        // from the multi-asset book only, so the read is explicit rather than
+        // depending on whichever row Postgres returns first for a run_date that
+        // now carries two books.
         supabase
           .from("research_recommendations")
           .select("run_date, picks, book_metrics")
+          .eq("lens", "multi_asset")
           .order("run_date", { ascending: false })
           .limit(1),
         supabase

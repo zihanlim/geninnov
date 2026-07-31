@@ -1613,73 +1613,10 @@ function BookPageInner() {
           </section>
 
           <section id="audit" aria-label="Audit detail">
-          <CollapsibleSection
-            title="Screening funnel"
-            // Says what this is FOR now that `From pool to book` renders the same
-            // screen as a chain: that panel names only the stages which removed
-            // something, and this is every stage including the ones that did not.
-            // Without the distinction the two read as the same table twice.
-            summary={
-              rec.screening_funnel && rec.screening_funnel.length > 0
-                ? `all ${rec.screening_funnel.length} stages, including those that removed nothing — ${rec.screening_funnel[rec.screening_funnel.length - 1]?.remaining ?? "—"} names cleared`
-                : "how the universe was filtered to the book"
-            }
-          >
-            {rec.screening_funnel && rec.screening_funnel.length > 0 ? (
-              <ScrollArea hint={false}>
-                <table className="w-full border-collapse text-[13px]">
-                  <caption className="sr-only">
-                    Candidate attrition by screening stage.
-                  </caption>
-                  <thead>
-                    <tr>
-                      {["Stage", "Remaining", "Removed", "Why"].map((h, i) => (
-                        <th
-                          key={h}
-                          className={`px-[18px] py-2.5 text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border bg-bg-elevated ${
-                            i === 1 || i === 2 ? "text-right" : "text-left"
-                          }`}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rec.screening_funnel.map((s) => (
-                      <tr key={s.stage}>
-                        <td className="px-[18px] py-2.5 border-b border-border font-medium">
-                          {s.stage}
-                        </td>
-                        <td className="px-[14px] py-2.5 border-b border-border text-right num">
-                          {s.remaining}
-                        </td>
-                        <td
-                          className="px-[14px] py-2.5 border-b border-border text-right num"
-                          style={{
-                            color: s.removed > 0 ? "var(--short)" : "var(--text-tertiary)",
-                          }}
-                        >
-                          {s.removed > 0 ? `−${s.removed}` : "0"}
-                        </td>
-                        <td className="px-[18px] py-2.5 border-b border-border text-text-secondary text-[12px]">
-                          {s.reason}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </ScrollArea>
-            ) : (
-              <EmptyState
-                title="No funnel recorded for this run"
-                cause="screening_funnel is populated by q1_agent.screen_candidates from migration 022 onward. This row predates it, or the agent did not reach the screening stage."
-                remedy="Re-run the pipeline; the next run records attrition per filter."
-                source="research_recommendations.screening_funnel"
-                compact
-              />
-            )}
-          </CollapsibleSection>
+          {/* The screening funnel table used to live here. It is now a
+              disclosure on `From pool to book`, which summarises the same
+              screen: one dataset, one location, and the per-stage detail
+              attached to the chain it details rather than in another tab. */}
 
           {/* ── Book risks (collapsed — expand for the tail risks) ─────── */}
           {canRenderAdvisoryBody(advisory) &&

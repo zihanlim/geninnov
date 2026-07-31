@@ -298,20 +298,79 @@ export default function BookFunnel({
               the book. A name the sizer did not fund has no published row and so has no
               lineage to show; it appears on the step that removed it.
             </>
-          )}{" "}
-          {/* The first edge names only the stages that REMOVED something, which is the
-              right summary and an incomplete audit: on this run six of the seven screen
-              stages removed nothing, and "the factor R-squared filter removed 0" is a
-              fact a reader checking the screen needs. That listing exists, collapsed,
-              under Audit — so point at it rather than reprinting it here or leaving two
-              views of one dataset unaware of each other. */}
-          The screen&rsquo;s remaining stages, including those that removed nothing, are
-          listed per stage under{" "}
-          <a href="#audit" className="text-accent hover:underline">
-            Audit &rarr; Screening funnel
-          </a>
-          .
+          )}
         </p>
+
+        {/* ── The screen, stage by stage ────────────────────────────────────
+            The chain's first edge names only the stages that REMOVED something,
+            because a cause is what a summary is for. But "the factor R-squared
+            filter removed 0" is a fact a reader auditing the screen needs, and
+            on this run six of the seven stages are exactly that.
+
+            That listing lived in a separate collapsed `Audit -> Screening
+            funnel` section: one dataset rendered twice, in two tabs, neither
+            aware of the other — and briefly a sentence here pointing at the
+            other one. A signpost between two panels is evidence they are one
+            panel. So the detail now sits on the summary it details, closed by
+            default. Same rule ADR-0204 applied to the lineage, which belongs to
+            the position rather than to a panel across the page. */}
+        {(inputs.screeningFunnel?.length ?? 0) > 0 && (
+          <details className="mt-3 group" data-testid="funnel-stages">
+            <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-[11px] text-text-tertiary hover:text-text-primary">
+              <span className="group-open:hidden">Show</span>
+              <span className="hidden group-open:inline">Hide</span>
+              {" "}all {inputs.screeningFunnel!.length} screen stages, including those
+              that removed nothing
+            </summary>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full border-collapse text-[12px]">
+                <caption className="sr-only">
+                  Candidate attrition by screening stage.
+                </caption>
+                <thead>
+                  <tr>
+                    {["Stage", "Remaining", "Removed", "Why"].map((h, i) => (
+                      <th
+                        key={h}
+                        className={`px-3 py-1.5 text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-b border-border ${
+                          i === 1 || i === 2 ? "text-right" : "text-left"
+                        }`}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {inputs.screeningFunnel!.map((st) => (
+                    <tr key={st.stage}>
+                      <td className="px-3 py-1.5 border-b border-border num text-[11.5px]">
+                        {st.stage}
+                      </td>
+                      <td className="px-3 py-1.5 border-b border-border text-right num">
+                        {st.remaining}
+                      </td>
+                      <td
+                        className="px-3 py-1.5 border-b border-border text-right num"
+                        style={{
+                          color:
+                            (st.removed ?? 0) > 0
+                              ? "var(--short)"
+                              : "var(--text-tertiary)",
+                        }}
+                      >
+                        {(st.removed ?? 0) > 0 ? `−${st.removed}` : "0"}
+                      </td>
+                      <td className="px-3 py-1.5 border-b border-border text-text-secondary">
+                        {st.reason}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        )}
       </div>
     </section>
   );

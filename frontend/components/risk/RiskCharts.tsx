@@ -402,6 +402,45 @@ type ChartPosition = {
   conviction: number | null;
 };
 
+/** Below this the scatter draws nothing: one point plots no relationship. */
+export const SCATTER_MIN_POINTS = 2;
+
+/**
+ * The points the scatter would plot — held positions that carry a conviction
+ * AND appear in the risk decomposition.
+ *
+ * Exported because RiskBody has to know the same answer BEFORE it renders, and
+ * a second copy of the rule there would be a second answer to "is this chart on
+ * screen" that drifts the first time the filter changes.
+ *
+ * Why RiskBody needs it at all: the scatter's "still the multi-asset book"
+ * marker sits outside the two-column grid, and the lens banner names the panels
+ * a reader will find below it. Both become wrong the moment this returns fewer
+ * than SCATTER_MIN_POINTS — the marker slides down onto the risk-contribution
+ * waterfall beside it, which is the LENS-FOLLOWING panel, and the banner names
+ * a panel that is not on the page. Not hypothetical under a lens:
+ * `portfolio_positions` is lens-less while `risk_decomposition` follows the
+ * lens, so on run_date 2026-07-30 the held names {BABA, F, GEV, GLD, NOC, PDD,
+ * SMH, UNG, UNH} and the credit book's decomposition {BIL, BKLN, EMB} intersect
+ * in nothing at all.
+ */
+export function positionRiskScatterPoints(
+  positions: readonly ChartPosition[],
+  decomposition?: RiskDecompositionRow | null,
+): Array<ChartPosition & { contribution: number }> {
+  const contributionByAsset = new Map(
+    (decomposition?.positions ?? [])
+      .filter((position) => typeof position.asset === "string" && isNum(position.contribution_to_vol))
+      .map((position) => [position.asset, position.contribution_to_vol as number]),
+  );
+  return positions
+    .filter((position) => isNum(position.conviction) && contributionByAsset.has(position.asset))
+    .map((position) => ({
+      ...position,
+      contribution: contributionByAsset.get(position.asset) as number,
+    }));
+}
+
 export function PositionRiskScatter({
   positions,
   decomposition,
@@ -409,18 +448,8 @@ export function PositionRiskScatter({
   positions: ChartPosition[];
   decomposition?: RiskDecompositionRow | null;
 }) {
-  const contributionByAsset = new Map(
-    (decomposition?.positions ?? [])
-      .filter((position) => typeof position.asset === "string" && isNum(position.contribution_to_vol))
-      .map((position) => [position.asset, position.contribution_to_vol as number]),
-  );
-  const points = positions
-    .filter((position) => isNum(position.conviction) && contributionByAsset.has(position.asset))
-    .map((position) => ({
-      ...position,
-      contribution: contributionByAsset.get(position.asset) as number,
-    }));
-  if (points.length < 2) return null;
+  const points = positionRiskScatterPoints(positions, decomposition);
+  if (points.length < SCATTER_MIN_POINTS) return null;
   const omitted = positions.length - points.length;
 
   const chartWidth = 620;

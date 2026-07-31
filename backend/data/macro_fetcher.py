@@ -102,9 +102,22 @@ YFINANCE_TICKERS = {
 # EQUITY_INDICES, so the VIX cell of the tape had never once rendered.
 #
 # Every ticker below was resolved against yfinance before being written down.
-# The one asset that could not be: Coinbase's COIN 50 index has no Yahoo symbol
-# (`COIN50-USD` → "Quote not found"), so the crypto group is BTC/ETH/SOL and
-# says nothing about a fourth.
+#
+# The one asset that could not be is Coinbase's COIN 50, and NOT because it does
+# not exist — it is published at coinbase.com/coin50, administered by
+# MarketVector, and stood at ~244.72 on 2026-07-31. It is credentialed-only:
+# the index endpoint (api.international.coinbase.com/api/v1/index/COIN50/price)
+# returns 401 without an HMAC-signed CB-ACCESS-KEY + passphrase, COIN50 appears
+# nowhere in Coinbase's two public product catalogues, MarketVector's site
+# refuses automated clients with a CloudFront 403, and no yfinance symbol
+# variant resolves. See ADR-0196 for the full probe.
+#
+# DO NOT "fix" this with the free feeds that do return a COIN50 price.
+# LiveCoinWatch, CoinRanking, DEXTools and coinbase.com/price/base-coinbase-50-index
+# all quote a TOKENISED COIN50 on Base at ~$0.000058 — a different instrument,
+# off by seven orders of magnitude from the index. Free, keyless, and wrong.
+#
+# So the crypto group is BTC/ETH/SOL and says nothing about a fourth.
 RIBBON_GROUPS: dict[str, list[tuple[str, str, str]]] = {
     # group: [(ticker, display name, unit)]
     "US": [

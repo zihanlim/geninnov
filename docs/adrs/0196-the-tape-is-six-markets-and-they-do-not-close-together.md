@@ -81,9 +81,31 @@ apply the same rule — the backend so the digits exist, the frontend so they sh
 
 - The tape is 23 tickers in six groups, all resolved against yfinance before
   being written down rather than assumed.
-- **Coinbase's COIN 50 is not on it.** It has no Yahoo symbol (`COIN50-USD` →
-  "Quote not found"), so the crypto group is BTC/ETH/SOL and claims no fourth.
-  This is the one asset from the request that could not be sourced.
+- **Coinbase's COIN 50 is not on it**, and the reason is not that it does not
+  exist. It is published at `coinbase.com/coin50` and administered by
+  MarketVector; the level on 2026-07-31 was ~244.72. It is *credentialed-only*.
+  Probed, 2026-07-31:
+
+  | Source | Result |
+  |---|---|
+  | `api.international.coinbase.com/api/v1/index/COIN50/price` | 401 — needs `CB-ACCESS-KEY` + passphrase + HMAC-SHA256 signature |
+  | Coinbase public product catalogs (350KB + 613KB of JSON) | zero matches for `COIN50` — not a public spot or brokerage product |
+  | `api.exchange.coinbase.com` / `api.coinbase.com/v2` `COIN50-USD` | 404 |
+  | `marketvector.com/coin50` (the administrator) | 403, CloudFront "Request blocked" — automated clients refused |
+  | yfinance, 7 symbol variants (`^COIN50`, `COIN50.CI`, `^CB50`, …) | all empty |
+
+  **The trap to avoid:** LiveCoinWatch, CoinRanking, DEXTools and
+  `coinbase.com/price/base-coinbase-50-index` all return a "COIN50" priced at
+  **~$0.000058**. That is a *tokenised* COIN50 on Base — a different instrument
+  from the index level, off by seven orders of magnitude. It is free, keyless,
+  and wrong, which is the combination most likely to get wired in by someone
+  checking only that a number came back.
+
+  Owner's decision, 2026-07-31: leave it off rather than add a credentialed
+  provider (three new secrets, HMAC signing, and a client nobody could test
+  before shipping it) for one cell of a decorative tape. The crypto group is
+  BTC/ETH/SOL and claims no fourth. Revisit only if Coinbase International
+  credentials exist for another reason.
 - `macro_daily_history` gains 17 series. Purely additive — every existing reader
   selects the `series_id`s it already knows — but the table is now ~2.7× wider
   per day and `backfill_regime.py` reads it.

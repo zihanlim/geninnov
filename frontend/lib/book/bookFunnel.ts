@@ -101,6 +101,19 @@ export interface FunnelNode {
   source: string;
   /** Set only when `total` is null (goal 2). */
   cause?: string;
+  /**
+   * A qualifier the count would be misread without.
+   *
+   * Exists for exactly one node so far, and for a reason worth stating: the
+   * first node's figures are NOT this book's. `trade_candidates` has no lens
+   * column — L1 ranks names before a lens is chosen — so `/book?lens=credit`
+   * opens on 42 candidates split 29 long / 13 short, and neither number
+   * describes the credit universe. The next edge removes 31 of them. Without a
+   * qualifier a reader has to infer "shared" from the edge that follows, which
+   * is ADR-0200's failure (a pool belonging to another book, shown unmarked)
+   * one panel over from where it was just fixed.
+   */
+  note?: string;
 }
 
 /** The transition INTO a node: what happened, and how many it cost. */
@@ -293,6 +306,7 @@ export function buildBookFunnel(inp: FunnelInputs): BookFunnel {
       short: rawSplit ? rawSplit.short : null,
       total: bounds.first,
       unit: "candidates",
+      note: "One pool, before any lens — L1 ranks names first and every lens screens these same rows.",
       source: rawSplit
         ? "research_recommendations.screening_funnel + trade_candidates.direction"
         : "research_recommendations.screening_funnel",

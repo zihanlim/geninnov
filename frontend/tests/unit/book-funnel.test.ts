@@ -388,6 +388,27 @@ describe("the first node's split, and what the lens does to it", () => {
     expect(screen?.long).toBeNull();
     expect(screen?.total).toBe(42);
   });
+
+  it("qualifies the first node as the SHARED pool, on every lens", () => {
+    // /book?lens=credit opens on 42 candidates split 29L/13S, and neither
+    // number describes the credit universe. Without this the reader has to
+    // infer "shared" from the edge that follows -- ADR-0200's failure (another
+    // book's pool shown unmarked) one panel over from where it was just fixed.
+    for (const inputs of [LIVE, CREDIT]) {
+      const screen = buildBookFunnel({ ...inputs, candidates: RAW42 }).nodes.find(
+        (n) => n.id === "screen",
+      );
+      expect(screen?.note, "the shared pool is unqualified").toBeTruthy();
+      expect(screen?.note).toContain("before any lens");
+    }
+  });
+
+  it("qualifies no OTHER node - every one of those is this book's own", () => {
+    const f = buildBookFunnel({ ...CREDIT, candidates: RAW42 });
+    for (const n of f.nodes.filter((x) => x.id !== "screen")) {
+      expect(n.note, `${n.id} should not need a qualifier`).toBeUndefined();
+    }
+  });
 });
 
 describe("splitPicks", () => {

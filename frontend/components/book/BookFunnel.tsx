@@ -106,6 +106,13 @@ function Node({
           <Split long={node.long} short={node.short} />
         </>
       )}
+      {/* Rendered directly under the count it qualifies, not in the prose block
+          below the chain: a reader who reads "42 candidates, 29 long" on the
+          credit page and looks away has already taken a number that is not this
+          book's. The qualifier has to be inside the same card. */}
+      {node.note && (
+        <p className="m-0 text-[10.5px] text-text-tertiary leading-[1.45]">{node.note}</p>
+      )}
       {children}
       {/* Goal 1: the figure names the column it came from, on the same card.
           `break-all` split every one of these mid-word at a ~200px column

@@ -1528,9 +1528,20 @@ function BookPageInner() {
               size. Phase 4 of the process map (ADR-0169) links here, and an
               anchor that disappears with the data is a link that silently
               scrolls to the top of the page. */}
-          <div id="sizing" className="panel p-4 mb-6">
-            <h3 className="text-[13px] font-semibold mb-1">Sizing</h3>
-            <p className="text-[11.5px] text-text-tertiary leading-[1.55] mb-3">
+          {/* A `card`, like every other instrument on this page. It was a bare
+              `panel p-4` with its own `h3` — the only section on /book framed
+              differently from its neighbours, which made "how was this sized"
+              read as an aside rather than as one of the page's instruments. The
+              `id` stays on the outer element for the reason above. */}
+          <section id="sizing" className="card mb-6" aria-label="Sizing">
+            <div className="card-header">
+              <h2 className="card-title m-0">Sizing</h2>
+              <span className="text-[11px] text-text-tertiary">
+                What set the weights
+              </span>
+            </div>
+            <div className="card-body">
+            <p className="m-0 mb-3 text-[11.5px] text-text-tertiary leading-[1.55]">
               The agent picks the names and the sides. This is what set the sizes.
             </p>
             <SizingProvenance
@@ -1541,7 +1552,8 @@ function BookPageInner() {
               heuristicWeights={rec?.heuristic_weights ?? null}
               rebalanceCost={rec?.rebalance_cost ?? null}
             />
-          </div>
+            </div>
+          </section>
 
           {/* ── Abstention roster ───────────────────────────────────────── */}
           </section>

@@ -1239,33 +1239,32 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
 
       {/* The boundary, stated once at the top rather than inferred from scattered
           chips: which panels below are the lens the reader chose, and which are
-          still the multi-asset published book. Returns null at multi_asset, so it
-          is absent from the default page entirely — its own guard, not this call
-          site's.
+          still the multi-asset published book.
 
-          ON /risk ONLY, the boundary card moves BESIDE the header instead of
-          hanging below it. The page-level "what is still the multi-asset book"
-          statement is the counterpart of the header's lede — read against the
-          prose that says what this page is, not buried a screen under it — and
-          at 1440 the header already owns 172px of 1344px with its lede at
-          ~600px wide, so the card takes the width the lede does not use. The
-          tight slot hands `side`, which stacks the card's own body (the
+          ON /risk AND /mandate, the boundary card moves BESIDE the header
+          instead of hanging below it. The page-level "what is still the
+          multi-asset book" statement is the counterpart of the header's lede —
+          read against the prose that says what this page is, not buried a screen
+          under it — and at 1440 the header already owns 172px of 1344px with its
+          lede at ~600px wide, so the card takes the width the lede does not use.
+          The tight slot hands `side`, which stacks the card's own body (the
           full-width form is two-column, and two ~200px columns inside ~480px
           would wrap the long `Ident` table names mid-word).
 
           Both cells leave the page with `items-start`, so the card never
           stretches the header and the header never stretches the card.
 
-          Under the DEFAULT lens the banner does not render at all, so this
-          grid is a no-op there — the markup is the old single header,
-          byte-identical. The risk-phase condition plus the banner's own
-          `lens === DEFAULT_LENS` guard would be enough by themselves, but the
-          third term (`length > 0`) keeps the wrapper off the page on the one
-          run where a lens published no boundary to state — a stray grid that
-          does nothing but divide a screen is not an improvement. */}
-      {phase === "risk" &&
-      data.resolvedLens !== DEFAULT_LENS &&
-      lensLessOnThisPhase.length > 0 ? (
+          The side variant now renders under EVERY lens, default included —
+          not only under a non-default one. The credit-lens page describes
+          which panels are exceptions; the default page collapses to a single
+          sentence ("no panel draws on the lens-less tables"), so the two
+          views sit on the same three-column shape and a reader who switches
+          lens here keeps the header geometry. The full-width form below is
+          still default-lens-suppressed (its own guard inside LensScope),
+          so a default-lens page does not stack two banners. /attribution is
+          pinned to multi_asset and keeps its own single PageHeader with the
+          `fine` line — the side layout is a no-op there. */}
+      {phase !== "attribution" ? (
         <div className="grid xl:grid-cols-[minmax(0,1fr)_480px_auto] gap-6 items-start mb-7 [&>*]:min-w-0">
           <PageHeader
             className="mb-0"
@@ -1312,59 +1311,55 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           </div>
         </div>
       ) : (
-        <>
-          <PageHeader
-            title={PHASE_COPY[phase].title}
-            lede={PHASE_COPY[phase].lede}
-            // /attribution is pinned to multi_asset, and on a day when a second lens
-            // has published a book that pin needs saying. A reader who arrived from
-            // /risk?lens=credit — the only route by which they could hold the credit
-            // book in mind — must not read this page's forward record as the credit
-            // book's. One tertiary line, not an alert: nothing is wrong here.
-            //
-            // Gated on a second lens EXISTING, which is precisely the condition under
-            // which the confusion is reachable: /risk only offers ?lens=credit when
-            // the credit book published. With one book there is nothing to
-            // disambiguate, and the sentence would be noise on the default page.
-            fine={
-              !lensEnabled && lensOffered.length > 1 ? (
-                <>
-                  This page reports the multi-asset book only. The forward record and
-                  the realised return series have no lens column (ADR-0194), so there
-                  is no per-lens version of them to show
-                  {/* The exception, named, because the old sentence ended at "no
-                      per-lens version of them to show" and that is FALSE for one panel
-                      here. `weights_backtest` lives on `research_recommendations`, which
-                      migration 062 keyed on (run_date, lens), and the credit book
-                      publishes its own: +4.13% cumulative at Sharpe 1.88 against the
-                      multi-asset +13.23% at 1.42 on the 2026-07-30 run. The pin still
-                      holds — `lensEnabled` is false on this phase, so the read is
-                      multi_asset — but a reader was being told a figure does not exist
-                      when what is true is that this page is not showing it. Those are
-                      different claims, and only one of them is checkable. */}
-                  {" "}
-                  — with one exception: the weights backtest below <em>is</em> published
-                  per lens, and the figures here are the multi-asset book&rsquo;s. The
-                  other lens&rsquo;s is on <Ident>/book</Ident> under that lens.
-                </>
-              ) : undefined
-            }
-            meta={[
-              { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
-              {
-                // The lens the ROW claims, not the lens the page queried. They should
-                // always agree; if a run ever writes a row whose `lens` differs from
-                // the key it was fetched by, this is where it shows, and the scope
-                // disclosures below still describe the query that produced the page.
-                label: "Lens",
-                value: data.loading ? "…" : (data.lens ?? "not recorded"),
-                capitalize: true,
-              },
-            ]}
-          />
-
-          <LensScopeBanner lens={data.resolvedLens} panels={lensLessOnThisPhase} />
-        </>
+        <PageHeader
+          title={PHASE_COPY[phase].title}
+          lede={PHASE_COPY[phase].lede}
+          // /attribution is pinned to multi_asset, and on a day when a second lens
+          // has published a book that pin needs saying. A reader who arrived from
+          // /risk?lens=credit — the only route by which they could hold the credit
+          // book in mind — must not read this page's forward record as the credit
+          // book's. One tertiary line, not an alert: nothing is wrong here.
+          //
+          // Gated on a second lens EXISTING, which is precisely the condition under
+          // which the confusion is reachable: /risk only offers ?lens=credit when
+          // the credit book published. With one book there is nothing to
+          // disambiguate, and the sentence would be noise on the default page.
+          fine={
+            !lensEnabled && lensOffered.length > 1 ? (
+              <>
+                This page reports the multi-asset book only. The forward record and
+                the realised return series have no lens column (ADR-0194), so there
+                is no per-lens version of them to show
+                {/* The exception, named, because the old sentence ended at "no
+                    per-lens version of them to show" and that is FALSE for one panel
+                    here. `weights_backtest` lives on `research_recommendations`, which
+                    migration 062 keyed on (run_date, lens), and the credit book
+                    publishes its own: +4.13% cumulative at Sharpe 1.88 against the
+                    multi-asset +13.23% at 1.42 on the 2026-07-30 run. The pin still
+                    holds — `lensEnabled` is false on this phase, so the read is
+                    multi_asset — but a reader was being told a figure does not exist
+                    when what is true is that this page is not showing it. Those are
+                    different claims, and only one of them is checkable. */}
+                {" "}
+                — with one exception: the weights backtest below <em>is</em> published
+                per lens, and the figures here are the multi-asset book&rsquo;s. The
+                other lens&rsquo;s is on <Ident>/book</Ident> under that lens.
+              </>
+            ) : undefined
+          }
+          meta={[
+            { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
+            {
+              // The lens the ROW claims, not the lens the page queried. They should
+              // always agree; if a run ever writes a row whose `lens` differs from
+              // the key it was fetched by, this is where it shows, and the scope
+              // disclosures below still describe the query that produced the page.
+              label: "Lens",
+              value: data.loading ? "…" : (data.lens ?? "not recorded"),
+              capitalize: true,
+            },
+          ]}
+        />
       )}
 
       {/* Every number below is computed on portfolio_positions. When that table has
@@ -1664,17 +1659,24 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           tool placed ahead of the finding it is for. The what-if follows, which
           also reads better: a reader now varies a shock they have already seen.
 
-          Under a NON-DEFAULT lens the two sit side by side at 3/4 + 1/4 — the
-          persisted matrix is the answer and takes the wide column, the browser
-          estimate that explores it takes the narrow one (and its `compact`
-          single-column body). Under the default lens the layout is the original
-          full-width stack. */}
+          Under a NON-DEFAULT lens the three live in the same grid: stress
+          matrix (3/4) on the left, what-if (1/4) on the right top, sanctions
+          exposure (1/4) on the right bottom. The right column is a flex column
+          pinned to the grid's row height: WhatIf sits at the top so its card top
+          aligns with the Stress card top, and the Sanctions wrapper uses
+          `mt-auto` so the card drops to the same baseline as the Stress card
+          bottom. `self-start` on the left keeps the Stress card at its natural
+          height — if the right column is naturally shorter, the gap between
+          WhatIf and Sanctions fills the empty space; if it is naturally taller
+          (the credit-lens default), the Stress card stays compact and the
+          Sanctions card drops below the row's natural size. Under the default
+          lens the layout is the original full-width stack. */}
       {data.resolvedLens !== DEFAULT_LENS ? (
-        <div className="grid xl:grid-cols-4 gap-6 items-start mb-6 [&>*]:min-w-0 [&_.card]:mb-0">
-          <div className="xl:col-span-3">
+        <div className="grid xl:grid-cols-4 gap-6 mb-6 [&>*]:min-w-0 [&_.card]:mb-0">
+          <div className="xl:col-span-3 self-start">
             <StressScenarios compact state={scenarioState} />
           </div>
-          <div className="xl:col-span-1">
+          <div className="xl:col-span-1 flex flex-col">
             <WhatIfScenario
               compact
               loading={data.loading}
@@ -1694,12 +1696,11 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
                 ) : undefined
               }
             />
-            {/* Sanctions exposure, under the what-if in the same 1/4 column: the
-                active lens's own reading — sanctions_exposure follows the lens —
-                so it takes the narrow track beside the persisted stress matrix
-                exactly as the what-if does. Spaced with a wrapper's mt-6 rather
-                than the card's own mb-6, which the grid's [&_.card]:mb-0 zeroes. */}
-            <div className="mt-6">
+            {/* mt-auto pushes Sanctions to the bottom of the right column so
+                its card bottom lines up with the Stress card bottom (or the
+                row bottom if the right column is naturally taller). pt-6 keeps
+                a minimum gap between the two cards. */}
+            <div className="mt-auto pt-6">
               <SanctionsExposure state={sanctionsState} />
             </div>
           </div>
@@ -1730,18 +1731,15 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
               ) : undefined
             }
           />
+          {/* 6b — Sanctions exposure, beside the stress table because it is the same kind of
+              claim: what the book does under a shock it did not choose. ADR-0096.
+              Under the DEFAULT lens it stays the full-width stack below the what-if.
+              Under a NON-DEFAULT lens it has already rendered inside the 1/4 column
+              under the what-if (see the stress grid above), so it is NOT repeated
+              here. PositioningCrowding moved to the attribution section (2/4 right
+              beside per-position attribution). */}
+          <SanctionsExposure state={sanctionsState} />
         </>
-      )}
-
-      {/* 6b — Sanctions exposure, beside the stress table because it is the same kind of
-          claim: what the book does under a shock it did not choose. ADR-0096.
-          Under the DEFAULT lens it stays the full-width stack below the what-if.
-          Under a NON-DEFAULT lens it has already rendered inside the 1/4 column
-          under the what-if (see the stress grid above), so it is NOT repeated
-          here. PositioningCrowding moved to the attribution section (2/4 right
-          beside per-position attribution). */}
-      {data.resolvedLens === DEFAULT_LENS && (
-        <SanctionsExposure state={sanctionsState} />
       )}
       </section>
       )}

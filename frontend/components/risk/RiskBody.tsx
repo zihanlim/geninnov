@@ -1285,22 +1285,31 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
               column to the RIGHT of the scope banner, not tucked inside the
               title/lede cell. The toggle above shows the lens the reader PICKED;
               this shows the lens the ROW claims, so the boundary disclosures
-              that follow still describe the query that produced the page. */}
-          <PageHeaderMeta
-            meta={[
-              { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
-              {
-                // The lens the ROW claims, not the lens the page queried. They
-                // should always agree; if a run ever writes a row whose `lens`
-                // differs from the key it was fetched by, this is where it shows,
-                // and the scope disclosures below still describe the query that
-                // produced the page.
-                label: "Lens",
-                value: data.loading ? "…" : (data.lens ?? "not recorded"),
-                capitalize: true,
-              },
-            ]}
-          />
+              that follow still describe the query that produced the page.
+
+              The wrapper pins the block to the multi-asset header's geometry
+              (measured 100.2 × 134.81 at the standard viewport): `self-start`
+              keeps it from stretching to the banner's row height, `xl:mt` drops
+              it below the title so its text lines up with the lede, and the fixed
+              width/height make the divider span exactly the lede — the same
+              right-aligned block with a vertical rule the default page shows. */}
+          <div className="grid self-start xl:mt-[37px] xl:h-[134.81px] xl:w-[100.2px]">
+            <PageHeaderMeta
+              meta={[
+                { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
+                {
+                  // The lens the ROW claims, not the lens the page queried. They
+                  // should always agree; if a run ever writes a row whose `lens`
+                  // differs from the key it was fetched by, this is where it shows,
+                  // and the scope disclosures below still describe the query that
+                  // produced the page.
+                  label: "Lens",
+                  value: data.loading ? "…" : (data.lens ?? "not recorded"),
+                  capitalize: true,
+                },
+              ]}
+            />
+          </div>
         </div>
       ) : (
         <>
@@ -1948,14 +1957,26 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           its card ~190px below CostDrag's and stair-step the pair. CostDrag now
           sits BEFORE the drawdown curve rather than directly above it — the
           correction arriving before the chart is the same guarantee, one row
-          earlier. */}
+          earlier. WeightsBacktest stacks UNDER the Published picks card in the
+          left cell since 2026-08-02 — "what these weights would have done" reads
+          as a second layer of realised evidence beneath "what the published
+          books actually did". */}
       {!data.loading && data.holdings.length > 0 ? (
         <>
           <section id="track-record">
             <TrackRecordHeading />
           </section>
           <div className="mt-3 grid xl:grid-cols-2 gap-6 items-start [&>*]:min-w-0 [&>*]:mb-0">
-            <TrackRecord framed={false} rows={data.outcomeRows} publishedByRunDate={data.publishedByRunDate} />
+            <div className="flex flex-col gap-6 [&>section]:flex-1">
+              <TrackRecord framed={false} rows={data.outcomeRows} publishedByRunDate={data.publishedByRunDate} />
+              {/* WeightsBacktest — stacked UNDER the Published picks card since
+                  2026-08-02 (it was a full-width row above the chart trio). The
+                  two cards that answer "what these weights would have done" and
+                  "what the published books actually did" now read as one column
+                  of realised evidence. WeightsBacktest renders a self-contained
+                  card with its caveat at the top and needs no surrounding prose. */}
+              <WeightsBacktest data={data.analyticsRow?.weights_backtest ?? null} />
+            </div>
             <CostDrag
               rows={data.holdings}
               publishedCumulative={
@@ -1968,17 +1989,13 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           </div>
         </>
       ) : (
-        <TrackRecord rows={data.outcomeRows} publishedByRunDate={data.publishedByRunDate} />
+        <>
+          <TrackRecord rows={data.outcomeRows} publishedByRunDate={data.publishedByRunDate} />
+          <div className="mt-3">
+            <WeightsBacktest data={data.analyticsRow?.weights_backtest ?? null} />
+          </div>
+        </>
       )}
-
-      {/* WeightsBacktest — full-width row above the chart trio (2026-08-02).
-          Previously paired with BenchmarkComparison (ADR-0172); that pairing is
-          dissolved so BenchmarkComparison can take the left 2/4 of the chart
-          grid instead. WeightsBacktest renders a self-contained card with its
-          caveat at the top and needs no surrounding prose. */}
-      <div className="mt-3">
-        <WeightsBacktest data={data.analyticsRow?.weights_backtest ?? null} />
-      </div>
 
       {/* The caveat spans full-width above the chart trio so the three panels share
           the same horizontal reference line below it. Stated before the curve,

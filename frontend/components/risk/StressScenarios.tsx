@@ -84,14 +84,18 @@ function ShockChips({
 // All of it gated at `wide` (1424px). Below that there is no surplus to park —
 // the table is at its 720px floor and scrolling — and pinning would only raise
 // the floor, making a phone scroll further to reach the same numbers.
-const COLUMNS = [
-  { label: "Scenario", width: "wide:w-[34rem]" },
-  { label: "Book return", width: "wide:w-[8.5rem]" },
-  { label: "P&L ($M)", width: "wide:w-[8.5rem]" },
+// In `compact` mode the table uses auto layout, so the fixed column widths are
+// omitted and the trailing column still absorbs surplus (a column without a
+// width takes the remainder under `table-fixed`, and under auto layout the
+// `Scenario` content cap does the same job).
+const COLUMNS = (compact: boolean) => [
+  { label: "Scenario", width: compact ? "" : "wide:w-[34rem]" },
+  { label: "Book return", width: compact ? "" : "wide:w-[8.5rem]" },
+  { label: "P&L ($M)", width: compact ? "" : "wide:w-[8.5rem]" },
   // 8rem, not 7: under `table-fixed` a column cannot grow for its content, and
   // the vocabulary is low / moderate / high / severe — the live book is all LOW,
   // so a column sized by eye today would clip the first MODERATE run.
-  { label: "Severity", width: "wide:w-[8rem]" },
+  { label: "Severity", width: compact ? "" : "wide:w-[8rem]" },
   { label: "", width: "" },
 ];
 
@@ -190,8 +194,17 @@ function ScenarioRow({
 
 export function StressScenarios({
   state,
+  compact = false,
 }: {
   state: AnalyticsState<ScenarioResult[]>;
+  /**
+   * Renders the table in auto layout, for a card in a narrow (3/4) column.
+   * The full-width form uses `wide:table-fixed` with fixed column widths tuned
+   * to ~1344px; at ~1000px (3/4) those widths overflow by ~48px and the card
+   * would scroll left-right, which the layout directive forbids. Auto layout
+   * sizes the columns to content within the available width instead.
+   */
+  compact?: boolean;
 }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
@@ -282,7 +295,11 @@ export function StressScenarios({
             <StressScenarioChart scenarios={rows} />
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[13px] min-w-[720px] wide:table-fixed">
+            <table
+              className={`w-full border-collapse text-[13px] min-w-[720px] ${
+                compact ? "" : "wide:table-fixed"
+              }`}
+            >
               <caption className="sr-only">
                 Estimated book return and P&amp;L under each stress scenario, sorted
                 worst first. Each row expands to the per-position contribution
@@ -290,7 +307,7 @@ export function StressScenarios({
               </caption>
               <thead>
                 <tr>
-                  {COLUMNS.map((col, i) => (
+                  {COLUMNS(compact).map((col, i) => (
                     <th
                       key={col.label || `col-${i}`}
                       scope="col"

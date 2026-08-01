@@ -104,7 +104,7 @@ export function LensScopeBanner({
 
   return (
     <div
-      className="card mb-6"
+      className={side ? "card h-full flex flex-col overflow-hidden" : "card mb-6"}
       role="note"
       aria-labelledby="lens-scope-title"
       data-testid="lens-scope-banner"
@@ -133,13 +133,49 @@ export function LensScopeBanner({
           holds seven inline `Ident` table names and a grid cell defaults to
           min-content: without it the longest identifier sets the column width
           and pushes the left one under it. Single column below `lg`, where two
-          would each be under 45ch — and always single column when `side`, for
-          the same reason at a ~480px card width. */}
-      <div className="p-[18px] pt-3 text-[12.5px] text-text-secondary leading-[1.65]">
-        {panels.length > 0 ? (
-          <div
-            className={`grid gap-x-9 gap-y-2 [&>*]:min-w-0 ${side ? "" : "lg:grid-cols-2"}`}
-          >
+          would each be under 45ch.
+
+          The `side` form is DIFFERENT: it lives in a fixed ~175px cell beside
+          the page header, so only the intro sentence stays visible and the
+          panel lists plus the standing explanation sit behind a single
+          `<details>`. The full-width form keeps its two-column split and the
+          explanation as a visible paragraph. */}
+      {side ? (
+        <div className="flex-1 flex flex-col p-[14px] pt-2.5 text-[12px] text-text-secondary leading-[1.5] min-w-0">
+          <p className="m-0">
+            Every figure below is read from the {lensLabel(lens)} book published
+            for this run, with these exceptions.
+          </p>
+          <details className="group mt-1.5">
+            <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-[11px] text-text-tertiary hover:text-text-primary">
+              <span className="group-open:hidden">Show</span>
+              <span className="hidden group-open:inline">Hide</span>
+              {" "}which panels &amp; why
+            </summary>
+            <div className="mt-2 space-y-2">
+              {wholly.length > 0 && (
+                <p className="m-0">
+                  Entirely the <strong>multi-asset</strong> published book —
+                  nothing in them follows the lens:{" "}
+                  <span className="text-text-primary">{wholly.join(", ")}</span>.
+                </p>
+              )}
+              {partly.length > 0 && (
+                <p className="m-0">
+                  <strong>Part multi-asset</strong> — some rows follow the lens
+                  and the rest are the multi-asset book&rsquo;s, inside one panel
+                  under one heading:{" "}
+                  <span className="text-text-primary">{partly.join(", ")}</span>.
+                  Which rows are which is in each panel&rsquo;s own marker.
+                </p>
+              )}
+              <p className="m-0">{why}</p>
+            </div>
+          </details>
+        </div>
+      ) : panels.length > 0 ? (
+        <div className="p-[18px] pt-3 text-[12.5px] text-text-secondary leading-[1.65]">
+          <div className="grid gap-x-9 gap-y-2 lg:grid-cols-2 [&>*]:min-w-0">
             <div className="max-w-[92ch]">
               <p className="m-0">
                 Every figure below is read from the {lensLabel(lens)} book
@@ -164,36 +200,21 @@ export function LensScopeBanner({
             </div>
             {/* `m-0`, not `mt-2`: at one column the grid's own `gap-y-2` already
                 supplies exactly that gap, and at two it would push this column
-                8px below the one beside it for no reason.
-
-                In `side` mode the standing explanation collapses behind a
-                `<details>` — that form exists to make the card match the
-                header's height, and this paragraph is the bulk of what made it
-                tall. The full-width form keeps it as a paragraph, because its
-                two-column "WHICH panels / WHY" split is the design there. */}
-            {side ? (
-              <details className="group">
-                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-[11px] text-text-tertiary hover:text-text-primary">
-                  <span className="group-open:hidden">Show</span>
-                  <span className="hidden group-open:inline">Hide</span>
-                  {" "}why these can&rsquo;t follow the lens
-                </summary>
-                <p className="m-0 mt-2 max-w-[92ch]">{why}</p>
-              </details>
-            ) : (
-              <p className="m-0 max-w-[92ch]">{why}</p>
-            )}
+                8px below the one beside it for no reason. */}
+            <p className="m-0 max-w-[92ch]">{why}</p>
           </div>
-        ) : (
-          // One sentence and nothing to pair it with — a two-column grid here
-          // would be a half-empty row, which is the defect above in miniature.
+        </div>
+      ) : (
+        // One sentence and nothing to pair it with — a two-column grid here
+        // would be a half-empty row, which is the defect above in miniature.
+        <div className="p-[18px] pt-3 text-[12.5px] text-text-secondary leading-[1.65]">
           <p className="m-0 max-w-[92ch]">
             Every figure below is read from the {lensLabel(lens)} book published
             for this run. No panel on this page draws on the lens-less tables
             (ADR-0194), so nothing here is the multi-asset book&rsquo;s.
           </p>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

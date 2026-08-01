@@ -1260,38 +1260,37 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       data.resolvedLens !== DEFAULT_LENS &&
       lensLessOnThisPhase.length > 0 ? (
         <div className="grid xl:grid-cols-[minmax(0,1fr)_480px] gap-6 items-start mb-7 [&>*]:min-w-0">
-          <div>
-            {/* The two-row meta (run date, lens) is the SAME block the default
-                page shows in the same spot — a reader who switches lens here
-                must not lose "which book, when" the header states everywhere
-                else. The toggle below shows the lens the reader PICKED; this
-                shows the lens the ROW claims (the pair the default page puts
-                side by side), so the boundary disclosures that follow still
-                describe the query that produced the page.
-
-                The cell is deliberately NOT fixed-height. A fixed 175px cell
-                clipped the lede at 1280–1300, where the shared lede wraps to
-                ~5 lines beside the meta block; the grid row grows to fit the
-                header instead, and the banner's `self-stretch` cell follows it. */}
-            <PageHeader
-              className="mb-0"
-              title={PHASE_COPY[phase].title}
-              lede={PHASE_COPY[phase].lede}
-              meta={[
-                { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
-                {
-                  // The lens the ROW claims, not the lens the page queried. They
-                  // should always agree; if a run ever writes a row whose `lens`
-                  // differs from the key it was fetched by, this is where it shows,
-                  // and the scope disclosures below still describe the query that
-                  // produced the page.
-                  label: "Lens",
-                  value: data.loading ? "…" : (data.lens ?? "not recorded"),
-                  capitalize: true,
-                },
-              ]}
-            />
-          </div>
+          <PageHeader
+            className="mb-0"
+            title={PHASE_COPY[phase].title}
+            lede={PHASE_COPY[phase].lede}
+            // The two-row meta (run date, lens) is the SAME block the default
+            // page shows in the same spot — a reader who switches lens here must
+            // not lose "which book, when" the header states everywhere else — and
+            // it sits where the multi-asset page puts it: the header's own
+            // right-hand block, not a third column beside the scope banner. The
+            // toggle above shows the lens the reader PICKED; this shows the lens
+            // the ROW claims (the pair the default page puts side by side), so
+            // the boundary disclosures that follow still describe the query that
+            // produced the page.
+            meta={[
+              { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
+              {
+                // The lens the ROW claims, not the lens the page queried. They
+                // should always agree; if a run ever writes a row whose `lens`
+                // differs from the key it was fetched by, this is where it shows,
+                // and the scope disclosures below still describe the query that
+                // produced the page.
+                label: "Lens",
+                value: data.loading ? "…" : (data.lens ?? "not recorded"),
+                capitalize: true,
+              },
+            ]}
+          />
+          {/* The cell is deliberately NOT fixed-height. A fixed 175px cell
+              clipped the lede at 1280–1300, where the shared lede wraps beside
+              the meta block; the grid row grows to fit the header instead, and
+              the banner's `self-stretch` cell matches the header's height. */}
           <div className="self-stretch">
             <LensScopeBanner lens={data.resolvedLens} panels={lensLessOnThisPhase} side />
           </div>
@@ -1649,7 +1648,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           single-column body). Under the default lens the layout is the original
           full-width stack. */}
       {data.resolvedLens !== DEFAULT_LENS ? (
-        <div className="grid xl:grid-cols-4 gap-6 items-start [&>*]:min-w-0 [&_.card]:mb-0">
+        <div className="grid xl:grid-cols-4 gap-6 items-start mb-6 [&>*]:min-w-0 [&_.card]:mb-0">
           <div className="xl:col-span-3">
             <StressScenarios compact state={scenarioState} />
           </div>
@@ -1669,6 +1668,14 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
                     : null
               }
             />
+            {/* Sanctions exposure, under the what-if in the same 1/4 column: the
+                active lens's own reading — sanctions_exposure follows the lens —
+                so it takes the narrow track beside the persisted stress matrix
+                exactly as the what-if does. Spaced with a wrapper's mt-6 rather
+                than the card's own mb-6, which the grid's [&_.card]:mb-0 zeroes. */}
+            <div className="mt-6">
+              <SanctionsExposure state={sanctionsState} />
+            </div>
           </div>
         </div>
       ) : (
@@ -1696,8 +1703,15 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       )}
 
       {/* 6b — Sanctions exposure, beside the stress table because it is the same kind of
-          claim: what the book does under a shock it did not choose. ADR-0096. */}
-      <SanctionsExposure state={sanctionsState} />
+          claim: what the book does under a shock it did not choose. ADR-0096.
+          Under the DEFAULT lens it stays the full-width stack below the what-if.
+          Under a NON-DEFAULT lens it has already rendered inside the 1/4 column
+          under the what-if (see the stress grid above), so it is NOT repeated
+          here. PositioningCrowding below is lens-following too, but this page
+          has not moved it — it keeps the full-width position on every lens. */}
+      {data.resolvedLens === DEFAULT_LENS && (
+        <SanctionsExposure state={sanctionsState} />
+      )}
       <PositioningCrowding state={positioningState} />
       </section>
       )}

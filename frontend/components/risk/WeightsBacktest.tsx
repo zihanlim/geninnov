@@ -31,7 +31,7 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
 export default function WeightsBacktest({ data }: { data?: WeightsBacktestRow | null }) {
   if (!data) {
     return (
-      <section className="panel p-4" aria-label="Backtest of the published weights">
+      <section className="card p-4" aria-label="Backtest of the published weights">
         <h3 className="text-[13px] font-semibold mb-1">These weights, over the past year</h3>
         <p className="text-[11.5px] text-text-tertiary leading-[1.55]">
           Not computed for this run — a gap in the pipeline, not a statement about how the
@@ -43,7 +43,7 @@ export default function WeightsBacktest({ data }: { data?: WeightsBacktestRow | 
 
   if (data.computed === false) {
     return (
-      <section className="panel p-4" aria-label="Backtest of the published weights" data-testid="weights-backtest">
+      <section className="card p-4" aria-label="Backtest of the published weights" data-testid="weights-backtest">
         <h3 className="text-[13px] font-semibold mb-1">These weights, over the past year</h3>
         <p className="text-[11.5px] text-text-tertiary leading-[1.55]">
           {data.reason ??
@@ -56,7 +56,7 @@ export default function WeightsBacktest({ data }: { data?: WeightsBacktestRow | 
   const down = describeDownCapture(data.benchmark?.down_capture, data.benchmark?.down_days);
 
   return (
-    <section className="panel p-4" aria-label="Backtest of the published weights" data-testid="weights-backtest">
+    <section className="card p-4" aria-label="Backtest of the published weights" data-testid="weights-backtest">
       <h3 className="text-[13px] font-semibold mb-1">These weights, over the past year</h3>
 
       {/* The caveats come FIRST. See the file header. */}

@@ -148,25 +148,25 @@ describe("LensScopeBanner under a non-default lens", () => {
     expect(side).not.toContain("lg:grid-cols-2");
   });
 
-  it("in side form the standing explanation collapses behind a details", () => {
-    // The card sits beside the page header, so it should match the header's
-    // height. The "sourced from portfolio_risk…ADR-0194" paragraph is the bulk
-    // of what made the card tall, so in `side` mode it hides behind a
-    // `<details>` summary; the full-width form keeps it as a paragraph. Both
-    // forms must still carry the text and its sources somewhere.
+  it("in side form the panel lists and explanation collapse behind a details", () => {
+    // The card sits beside the page header in a fixed-height cell, so it must
+    // stay compact: only the intro sentence is visible, and the panel lists plus
+    // the "sourced from portfolio_risk…ADR-0194" explanation all hide behind a
+    // single `<details>` summary. The full-width form keeps the lists and the
+    // explanation as visible text. Both forms must still carry everything.
     const side = renderToStaticMarkup(
       <LensScopeBanner lens="credit" panels={PANELS} side />,
     );
     expect(side).toContain("<details");
-    expect(side).toContain("why these can");
+    expect(side).toContain("which panels");
     expect(side).toContain("portfolio_risk");
     expect(side).toContain("pick_outcomes");
-    // The explanation must not render as a visible paragraph in side form — it
-    // is inside the collapsed details, and rendering it twice (or leaving it
-    // visible) is exactly what the collapse is supposed to prevent. So nothing
-    // before the `<details>` element carries the source names.
+    // The panels and sources must not render as visible text in side form — they
+    // are inside the collapsed details. So nothing before the `<details>`
+    // element carries a panel label or a source name.
     const beforeDetails = side.slice(0, side.indexOf("<details"));
     expect(beforeDetails).not.toContain("portfolio_risk");
+    expect(beforeDetails).not.toContain(esc(panelLabel("RiskLimitBoard")));
 
     const full = renderToStaticMarkup(<LensScopeBanner lens="credit" panels={PANELS} />);
     expect(full).not.toContain("<details");

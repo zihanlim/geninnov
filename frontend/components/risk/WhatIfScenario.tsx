@@ -98,6 +98,7 @@ export function WhatIfScenario({
   factors,
   totalCapital,
   dataFailure,
+  compact = false,
 }: {
   loading: boolean;
   positions: PositionRow[];
@@ -105,6 +106,13 @@ export function WhatIfScenario({
   totalCapital: number | null;
   /** Set when positions or factor_exposures failed to load. */
   dataFailure?: string | null;
+  /**
+   * Renders the sliders and the live result stacked vertically, for a card in a
+   * narrow (1/4) column. The normal layout is a two-column grid whose right
+   * track is a fixed 320px live-result panel — at ~318px of card that would be
+   * one track at 0px, so `compact` switches the whole body to a single column.
+   */
+  compact?: boolean;
 }) {
   const [shocks, setShocks] = useState<ShockState>(ZERO_STATE);
 
@@ -153,7 +161,9 @@ export function WhatIfScenario({
         </div>
       ) : (
         <div className="card-body">
-          <div className="grid md:grid-cols-[1fr_320px] gap-6">
+          <div
+            className={`grid gap-6 ${compact ? "grid-cols-1" : "md:grid-cols-[1fr_320px]"}`}
+          >
             {/* Sliders */}
             <div>
               <p className="m-0 mb-4 text-[12px] text-text-secondary leading-[1.6] max-w-[70ch]">

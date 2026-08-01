@@ -314,7 +314,7 @@ export default function BenchmarkComparison({
   const uncomputed = comparison && comparison.computed === false;
   if ((!comparison || uncomputed) && !conditionalVol) {
     return (
-      <section className="panel p-4" aria-label="Versus the benchmark" data-testid="benchmark-comparison">
+      <section className="card p-4" aria-label="Versus the benchmark" data-testid="benchmark-comparison">
         <h3 className="text-[13px] font-semibold mb-1">Versus the benchmark</h3>
         <p className="text-[11.5px] text-text-tertiary leading-[1.55]">
           {uncomputed && comparison?.reason
@@ -330,7 +330,7 @@ export default function BenchmarkComparison({
   const up = comparison?.up_capture;
 
   return (
-    <section className="panel p-4" aria-label="Versus the benchmark" data-testid="benchmark-comparison">
+    <section className="card p-4" aria-label="Versus the benchmark" data-testid="benchmark-comparison">
       <h3 className="text-[13px] font-semibold mb-1">Versus the benchmark</h3>
       {/* Only claim a measurement when one happened. With no comparison but a conditional
           vol block, this panel still renders — and the intro used to read "Measured over

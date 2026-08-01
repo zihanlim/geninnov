@@ -43,12 +43,48 @@ export interface PageHeaderMeta {
   capitalize?: boolean;
 }
 
+/**
+ * The right-hand run-metadata block (label above value, right-aligned, with a
+ * vertical rule at `sm`). Extracted so it can be rendered OUTSIDE the header —
+ * /risk's credit-lens page places it as its own grid column to the right of
+ * the scope banner instead of inside the title/lede cell — without duplicating
+ * the markup or letting the two surfaces drift apart.
+ */
+export function PageHeaderMeta({
+  meta,
+  aside,
+}: {
+  meta?: PageHeaderMeta[];
+  /** Anything that sits above the meta rows — `/` puts its StatusBadge here. */
+  aside?: ReactNode;
+}) {
+  return (
+    <div className="shrink-0 self-stretch text-right text-text-secondary text-[12px] sm:border-l sm:border-border sm:pl-5">
+      {aside && <div className="mb-2 flex justify-end">{aside}</div>}
+      {(meta ?? []).map((m, i) => (
+        <div key={m.label} className={i === 0 ? "" : "mt-2.5"}>
+          <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-medium leading-none">
+            {m.label}
+          </div>
+          <div
+            className={`num mt-1 ${m.capitalize ? "capitalize" : ""}`}
+            style={m.warn ? { color: "var(--warning)" } : undefined}
+          >
+            {m.value}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function PageHeader({
   title,
   lede,
   fine,
   meta,
   aside,
+  className,
 }: {
   title: string;
   /** The page's summary sentence. One line of prose, not a caption. */
@@ -59,11 +95,16 @@ export default function PageHeader({
   meta?: PageHeaderMeta[];
   /** Anything that sits above the meta block — `/` puts its StatusBadge here. */
   aside?: ReactNode;
+  /**
+   * Merged into the root. Used by /risk's credit-lens header cell to zero the
+   * default `mb-7` (the cell's own fixed height owns the spacing there).
+   */
+  className?: string;
 }) {
   const hasMeta = (meta?.length ?? 0) > 0 || aside !== undefined;
 
   return (
-    <div className="mb-7">
+    <div className={`mb-7 ${className ?? ""}`.trim()}>
       <h1 className="text-[22px] font-semibold tracking-[-0.01em] m-0 mb-1">
         {title}
       </h1>
@@ -84,22 +125,7 @@ export default function PageHeader({
           // than hug the two lines of text. Below `sm` the block wraps under the
           // lede and a vertical rule there would be a stray line, so it starts at
           // `sm` — the one piece of this that is a breakpoint rather than a taste.
-          <div className="shrink-0 self-stretch text-right text-text-secondary text-[12px] sm:border-l sm:border-border sm:pl-5">
-            {aside && <div className="mb-2 flex justify-end">{aside}</div>}
-            {(meta ?? []).map((m, i) => (
-              <div key={m.label} className={i === 0 ? "" : "mt-2.5"}>
-                <div className="text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-medium leading-none">
-                  {m.label}
-                </div>
-                <div
-                  className={`num mt-1 ${m.capitalize ? "capitalize" : ""}`}
-                  style={m.warn ? { color: "var(--warning)" } : undefined}
-                >
-                  {m.value}
-                </div>
-              </div>
-            ))}
-          </div>
+          <PageHeaderMeta meta={meta} aside={aside} />
         )}
       </div>
     </div>

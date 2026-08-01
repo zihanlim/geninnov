@@ -48,7 +48,7 @@ export default function VarMethods({
   const anyValue = rows.some((r) => r.value !== null);
 
   return (
-    <section className="panel p-4" aria-label="Value at risk by method" data-testid="var-methods">
+    <section className="card p-4" aria-label="Value at risk by method" data-testid="var-methods">
       <h3 className="text-[13px] font-semibold mb-1">Value at risk, by method</h3>
       <p className="text-[11.5px] text-text-tertiary leading-[1.55] mb-3">
         Four figures, all called VaR, none interchangeable. They differ by{" "}

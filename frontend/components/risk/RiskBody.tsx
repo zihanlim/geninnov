@@ -2026,13 +2026,16 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         </SourceCaveat>
       )}
 
-      {/* The benchmark, the drawdown curve, and the P&L table in one row:
-          BenchmarkComparison takes the left 2/4 (col-span-2 of a 4-col grid),
-          the drawdown chart and the daily history stack vertically in the right
-          1/4 + 1/4. `main` is `max-w-[1400px]`, so at 1440 viewport the
-          available width is 1344px; after gap-6 (18px) each side of the col-span
-          groups, BenchmarkComparison gets 663px and each right-side card 331px —
-          comfortable for the capture bars and the P&L table respectively (2026-08-02). */}
+      {/* The benchmark on the left, the drawdown curve and the P&L table
+          beneath it on the right. BenchmarkComparison takes the left 2/4
+          (col-span-2 of a 4-col grid); the drawdown chart and the daily
+          history stack vertically in the right 2/4. `main` is
+          `max-w-[1400px]`, so at 1440 viewport the available width is
+          1344px; after gap-6 (18px) each side of the col-span groups,
+          BenchmarkComparison gets 663px and the right-side cards 663px as
+          well — comfortable for the capture bars, the drawdown SVG
+          (min-width 620, so at the old 331px it scrolled) and the P&L table
+          respectively (2026-08-02). */}
       <div className="grid xl:grid-cols-4 gap-6 items-start [&>*]:min-w-0 mb-6">
         <div className="xl:col-span-2">
           <BenchmarkComparison
@@ -2041,7 +2044,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
             sessions={data.returns.length}
           />
         </div>
-        <div className="xl:col-span-1">
+        <div className="xl:col-span-2 grid gap-6 [&>*]:min-w-0 [&>*]:mb-0">
           <DrawdownChart
             loading={data.loading}
             rows={data.returns}
@@ -2049,8 +2052,6 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
             inception={data.inception}
             benchmark={data.benchmark}
           />
-        </div>
-        <div className="xl:col-span-1">
           <DailyPLHistory limit={30} />
         </div>
       </div>

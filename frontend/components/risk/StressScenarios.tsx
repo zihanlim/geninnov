@@ -173,7 +173,7 @@ function ScenarioRow({
             <ShockChips factorShocks={factorShocks} sectorShocks={sectorShocks} />
             {breakdown.length > 0 ? (
               <div className="overflow-x-auto">
-                <pre className="num m-0 text-[12px] leading-[1.7] text-text-secondary whitespace-pre">
+                <pre className="num m-0 text-[12px] leading-[1.7] text-text-secondary whitespace-pre-wrap">
                   {breakdown.join("\n")}
                 </pre>
               </div>

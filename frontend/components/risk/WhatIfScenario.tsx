@@ -208,11 +208,27 @@ export function WhatIfScenario({
                     </option>
                   ))}
                 </select>
-                {presetId !== CUSTOM_PRESET_ID && (
-                  <p className="m-0 mt-2 text-[11.5px] text-text-tertiary leading-[1.55]">
-                    {WHAT_IF_PRESETS.find((p) => p.id === presetId)?.description}
-                  </p>
-                )}
+                {/* All descriptions render, stacked in the same grid cell so the
+                    row always takes the tallest one's height. A single
+                    conditional <p> would change height with the selected story —
+                    up to four wrapped lines in the compact column — and shove
+                    the sliders and result panel down as the scenario changes.
+                    The grid cell is the fix: the invisible siblings keep the
+                    height pinned to the longest description, so the layout
+                    below never moves. Custom shows the fixed hint line instead
+                    of an empty gap, but still inside the same cell. */}
+                <div className="grid mt-2">
+                  {WHAT_IF_PRESETS.map((p) => (
+                    <p
+                      key={p.id}
+                      className={`m-0 text-[11.5px] text-text-tertiary leading-[1.55] col-start-1 row-start-1 ${
+                        presetId === p.id ? "" : "invisible"
+                      }`}
+                    >
+                      {p.description}
+                    </p>
+                  ))}
+                </div>
               </div>
               <p className="m-0 mb-4 text-[12px] text-text-secondary leading-[1.6] max-w-[70ch]">
                 Set a shock on each driver; the estimated book return recomputes live as

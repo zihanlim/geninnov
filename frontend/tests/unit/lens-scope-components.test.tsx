@@ -128,6 +128,26 @@ describe("LensScopeBanner under a non-default lens", () => {
     expect(html).not.toContain('role="alert"');
   });
 
+  it("in side form the body is one column: the same prose, stacked", () => {
+    // The banner rendered beside a page header gets a ~480px slot. Its normal
+    // two-column body would hand each column ~200px there and wrap the long
+    // `Ident` table names mid-word, so `side` stacks the body instead. The
+    // assertions are the same ones the full-width form is held to — the two
+    // forms must not drift apart in what they say, only in how they lay it out.
+    const side = renderToStaticMarkup(
+      <LensScopeBanner lens="credit" panels={PANELS} side />,
+    );
+    expect(side).toContain('data-testid="lens-scope-banner"');
+    expect(side).toContain("Credit Lens");
+    for (const panel of PANELS) {
+      expect(side, `side banner did not name "${panel}"`).toContain(esc(panelLabel(panel)));
+    }
+    // Two paragraphs out of the two-column grid's `lg:grid-cols-2` — if this
+    // ever regresses to a wide-grid layout the reader is back to mid-word-wrapped
+    // table names in the side slot.
+    expect(side).not.toContain("lg:grid-cols-2");
+  });
+
   it("states the opposite case rather than rendering an empty frame", () => {
     // A phase whose panels all follow the lens still deserves the sentence —
     // "this is the credit book" is worth saying even when there is no boundary

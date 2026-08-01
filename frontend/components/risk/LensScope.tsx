@@ -50,9 +50,22 @@ import { LENS_LESS_TABLES, PANEL_SCOPE, panelLabel, scopeOf } from "@/lib/risk/l
 export function LensScopeBanner({
   lens,
   panels,
+  side = false,
 }: {
   lens: string;
   panels: string[];
+  /**
+   * Render the body as ONE column, for a banner placed in a narrow right-hand
+   * slot beside a page header rather than full-width across the page.
+   *
+   * The two-column body exists because a full-width card's 92ch measure left
+   * ~700px empty. In a ~480px side slot the same grid would give each column
+   * ~200px — the long `Ident` table names wrap mid-word and the prose gets a
+   * broken measure. So the slot hands `side` and the card drops back to a
+   * stacked body: same sentences, same order, one column. The card header and
+   * the `panels.length === 0` single-sentence body are unaffected either way.
+   */
+  side?: boolean;
 }) {
   if (lens === DEFAULT_LENS) return null;
 
@@ -94,10 +107,13 @@ export function LensScopeBanner({
           holds seven inline `Ident` table names and a grid cell defaults to
           min-content: without it the longest identifier sets the column width
           and pushes the left one under it. Single column below `lg`, where two
-          would each be under 45ch. */}
+          would each be under 45ch — and always single column when `side`, for
+          the same reason at a ~480px card width. */}
       <div className="p-[18px] pt-3 text-[12.5px] text-text-secondary leading-[1.65]">
         {panels.length > 0 ? (
-          <div className="grid gap-x-9 gap-y-2 lg:grid-cols-2 [&>*]:min-w-0">
+          <div
+            className={`grid gap-x-9 gap-y-2 [&>*]:min-w-0 ${side ? "" : "lg:grid-cols-2"}`}
+          >
             <div className="max-w-[92ch]">
               <p className="m-0">
                 Every figure below is read from the {lensLabel(lens)} book

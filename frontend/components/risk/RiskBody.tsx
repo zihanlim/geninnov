@@ -1205,57 +1205,13 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       {/* Title and lede come from the PHASE, not from the page. This body is
           three destinations now, and a shared "Book Risk" heading on all of
           them would make the tab a reader clicked indistinguishable from the
-          two they did not. */}
-      <PageHeader
-        title={PHASE_COPY[phase].title}
-        lede={PHASE_COPY[phase].lede}
-        // /attribution is pinned to multi_asset, and on a day when a second lens
-        // has published a book that pin needs saying. A reader who arrived from
-        // /risk?lens=credit — the only route by which they could hold the credit
-        // book in mind — must not read this page's forward record as the credit
-        // book's. One tertiary line, not an alert: nothing is wrong here.
-        //
-        // Gated on a second lens EXISTING, which is precisely the condition under
-        // which the confusion is reachable: /risk only offers ?lens=credit when
-        // the credit book published. With one book there is nothing to
-        // disambiguate, and the sentence would be noise on the default page.
-        fine={
-          !lensEnabled && lensOffered.length > 1 ? (
-            <>
-              This page reports the multi-asset book only. The forward record and
-              the realised return series have no lens column (ADR-0194), so there
-              is no per-lens version of them to show
-              {/* The exception, named, because the old sentence ended at "no
-                  per-lens version of them to show" and that is FALSE for one panel
-                  here. `weights_backtest` lives on `research_recommendations`, which
-                  migration 062 keyed on (run_date, lens), and the credit book
-                  publishes its own: +4.13% cumulative at Sharpe 1.88 against the
-                  multi-asset +13.23% at 1.42 on the 2026-07-30 run. The pin still
-                  holds — `lensEnabled` is false on this phase, so the read is
-                  multi_asset — but a reader was being told a figure does not exist
-                  when what is true is that this page is not showing it. Those are
-                  different claims, and only one of them is checkable. */}
-              {" "}
-              — with one exception: the weights backtest below <em>is</em> published
-              per lens, and the figures here are the multi-asset book&rsquo;s. The
-              other lens&rsquo;s is on <Ident>/book</Ident> under that lens.
-            </>
-          ) : undefined
-        }
-        meta={[
-          { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
-          {
-            // The lens the ROW claims, not the lens the page queried. They should
-            // always agree; if a run ever writes a row whose `lens` differs from
-            // the key it was fetched by, this is where it shows, and the scope
-            // disclosures below still describe the query that produced the page.
-            label: "Lens",
-            value: data.loading ? "…" : (data.lens ?? "not recorded"),
-            capitalize: true,
-          },
-        ]}
-      />
+          two they did not.
 
+          The header is rendered by the ternary below, which either pairs it
+          with the scope banner (risk + non-default lens) or renders it alone.
+          Only one PageHeader exists here; the `fine` that tells /attribution
+          readers the record is the multi-asset book's lives in the else branch
+          because it only ever renders on a pinned phase. */}
       {/* The lens toggle. Rendered only when more than one lens actually has a
           published book for today's run_date — a control offering a book that does
           not exist is worse than no control — and never on /attribution, which is
@@ -1278,8 +1234,105 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           chips: which panels below are the lens the reader chose, and which are
           still the multi-asset published book. Returns null at multi_asset, so it
           is absent from the default page entirely — its own guard, not this call
-          site's. */}
-      <LensScopeBanner lens={data.resolvedLens} panels={lensLessOnThisPhase} />
+          site's.
+
+          ON /risk ONLY, the boundary card moves BESIDE the header instead of
+          hanging below it. The page-level "what is still the multi-asset book"
+          statement is the counterpart of the header's lede — read against the
+          prose that says what this page is, not buried a screen under it — and
+          at 1440 the header already owns 172px of 1344px with its lede at
+          ~600px wide, so the card takes the width the lede does not use. The
+          tight slot hands `side`, which stacks the card's own body (the
+          full-width form is two-column, and two ~200px columns inside ~480px
+          would wrap the long `Ident` table names mid-word).
+
+          Both cells leave the page with `items-start`, so the card never
+          stretches the header and the header never stretches the card.
+
+          Under the DEFAULT lens the banner does not render at all, so this
+          grid is a no-op there — the markup is the old single header,
+          byte-identical. The risk-phase condition plus the banner's own
+          `lens === DEFAULT_LENS` guard would be enough by themselves, but the
+          third term (`length > 0`) keeps the wrapper off the page on the one
+          run where a lens published no boundary to state — a stray grid that
+          does nothing but divide a screen is not an improvement. */}
+      {phase === "risk" &&
+      data.resolvedLens !== DEFAULT_LENS &&
+      lensLessOnThisPhase.length > 0 ? (
+        <div className="grid xl:grid-cols-[minmax(0,1fr)_480px] gap-6 items-start mb-7 [&>*]:min-w-0">
+          <div>
+            <PageHeader
+              title={PHASE_COPY[phase].title}
+              lede={PHASE_COPY[phase].lede}
+              meta={[
+                { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
+                {
+                  label: "Lens",
+                  value: data.loading ? "…" : (data.lens ?? "not recorded"),
+                  capitalize: true,
+                },
+              ]}
+            />
+          </div>
+          <div className="self-stretch">
+            <LensScopeBanner lens={data.resolvedLens} panels={lensLessOnThisPhase} side />
+          </div>
+        </div>
+      ) : (
+        <>
+          <PageHeader
+            title={PHASE_COPY[phase].title}
+            lede={PHASE_COPY[phase].lede}
+            // /attribution is pinned to multi_asset, and on a day when a second lens
+            // has published a book that pin needs saying. A reader who arrived from
+            // /risk?lens=credit — the only route by which they could hold the credit
+            // book in mind — must not read this page's forward record as the credit
+            // book's. One tertiary line, not an alert: nothing is wrong here.
+            //
+            // Gated on a second lens EXISTING, which is precisely the condition under
+            // which the confusion is reachable: /risk only offers ?lens=credit when
+            // the credit book published. With one book there is nothing to
+            // disambiguate, and the sentence would be noise on the default page.
+            fine={
+              !lensEnabled && lensOffered.length > 1 ? (
+                <>
+                  This page reports the multi-asset book only. The forward record and
+                  the realised return series have no lens column (ADR-0194), so there
+                  is no per-lens version of them to show
+                  {/* The exception, named, because the old sentence ended at "no
+                      per-lens version of them to show" and that is FALSE for one panel
+                      here. `weights_backtest` lives on `research_recommendations`, which
+                      migration 062 keyed on (run_date, lens), and the credit book
+                      publishes its own: +4.13% cumulative at Sharpe 1.88 against the
+                      multi-asset +13.23% at 1.42 on the 2026-07-30 run. The pin still
+                      holds — `lensEnabled` is false on this phase, so the read is
+                      multi_asset — but a reader was being told a figure does not exist
+                      when what is true is that this page is not showing it. Those are
+                      different claims, and only one of them is checkable. */}
+                  {" "}
+                  — with one exception: the weights backtest below <em>is</em> published
+                  per lens, and the figures here are the multi-asset book&rsquo;s. The
+                  other lens&rsquo;s is on <Ident>/book</Ident> under that lens.
+                </>
+              ) : undefined
+            }
+            meta={[
+              { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
+              {
+                // The lens the ROW claims, not the lens the page queried. They should
+                // always agree; if a run ever writes a row whose `lens` differs from
+                // the key it was fetched by, this is where it shows, and the scope
+                // disclosures below still describe the query that produced the page.
+                label: "Lens",
+                value: data.loading ? "…" : (data.lens ?? "not recorded"),
+                capitalize: true,
+              },
+            ]}
+          />
+
+          <LensScopeBanner lens={data.resolvedLens} panels={lensLessOnThisPhase} />
+        </>
+      )}
 
       {/* Every number below is computed on portfolio_positions. When that table has
           not been reconciled to the published book, they describe a portfolio nobody

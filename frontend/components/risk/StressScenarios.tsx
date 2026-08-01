@@ -20,6 +20,7 @@ import {
 } from "@/lib/risk/analytics";
 import { Ident, SectionGap, SectionSkeleton } from "./SectionGap";
 import { StressScenarioChart } from "@/components/risk/RiskCharts";
+import { DisclosureChevron } from "@/components/DisclosureChevron";
 
 // A scenario states its shocks in one or both of two vocabularies: factor betas
 // (S1-S5) and sector dependency (S6, ADR-0088). Rendering only the first left the
@@ -155,15 +156,23 @@ function ScenarioRow({
           </span>
         </td>
         <td className="px-[18px] py-3 border-b border-border text-right">
+          {/* "Breakdown" is a noun that described the content, not the action —
+              beside a `LOW` severity badge it read as another status tag, and as a
+              trailing pill with no caret it was the one disclosure in the repo with
+              no expand affordance (every <details> and CollapsibleSection pair a
+              Show/Hide verb with a DisclosureChevron; DiscoveredThemes records the
+              same swap from a bare glyph). The verb + caret + cursor-pointer is the
+              established idiom, goal 5 ("name the capability the affordance implies"). */}
           <button
             type="button"
-            className="filter-btn"
+            className="filter-btn cursor-pointer inline-flex items-center gap-1.5"
             onClick={onToggle}
             aria-expanded={open}
             aria-controls={detailId}
             aria-label={`${open ? "Hide" : "Show"} contribution breakdown for ${scenario.label}`}
           >
             {open ? "Hide" : "Breakdown"}
+            <DisclosureChevron open={open} className="text-text-tertiary" />
           </button>
         </td>
       </tr>

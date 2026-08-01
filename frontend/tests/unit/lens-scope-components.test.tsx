@@ -251,14 +251,18 @@ describe("LensScopeChip under a non-default lens", () => {
     // Same text, same testid, same role, same title — only the container changes.
     expect(pill).toContain('data-testid="lens-scope-chip"');
     expect(pill).toContain('role="note"');
-    expect(pill).toContain(">part multi-asset<");
+    expect(pill).toContain(">PART MULTI-ASSET<");
     expect(pill).toContain("title=");
     expect(pill).toContain("ADR-0194");
     expect(pill).toContain("portfolio_risk");
-    // The pill form carries the badge utility classes (globals.css:324/330).
+    // The pill form carries the badge utility classes (globals.css:324/330),
+    // the reference 10px size (ThesisBlock VERIFIED badge), and an accessible
+    // label naming the lowercase phrase.
     expect(pill).toContain("badge");
     expect(pill).toContain("badge-neutral");
     expect(pill).toContain("whitespace-nowrap");
+    expect(pill).toContain("text-[10px]");
+    expect(pill).toContain('aria-label="part multi-asset"');
   });
 
   it("pill variant is null at the default lens, same as bare text", () => {
@@ -272,7 +276,7 @@ describe("LensScopeChip under a non-default lens", () => {
     const published = renderToStaticMarkup(
       <LensScopeChip lens="credit" panel="DrawdownChart" pill />,
     );
-    expect(published).toContain(">multi-asset book<");
+    expect(published).toContain(">MULTI-ASSET BOOK<");
     expect(published).toContain("badge-neutral");
   });
 });

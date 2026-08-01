@@ -280,14 +280,15 @@ export function LensScopeChip({
     <span
       role="note"
       title={detail}
+      aria-label={label}
       data-testid="lens-scope-chip"
       className={
         pill
-          ? "badge badge-neutral whitespace-nowrap"
+          ? "badge badge-neutral whitespace-nowrap text-[10px]"
           : "text-[11px] text-text-tertiary whitespace-nowrap"
       }
     >
-      {label}
+      {pill ? label.toUpperCase() : label}
     </span>
   );
 }

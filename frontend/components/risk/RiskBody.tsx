@@ -420,6 +420,24 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
   const shows = (id: string) => phaseShows(phase, id);
   const [data, setData] = useState<PageData>(INITIAL);
 
+  // ── Stress / Sanctions bottom alignment ───────────────────────────────
+  // Pure-CSS alignment: the outer grid stretches both columns to the
+  // row track height, the Stress section fills its cell (so the Stress
+  // card bottom = the row track bottom), and the right column uses a
+  // CSS Grid with a 1fr middle row to keep the gap between WhatIf and
+  // Sanctions at the standardised `gap-6` (24px) while Sanctions sits
+  // at the column bottom. Both columns share the same bottom edge, so
+  // the Stress card bottom aligns with the Sanctions card bottom on
+  // every lens — no JS measurement, no ResizeObserver, no race between
+  // first paint and the data arriving. The trade-off: when the right
+  // column is naturally taller than the Stress card (the credit lens,
+  // where the WhatIf sliders are tall and Sanctions is short on a
+  // 0-position book), the Stress card carries empty space at its
+  // bottom inside the card. That is the price of bottom alignment
+  // without per-card JS; the alternative — letting Sanctions trail
+  // below the Stress card — is the defect this comment used to
+  // document.
+
   // ── Lens (?lens=credit) ──────────────────────────────────────────────────
   // /mandate and /risk get the same lens control /book has. /attribution does
   // NOT, and that is a decision rather than an omission.
@@ -1661,23 +1679,39 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           The three live in one grid on EVERY phase route, not just the
           non-default one: stress matrix (3/4) on the left, what-if (1/4, in
           `compact` single-column body for the narrow rail) on the right top,
-          sanctions exposure (1/4) on the right bottom. The right column is a
-          flex column: WhatIf sits at the top so its card top aligns with the
-          Stress card top, and the Sanctions wrapper uses `mt-auto` so the card
-          drops to the same baseline as the Stress card bottom. `self-start` on
-          the left keeps the Stress card at its natural height — if the right
-          column is naturally shorter, the gap between WhatIf and Sanctions
-          fills the empty space; if it is naturally taller, the Stress card
-          stays compact and the Sanctions card drops below the row's natural
-          size. */}
+          sanctions exposure (1/4) on the right bottom. The outer grid
+          stretches both columns to the row track height so the Stress card
+          bottom aligns with the Sanctions card bottom on every lens (see the
+          alignment block above the JSX). */}
       <div className="grid xl:grid-cols-4 gap-6 mb-6 [&>*]:min-w-0 [&_.card]:mb-0">
-        <div className="xl:col-span-3 self-start">
+        {/* Left cell: stretched to the row track height (`h-full grid`
+            + the section's default `align-self: stretch`). The Stress
+            section fills its cell, so the Stress card bottom = the row
+            track bottom = the right column's bottom = the Sanctions
+            card bottom. When the right column is naturally taller than
+            the Stress card (the credit lens with a tall WhatIf and a
+            short Sanctions on a 0-position book), the Stress card
+            carries empty space at its bottom inside the card; that is
+            the price of bottom alignment without per-card JS. */}
+        <div className="xl:col-span-3 h-full grid">
           <StressScenarios
             compact={data.resolvedLens !== DEFAULT_LENS}
             state={scenarioState}
           />
         </div>
-        <div className="xl:col-span-1 flex flex-col">
+        {/* Right cell: CSS Grid with a 1fr middle row that absorbs the
+            leftover height. WhatIf sits at the top, Sanctions sits at
+            the bottom, and the gap-6 between them is the standardised
+            24px regardless of the row track height. `h-full` makes
+            the column fill the row track even when its natural content
+            is shorter than the left's; without it, the right column
+            collapsed to its content size and the spacer could not
+            grow. The middle row is empty + `aria-hidden` so it
+            contributes no semantics and no visible border. */}
+        <div
+          className="xl:col-span-1 grid gap-6 h-full"
+          style={{ gridTemplateRows: "auto 1fr auto" }}
+        >
           {/* Browser-side estimate, labelled as one — beside the persisted
               matrix. Both figures it puts on screen — the shocked positions
               and the dollar P&L against total_capital — come from lens-less
@@ -1705,18 +1739,13 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
               ) : undefined
             }
           />
-          {/* mt-auto pushes Sanctions to the bottom of the right column so
-              its card bottom lines up with the Stress card bottom (or the
-              row bottom if the right column is naturally taller). pt-6 keeps
-              a minimum gap between the two cards.
-
-              6b — Sanctions exposure, beside the stress table because it is
+          <div aria-hidden="true" />
+          {/* 6b — Sanctions exposure, beside the stress table because it is
               the same kind of claim: what the book does under a shock it did
               not choose. ADR-0096. PositioningCrowding moved to the
-              attribution section (2/4 right beside per-position attribution). */}
-          <div className="mt-auto pt-6">
-            <SanctionsExposure state={sanctionsState} />
-          </div>
+              attribution section (2/4 right beside per-position
+              attribution). */}
+          <SanctionsExposure state={sanctionsState} />
         </div>
       </div>
       </section>

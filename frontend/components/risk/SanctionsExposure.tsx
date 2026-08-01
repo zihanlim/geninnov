@@ -150,12 +150,7 @@ export function SanctionsExposure({ state }: { state: AnalyticsState<SanctionsEx
           </p>
 
           {x.positions.length > 0 ? (
-            <div className="overflow-x-auto">
-              {/* 420, not the 640 this carried when it had a fifth CHANNEL column: the old
-                  width forced a 4-column table into an inner scroller on mobile, showing
-                  only NAME and SIDE while the reader scrolled for WEIGHT. Wide content may
-                  scroll in its own container (goal 7), but it should not be made wide. */}
-              <table className="w-full border-collapse text-[12.5px] min-w-[420px]">
+            <table className="w-full border-collapse text-[12.5px] px-[18px]">
                 <caption className="sr-only">
                   Positions in sanctions-exposed jurisdictions, with the side held and the
                   named channel of exposure.
@@ -197,7 +192,6 @@ export function SanctionsExposure({ state }: { state: AnalyticsState<SanctionsEx
                   ))}
                 </tbody>
               </table>
-            </div>
           ) : null}
 
           {/* The channel, once per JURISDICTION rather than once per row. It was a table

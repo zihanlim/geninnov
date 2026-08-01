@@ -60,43 +60,21 @@ function ShockChips({
   );
 }
 
-// Auto table layout hands surplus width to the column with the widest content,
-// which here is `Scenario` — and its content is capped at 62ch for measure, so
-// at 1440 that column took half the table and parked ~380px of nothing between
-// a scenario's name and its own return. The value columns are pinned to their
-// content and the trailing action column absorbs the surplus, which keeps a
-// label and the figures describing it in one scannable block and moves the slack
-// to the one place a row can carry it: ahead of a right-aligned button, where a
-// trailing action sits anyway.
-//
-// It needs FIXED layout to work, which is the part that took two measured
-// attempts. Under auto layout a `w-full` absorber on the trailing column wins
-// outright — the browser resolves the percentage first and starves every other
-// column to min-content, including ones with a specified width. Measured at
-// 1440: Scenario asked for 34rem and got 179px, the description wrapped to
-// ~143px, and every row grew to eight lines. Several times worse than the gap it
-// was meant to close, and identical to eye whether the width was declared or
-// not, which is why it was measured rather than looked at.
-//
-// Under `table-fixed` the declared widths are honoured and the ONE column
-// without a width takes the remainder — so the absorber is the absence of a
-// class, not `w-full`.
-//
-// All of it gated at `wide` (1424px). Below that there is no surplus to park —
-// the table is at its 720px floor and scrolling — and pinning would only raise
-// the floor, making a phone scroll further to reach the same numbers.
-// In `compact` mode the table uses auto layout, so the fixed column widths are
-// omitted and the trailing column still absorbs surplus (a column without a
-// width takes the remainder under `table-fixed`, and under auto layout the
-// `Scenario` content cap does the same job).
-const COLUMNS = (compact: boolean) => [
-  { label: "Scenario", width: compact ? "" : "wide:w-[34rem]" },
-  { label: "Book return", width: compact ? "" : "wide:w-[8.5rem]" },
-  { label: "P&L ($M)", width: compact ? "" : "wide:w-[8.5rem]" },
-  // 8rem, not 7: under `table-fixed` a column cannot grow for its content, and
-  // the vocabulary is low / moderate / high / severe — the live book is all LOW,
-  // so a column sized by eye today would clip the first MODERATE run.
-  { label: "Severity", width: compact ? "" : "wide:w-[8rem]" },
+// Auto layout everywhere: no `min-w-[720px]` floor, no `wide:table-fixed` pin.
+// The Stress card now lives in a 3/4 column, not full-width — and the old 720px
+// floor plus 34rem/8.5rem fixed column widths forced horizontal scrolling inside
+// the card. The `compact` branch kept this honest at the 1/4 rail, but every
+// 3/4-cell (the default-lens path and the new credit-lens path) was scrolling
+// when the card came in under ~960px. Trading the controlled 1440 layout for
+// the description-heavy auto layout was the right call: the value columns stay
+// scannable, the Scenario column wraps to the available width, and the trailing
+// disclosure button still gets a clean right-aligned home. The `max-w-[62ch]`
+// cap on the description is the measure stop.
+const COLUMNS = (_compact: boolean) => [
+  { label: "Scenario", width: "" },
+  { label: "Book return", width: "" },
+  { label: "P&L ($M)", width: "" },
+  { label: "Severity", width: "" },
   { label: "", width: "" },
 ];
 
@@ -178,7 +156,19 @@ function ScenarioRow({
       </tr>
       {open && (
         <tr id={detailId}>
-          <td colSpan={5} className="px-[18px] py-4 border-b border-border-strong bg-bg-elevated/60">
+          {/* `w-full` here is the auto-layout fix, not an appearance class. A
+              colSpan=5 cell spanning every column feeds its PREFERRED width into
+              the column-distribution pass of `table-layout: auto`. S7's
+              "Credit-beta coverage:" prose is one unwrapped ~1311px line (2× the
+              1000px card), so without a declared width the browser split that
+              surplus across the five spanned columns and the value columns
+              rebalanced — Book return / P&L / Severity shifted ~30-64px left on
+              expand while the Scenario column held. Declaring width:100% caps the
+              spanning cell's contribution at the table's own width, so the
+              breakdown wraps (it already does, whitespace-pre-wrap) without
+              moving a single column. Measured at 1440 via Playwright: book return
+              x 581→517 on expand, and 517→581 with the width declared. */}
+          <td colSpan={5} className="w-full px-[18px] py-4 border-b border-border-strong bg-bg-elevated/60">
             <ShockChips factorShocks={factorShocks} sectorShocks={sectorShocks} />
             {breakdown.length > 0 ? (
               <div className="overflow-x-auto">
@@ -303,12 +293,9 @@ export function StressScenarios({
             </p>
             <StressScenarioChart scenarios={rows} />
           </div>
-          <div className="overflow-x-auto">
-            <table
-              className={`w-full border-collapse text-[13px] min-w-[720px] ${
-                compact ? "" : "wide:table-fixed"
-              }`}
-            >
+          <table
+            className="w-full border-collapse text-[13px] px-[18px]"
+          >
               <caption className="sr-only">
                 Estimated book return and P&amp;L under each stress scenario, sorted
                 worst first. Each row expands to the per-position contribution
@@ -341,7 +328,6 @@ export function StressScenarios({
                 ))}
               </tbody>
             </table>
-          </div>
           <p className="m-0 px-[18px] py-3 text-[11px] text-text-tertiary leading-[1.6] max-w-[90ch]">
             Estimates combine a factor path (signed weight × beta × factor shock) with
             direct shocks where the scenario calibrates one — per asset, or inherited

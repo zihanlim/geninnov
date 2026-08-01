@@ -51,6 +51,14 @@ export default function AskPage() {
     gross: number | null;
     net: number | null;
   } | null>(null);
+  // ADR-0222: the active context also reports whether the new
+  // structured_facts and computable_macro layers are populated, so a
+  // reader of the page knows the agent CAN answer "what does the
+  // system know about MSFT capex?" from a fact table.
+  const [layerCounts, setLayerCounts] = useState<{
+    factsByCategory: { ai_capex: number; china_ai: number; macro: number; valuation: number };
+    computableMacroStatus: "measured" | "unknown" | "absent";
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +96,44 @@ export default function AskPage() {
           net: typeof bm?.net_exposure === "number" ? bm.net_exposure : null,
         });
       });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Fetch the new-layer presence in parallel with the book read. The
+  // counts are per-category for structured_facts (4 categories), and
+  // a single 'measured | unknown | absent' for computable_macro
+  // (the JSONB has three sub-metrics; 'measured' if at least one is
+  // measured, 'unknown' if the JSONB is null, 'absent' on error).
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      supabase
+        .from("structured_facts")
+        .select("category", { count: "exact" }),
+      supabase
+        .from("regime_classifications")
+        .select("computable_macro")
+        .order("run_date", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]).then(([factsRes, regimeRes]) => {
+      if (cancelled) return;
+      const byCat = { ai_capex: 0, china_ai: 0, macro: 0, valuation: 0 };
+      for (const r of factsRes.data || []) {
+        const c = (r as { category?: string }).category;
+        if (c && c in byCat) byCat[c as keyof typeof byCat]++;
+      }
+      const cm = (regimeRes.data as { computable_macro?: { erp?: { status?: string } } } | null)?.computable_macro;
+      const status: "measured" | "unknown" | "absent" =
+        cm && typeof cm === "object" && cm.erp?.status === "measured"
+          ? "measured"
+          : cm && typeof cm === "object"
+            ? "unknown"
+            : "absent";
+      setLayerCounts({ factsByCategory: byCat, computableMacroStatus: status });
+    });
     return () => {
       cancelled = true;
     };
@@ -160,6 +206,44 @@ export default function AskPage() {
                 </dl>
               ) : (
                 <div className="skeleton h-[76px] rounded" />
+              )}
+              {/* ADR-0222: surface the new layers. The four structured_facts
+                  counts and the computable_macro status are presence
+                  signals, not figures a reader acts on — /facts is the
+                  surface. The link is the discoverability hop. */}
+              {layerCounts && (
+                <div className="m-0 mt-3.5 pt-3 border-t border-border text-[11px] leading-[1.55]">
+                  <div className="text-text-tertiary mb-1.5">Layers the agent reads</div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1">
+                    <a
+                      href="/facts"
+                      className="num text-text-secondary hover:text-text-primary underline decoration-zinc-700"
+                    >
+                      structured_facts:{" "}
+                      <span className="text-text-primary">
+                        {Object.values(layerCounts.factsByCategory).reduce((a, b) => a + b, 0)}
+                      </span>
+                    </a>
+                    <span className="text-text-tertiary">
+                      ai_capex {layerCounts.factsByCategory.ai_capex} ·
+                      china_ai {layerCounts.factsByCategory.china_ai} ·
+                      macro {layerCounts.factsByCategory.macro} ·
+                      valuation {layerCounts.factsByCategory.valuation}
+                    </span>
+                  </div>
+                  <div className="mt-1">
+                    <span className="text-text-tertiary">computable_macro: </span>
+                    <span
+                      className={
+                        layerCounts.computableMacroStatus === "measured"
+                          ? "text-emerald-400"
+                          : "text-text-tertiary"
+                      }
+                    >
+                      {layerCounts.computableMacroStatus}
+                    </span>
+                  </div>
+                </div>
               )}
               <p className="m-0 mt-3.5 pt-3 border-t border-border text-[11px] leading-[1.55] text-text-tertiary">
                 Every answer is built from these rows — the agent fetches each value

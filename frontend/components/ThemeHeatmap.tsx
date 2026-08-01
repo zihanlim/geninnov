@@ -2,6 +2,24 @@ import { toDisplayScore, type ThemeEdge } from "@/lib/themeSignals";
 import { EdgeDirectionChip, ProvenanceDot, PositionsLink, isThemeAbstained } from "./ThemeEdgeChips";
 import { isSynthetic, type ThemeProvenance } from "@/lib/themeProvenance";
 import { ScrollArea } from "@/components/ScrollArea";
+import Link from "next/link";
+
+/**
+ * Maps a theme NAME to the structured_facts CATEGORY that backs it. Themes with
+ * no direct fact category (e.g. "Geopolitical Risk", "Energy Prices") render
+ * NO fact link — the link is a presence signal of what the L5 can cite about a
+ * theme, and inventing one would be the same fabrication the table is meant to
+ * prevent. Only categories with rows are mapped; the heatmap caller passes the
+ * live counts so an empty category hides the link itself.
+ */
+const THEME_FACT_CATEGORY: Record<string, "ai_capex" | "china_ai" | "macro" | "valuation"> = {
+  "AI Capex": "ai_capex",
+  "China Growth": "china_ai",
+  "US Dollar": "macro",
+  "Fed Policy": "macro",
+  "Inflation": "macro",
+  "Corporate Credit": "macro",
+};
 
 export interface HeatmapTheme {
   id: string;
@@ -50,6 +68,13 @@ interface Props<T extends HeatmapTheme> {
    * positions for Energy Prices and US Dollar, which hold none.
    */
   heldThemeIds?: Set<string>;
+  /**
+   * structured_facts row counts per category (ADR-0222). When a theme has a
+   * mapped category with a non-zero count, the heatmap row renders a small
+   * "N facts →" link inline under the theme name that jumps to the matching
+   * section on /facts. Categories with zero rows are treated as no link.
+   */
+  factsByCategory?: Partial<Record<"ai_capex" | "china_ai" | "macro" | "valuation", number>>;
 }
 
 // Diverging color: red (low) → gray (mid) → green (high) on a 0-100 scale.
@@ -99,6 +124,7 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({
   abstainThreshold = 0.15,
   heldThemeIds,
   provByTheme,
+  factsByCategory,
 }: Props<T>) {
   if (themes.length === 0) {
     return (
@@ -258,6 +284,25 @@ export default function ThemeHeatmap<T extends HeatmapTheme>({
                       )}
                     </span>
                   )}
+                  {/* Per-theme fact link (ADR-0222 surfacing). Only renders when the
+                      theme has a mapped category with at least one row, so a zero-
+                      count never produces a misleading link. The href anchors on the
+                      matching section heading on /facts (#ai_capex, #china_ai, etc). */}
+                  {(() => {
+                    const cat = THEME_FACT_CATEGORY[t.name];
+                    const n = cat ? factsByCategory?.[cat] ?? 0 : 0;
+                    if (!cat || n === 0) return null;
+                    return (
+                      <Link
+                        href={`/facts#${cat}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="block mt-0.5 pl-[15px] text-[10px] font-normal text-text-tertiary hover:text-text-primary"
+                        title={`View the ${n} structured_facts rows that back this theme`}
+                      >
+                        <span className="num">{n}</span> facts →
+                      </Link>
+                    );
+                  })()}
                 </td>
                 <td className="px-2 py-2 text-center text-text-tertiary text-[10.5px]">{tierBadge(t.tier)}</td>
                 <td className="px-2 py-2 text-center whitespace-nowrap">

@@ -41,6 +41,11 @@ jobs:
       # ── Non-secret config (safe to hardcode) ──
       LLM_PROVIDER: minimax
       ANDROMEDA_ALLOW_MOCK: "0"   # real-or-empty, never fabricated (RESIDUAL R0b)
+      # ADR-0222 Tier 2: enable LLM extraction of numeric claims from
+      # theme_news. Confidence is `low`; rows land in structured_facts with
+      # category=auto_news. The L5 cites them with confidence attached. To
+      # disable: set to "0" (or unset). Cost is cents/day on Gemini Flash.
+      ANDROMEDA_NEWS_EXTRACTION: "1"
       PYTHONUNBUFFERED: "1"
 
     steps:
@@ -81,6 +86,9 @@ jobs:
           test -n "$FRED_API_KEY" || echo "::warning::FRED_API_KEY missing — macro series will be skipped"
           test -n "$BRAVE_SEARCH_API_KEY" || echo "::warning::BRAVE_SEARCH_API_KEY missing — news will be empty"
           test -n "$MINIMAX_API_KEY" || echo "::warning::MINIMAX_API_KEY missing — L5 book falls back to the deterministic template"
+          if [ "$ANDROMEDA_NEWS_EXTRACTION" = "1" ]; then
+            test -n "$GEMINI_API_KEY" || echo "::warning::ANDROMEDA_NEWS_EXTRACTION=1 but GEMINI_API_KEY missing — auto_news tier will be empty"
+          fi
 
       - name: Run daily refresh (L0–L5)
         run: python scripts/daily_refresh.py

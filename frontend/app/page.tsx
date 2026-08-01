@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import RegimeHero from "@/components/RegimeHero";
 import MacroCrossCurrents, { type CrossCurrents } from "@/components/MacroCrossCurrents";
+import ComputableMacroCard from "@/components/ComputableMacroCard";
 import ConvictionCard, { type ConvictionTheme } from "@/components/ConvictionCard";
 import Watchlist from "@/components/Watchlist";
 import ThemeDerivationDrawer from "@/components/ThemeDerivationDrawer";
@@ -67,6 +68,12 @@ interface Regime {
   fed_curve_change_13w_bps?: number | null;
   fed_curve_steepness_bps?: number | null;
   fed_posture_evidence?: CrossCurrents["fed_posture_evidence"];
+  // ADR-0217: three computable-from-existing-data analytics, persisted
+  // as a JSONB column on regime_classifications by the L3a runner.
+  // Status per metric follows ADR-0098 (measured / unknown / ...).
+  // The shape itself is owned by components/ComputableMacroCard.tsx
+  // — re-importing it here would create a circular import.
+  computable_macro?: import("@/components/ComputableMacroCard").ComputableMacro | null;
 }
 
 interface Factor {
@@ -207,6 +214,14 @@ function ConvictionPageInner() {
   const [abstainThreshold, setAbstainThreshold] = useState<number>(
     DEFAULT_EDGE_WEIGHTS.abstainThreshold
   );
+  // structured_facts row counts per category (ADR-0222 surfacing). Drives the
+  // "N facts →" line under each theme in the heatmap — read once here, passed
+  // to ThemeHeatmap, not fetched per-row. Empty object is the right
+  // pre-fetch state: ThemeHeatmap treats `undefined` as "no link", but a
+  // category-keyed object is what the lookup needs.
+  const [factsByCategory, setFactsByCategory] = useState<
+    Partial<Record<"ai_capex" | "china_ai" | "macro" | "valuation", number>>
+  >({});
   const [loading, setLoading] = useState(true);
   const [runDate, setRunDate] = useState<string | null>(null);
   const [lastPipelineRun, setLastPipelineRun] = useState<string | null>(null);
@@ -237,7 +252,7 @@ function ConvictionPageInner() {
           supabase
             .from("regime_classifications")
             .select(
-              "cycle, sentiment, run_date, yield_curve_slope, hy_oas, vix_level, vix_term_diff, real_rate, spx_breadth, debasement_pressure, debasement_real_yield_comp, debasement_dxy_decline_comp, debasement_gold_rise_comp, debasement_comovement_comp, debasement_lookback_weeks, fed_posture, fed_pivot_delta, fed_rate_change_13w_bps, fed_curve_change_13w_bps, fed_curve_steepness_bps, fed_posture_evidence"
+              "cycle, sentiment, run_date, yield_curve_slope, hy_oas, vix_level, vix_term_diff, real_rate, spx_breadth, debasement_pressure, debasement_real_yield_comp, debasement_dxy_decline_comp, debasement_gold_rise_comp, debasement_comovement_comp, debasement_lookback_weeks, fed_posture, fed_pivot_delta, fed_rate_change_13w_bps, fed_curve_change_13w_bps, fed_curve_steepness_bps, fed_posture_evidence, computable_macro"
             )
             .order("run_date", { ascending: false })
             .limit(1)
@@ -317,6 +332,7 @@ function ConvictionPageInner() {
         { byTheme: edgeByTheme },
         { byTheme: provByTheme },
         bookPicksRes,
+        factsRes,
       ] = await Promise.all([
         fetchThemeHistories(ids, 30),
         fetchThemeEdge(ids),
@@ -330,7 +346,36 @@ function ConvictionPageInner() {
           .order("run_date", { ascending: false })
           .limit(1)
           .maybeSingle(),
+        // structured_facts per-category counts (ADR-0222). A grouped count
+        // query is cheaper than 4 separate count calls, and the four
+        // categories are stable enough to keep in the JS rather than discover
+        // them. `count: "exact"` is the right tool here — `estimated` would
+        // round and let a 22 look like 20 in the heatmap's per-theme link.
+        supabase
+          .from("structured_facts")
+          .select("category", { count: "exact" }),
       ]);
+      // Aggregate per-category counts. A read error is treated as "no link"
+      // — same posture as the ask page: a failed read is not a fabricated
+      // zero, but ThemeHeatmap already treats undefined counts as no link,
+      // and the heatmap's own page (/facts) renders the real error.
+      if (!factsRes.error && factsRes.data) {
+        const byCat: Partial<
+          Record<"ai_capex" | "china_ai" | "macro" | "valuation", number>
+        > = {};
+        for (const r of factsRes.data as Array<{ category?: string }>) {
+          const c = r.category;
+          if (
+            c === "ai_capex" ||
+            c === "china_ai" ||
+            c === "macro" ||
+            c === "valuation"
+          ) {
+            byCat[c] = (byCat[c] ?? 0) + 1;
+          }
+        }
+        setFactsByCategory(byCat);
+      }
       // Left undefined on a read error: "the query failed" is not "the book holds
       // nothing in this theme", and the link must not render the second for the first.
       if (!bookPicksRes.error && bookPicksRes.data) {
@@ -660,6 +705,18 @@ function ConvictionPageInner() {
             <MacroCrossCurrents cycle={regime?.cycle ?? null} cc={regime ?? null} />
           </div>
 
+          {/* ── Computable macro: ADR-0217/0222 ─────────────────────────────
+              The L3a runner writes three derived readings (ERP, equity-bond
+              correlation, NDX seasonality) into regime_classifications
+              .computable_macro. We surface them HERE so a reader of the
+              L5 thesis on /book can land on / and see the metric the L5
+              was citing — same source of truth, two views. The card's
+              "full structured facts →" link is the discoverability hop
+              into /facts, which is the table the L5 also cites from. */}
+          <div className="mb-4">
+            <ComputableMacroCard cm={regime?.computable_macro ?? null} />
+          </div>
+
           {/* ── Screening: four aggregates, as a strip rather than a pane ────
               These are single figures, not a list — a pane would give them a
               scroller they never need and cost the grid a cell. The crowding
@@ -780,6 +837,7 @@ function ConvictionPageInner() {
                 edgeByTheme={edges}
                 abstainThreshold={abstainThreshold}
                 provByTheme={provenance}
+                factsByCategory={factsByCategory}
               />
             )}
 

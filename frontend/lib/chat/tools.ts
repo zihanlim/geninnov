@@ -617,6 +617,149 @@ const macroTool: ToolSpec = {
   },
 };
 
+// ADR-0218: read the structured_facts table the L5 cites. Category is
+// the one filter the L5 actually uses ("what do we know about
+// ai_capex?"), entity is a free-text match for "is X in the table?",
+// metric narrows a known entity. The result is one Fact per (entity,
+// metric) pair at its most recent as_of — the same shape the L5
+// prompt renders.
+const structuredFactsTool: ToolSpec = {
+  name: "structured_facts",
+  description:
+    "The hand-curated `structured_facts` table the L5 reasoning agent cites (ADR-0218). Each fact is (entity, metric, value, unit, as_of, source, confidence). Call this when a question asks about hyperscaler capex, cash runways, Chinese AI model releases, OpenRouter share, FOMC probabilities, equity risk premium, MIT/Bain/JPM research findings, or any other 'is there a fact the system can defend' question. Pass `category` to read all facts in one bucket; pass `entity` to scope to one subject; pass `metric` to narrow further.",
+  args: {
+    category:
+      "Optional. One of 'ai_capex', 'china_ai', 'macro', 'valuation'. Returns all facts in the category. Omit to read all.",
+    entity:
+      "Optional. Filters to one entity, e.g. 'MSFT' or 'industry:hyperscaler' or 'OpenRouter'.",
+    metric:
+      "Optional. Narrows to one metric, e.g. 'capex_fy26_bn'. Combine with entity for an exact match.",
+  },
+  async run(args, { db }) {
+    const category = str(args.category);
+    const entity = str(args.entity);
+    const metric = str(args.metric);
+    const filters: Record<string, unknown> = { order: { column: "as_of", ascending: false }, limit: 200 };
+    if (category) filters.eq = { ...(filters.eq as object ?? {}), category };
+    if (entity)    filters.eq = { ...(filters.eq as object ?? {}), entity };
+    if (metric)    filters.eq = { ...(filters.eq as object ?? {}), metric };
+    const { rows, error } = await db.select(
+      "structured_facts",
+      "entity, metric, value, unit, as_of, source, source_url, confidence, category, notes",
+      filters,
+    );
+    if (!rows.length) {
+      return {
+        tool: "structured_facts",
+        args,
+        facts: [],
+        absence: error
+          ? `structured_facts could not be read (${error}).`
+          : category
+            ? `No structured_facts rows in category='${category}'${entity ? ` for entity='${entity}'` : ""}${metric ? ` metric='${metric}'` : ""}. The fact the user is asking about is not in the table — say so rather than inventing it.`
+            : "structured_facts has no rows. The seed has not been loaded; run the loader to populate it.",
+      };
+    }
+    // Per (entity, metric) keep the most recent as_of. The natural key
+    // is (entity, metric, as_of), so the order-by-as_of-DESC walk picks
+    // the freshest row per pair by taking the first occurrence.
+    const seen = new Set<string>();
+    const facts: Fact[] = [];
+    for (const r of rows) {
+      const e = str(r.entity), m = str(r.metric);
+      if (!e || !m) continue;
+      const key = `${e}:${m}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const v = num(r.value);
+      const asOf = str(r.as_of);
+      const conf = str(r.confidence) ?? "?";
+      const src = str(r.source) ?? "?";
+      const unit = str(r.unit) ?? "";
+      const label = `${e} / ${m}`;
+      const value = v !== null ? v : str(r.value) ?? "—";
+      // Confidence is a property of the cite, not a number. Carry it
+      // in the label so the guardrail sees it on the read side.
+      facts.push(
+        f(`structured_facts.${e}.${m}`,
+          `${label} (${conf})`,
+          value,
+          src,
+          "score",
+          asOf,
+        ),
+      );
+    }
+    return {
+      tool: "structured_facts",
+      args,
+      facts,
+      notes: error ? { read_error: error } : undefined,
+    };
+  },
+};
+
+// ADR-0217: read the computable_macro JSONB on the latest regime
+// row. The runner writes three derived readings (erp, equity_bond_corr,
+// ndx_seasonality); this tool pulls them with their status so the
+// guardrail sees 'unknown' rather than treating a missing value as
+// zero.
+const computableMacroTool: ToolSpec = {
+  name: "computable_macro",
+  description:
+    "The three computable-from-existing-data macro analytics on the latest regime row (ADR-0217): ERP (earnings yield − 10y), equity_bond_corr (60d rolling SPX × DGS10 with the SocGen flip flag), ndx_seasonality (per-month NDX 1990-2025 + midterm-year subset). Each metric carries its own status — measured / insufficient_history / unknown. Call this when a question asks for ERP, equity-bond correlation, or NDX seasonality; the values come from regime_classifications.computable_macro, not from a re-derivation.",
+  args: {},
+  async run(args, { db }) {
+    const { rows, error } = await db.select(
+      "regime_classifications",
+      "run_date, computable_macro",
+      { order: { column: "run_date", ascending: false }, limit: 1 },
+    );
+    const row = rows[0];
+    const cm = (row?.computable_macro ?? null) as Record<string, Record<string, unknown>> | null;
+    if (!cm || typeof cm !== "object") {
+      return {
+        tool: "computable_macro",
+        args,
+        facts: [],
+        absence: error
+          ? `regime_classifications could not be read (${error}).`
+          : "The L3a runner has not written computable_macro yet — the JSONB column is null. Run scripts/daily_refresh.py to populate.",
+      };
+    }
+    const runDate = str(row?.run_date);
+    const facts: Fact[] = [];
+    for (const metric of ["erp", "equity_bond_corr", "ndx_seasonality"] as const) {
+      const m = cm[metric];
+      if (!m || typeof m !== "object") continue;
+      const status = str(m.status) ?? "unknown";
+      // Per-metric: render the inner key the L5 cites most. ADR-0220's
+      // citation guardrail accepts any inner key, but the prompt
+      // names these specifically.
+      let primaryKey: string;
+      switch (metric) {
+        case "erp": primaryKey = "erp_pct"; break;
+        case "equity_bond_corr": primaryKey = "corr"; break;
+        case "ndx_seasonality": primaryKey = "n_observations"; break;
+      }
+      const v = m[primaryKey];
+      const n = num(v);
+      if (n !== null) {
+        facts.push(
+          f(`computable_macro.${metric}.${primaryKey}`,
+            `${metric} (${status})`,
+            n,
+            `regime_classifications.computable_macro.${metric}.${primaryKey}`,
+            "score",
+            runDate,
+          ),
+        );
+      }
+    }
+    return { tool: "computable_macro", args, facts };
+  },
+};
+
 const pipelineStatus: ToolSpec = {
   name: "pipeline_status",
   description:
@@ -1125,6 +1268,8 @@ export const TOOLS: ToolSpec[] = [
   riskMetrics,
   themeScores,
   macroTool,
+  structuredFactsTool,
+  computableMacroTool,
   pipelineStatus,
   screeningFunnel,
   bookTurnover,

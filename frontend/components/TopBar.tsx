@@ -305,7 +305,13 @@ export default function TopBar() {
             the only mount that can hold a Ctrl+F-able, deep-linkable transcript.
             Both mount the same `AskConsole`. */}
         <AskDock />
-        {/* Beside `Ask` for the same reason `Ask` is here rather than in the nav:
+        {/* /facts is reachable from /alpha (the theme heatmap) and from /ask's
+            "What it reads" sidebar — see ThemeHeatmap's per-row fact link and
+            AskPage's layer-count block. A top-bar entry is redundant: the badge
+            was a presence signal for a data layer, not a navigation destination
+            (ADR-0222 was about /facts the route; the surfacing of it is decided
+            per-page, not globally).
+            Beside `Ask` for the same reason `Ask` is here rather than in the nav:
             both are ways of READING the site, not things it publishes, so they form
             one cluster of tools and the nav stays four destinations. It sits left of
             the run-state group, which is the order it had on `/` — tool, then state. */}

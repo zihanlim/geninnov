@@ -2949,6 +2949,44 @@ def main():
             # production with nothing to show why.
             print(f"[pipeline_runs] record failed ({exc.__class__.__name__}): {exc}")
 
+    # ── Phase 3a (L3a): computable macro analytics (ADR-0217) ─────────────
+    # Best-effort: a failure here augments the regime row with the
+    # JSONB column; it does not write a new row. If L3 failed and
+    # regime is None, this is also a no-op (the regime row was never
+    # written for this run_date).
+    if regime is not None:
+        from backend.services.computable_macro_runner import run as run_computable_macro
+        try:
+            comp_payload = run_computable_macro(supabase, as_of=run_date)
+            erp_status = comp_payload.get("erp", {}).get("status", "unknown")
+            eq_status = comp_payload.get("equity_bond_corr", {}).get("status", "unknown")
+            ndx_n = comp_payload.get("ndx_seasonality", {}).get("n_observations", 0)
+            print(f"[{run_date}] [L3a] computable_macro: erp={erp_status} "
+                  f"equity_bond_corr={eq_status} ndx_obs={ndx_n}")
+        except Exception as exc:
+            # A failure here must not abort the pipeline. The metric
+            # statuses are 'unknown' on a miss; the JSONB was either
+            # not written (caught by the runner itself) or written
+            # with a per-metric unknown reason.
+            print(f"[{run_date}] [L3a] computable_macro failed ({exc.__class__.__name__}): continuing.")
+
+        # ── L3b: Mirror everything into structured_facts ─────────────────
+        # The four auto-derivation passes (ADR-0222 Tier 1) re-shape
+        # what the pipeline just wrote into the structured_facts table
+        # so the L5 can cite it and /facts can render it. Hand-curated
+        # rows (50 in the seed) are untouched — different
+        # (entity, metric, as_of) keys. A failure here is non-fatal:
+        # the L5 cites from the source tables directly, and a stale
+        # /facts page is the worst outcome (ADR-0098 — absence beats
+        # fabrication).
+        try:
+            from backend.services.fact_extraction import derive_auto_facts
+            n_facts = derive_auto_facts(supabase, as_of=run_date)
+            print(f"[{run_date}] [L3b] auto_derive_facts: wrote {n_facts} rows")
+        except Exception as exc:
+            print(f"[{run_date}] [L3b] auto_derive_facts failed "
+                  f"({exc.__class__.__name__}): continuing.")
+
     # ── Phase 1–4: Theme signals → HypeScore → TradeScore ──────────────────
     # L1 is instrumented like every other stage. It was not, and /method said so
     # honestly — "Last success: never — no row with status='success'" — while the

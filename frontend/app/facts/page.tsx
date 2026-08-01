@@ -56,12 +56,63 @@ const CATEGORIES: { key: string; title: string; description: string }[] = [
     title: "Valuation",
     description: "External research: MIT, Bain, JPM findings on AI revenue vs. capex.",
   },
+  // The four below are AUTO-DERIVED (ADR-0222 Tier 1): re-shaped from tables the
+  // pipeline already writes. Confidence is `medium` and source is
+  // `auto-derived: <table>`. The hand-curated rows above are `high` and
+  // `medium` from a human source; both tiers live in the same table and the
+  // L5 cites them with the confidence attached.
+  {
+    key: "auto_macro",
+    title: "Auto · Macro",
+    description: "FRED yields, Fed Funds, VIX, S&P 500, NASDAQ 100, gold, oil, copper. Daily snapshot, auto-shaped from macro_indicators.",
+  },
+  {
+    key: "auto_regime",
+    title: "Auto · Regime",
+    description: "Yield curve slope, HY OAS, VIX level, real rate, SPX breadth. From the regime_classifications row.",
+  },
+  {
+    key: "auto_computable",
+    title: "Auto · Computable Macro",
+    description: "ERP, equity-bond correlation, NDX seasonality. From regime_classifications.computable_macro JSONB (ADR-0217).",
+  },
+  {
+    key: "auto_themes",
+    title: "Auto · Themes",
+    description: "Per-theme hype, volume, sentiment, correlation, momentum. From the published themes run.",
+  },
+  // Auto-derived aggregates over the curated company-level rows
+  // (sum/mean/min/max across the big-five hyperscalers, etc.). The
+  // hand-curated `industry:hyperscaler:capex_2026_total_bn = 725` is
+  // a JPM research view that ALSO includes smaller hyperscalers; the
+  // auto-derived `*_sum` is the big-five slice. Both travel — the
+  // L5 cites whichever scope the thesis asks for.
+  {
+    key: "auto_industry",
+    title: "Auto · Industry",
+    description: "Aggregates (sum/mean/min/max) over the curated company rows. E.g. top-5 hyperscaler capex sum.",
+  },
+  // Tier 2 (ADR-0222): LLM-extracted numeric claims from news
+  // headlines. Confidence is `low` and the source is the article
+  // name (theme_news.source). OFF by default; the LLM extraction
+  // pass is gated by ANDROMEDA_NEWS_EXTRACTION=1 in the env. When
+  // the pass is off, this section is empty — the L5 cites from
+  // the other tiers.
+  {
+    key: "auto_news",
+    title: "Auto · News",
+    description: "Numeric claims LLM-extracted from recent news headlines. Low confidence; source is the article.",
+  },
 ];
 
 const CONFIDENCE_STYLES: Record<string, string> = {
-  high: "bg-emerald-900/30 text-emerald-300 border-emerald-700",
-  medium: "bg-amber-900/30 text-amber-300 border-amber-700",
-  low: "bg-zinc-800 text-zinc-300 border-zinc-700",
+  // The "Ledger" light theme (globals.css) — NOT the old dark-theme emerald/amber
+  // /zinc builtins, which rendered pale text on pale tint and near-black on
+  // zinc-800. These are the app's own AA-verified pairs: accent for emphasis
+  // (high), warning for attention (medium), neutral outline for the weak tier.
+  high: "bg-accent-dim text-accent",
+  medium: "bg-warning-dim text-warning",
+  low: "bg-bg-elevated text-text-secondary border border-border",
 };
 
 export default function FactsPage() {
@@ -150,13 +201,13 @@ export default function FactsPage() {
       )}
 
       {!loading && !error && rows.length === 0 && (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-6 text-zinc-300">
-          <p className="font-medium">No facts loaded yet.</p>
-          <p className="mt-2 text-sm text-zinc-400">
-            The <code className="bg-zinc-800 px-1 rounded">structured_facts</code>{" "}
+        <div className="rounded-lg border border-border bg-bg-surface p-6">
+          <p className="m-0 font-medium text-text-primary">No facts loaded yet.</p>
+          <p className="mt-2 m-0 text-[13px] text-text-secondary">
+            The <code className="rounded bg-bg-elevated px-1 font-mono text-[12px] text-text-primary">structured_facts</code>{" "}
             table is empty. Run the loader against the seed JSON to populate it:
           </p>
-          <pre className="mt-3 rounded bg-zinc-950 p-3 text-xs text-zinc-300 overflow-auto">
+          <pre className="mt-3 rounded bg-bg-surface p-3 text-[12px] font-mono text-text-secondary overflow-auto border border-border">
 {`python -m backend.data.structured_facts_loader \\
     --path data/structured_facts_seed.json`}
           </pre>
@@ -167,16 +218,16 @@ export default function FactsPage() {
         {totalByCategory.map((c) => (
           <div
             key={c.key}
-            className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
+            className="rounded-lg border border-border bg-bg-surface p-4"
           >
-            <div className="text-xs uppercase tracking-wide text-zinc-500">
+            <div className="text-[10px] uppercase tracking-[0.1em] font-medium text-text-tertiary">
               {c.title}
             </div>
-            <div className="mt-1 text-2xl font-semibold text-zinc-100">
+            <div className="mt-1 text-2xl font-semibold num text-text-primary">
               {c.count}
             </div>
-            <div className="text-xs text-zinc-500">rows</div>
-            <div className="mt-3 text-sm text-zinc-400">{c.description}</div>
+            <div className="text-[11px] text-text-tertiary">rows</div>
+            <div className="mt-3 text-[12px] text-text-secondary">{c.description}</div>
           </div>
         ))}
       </div>
@@ -188,18 +239,22 @@ export default function FactsPage() {
           return (
             <section
               key={c.key}
-              className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-5"
+              id={c.key}
+              // `scroll-mt-20` leaves room for the sticky TopBar (h-14 = 56px)
+              // when an anchor jump lands here, so the heading isn't hidden
+              // underneath the bar.
+              className="rounded-lg border border-border bg-bg-surface p-5 scroll-mt-20"
             >
-              <h2 className="text-lg font-semibold text-zinc-100">
+              <h2 className="text-[16px] font-semibold text-text-primary m-0">
                 {c.title}{" "}
-                <span className="text-sm font-normal text-zinc-500">
+                <span className="text-[13px] font-normal text-text-tertiary">
                   · {list.length} {list.length === 1 ? "row" : "rows"}
                 </span>
               </h2>
               <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full text-sm">
+                <table className="min-w-full text-[13px]">
                   <thead>
-                    <tr className="text-left text-zinc-400">
+                    <tr className="text-left text-text-tertiary">
                       <th className="py-2 pr-3 font-medium">Entity / Metric</th>
                       <th className="py-2 pr-3 font-medium">Value</th>
                       <th className="py-2 pr-3 font-medium">Unit</th>
@@ -212,33 +267,33 @@ export default function FactsPage() {
                     {list.map((r) => (
                       <tr
                         key={r.id}
-                        className="border-t border-zinc-800 align-top"
+                        className="border-t border-border align-top"
                       >
-                        <td className="py-2 pr-3 font-mono text-xs text-zinc-200">
+                        <td className="py-2 pr-3 font-mono text-[12px] text-text-primary">
                           <div>{r.entity}</div>
-                          <div className="text-zinc-500">{r.metric}</div>
+                          <div className="text-text-tertiary">{r.metric}</div>
                           {r.notes && (
-                            <div className="mt-1 text-zinc-500 font-sans normal-case">
+                            <div className="mt-1 text-text-tertiary font-sans normal-case text-[12px]">
                               {r.notes}
                             </div>
                           )}
                         </td>
-                        <td className="py-2 pr-3 font-mono text-zinc-100">
+                        <td className="py-2 pr-3 font-mono num text-text-primary">
                           {typeof r.value === "number"
                             ? r.value.toLocaleString()
                             : String(r.value)}
                         </td>
-                        <td className="py-2 pr-3 text-zinc-400">{r.unit}</td>
-                        <td className="py-2 pr-3 text-zinc-400">
+                        <td className="py-2 pr-3 text-text-secondary">{r.unit}</td>
+                        <td className="py-2 pr-3 text-text-secondary">
                           {r.as_of?.slice(0, 10) || "—"}
                         </td>
-                        <td className="py-2 pr-3 text-zinc-300">
+                        <td className="py-2 pr-3 text-text-secondary">
                           {r.source_url ? (
                             <a
                               href={r.source_url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="underline decoration-zinc-600 hover:text-zinc-100"
+                              className="underline decoration-border hover:text-text-primary"
                             >
                               {r.source}
                             </a>
@@ -248,7 +303,7 @@ export default function FactsPage() {
                         </td>
                         <td className="py-2 pr-3">
                           <span
-                            className={`inline-block rounded border px-2 py-0.5 text-xs ${
+                            className={`inline-block rounded border px-2 py-0.5 text-[11px] ${
                               CONFIDENCE_STYLES[r.confidence] ||
                               CONFIDENCE_STYLES.medium
                             }`}
@@ -266,11 +321,11 @@ export default function FactsPage() {
         })}
       </div>
 
-      <div className="mt-10 rounded-lg border border-zinc-800 bg-zinc-900/40 p-5 text-sm text-zinc-400">
-        <div className="font-medium text-zinc-200">How to read this</div>
-        <p className="mt-2">
+      <div className="mt-10 rounded-lg border border-border bg-bg-surface p-5">
+        <div className="font-medium text-text-primary">How to read this</div>
+        <p className="mt-2 m-0 text-[13px] text-text-secondary">
           The L5 reasoning agent cites from this table as{" "}
-          <code className="rounded bg-zinc-800 px-1 font-mono text-xs text-zinc-200">
+          <code className="rounded bg-bg-elevated px-1 font-mono text-[12px] text-text-primary">
             [structured_facts:&lt;entity&gt;:&lt;metric&gt;]
           </code>
           . The cite is verified against the row in this table; a fabricated cite
@@ -278,8 +333,8 @@ export default function FactsPage() {
           not here is not citable — the L5 cites absence as absence, not as a
           guess.
         </p>
-        <p className="mt-2">
-          The <code className="font-mono text-xs">as_of</code> column is the date
+        <p className="mt-2 m-0 text-[13px] text-text-secondary">
+          The <code className="rounded bg-bg-elevated px-1 font-mono text-[12px] text-text-primary">as_of</code> column is the date
           the fact is true as of, not the date the row was loaded; a quarterly
           update writes a new row rather than overwriting history, so the
           trajectory of one quantity is preserved.

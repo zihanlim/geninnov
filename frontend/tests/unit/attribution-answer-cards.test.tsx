@@ -94,6 +94,16 @@ describe("the row's shape", () => {
     expect(out).toContain("gross against net");
   });
 
+  it("folds the dollar cost into the gross/net card", () => {
+    // The standalone cost card is gone, but the cost finding must survive: the
+    // gross/net card now carries the dollar charge and turnover in its consequence.
+    const out = renderToStaticMarkup(
+      <AnswerRow cards={cards({ holdings: [holding(), holding(), holding()] })} />,
+    );
+    expect(out).toContain("$0.4M");
+    expect(out).toContain("charged over 3 runs at 79% mean turnover");
+  });
+
   it("puts no realised statistic on any card", () => {
     // The refusal list in components/AnswerRow.tsx. These are wrong here on BOTH
     // sample (9 sessions vs minimums of 30-252) and basis (costless series on a

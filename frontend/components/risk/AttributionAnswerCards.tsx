@@ -38,7 +38,7 @@
 // duplication this row exists to avoid.
 
 import type { AnswerCard } from "@/components/AnswerRow";
-import { pctOf } from "@/components/AnswerRow";
+import { pctOf, usdM } from "@/components/AnswerRow";
 import type { HoldingsPerformanceRow } from "@/components/risk/CostDrag";
 import type { TrackRecord } from "@/lib/method/trackRecord";
 import { MIN_SESSIONS_BY_FIELD } from "@/lib/risk/sampleAdequacy";
@@ -46,6 +46,11 @@ import { MONITORED } from "@/lib/mandate";
 
 const sum = (xs: Array<number | null | undefined>) =>
   xs.reduce<number>((a, x) => a + (typeof x === "number" ? x : 0), 0);
+
+const mean = (xs: Array<number | null | undefined>) => {
+  const ok = xs.filter((x): x is number => typeof x === "number");
+  return ok.length ? sum(ok) / ok.length : null;
+};
 
 /** The statistics still suppressed at `sessions`, cheapest threshold first. */
 function stillSuppressed(sessions: number): Array<[string, number]> {
@@ -158,6 +163,9 @@ export function attributionAnswerCards({
   // ── 3. Gross against net — where the sign lives ───────────────────────────
   const g = holdings.length ? sum(holdings.map((h) => h.gross_return)) : null;
   const n = holdings.length ? sum(holdings.map((h) => h.net_return)) : null;
+  const totalCost = holdings.length ? sum(holdings.map((h) => h.cost_pct)) : null;
+  const totalCostUsd = holdings.length ? sum(holdings.map((h) => h.cost_usd)) : null;
+  const avgTurnover = mean(holdings.map((h) => h.turnover));
   const flips = g !== null && n !== null && g >= 0 && n < 0;
   const grossNet: AnswerCard = {
     label: "Gross against net",
@@ -181,12 +189,30 @@ export function attributionAnswerCards({
           <strong>The sign flips.</strong> The same positions earn {pctOf(g, 2)} before
           trading costs and lose {pctOf(Math.abs(n), 2)} after them. The cost is not a
           haircut on the result; over this window it <em>is</em> the result.
+          {totalCost !== null && (
+            <>
+              {" "}
+              <span className="num">{usdM(totalCostUsd!)}</span> charged over{" "}
+              {holdings.length} run{holdings.length === 1 ? "" : "s"} at{" "}
+              {avgTurnover === null ? "an unmeasured" : pctOf(avgTurnover, 0)} mean
+              turnover.
+            </>
+          )}
         </>
       ) : (
         <>
           {pctOf(g, 2)} before trading costs, {pctOf(n, 2)} after. The gap is what
           reconstituting the book each run costs, priced by this repo&apos;s own cost
           model rather than assumed away.
+          {totalCost !== null && (
+            <>
+              {" "}
+              <span className="num">{usdM(totalCostUsd!)}</span> charged over{" "}
+              {holdings.length} run{holdings.length === 1 ? "" : "s"} at{" "}
+              {avgTurnover === null ? "an unmeasured" : pctOf(avgTurnover, 0)} mean
+              turnover.
+            </>
+          )}
         </>
       ),
   };

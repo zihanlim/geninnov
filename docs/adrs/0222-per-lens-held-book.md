@@ -52,12 +52,14 @@ left them:
   `lens` column. A per-lens forward record is explicitly out of scope and would
   require re-deriving all four of ADR-0090's guarantees for a second concurrent
   denominator.
-- The credit book does **not** gain a `portfolio_positions` write in this change.
-  Today the credit book is persisted to `research_recommendations` + a
-  `book_holdings` snapshot (`q1_agent._persist_book_holdings`), and no credit held
-  book exists in `portfolio_positions` yet — so the credit page's scatter still does
-  not render. Writing one is a follow-up: filter the credit-lens candidates to the
-  credit universe and call the held-book path under `lens='credit'`.
+- **The credit held book is written per-lens.** `run_credit_lens_book` calls
+  `reconcile_positions_to_published_book` under `lens='credit'` after L5b succeeds,
+  so the credit book gets `portfolio_positions` rows carrying `lens='credit'`. Both
+  `allocate_and_persist_portfolio` and `reconcile_positions_to_published_book` gain a
+  `lens` param (default `'multi_asset'`), scope their deletes by lens, and upsert on
+  `lens,theme_id,asset,direction` — the new UNIQUE after migration 068. This is also a
+  required fix: the old `on_conflict='theme_id,asset,direction'` no longer matches any
+  constraint, so the multi-asset nightly would have errored without it.
 
 ## Consequences
 
@@ -65,14 +67,16 @@ left them:
   filter is `.eq("lens", resolved)`; at multi_asset `resolved` is `'multi_asset'`, and
   every row's `lens` defaults to `'multi_asset'`. Verified by the unit test
   `test_portfolio_positions_lens` and by a live probe of `/risk` before/after.
-- **The credit page can render the scatter as soon as the follow-up lands.** Once a
-  credit held book exists under `lens='credit'`, the existing chart code draws it —
-  the chart itself needed no change, only the per-lens held book.
+- **The credit page renders the scatter.** With the credit held book written under
+  `lens='credit'`, the existing chart code draws it — the chart itself needed no
+  change, only the per-lens held book. Verified live for 2026-08-01: the credit book's
+  decomposition is {JNK, BKLN, BIL}, which after the write joins its own
+  `portfolio_positions` rows to 3 points, above `SCATTER_MIN_POINTS`.
 - **The `(lens, conviction)` index stays small.** It is partial (`WHERE conviction
   IS NOT NULL`) so rows without a persisted conviction never enter it.
 - **This is a debt, not a leak.** The held book is a per-day snapshot of target
   weights, not a return stream, and the credit book has no P&L series (ADR-0194
-  deferred it). The scatter's x-axis will read the credit book's conviction, and the
+  deferred it). The scatter's x-axis reads the credit book's conviction, and the
   y-axis its decomposition — a genuine credit-book risk view, with no fabricated
   history.
 
@@ -96,7 +100,10 @@ left them:
 
 - Migration: `supabase/migrations/068_per_lens_held_book.sql`
 - Implementation: `frontend/components/risk/RiskBody.tsx` (held-book read filters by
-  lens), `frontend/lib/risk/riskBoard.ts` (`PositionRow.lens`)
-- Tests: `tests/backend/test_portfolio_positions_lens.py` (new)
-- Follow-up (not in this ADR): a credit-lens held-book writer in
-  `scripts/daily_refresh.py::run_credit_lens_book`
+  lens), `frontend/lib/risk/riskBoard.ts` (`PositionRow.lens`),
+  `scripts/daily_refresh.py` (`allocate_and_persist_portfolio`,
+  `reconcile_positions_to_published_book`, `run_credit_lens_book` — the credit
+  held-book writer)
+- Tests: `tests/backend/test_book_per_lens.py` (per-lens held-book writes),
+  `frontend/tests/unit/risk-analytics-columns.test.ts` (held-book read filters by
+  lens)

@@ -128,7 +128,7 @@ import {
 import { fetchThemeHistories } from "@/lib/themeSignals";
 import SectionNav from "@/components/SectionNav";
 import AnswerRow from "@/components/AnswerRow";
-import PageHeader from "@/components/PageHeader";
+import PageHeader, { PageHeaderMeta } from "@/components/PageHeader";
 import { riskAnswerCards } from "@/components/risk/RiskAnswerCards";
 import { mandateAnswerCards } from "@/components/risk/MandateAnswerCards";
 import { attributionAnswerCards } from "@/components/risk/AttributionAnswerCards";
@@ -378,19 +378,20 @@ const INITIAL: PageData = {
 };
 
 /**
- * A panel's "still the multi-asset book" marker, or nothing at all.
+ * The "still the multi-asset book" marker for the two ANSWER ROW call sites —
+ * nothing, or a marker above the row.
+ *
+ * Section cards now carry their own in-header `scopePill`; this helper is left
+ * only for the `MandateAnswerRow` / `RiskAnswerRow` blocks, which have no single
+ * card header to host a pill (a four-card grid would mislabel the cards that
+ * follow the lens, and each card already has its own per-card `scopeNote`). So
+ * this is the one remaining block-above-a-row form.
  *
  * One line at a call site, and the gate cannot be forgotten: `showScopeNote`
  * returns false for EVERY panel at multi_asset, so under the default lens this
- * renders null and the extra DOM node never reaches the eight cards that would
+ * renders null and the extra DOM node never reaches the rows that would
  * otherwise carry one. (`LensScopeChip` re-checks the lens itself; that is its
  * own invariant, not a reason to skip this one.)
- *
- * Left-aligned rather than right. `PositionRiskScatter`'s marker sits above a
- * two-column grid whose FIRST cell is the panel being marked, so a left edge
- * puts the chip over the card it describes at every breakpoint; right-aligned
- * it would float above the waterfall beside it, which has a different scope and
- * needs no marker at all.
  */
 function ScopeNote({ lens, panel }: { lens: string; panel: string }) {
   if (!showScopeNote(lens, panel)) return null;
@@ -1259,20 +1260,27 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       {phase === "risk" &&
       data.resolvedLens !== DEFAULT_LENS &&
       lensLessOnThisPhase.length > 0 ? (
-        <div className="grid xl:grid-cols-[minmax(0,1fr)_480px] gap-6 items-start mb-7 [&>*]:min-w-0">
+        <div className="grid xl:grid-cols-[minmax(0,1fr)_480px_auto] gap-6 items-start mb-7 [&>*]:min-w-0">
           <PageHeader
             className="mb-0"
             title={PHASE_COPY[phase].title}
             lede={PHASE_COPY[phase].lede}
-            // The two-row meta (run date, lens) is the SAME block the default
-            // page shows in the same spot — a reader who switches lens here must
-            // not lose "which book, when" the header states everywhere else — and
-            // it sits where the multi-asset page puts it: the header's own
-            // right-hand block, not a third column beside the scope banner. The
-            // toggle above shows the lens the reader PICKED; this shows the lens
-            // the ROW claims (the pair the default page puts side by side), so
-            // the boundary disclosures that follow still describe the query that
-            // produced the page.
+          />
+          {/* The cell is deliberately NOT fixed-height. A fixed 175px cell
+              clipped the lede at 1280–1300, where the shared lede wraps; the
+              grid row grows to fit the header instead, and the banner's
+              `self-stretch` cell matches the header's height. */}
+          <div className="self-stretch">
+            <LensScopeBanner lens={data.resolvedLens} panels={lensLessOnThisPhase} side />
+          </div>
+          {/* The two-row meta (run date, lens) is the SAME block the default
+              page shows — a reader who switches lens here must not lose "which
+              book, when" the header states everywhere else — but as its own grid
+              column to the RIGHT of the scope banner, not tucked inside the
+              title/lede cell. The toggle above shows the lens the reader PICKED;
+              this shows the lens the ROW claims, so the boundary disclosures
+              that follow still describe the query that produced the page. */}
+          <PageHeaderMeta
             meta={[
               { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
               {
@@ -1287,13 +1295,6 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
               },
             ]}
           />
-          {/* The cell is deliberately NOT fixed-height. A fixed 175px cell
-              clipped the lede at 1280–1300, where the shared lede wraps beside
-              the meta block; the grid row grows to fit the header instead, and
-              the banner's `self-stretch` cell matches the header's height. */}
-          <div className="self-stretch">
-            <LensScopeBanner lens={data.resolvedLens} panels={lensLessOnThisPhase} side />
-          </div>
         </div>
       ) : (
         <>
@@ -1593,16 +1594,22 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
               valued from lens-less tables and six from the lens-following
               analytics row, in one table, under one heading, with one OK/BREACH
               column. Inside the section wrapper, so the grid cell is untouched. */}
-          <ScopeNote lens={data.resolvedLens} panel="RiskLimitBoard" />
-          {/* The lens goes IN as well, because the chip above can only say the
-              board is part multi-asset — the board itself is the only thing that
-              knows which five of its eleven rows are the half it means, and the
-              banner sends the reader here to find out. */}
+          {/* The lens goes IN as a header pill as well, because the pill can only
+              say the board is part multi-asset — the board itself is the only
+              thing that knows which five of its eleven rows are the half it
+              means, and the banner sends the reader here to find out. It lives
+              IN the card header so it never shifts the card's top under a
+              non-default lens (a block above the card did). */}
           <RiskLimitBoard
             loading={data.loading}
             rows={limitBoard}
             coverageNote={limitCoverageNote}
             lens={data.resolvedLens}
+            scopePill={
+              showScopeNote(data.resolvedLens, "RiskLimitBoard") ? (
+                <LensScopeChip lens={data.resolvedLens} panel="RiskLimitBoard" pill />
+              ) : undefined
+            }
           />
         </section>
 
@@ -1653,7 +1660,6 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
             <StressScenarios compact state={scenarioState} />
           </div>
           <div className="xl:col-span-1">
-            <ScopeNote lens={data.resolvedLens} panel="WhatIfScenario" />
             <WhatIfScenario
               compact
               loading={data.loading}
@@ -1666,6 +1672,11 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
                   : data.factorsFailure
                     ? `factor_exposures read failed: ${data.factorsFailure}`
                     : null
+              }
+              scopePill={
+                showScopeNote(data.resolvedLens, "WhatIfScenario") ? (
+                  <LensScopeChip lens={data.resolvedLens} panel="WhatIfScenario" pill />
+                ) : undefined
               }
             />
             {/* Sanctions exposure, under the what-if in the same 1/4 column: the
@@ -1684,8 +1695,8 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           {/* Browser-side estimate, labelled as one — after the persisted matrix. */}
           {/* Both figures it puts on screen — the shocked positions and the dollar
               P&L against total_capital — come from lens-less tables, so the shock is
-              applied to the multi-asset book whatever lens is active. */}
-          <ScopeNote lens={data.resolvedLens} panel="WhatIfScenario" />
+              applied to the multi-asset book whatever lens is active. The marker
+              rides in the card's header pill rather than above it. */}
           <WhatIfScenario
             loading={data.loading}
             positions={data.positions}
@@ -1697,6 +1708,11 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
                 : data.factorsFailure
                   ? `factor_exposures read failed: ${data.factorsFailure}`
                   : null
+            }
+            scopePill={
+              showScopeNote(data.resolvedLens, "WhatIfScenario") ? (
+                <LensScopeChip lens={data.resolvedLens} panel="WhatIfScenario" pill />
+              ) : undefined
             }
           />
         </>
@@ -1739,14 +1755,19 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         {/* Three of the four VaRs follow the lens; the published one on the risk
             row does not. A multi-asset VaR sitting inside a four-way comparison
             of credit VaRs is precisely the "two numbers called VaR" defect
-            ADR-0082 named, one lens toggle later. */}
-        <ScopeNote lens={data.resolvedLens} panel="VarMethods" />
+            ADR-0082 named, one lens toggle later. The marker rides in the card's
+            header pill rather than above it. */}
         <VarMethods
           risk={data.risk}
           decomposition={data.analyticsRow?.risk_decomposition ?? null}
           monteCarlo={data.analyticsRow?.monte_carlo_var ?? null}
           forecast={data.analyticsRow?.var_forecast ?? null}
           sessions={data.returns.length}
+          scopePill={
+            showScopeNote(data.resolvedLens, "VarMethods") ? (
+              <LensScopeChip lens={data.resolvedLens} panel="VarMethods" pill />
+            ) : undefined
+          }
         />
       </div>
       </section>
@@ -1788,10 +1809,17 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           positioning / CFTC (lens-following, right 2/4). The attribution table
           is min-w-[860px] with its own overflow-x-auto; inside a ~660px column
           it scrolls rather than breaking. PositioningCrowding is the active
-          lens's own CFTC reading. */}
-      <div className="mt-6 grid xl:grid-cols-2 gap-6 items-start [&>*]:min-w-0 [&>*]:mb-0">
-        <div>
-          <ScopeNote lens={data.resolvedLens} panel="PositionRiskAttribution" />
+          lens's own CFTC reading.
+
+          Grid STRETCHES to equal height (no items-start) so the per-position
+          attribution card's bottom edge lines up with the theme-attention card
+          below CFTC — the same equal-height idiom the exposure row uses. The
+          left cell is a flex column so that card fills the cell it was given.
+          (The lens pills render null at multi_asset; under a second lens each
+          card carries its own in-header pill, so no block above a card shifts
+          it and the tops align under every lens.) */}
+      <div className="mt-6 grid xl:grid-cols-2 gap-6 [&>*]:min-w-0 [&>*]:mb-0">
+        <div className="flex flex-col [&>section]:flex-1">
           <PositionRiskAttribution
             loading={data.loading}
             rows={attribution}
@@ -1802,17 +1830,23 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
             positionsFailure={data.positionsFailure}
             factorsFailure={data.factorsFailure}
             hasPositions={data.positions.length > 0}
+            scopePill={
+              showScopeNote(data.resolvedLens, "PositionRiskAttribution") ? (
+                <LensScopeChip lens={data.resolvedLens} panel="PositionRiskAttribution" pill />
+              ) : undefined
+            }
           />
         </div>
         <div>
-          <ScopeNote lens={data.resolvedLens} panel="PositioningCrowding" />
+          {/* PositioningCrowding is scope "book" — every figure follows the lens —
+              so it carries no pill, which is exactly why this card's top aligns
+              with the pill-carrying one beside it. */}
           <PositioningCrowding state={positioningState} />
           {/* Theme attention crowding: sits below CFTC in the right column. The
               two theme tables are lens-neutral, so the only book-shaped input is
               the held-position list — every row scores a theme the MULTI-ASSET
               book holds, whichever lens the reader picked. */}
           <div className="mt-6">
-            <ScopeNote lens={data.resolvedLens} panel="AttentionCrowding" />
             <AttentionCrowding
               loading={data.loading}
               rows={crowdingRows}
@@ -1821,6 +1855,11 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
                 data.positions.length === 0
                   ? "No sized positions, so there are no book themes to score for crowding."
                   : `The book's themes have up to ${crowdingMaxObs} of the five scored observations a within-history percentile needs; below five it reads — rather than a guess, and fills in as the daily history grows.`
+              }
+              scopePill={
+                showScopeNote(data.resolvedLens, "AttentionCrowding") ? (
+                  <LensScopeChip lens={data.resolvedLens} panel="AttentionCrowding" pill />
+                ) : undefined
               }
             />
           </div>
@@ -1909,7 +1948,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           <section id="track-record">
             <TrackRecordHeading />
           </section>
-          <div className="grid xl:grid-cols-2 gap-6 items-start [&>*]:min-w-0 [&>*]:mb-0">
+          <div className="mt-3 grid xl:grid-cols-2 gap-6 items-start [&>*]:min-w-0 [&>*]:mb-0">
             <TrackRecord framed={false} rows={data.outcomeRows} publishedByRunDate={data.publishedByRunDate} />
             <CostDrag
               rows={data.holdings}
@@ -1926,48 +1965,22 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         <TrackRecord rows={data.outcomeRows} publishedByRunDate={data.publishedByRunDate} />
       )}
 
-      {/* Moved off /mandate (ADR-0172). Both are BACKWARD-LOOKING, which is phase
-          6's question and not phase 1's — a mandate says what the book is allowed to
-          be, not what it did. They were at 4093px on a page whose own answer is at
-          284px, while /attribution was the thinnest page in the app.
-
-          The pairing comment below is kept because its measurement still holds: these
-          two need 676px each and fit a two-column row, where the limit board (820),
-          per-position attribution (860) and stress scenarios (720) do not. Pairing is
-          gated on the measurement name by name, not applied to whatever is adjacent. */}
-      {/* 2c ‖ 2d — the two backward-looking readings, side by side.
-              2c is "versus what?" answered with numbers rather than a second chart
-              line (ADR-0094 built the benchmark series; down-capture is the field
-              that actually tests this book's claim to be short the market). 2d is
-              the path statistics ex-ante cannot produce and a three-session book
-              cannot either — explicitly NOT a track record (ADR-0112), with its
-              caveats above the numbers rather than below them.
-
-              THESE TWO PAIR AND THE FOUR INSTRUMENTS ABOVE CANNOT, and the reason
-              is measured rather than aesthetic. `main` is `max-w-[1400px]`, so at a
-              1440 viewport a two-column row gives each side (1344-24)/2 = 660px.
-              The limit board needs 820px before its table opens a horizontal
-              scroller, per-position attribution 860, stress scenarios and external
-              positioning 720 each — so halving any of them trades vertical space
-              for an inner scrollbar, which is goal 7's failure, not a fix for it.
-              These two need 676 and fit. Pairing is gated on the measurement, name
-              by name; it is not a rule the page applies to whatever is adjacent. */}
-      <div className="mt-6 grid lg:grid-cols-2 gap-6 items-start [&>*]:min-w-0">
-        <BenchmarkComparison
-          comparison={data.risk?.benchmark_comparison ?? null}
-          conditionalVol={data.risk?.conditional_vol ?? null}
-          sessions={data.returns.length}
-        />
+      {/* WeightsBacktest — full-width row above the chart trio (2026-08-02).
+          Previously paired with BenchmarkComparison (ADR-0172); that pairing is
+          dissolved so BenchmarkComparison can take the left 2/4 of the chart
+          grid instead. WeightsBacktest renders a self-contained card with its
+          caveat at the top and needs no surrounding prose. */}
+      <div className="mt-3">
         <WeightsBacktest data={data.analyticsRow?.weights_backtest ?? null} />
       </div>
 
-      {/* Stated before the curve, not after it. Both panels below draw a shape a
-          reader recognises as a track record, and at the current observation
-          count that shape is asserting far more than the data supports. The n is
-          read from the persisted row rather than from rows.length so the caveat
-          cannot disagree with the figure L4 published. */}
+      {/* The caveat spans full-width above the chart trio so the three panels share
+          the same horizontal reference line below it. Stated before the curve,
+          not after it: a reader who scrolls past the chart has already formed a
+          view, and the correction arriving afterwards is a footnote to a conclusion
+          they have made. */}
       {!data.loading && (
-        <SourceCaveat source="portfolio_cumulative_return.daily_returns_count">
+        <SourceCaveat source="portfolio_cumulative_return.daily_returns_count" className="mt-3 mb-2">
           {data.inception ? (
             <>
               Priced from actual closes, but{" "}
@@ -2006,19 +2019,34 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           )}
         </SourceCaveat>
       )}
-      {/* The caveat stays directly above the curve it corrects, not below it:
-          a reader who scrolls past the chart has already formed a view of the
-          performance, and the correction arriving afterwards is a footnote to
-          a conclusion they have made. */}
-      <div className="grid xl:grid-cols-2 gap-6 mb-6 items-start [&>*]:mb-0">
-        <DrawdownChart
-          loading={data.loading}
-          rows={data.returns}
-          failure={data.returnsFailure}
-          inception={data.inception}
-          benchmark={data.benchmark}
-        />
-        <DailyPLHistory limit={30} />
+
+      {/* The benchmark, the drawdown curve, and the P&L table in one row:
+          BenchmarkComparison takes the left 2/4 (col-span-2 of a 4-col grid),
+          the drawdown chart and the daily history stack vertically in the right
+          1/4 + 1/4. `main` is `max-w-[1400px]`, so at 1440 viewport the
+          available width is 1344px; after gap-6 (18px) each side of the col-span
+          groups, BenchmarkComparison gets 663px and each right-side card 331px —
+          comfortable for the capture bars and the P&L table respectively (2026-08-02). */}
+      <div className="grid xl:grid-cols-4 gap-6 items-start [&>*]:min-w-0 mb-6">
+        <div className="xl:col-span-2">
+          <BenchmarkComparison
+            comparison={data.risk?.benchmark_comparison ?? null}
+            conditionalVol={data.risk?.conditional_vol ?? null}
+            sessions={data.returns.length}
+          />
+        </div>
+        <div className="xl:col-span-1">
+          <DrawdownChart
+            loading={data.loading}
+            rows={data.returns}
+            failure={data.returnsFailure}
+            inception={data.inception}
+            benchmark={data.benchmark}
+          />
+        </div>
+        <div className="xl:col-span-1">
+          <DailyPLHistory limit={30} />
+        </div>
       </div>
       </section>
       )}

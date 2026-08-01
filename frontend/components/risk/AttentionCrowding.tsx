@@ -9,6 +9,7 @@
 // a fabricated 50th percentile.
 
 "use client";
+import type { ReactNode } from "react";
 import {
   type CrowdingRow,
   CROWDING_PERCENTILE,
@@ -45,12 +46,16 @@ export function AttentionCrowding({
   rows,
   historyFailure,
   observationNote,
+  scopePill,
 }: {
   loading: boolean;
   rows: CrowdingRow[];
   historyFailure: string | null;
   /** Set when too few scored observations exist to compute percentiles. */
   observationNote?: string | null;
+  /** The "still the multi-asset book" marker, rendered as a pill in the card
+   *  header. Absent at the default lens and for any caller that predates it. */
+  scopePill?: ReactNode;
 }) {
   const flagged = rows.filter((r) => r.flag !== null);
   const positioned = rows.filter((r) => r.bookDirection !== null);
@@ -62,10 +67,13 @@ export function AttentionCrowding({
         <h2 id="risk-crowding-heading" className="card-title m-0">
           Theme attention crowding
         </h2>
-        <span className="text-[11px] text-text-tertiary num">
-          {loading
-            ? "…"
-            : `${flagged.length} crowded & positioned · ${positioned.length} in book`}
+        <span className="flex items-center gap-2 flex-wrap">
+          {scopePill}
+          <span className="text-[11px] text-text-tertiary num">
+            {loading
+              ? "…"
+              : `${flagged.length} crowded & positioned · ${positioned.length} in book`}
+          </span>
         </span>
       </div>
 

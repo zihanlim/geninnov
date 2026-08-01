@@ -60,6 +60,7 @@ import {
   countByStatus,
   NEAR_LIMIT_FRACTION,
 } from "@/lib/risk/riskBoard";
+import type { ReactNode } from "react";
 import { LIMIT_STATUS_CHIPS } from "@/lib/risk/riskChips";
 import { isNum } from "@/lib/risk/analytics";
 import { DEFAULT_LENS } from "@/lib/book/lensView";
@@ -159,6 +160,7 @@ export function RiskLimitBoard({
   rows,
   coverageNote,
   lens = DEFAULT_LENS,
+  scopePill,
 }: {
   loading: boolean;
   rows: LimitRow[];
@@ -170,6 +172,12 @@ export function RiskLimitBoard({
    * which is also the only correct behaviour for a page pinned to the default.
    */
   lens?: string;
+  /**
+   * The "still the multi-asset book" marker, rendered as a pill in the card
+   * header. Absent at the default lens (and for any caller that predates the
+   * pill), so it never reaches a page a live submission is shown from.
+   */
+  scopePill?: ReactNode;
 }) {
   const counts = countByStatus(rows);
   const anyConfig = rows.some((r) => r.limitSource === "scoring_config");
@@ -191,12 +199,15 @@ export function RiskLimitBoard({
         <h2 id="risk-limits-heading" className="card-title m-0">
           Risk-limit board
         </h2>
-        <span className="text-[11px] text-text-tertiary num">
-          {loading
-            ? "…"
-            : `${counts.breached} breached · ${counts.near} near · ${counts.ok} ok${
-                counts.unknown ? ` · ${counts.unknown} no-data` : ""
-              }`}
+        <span className="flex items-center gap-2 flex-wrap">
+          {scopePill}
+          <span className="text-[11px] text-text-tertiary num">
+            {loading
+              ? "…"
+              : `${counts.breached} breached · ${counts.near} near · ${counts.ok} ok${
+                  counts.unknown ? ` · ${counts.unknown} no-data` : ""
+                }`}
+          </span>
         </span>
       </div>
 

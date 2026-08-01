@@ -14,7 +14,7 @@
 // historically do. The mapping is transparent so a PM can discount it.
 
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   type PositionRow,
   type FactorExposureRow,
@@ -105,6 +105,7 @@ export function WhatIfScenario({
   totalCapital,
   dataFailure,
   compact = false,
+  scopePill,
 }: {
   loading: boolean;
   positions: PositionRow[];
@@ -119,6 +120,9 @@ export function WhatIfScenario({
    * one track at 0px, so `compact` switches the whole body to a single column.
    */
   compact?: boolean;
+  /** The "still the multi-asset book" marker, rendered as a pill in the card
+   *  header. Absent at the default lens and for any caller that predates it. */
+  scopePill?: ReactNode;
 }) {
   const [shocks, setShocks] = useState<ShockState>(ZERO_STATE);
   // Which named story the sliders currently describe. "custom" means the reader
@@ -153,7 +157,10 @@ export function WhatIfScenario({
         <h2 id="risk-whatif-heading" className="card-title m-0">
           What-if scenario builder
         </h2>
-        <span className="text-[11px] text-text-tertiary num">estimate · live</span>
+        <span className="flex items-center gap-2 flex-wrap">
+          {scopePill}
+          <span className="text-[11px] text-text-tertiary num">estimate · live</span>
+        </span>
       </div>
 
       {loading ? (

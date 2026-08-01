@@ -358,7 +358,7 @@ export function RiskMetricsGrid({
   const gridCls = "grid grid-cols-2 md:grid-cols-5 gap-3";
 
   return (
-    <section className="mb-6" aria-labelledby="risk-metrics-heading">
+    <section className="mb-4" aria-labelledby="risk-metrics-heading">
       <div className="flex items-baseline justify-between gap-4 mb-3 flex-wrap">
         <h2 id="risk-metrics-heading" className="card-title m-0">
           Risk metrics

@@ -8,6 +8,7 @@
 // beta, never a zero that would understate its risk.
 
 "use client";
+import type { ReactNode } from "react";
 import {
   MIN_SESSIONS,
   netShareIsMeaningful,
@@ -66,6 +67,7 @@ export function PositionRiskAttribution({
   positionsFailure,
   factorsFailure,
   hasPositions,
+  scopePill,
 }: {
   loading: boolean;
   rows: PositionAttribution[];
@@ -76,6 +78,9 @@ export function PositionRiskAttribution({
   positionsFailure: string | null;
   factorsFailure: string | null;
   hasPositions: boolean;
+  /** The "still the multi-asset book" marker, rendered as a pill in the card
+   *  header. Absent at the default lens and for any caller that predates it. */
+  scopePill?: ReactNode;
 }) {
   const maxBeta = rows.reduce(
     (m, r) => Math.max(m, isNum(r.betaContribution) ? Math.abs(r.betaContribution) : 0),

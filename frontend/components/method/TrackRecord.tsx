@@ -249,7 +249,7 @@ export default function TrackRecord({
  */
 export function TrackRecordHeading() {
   return (
-    <div className="bg-slate-50 border-l-4 border-logo-plate rounded-r p-4 mb-4 w-full">
+    <div className="bg-slate-50 border-l-4 border-logo-plate rounded-r p-4 mb-3 w-full">
       <h2 className="text-[18px] font-semibold m-0 mb-1.5">
         Were the published books right?
       </h2>

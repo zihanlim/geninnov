@@ -241,7 +241,26 @@ export function LensScopeBanner({
  * the provenance module ends up misstating provenance. The hover `title` is not
  * a substitute: it is invisible on touch and to anyone who does not hover.
  */
-export function LensScopeChip({ lens, panel }: { lens: string; panel: string }) {
+export function LensScopeChip({
+  lens,
+  panel,
+  pill = false,
+}: {
+  lens: string;
+  panel: string;
+  /**
+   * Render the marker as a pill (`badge badge-neutral`) for a card whose header
+   * hosts it, instead of the bare text line used above an AnswerRow.
+   *
+   * A pill lives INSIDE the card's `card-header`, so it occupies no layout slot
+   * above the card — a block `<ScopeNote>` wrapper pushed the card down by the
+   * marker's own height, which under a non-default lens broke the paired-grid
+   * alignment (PositionRiskAttribution's chip above it sat its top ~27px below
+   * the chip-less PositioningCrowding beside it). The two forms say exactly the
+   * same thing in the same visible words; only the container differs.
+   */
+  pill?: boolean;
+}) {
   if (lens === DEFAULT_LENS) return null;
 
   const scope = scopeOf(panel);
@@ -262,7 +281,11 @@ export function LensScopeChip({ lens, panel }: { lens: string; panel: string }) 
       role="note"
       title={detail}
       data-testid="lens-scope-chip"
-      className="text-[11px] text-text-tertiary whitespace-nowrap"
+      className={
+        pill
+          ? "badge badge-neutral whitespace-nowrap"
+          : "text-[11px] text-text-tertiary whitespace-nowrap"
+      }
     >
       {label}
     </span>

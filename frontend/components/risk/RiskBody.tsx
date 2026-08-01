@@ -1960,14 +1960,18 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           earlier. WeightsBacktest stacks UNDER the Published picks card in the
           left cell since 2026-08-02 — "what these weights would have done" reads
           as a second layer of realised evidence beneath "what the published
-          books actually did". */}
+          books actually did". The two cells STRETCH to equal height (no
+          items-start) and the left column is justify-between, so Published
+          picks' top edge and These weights' bottom edge line up with CostDrag's
+          — only the gap between the two left cards absorbs the difference,
+          never the cards themselves. */}
       {!data.loading && data.holdings.length > 0 ? (
         <>
           <section id="track-record">
             <TrackRecordHeading />
           </section>
-          <div className="mt-3 grid xl:grid-cols-2 gap-6 items-start [&>*]:min-w-0 [&>*]:mb-0">
-            <div className="flex flex-col gap-6 [&>section]:flex-1">
+          <div className="mt-3 grid xl:grid-cols-2 gap-6 [&>*]:min-w-0 [&>*]:mb-0">
+            <div className="flex flex-col gap-6 justify-between">
               <TrackRecord framed={false} rows={data.outcomeRows} publishedByRunDate={data.publishedByRunDate} />
               {/* WeightsBacktest — stacked UNDER the Published picks card since
                   2026-08-02 (it was a full-width row above the chart trio). The

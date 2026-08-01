@@ -2056,16 +2056,21 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           BenchmarkComparison gets 663px and the right-side cards 663px as
           well — comfortable for the capture bars, the drawdown SVG
           (min-width 620, so at the old 331px it scrolled) and the P&L table
-          respectively (2026-08-02). */}
-      <div className="grid xl:grid-cols-4 gap-6 items-start [&>*]:min-w-0 mb-6">
-        <div className="xl:col-span-2">
+          respectively (2026-08-02). The two cells STRETCH to equal height (no
+          items-start) since 2026-08-02: BenchmarkComparison fills the left
+          cell while the right cell is justify-between, so the benchmark card's
+          top edge lines up with the drawdown card and its bottom edge with the
+          Daily P&L history card — whichever side is taller, only the gaps
+          absorb the difference, never the cards. */}
+      <div className="grid xl:grid-cols-4 gap-6 [&>*]:min-w-0 mb-6">
+        <div className="xl:col-span-2 flex flex-col [&>section]:flex-1">
           <BenchmarkComparison
             comparison={data.risk?.benchmark_comparison ?? null}
             conditionalVol={data.risk?.conditional_vol ?? null}
             sessions={data.returns.length}
           />
         </div>
-        <div className="xl:col-span-2 grid gap-6 [&>*]:min-w-0 [&>*]:mb-0">
+        <div className="xl:col-span-2 flex flex-col gap-6 justify-between [&>*]:min-w-0 [&>*]:mb-0">
           <DrawdownChart
             loading={data.loading}
             rows={data.returns}

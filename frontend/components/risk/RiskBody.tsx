@@ -1259,21 +1259,40 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       {phase === "risk" &&
       data.resolvedLens !== DEFAULT_LENS &&
       lensLessOnThisPhase.length > 0 ? (
-        <div className="grid xl:grid-cols-[minmax(0,1fr)_480px] gap-6 items-stretch mb-7 [&>*]:min-w-0 h-[175px]">
-          <div className="h-full overflow-hidden">
-            {/* No `meta`: the credit-lens side-by-side header is a fixed 175px
-                cell, and the lens is already shown by the toggle below while the
-                run date reads off the page. Keeping the meta here would push the
-                lede past the cell's height on narrower desktop widths (the
-                shared lede wraps at ~712px), forcing a clip. Title + lede only,
-                per the layout directive. */}
+        <div className="grid xl:grid-cols-[minmax(0,1fr)_480px] gap-6 items-start mb-7 [&>*]:min-w-0">
+          <div>
+            {/* The two-row meta (run date, lens) is the SAME block the default
+                page shows in the same spot — a reader who switches lens here
+                must not lose "which book, when" the header states everywhere
+                else. The toggle below shows the lens the reader PICKED; this
+                shows the lens the ROW claims (the pair the default page puts
+                side by side), so the boundary disclosures that follow still
+                describe the query that produced the page.
+
+                The cell is deliberately NOT fixed-height. A fixed 175px cell
+                clipped the lede at 1280–1300, where the shared lede wraps to
+                ~5 lines beside the meta block; the grid row grows to fit the
+                header instead, and the banner's `self-stretch` cell follows it. */}
             <PageHeader
               className="mb-0"
               title={PHASE_COPY[phase].title}
               lede={PHASE_COPY[phase].lede}
+              meta={[
+                { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
+                {
+                  // The lens the ROW claims, not the lens the page queried. They
+                  // should always agree; if a run ever writes a row whose `lens`
+                  // differs from the key it was fetched by, this is where it shows,
+                  // and the scope disclosures below still describe the query that
+                  // produced the page.
+                  label: "Lens",
+                  value: data.loading ? "…" : (data.lens ?? "not recorded"),
+                  capitalize: true,
+                },
+              ]}
             />
           </div>
-          <div className="h-full">
+          <div className="self-stretch">
             <LensScopeBanner lens={data.resolvedLens} panels={lensLessOnThisPhase} side />
           </div>
         </div>

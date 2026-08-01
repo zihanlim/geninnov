@@ -244,9 +244,13 @@ class TestRibbonGroups:
         )
 
     def test_every_tape_ticker_gets_price_history(self):
-        from macro_fetcher import HISTORY_TICKERS, RIBBON_TICKERS
+        from macro_fetcher import FRED_CATALOG, HISTORY_TICKERS, RIBBON_TICKERS
 
-        missing = set(RIBBON_TICKERS) - set(HISTORY_TICKERS)
+        # Bonds are FRED series (DGS*): their history arrives via
+        # `fetch_fred_batch`, never the yfinance batch, so the requirement is a
+        # PATH to macro_daily_history — HISTORY_TICKERS membership OR a FRED
+        # series id — not membership of HISTORY_TICKERS alone.
+        missing = set(RIBBON_TICKERS) - set(HISTORY_TICKERS) - set(FRED_CATALOG)
         assert not missing, (
             f"{missing} would have no rows in macro_daily_history, so "
             "fetch_market_assets finds <2 closes and drops them silently"
@@ -289,6 +293,102 @@ class TestRibbonGroups:
         out = f.fetch_market_assets(tickers=["EURUSD=X"])
         assert out[0]["current"] == pytest.approx(1.1513, abs=1e-9)
         assert out[0]["prev_close"] == pytest.approx(1.1467, abs=1e-9)
+
+    def test_bonds_group_is_the_fred_curve_points(self):
+        """The Bonds tab reads the SAME constant-maturity curve the regime
+        classifier reads (DGS2/5/10/30) plus the tape-only points
+        (DGS1MO/3MO/6MO/1/3/7/20) — no new yfinance symbols, no resolution
+        risk, and the tape cannot drift from the numbers /method cites."""
+        from macro_fetcher import FRED_CATALOG, RIBBON_GROUPS, RIBBON_TICKERS
+
+        bonds = RIBBON_GROUPS["Bonds"]
+        assert [t for t, _name, _unit in bonds] == [
+            "DGS1MO", "DGS3MO", "DGS6MO", "DGS1", "DGS2", "DGS3",
+            "DGS5", "DGS7", "DGS10", "DGS20", "DGS30",
+        ]
+        for ticker, _name, _unit in bonds:
+            assert ticker in FRED_CATALOG, (
+                f"{ticker} is not a FRED series — it would have no history"
+            )
+            assert RIBBON_TICKERS[ticker]["unit"] == "pct"
+
+    def test_bond_series_never_reach_macro_indicators(self):
+        """BOND_SERIES is tape-only: fetched and persisted to daily history,
+        but NOT part of FRED_SERIES. `upsert_latest_snapshot` walks
+        FRED_SERIES alone, so the 1m/3m/6m/1y/3y/7y/20y points never publish
+        to /facts, /method or the L5 prompt — the mirror of the
+        RIBBON_GROUPS-vs-YFINANCE_TICKERS separation."""
+        import inspect
+
+        from macro_fetcher import BOND_SERIES, FRED_SERIES, MacroFetcher
+
+        assert set(BOND_SERIES).isdisjoint(set(FRED_SERIES))
+        src = inspect.getsource(MacroFetcher.upsert_latest_snapshot)
+        assert "FRED_SERIES" in src
+        assert "BOND_SERIES" not in src, (
+            "the snapshot writer must not walk BOND_SERIES, or the curve "
+            "points would become L0 macro indicators"
+        )
+
+    def test_bond_series_persist_to_daily_history(self):
+        """The tape reads prev_close from macro_daily_history, so BOND_SERIES
+        must be written there even though it never reaches macro_indicators."""
+        import pandas as pd
+
+        from macro_fetcher import MacroFetcher
+
+        captured = {}
+
+        class _Tbl:
+            def __init__(self, name):
+                self._name = name
+
+            def upsert(self, payload, **_k):
+                captured["table"] = self._name
+                captured["payload"] = payload
+                return self
+
+            def execute(self):
+                return type("R", (), {"data": []})()
+
+        class _SB:
+            def table(self, name):
+                return _Tbl(name)
+
+        f = MacroFetcher.__new__(MacroFetcher)
+        f.supabase = _SB()
+
+        fred = pd.DataFrame({
+            "trading_date": ["2026-07-30"],
+            "DGS1MO": [5.30],
+            "DGS3MO": [5.35],
+            "DGS6MO": [5.25],
+            "DGS1": [4.95],
+            "DGS3": [4.55],
+            "DGS7": [4.50],
+            "DGS20": [4.80],
+        })
+        n = f.persist_daily_history(fred, pd.DataFrame())
+
+        written = {r["series_id"] for r in captured.get("payload", [])}
+        assert n >= 7
+        assert {"DGS1MO", "DGS3MO", "DGS6MO", "DGS1", "DGS3", "DGS7", "DGS20"} <= written
+        assert captured.get("table") == "macro_daily_history"
+
+    def test_yields_keep_two_decimals(self):
+        """Yields are quoted in 2dp (FRED's own precision). The 4dp rule is for
+        FX; storing a DGS10 as 4.2500 would be false precision on a float4."""
+        f, _ = TestMarketAssetsUpsertPayload()._fetcher_with_history(
+            [
+                {"series_id": "DGS10", "trading_date": "2026-07-31", "value": 4.25},
+                {"series_id": "DGS10", "trading_date": "2026-07-30", "value": 4.24},
+            ]
+        )
+        out = f.fetch_market_assets(tickers=["DGS10"])
+        assert out[0]["current"] == pytest.approx(4.25, abs=1e-9)
+        assert out[0]["prev_close"] == pytest.approx(4.24, abs=1e-9)
+        assert out[0]["market_group"] == "Bonds"
+        assert out[0]["name"] == "US 10Y"
 
     def test_as_of_is_the_session_not_the_write_time(self):
         """Six markets on one tape close in different sessions — measured

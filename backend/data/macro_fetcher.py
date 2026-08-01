@@ -67,6 +67,31 @@ FRED_SERIES = {
     "UNRATE": {"name": "Unemployment Rate", "unit": "pct"},
 }
 
+# ── Tape-only FRED series ───────────────────────────────────────────────────
+# The Bonds tape group's short end and mid curve. These are FRED series that
+# the L0 macro set deliberately does NOT contain: FRED_SERIES is what the
+# regime classifier reads, /method renders and the L5 prompt is built from, and
+# nothing there asked for a 1m or a 7y point. They are still fetched daily and
+# persisted to macro_daily_history — that is where fetch_market_assets reads
+# prev_close from — but `upsert_latest_snapshot` walks FRED_SERIES alone, so
+# these never reach macro_indicators, /facts, /method or the L5 prompt. The
+# mirror of the RIBBON_GROUPS-vs-YFINANCE_TICKERS separation, in the other
+# direction.
+BOND_SERIES = {
+    "DGS1MO": {"name": "1m Treasury Yield", "unit": "pct"},
+    "DGS3MO": {"name": "3m Treasury Yield", "unit": "pct"},
+    "DGS6MO": {"name": "6m Treasury Yield", "unit": "pct"},
+    "DGS1":   {"name": "1y Treasury Yield", "unit": "pct"},
+    "DGS3":   {"name": "3y Treasury Yield", "unit": "pct"},
+    "DGS7":   {"name": "7y Treasury Yield", "unit": "pct"},
+    "DGS20":  {"name": "20y Treasury Yield", "unit": "pct"},
+}
+
+#: Everything fetched from FRED: the L0 macro set plus the tape-only curve
+#: points. `upsert_latest_snapshot` continues to walk FRED_SERIES so the
+#: snapshot stays L0-only.
+FRED_CATALOG = {**FRED_SERIES, **BOND_SERIES}
+
 YFINANCE_TICKERS = {
     "^VIX": {"name": "VIX Spot", "unit": "index"},
     "^VIX3M": {"name": "VIX 3M", "unit": "index"},
@@ -127,6 +152,26 @@ RIBBON_GROUPS: dict[str, list[tuple[str, str, str]]] = {
         ("^RUT", "Russell 2000", "pts"),
         ("^VIX", "VIX", "index"),
     ],
+    "Bonds": [
+        # US Treasury constant-maturity yields across the curve. These are FRED
+        # series ids (DGS*), NOT yfinance symbols: they are fetched daily into
+        # macro_daily_history (DGS2/5/10/30 by FRED_SERIES, the rest by
+        # BOND_SERIES), so the tape shows the same numbers /method and the
+        # regime classifier cite — no new fetch mechanism, no resolution risk.
+        # The cost is that a run without FRED_API_KEY carries no bond cells —
+        # the same dependency the yield-curve classification already has.
+        ("DGS1MO", "US 1M", "pct"),
+        ("DGS3MO", "US 3M", "pct"),
+        ("DGS6MO", "US 6M", "pct"),
+        ("DGS1", "US 1Y", "pct"),
+        ("DGS2", "US 2Y", "pct"),
+        ("DGS3", "US 3Y", "pct"),
+        ("DGS5", "US 5Y", "pct"),
+        ("DGS7", "US 7Y", "pct"),
+        ("DGS10", "US 10Y", "pct"),
+        ("DGS20", "US 20Y", "pct"),
+        ("DGS30", "US 30Y", "pct"),
+    ],
     "Europe": [
         ("^FTSE", "FTSE 100", "pts"),
         ("^GDAXI", "DAX", "pts"),
@@ -165,11 +210,16 @@ RIBBON_TICKERS: dict[str, dict] = {
     for i, (ticker, name, unit) in enumerate(members)
 }
 
-#: Everything needing daily price history: the macro set plus the tape.
-#: `dict.fromkeys` rather than a set — insertion order is stable, so a failed
-#: batch logs the same ticker order every run and diffs cleanly.
+#: Everything needing daily price history from yfinance: the macro set plus the
+#: tape. FRED series (FRED_CATALOG — DGS2/5/10/30 and the tape-only curve
+#: points) are EXCLUDED — their history arrives via `fetch_fred_batch`, and
+#: yfinance would resolve a series id to nothing but a warning. `dict.fromkeys`
+#: rather than a set — insertion order is stable, so a failed batch logs the
+#: same ticker order every run and diffs cleanly.
 HISTORY_TICKERS: list[str] = list(
-    dict.fromkeys([*YFINANCE_TICKERS, *RIBBON_TICKERS])
+    dict.fromkeys(
+        t for t in [*YFINANCE_TICKERS, *RIBBON_TICKERS] if t not in FRED_CATALOG
+    )
 )
 
 #: Retained: `fetch_market_assets(tickers=...)` still takes an explicit list and
@@ -250,7 +300,7 @@ class MacroFetcher:
         end = end or date.today()
         start = self._get_lookback_start()
         frames = []
-        for series_id in FRED_SERIES:
+        for series_id in FRED_CATALOG:
             df = _fred_observation(series_id, start, end)
             if df is not None and not df.empty:
                 frames.append(df)
@@ -288,14 +338,14 @@ class MacroFetcher:
             td = row["trading_date"]
             if hasattr(td, "isoformat"):
                 td = td.isoformat()
-            for series_id in FRED_SERIES:
+            for series_id in FRED_CATALOG:
                 val = row.get(series_id)
                 if pd.isna(val):
                     continue
                 rows.append({
                     "series_id": series_id,
                     "value": float(val),
-                    "unit": FRED_SERIES[series_id]["unit"],
+                    "unit": FRED_CATALOG[series_id]["unit"],
                     "trading_date": td,
                 })
 
@@ -398,7 +448,7 @@ class MacroFetcher:
 
     def fetch_market_assets(self, tickers: list[str] | None = None) -> list[dict]:
         """
-        Returns latest two closes for equity indices from macro_daily_history,
+        Returns latest two closes per tape ticker from macro_daily_history,
         with pct_change computed. Stores result in market_assets table.
         Returns [{ticker, name, current, prev_close, pct_change, updated_at}].
         """
@@ -454,12 +504,16 @@ class MacroFetcher:
             # Two decimals is right for index points and LOSSY for a currency:
             # EUR/USD 1.1512 stored as 1.15 cannot be recovered downstream, and
             # an FX quote is read in the digits that rounding removes — a 0.4%
-            # move renders as no move at all. Keyed on magnitude, not on the
-            # group, so USD/JPY at 160.84 and Bitcoin at 64,131.20 keep 2dp
-            # where more would be false precision on a float4 column. The
-            # frontend formats on the same rule; this is what gives it the
+            # move renders as no move at all. Keyed on magnitude for levels, but
+            # a yield (unit "pct") is quoted to 2dp in FRED's own precision, so
+            # 4.2500 for a DGS10 would be false precision on a float4 column.
+            # The frontend formats on the same rules; this is what gives it the
             # digits to format.
-            places = 4 if abs(curr) < 10 else 2
+            places = (
+                2
+                if meta.get("unit") == "pct"
+                else (4 if abs(curr) < 10 else 2)
+            )
             results.append({
                 "ticker": ticker,
                 "name": meta.get("name", ticker),

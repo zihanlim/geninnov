@@ -33,8 +33,12 @@ interface MarketAsset {
  * tape. It also listed `^VIX`, which was never in the backend's
  * `EQUITY_INDICES`, so the VIX cell had never once rendered — two lists that
  * had to agree, with nothing failing when they stopped.
+ *
+ * `Bonds` sits beside `US` on purpose: the group IS US Treasuries
+ * (DGS2/5/10/30), and a reader who wants US rates should not have to cross the
+ * Atlantic to reach them.
  */
-const GROUP_ORDER = ["US", "Europe", "Asia", "Currencies", "Crypto", "Futures"];
+const GROUP_ORDER = ["US", "Bonds", "Europe", "Asia", "Currencies", "Crypto", "Futures"];
 const DEFAULT_GROUP = "US";
 const FRESHNESS_FIELD = "market.index.as_of";
 const MAX_AGE_SECONDS = 86400; // daily closes — never live intraday quotes
@@ -245,6 +249,16 @@ export default function MarketBar() {
         const isPos = a.pct_change >= 0;
         const isNeg = a.pct_change < 0;
         const isVix = a.ticker === "^VIX";
+        // Yields (Bonds group) are quoted to 2dp — FRED's own precision. The
+        // <10 → 4dp rule was written for FX quotes, where the 3rd/4th decimals
+        // ARE the quote; 4.2500 for a yield reads as noise, not precision. The
+        // backend stores on the same rule, so this never fabricates a digit.
+        const fracDigits =
+          a.market_group === "Bonds"
+            ? 2
+            : Math.abs(a.current) < 10
+              ? 4
+              : 2;
         // VIX: high is bad (red), low is good (green)
         const changeColor = isVix
           ? isPos
@@ -274,7 +288,7 @@ export default function MarketBar() {
                 <span className="num text-[13px] font-semibold text-text-primary leading-none">
                   {a.current.toLocaleString("en-US", {
                     minimumFractionDigits: 2,
-                    maximumFractionDigits: Math.abs(a.current) < 10 ? 4 : 2,
+                    maximumFractionDigits: fracDigits,
                   })}
                 </span>
                 <span

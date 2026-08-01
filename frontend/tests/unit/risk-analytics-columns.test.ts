@@ -79,6 +79,70 @@ describe("/risk analytics select list", () => {
   });
 });
 
+describe("/risk held-book read follows the lens (ADR-0222)", () => {
+  // portfolio_positions became per-lens in migration 068. The /risk read must
+  // filter by the resolved lens — the same `resolved` used for
+  // research_recommendations and book_holdings — so the held book the page
+  // computes risk on is the book the reader picked. At multi_asset this is a
+  // no-op (every row backfills lens='multi_asset'), which is why the assertion
+  // is structural rather than visual.
+  const RISK_BODY = src("components/risk/RiskBody.tsx");
+  const RISK_BOARD = src("lib/risk/riskBoard.ts");
+
+  /** The columns `/risk` asks Supabase for on portfolio_positions. */
+  function positionColumns(): string[] {
+    const m = /const POSITION_COLUMNS =[\s\S]*?"([^"]+)";/.exec(RISK_BODY);
+    expect(m, "POSITION_COLUMNS should be a plain string literal").not.toBeNull();
+    return m![1].split(",").map((c) => c.trim()).filter(Boolean);
+  }
+
+  /** The field names on `export interface PositionRow { ... }`. */
+  function positionRowFields(): string[] {
+    const start = RISK_BOARD.indexOf("export interface PositionRow {");
+    expect(start, "PositionRow should exist in lib/risk/riskBoard.ts").toBeGreaterThan(-1);
+    const body = RISK_BOARD.slice(start, RISK_BOARD.indexOf("\n}", start));
+    const fields: string[] = [];
+    for (const line of body.split("\n").slice(1)) {
+      const m = /^\s{2}(\w+)\??:/.exec(line);
+      if (m) fields.push(m[1]);
+    }
+    expect(fields.length, "should have parsed some fields").toBeGreaterThan(3);
+    return fields;
+  }
+
+  it("selects every column PositionRow declares", () => {
+    const selected = new Set(positionColumns());
+    const missing = positionRowFields().filter((f) => !selected.has(f));
+    expect(
+      missing,
+      `PositionRow declares ${missing.join(", ")} but POSITION_COLUMNS does not select ` +
+        `${missing.length === 1 ? "it" : "them"}. The scatter would read undefined.`,
+    ).toEqual([]);
+  });
+
+  it("filters the held-book read by the resolved lens", () => {
+    // The read site: the portfolio_positions select inside the Promise.all. It
+    // must carry `.eq("lens", resolved)` so the page computes risk on the book
+    // it is actually describing, not the multi-asset one.
+    const start = RISK_BODY.indexOf('.from("portfolio_positions")');
+    expect(start, "portfolio_positions read should exist in RiskBody").toBeGreaterThan(-1);
+    const segment = RISK_BODY.slice(start, start + 600);
+    expect(segment).toContain('.eq("lens", resolved)');
+    // And the row type must carry the field so the cast at the read site is
+    // honest about what it received.
+    expect(RISK_BOARD).toMatch(/^\s{2}lens: string;/m);
+  });
+
+  it("does not select columns the row type cannot hold", () => {
+    const declared = new Set(positionRowFields());
+    const extra = positionColumns().filter((c) => !declared.has(c));
+    expect(
+      extra,
+      `POSITION_COLUMNS selects ${extra.join(", ")}, which PositionRow does not declare.`,
+    ).toEqual([]);
+  });
+});
+
 describe("empty states distinguish absence from a measured zero", () => {
   // Design goal 2. A null analytics column means the run predates the migration or the
   // source did not answer — it must never render as a finding of "none".

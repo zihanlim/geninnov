@@ -38,6 +38,7 @@ export interface PositionRow {
   regime_bias: number | null;
   carry_signal: number | null;
   value_signal: number | null;
+  sentiment_signal: number | null;
   conviction: number | null;
   vol: number | null;
 }

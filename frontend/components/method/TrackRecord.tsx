@@ -37,6 +37,7 @@ const HORIZON = 21;
 export default function TrackRecord({
   rows: given,
   publishedByRunDate,
+  framed = true,
 }: {
   rows?: PickOutcomeRow[] | null;
   /**
@@ -44,6 +45,13 @@ export default function TrackRecord({
    * Without it the superseded count is null and nothing is claimed about it.
    */
   publishedByRunDate?: Map<string, Set<string>>;
+  /**
+   * false renders ONLY the card — no <section>, no h2, no intro. /attribution's
+   * pairing uses it: the heading spans the row above the grid (2026-08-01), so the
+   * card's top edge lines up with CostDrag's card beside it. The framed default
+   * keeps every other mount reading as a self-contained section.
+   */
+  framed?: boolean;
 }) {
   const [fetched, setFetched] = useState<PickOutcomeRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,28 +80,9 @@ export default function TrackRecord({
     rows === null ? null : buildTrackRecord(rows, HORIZON, publishedByRunDate);
   const status = tr ? trackRecordStatus(tr) : null;
 
-  return (
-    <section className="mb-7" id="track-record">
-      <h2 className="text-[18px] font-semibold m-0 mb-1.5">
-        Were the published books right?
-      </h2>
-      <p className="m-0 mb-4 text-[13.5px] text-text-secondary leading-[1.65] max-w-[76ch]">
-        Everything else on this page checks whether a <em>signal</em> predicted returns in
-        history. This checks the only claim that matters to a reader: the{" "}
-        <strong>books we actually published</strong>. Each pick is resolved against a spec
-        the pipeline assigns — never the model, which would let it choose its own exam:
-        entry is the close on <span className="num">run_date</span> (the book publishes
-        after the close, so that is the last price it could have acted on), exit is the
-        close <span className="num">{HORIZON}</span> trading days later, and a{" "}
-        <em>hit</em> is a signed return above zero. {HORIZON} trading days because{" "}
-        <code className="num">scripts/backtest_edge.py</code> already measures IC against
-        forward one-month returns; a different window would leave this table and the IC
-        table disagreeing about what &ldquo;works&rdquo; means. Harness:{" "}
-        <code className="num">scripts/resolve_outcomes.py</code>.
-      </p>
-
-      <div className="card">
-        <div className="card-header flex-wrap gap-2">
+  const card = (
+    <div className="card">
+      <div className="card-header flex-wrap gap-2">
           <span className="card-title">
             Published picks · {HORIZON}-trading-day resolution
           </span>
@@ -241,7 +230,44 @@ export default function TrackRecord({
           </>
         )}
       </div>
+  );
+
+  if (!framed) return card;
+
+  return (
+    <section className="mb-7" id="track-record">
+      <TrackRecordHeading />
+      {card}
     </section>
+  );
+}
+
+/**
+ * The section framing for the forward track record, split out so /attribution's
+ * pairing can span it full-width above the card grid (2026-08-01) while the
+ * default framed render keeps it inside the section.
+ */
+export function TrackRecordHeading() {
+  return (
+    <div className="bg-slate-50 border-l-4 border-logo-plate rounded-r p-4 mb-4 w-full">
+      <h2 className="text-[18px] font-semibold m-0 mb-1.5">
+        Were the published books right?
+      </h2>
+      <p className="m-0 text-[13.5px] text-text-secondary leading-[1.65]">
+        Everything else on this page checks whether a <em>signal</em> predicted returns in
+        history. This checks the only claim that matters to a reader: the{" "}
+        <strong>books we actually published</strong>. Each pick is resolved against a spec
+        the pipeline assigns — never the model, which would let it choose its own exam:
+        entry is the close on <span className="num">run_date</span> (the book publishes
+        after the close, so that is the last price it could have acted on), exit is the
+        close <span className="num">{HORIZON}</span> trading days later, and a{" "}
+        <em>hit</em> is a signed return above zero. {HORIZON} trading days because{" "}
+        <code className="num">scripts/backtest_edge.py</code> already measures IC against
+        forward one-month returns; a different window would leave this table and the IC
+        table disagreeing about what &ldquo;works&rdquo; means. Harness:{" "}
+        <code className="num">scripts/resolve_outcomes.py</code>.
+      </p>
+    </div>
   );
 }
 

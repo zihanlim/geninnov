@@ -231,7 +231,7 @@ export function PositionRiskAttribution({
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[13px] min-w-[860px]">
+            <table className="w-full border-collapse text-[12.5px]">
               <caption className="sr-only">
                 Per-position contribution to book beta, gross and net exposure, and
                 average correlation to the book, sorted by beta contribution.
@@ -239,27 +239,25 @@ export function PositionRiskAttribution({
               <thead>
                 <tr>
                   {[
-                    "Asset",
-                    "Dir",
-                    "Signed wt",
-                    "β mkt",
-                    "β contribution",
-                    "Gross share",
-                    "Net share",
+                    { label: "Asset", align: "left" },
+                    { label: "Dir", align: "left" },
+                    { label: "Wt", align: "right" },
+                    { label: "β", align: "right" },
+                    { label: "β contr", align: "left" },
+                    { label: "Gross", align: "right" },
+                    { label: "Net", align: "right" },
                     // NOT "to book". This averages only the pairs flagged at ρ ≥ 0.70,
                     // so a name correlated 0.65 with every other holding renders "—"
                     // and reads as uncorrelated when it is close to the opposite. The
                     // header now names the subset it measures (ADR-0067).
-                    `Avg |ρ| · flagged ≥ ${HIGH_CORR_THRESHOLD.toFixed(2)}`,
-                  ].map((h, i) => (
+                    { label: `Avg |ρ| ≥ ${HIGH_CORR_THRESHOLD.toFixed(2)}`, align: "right" },
+                  ].map((h) => (
                     <th
-                      key={h}
+                      key={h.label}
                       scope="col"
-                      className={`px-[14px] py-[7px] text-[11px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-y border-border-strong bg-bg-elevated ${
-                        i <= 1 ? "text-left" : i === 4 ? "text-left" : "text-right"
-                      }`}
+                      className={`px-2.5 py-1.5 text-[10px] uppercase tracking-[0.1em] text-text-tertiary font-medium border-y border-border-strong bg-bg-elevated whitespace-nowrap text-${h.align}`}
                     >
-                      {h}
+                      {h.label}
                     </th>
                   ))}
                 </tr>
@@ -267,10 +265,10 @@ export function PositionRiskAttribution({
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className="hover:bg-bg-elevated">
-                    <td className="px-[14px] py-[7px] border-b border-border num text-text-primary">
+                    <td className="px-2.5 py-1.5 border-b border-border num text-text-primary whitespace-nowrap">
                       {r.asset}
                     </td>
-                    <td className="px-[14px] py-[7px] border-b border-border">
+                    <td className="px-2.5 py-1.5 border-b border-border">
                       <span
                         className={`dir-pill ${
                           r.direction === "long" ? "dir-pill-long" : "dir-pill-short"
@@ -280,22 +278,22 @@ export function PositionRiskAttribution({
                       </span>
                     </td>
                     <td
-                      className={`px-[14px] py-[7px] border-b border-border text-right num ${
+                      className={`px-2.5 py-1.5 border-b border-border text-right num whitespace-nowrap ${
                         r.direction === "long" ? "text-long" : "text-short"
                       }`}
                     >
                       {fmtSignedPct(r.signedWeight)}
                     </td>
-                    <td className="px-[14px] py-[7px] border-b border-border text-right num text-text-secondary">
+                    <td className="px-2.5 py-1.5 border-b border-border text-right num text-text-secondary whitespace-nowrap">
                       {fmtSignedBeta(r.betaMkt)}
                     </td>
-                    <td className="px-[14px] py-[7px] border-b border-border">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 min-w-[80px]">
+                    <td className="px-2.5 py-1.5 border-b border-border">
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex-1 min-w-[48px]">
                           <ContribBar value={r.betaContribution} max={maxBeta} positiveIsRisk />
                         </div>
                         <span
-                          className={`num text-[12px] w-[52px] text-right ${
+                          className={`num text-[11px] w-[44px] text-right whitespace-nowrap ${
                             !isNum(r.betaContribution)
                               ? "text-text-tertiary"
                               : r.betaContribution >= 0
@@ -307,11 +305,11 @@ export function PositionRiskAttribution({
                         </span>
                       </div>
                     </td>
-                    <td className="px-[14px] py-[7px] border-b border-border text-right num text-text-secondary">
+                    <td className="px-2.5 py-1.5 border-b border-border text-right num text-text-secondary whitespace-nowrap">
                       {fmtPct(r.grossShare)}
                     </td>
                     <td
-                      className={`px-[14px] py-[7px] border-b border-border text-right num ${
+                      className={`px-2.5 py-1.5 border-b border-border text-right num whitespace-nowrap ${
                         !isNum(r.netShare)
                           ? "text-text-tertiary"
                           : r.netShare >= 0
@@ -322,7 +320,7 @@ export function PositionRiskAttribution({
                       {fmtSignedPct(r.netShare)}
                     </td>
                     <td
-                      className={`px-[14px] py-[7px] border-b border-border text-right num ${
+                      className={`px-2.5 py-1.5 border-b border-border text-right num whitespace-nowrap ${
                         r.avgCorr === null ? "text-text-tertiary" : "text-text-primary"
                       }`}
                       title={
@@ -338,10 +336,10 @@ export function PositionRiskAttribution({
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={4} className="px-[14px] py-[7px] text-right num text-[11px] text-text-tertiary">
-                    Σ β contribution ({measuredBeta} of {rows.length} measured)
+                  <td colSpan={4} className="px-2.5 py-1.5 text-right num text-[10.5px] text-text-tertiary whitespace-nowrap">
+                    Σ β ({measuredBeta}/{rows.length})
                   </td>
-                  <td className="px-[14px] py-[7px] text-left num text-[12px] text-text-primary">
+                  <td className="px-2.5 py-1.5 text-left num text-[11.5px] text-text-primary whitespace-nowrap">
                     {fmtSignedBeta(sumBeta)}
                     {isNum(bookBeta) && showBookBeta && (
                       <span className="text-text-tertiary">

@@ -217,7 +217,7 @@ const PANEL_SECTION: Record<string, string> = {
   StressScenarios: "stress",
   WhatIfScenario: "stress",
   SanctionsExposure: "stress",
-  PositioningCrowding: "stress",
+  PositioningCrowding: "attribution",
   VarMethods: "var-methods",
   PositionRiskScatter: "attribution",
   RiskContributionWaterfall: "attribution",
@@ -1707,12 +1707,11 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           Under the DEFAULT lens it stays the full-width stack below the what-if.
           Under a NON-DEFAULT lens it has already rendered inside the 1/4 column
           under the what-if (see the stress grid above), so it is NOT repeated
-          here. PositioningCrowding below is lens-following too, but this page
-          has not moved it — it keeps the full-width position on every lens. */}
+          here. PositioningCrowding moved to the attribution section (2/4 right
+          beside per-position attribution). */}
       {data.resolvedLens === DEFAULT_LENS && (
         <SanctionsExposure state={sanctionsState} />
       )}
-      <PositioningCrowding state={positioningState} />
       </section>
       )}
 
@@ -1761,40 +1760,10 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           markup does another is the defect, not the nav. */}
       {shows("attribution") && (
       <section id="attribution" aria-label="Per-position and per-theme attribution">
-      {/* Marks the SCATTER, not the waterfall beside it: the scatter plots
-          portfolio_positions (lens-less) against the lens-following risk
-          decomposition, while the waterfall is the decomposition alone and needs
-          no marker. Left-aligned above the grid, so at `xl` it sits over the
-          scatter's cell — the left 2/4 of the row below — and at narrower widths
-          over the card directly below it. (The scatter is now wrapped in a
-          col-span div for the 2026-08-01 layout; the grid is four columns, so
-          the default page's DOM has already changed and the marker no longer
-          needs to stay outside a wrapper.)
-
-          GATED ON THE SCATTER ACTUALLY DRAWING, because sitting outside the grid
-          is what makes that necessary. `PositionRiskScatter` returns null below
-          SCATTER_MIN_POINTS, and under a lens that is the ordinary case: it
-          needs names present in BOTH the lens-less held book and the
-          lens-following decomposition, which on 2026-07-30 intersected in
-          nothing. Ungated, the words "multi-asset book" then sat directly above
-          the risk-contribution waterfall — the one panel in this section that
-          genuinely IS the credit book — labelling it as the other one. */}
-      {scatterVisible && (
-        <ScopeNote lens={data.resolvedLens} panel="PositionRiskScatter" />
-      )}
-      {/* ONE row at `xl` (2026-08-01): the scatter takes the left 2/4 of a
-          four-column grid, and the right 2/4 stacks the risk-contribution
-          waterfall over the per-position attribution card. The attribution
-          table is the widest element in the section (min-w-[860px]); inside a
-          ~676px column it keeps its own overflow-x-auto rather than being
-          squeezed, and the waterfall's SVG scales to whatever width it is given.
-
-          When the scatter self-suppresses — the common case under a non-default
-          lens, where it needs names in BOTH the lens-less held book and the
-          lens-following decomposition — the right stack takes the FULL width. A
-          grid whose left half is an empty col-span-2 is the orphaned-cell
-          failure this file refuses, so the stack widens instead of leaving a
-          hole. */}
+      {/* Row 1 — scatter (lens-less) + waterfall (lens-following). The scatter
+          takes the left 2/4, the waterfall the right 2/4. When the scatter
+          self-suppresses — the common case under a non-default lens — the
+          waterfall takes the full width. */}
       <div className="grid xl:grid-cols-4 gap-6 items-start [&>*]:min-w-0">
         {scatterVisible && (
           <div className="xl:col-span-2">
@@ -1804,11 +1773,6 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
             />
           </div>
         )}
-        {/* A nested single-column grid, so the waterfall and the attribution card
-            get a real 24px gap instead of relying on the card's mb-6 — which is
-            margin-bottom, so two stacked cards would otherwise sit flush. The
-            attribution card keeps its own mb-6 class (it renders full-width
-            elsewhere) but this column zeroes it. */}
         <div
           className={`${
             scatterVisible ? "xl:col-span-2" : "xl:col-span-4"
@@ -1817,9 +1781,16 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           <RiskContributionWaterfall
             decomposition={data.analyticsRow?.risk_decomposition ?? null}
           />
-          {/* Every row is a held name from portfolio_positions, and the book beta
-              it compares against is portfolio_risk's — so the table names
-              multi-asset positions whatever lens is active. */}
+        </div>
+      </div>
+
+      {/* Row 2 — per-position attribution (lens-less, left 2/4) and external
+          positioning / CFTC (lens-following, right 2/4). The attribution table
+          is min-w-[860px] with its own overflow-x-auto; inside a ~660px column
+          it scrolls rather than breaking. PositioningCrowding is the active
+          lens's own CFTC reading. */}
+      <div className="mt-6 grid xl:grid-cols-2 gap-6 items-start [&>*]:min-w-0 [&>*]:mb-0">
+        <div>
           <ScopeNote lens={data.resolvedLens} panel="PositionRiskAttribution" />
           <PositionRiskAttribution
             loading={data.loading}
@@ -1833,23 +1804,28 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
             hasPositions={data.positions.length > 0}
           />
         </div>
+        <div>
+          <ScopeNote lens={data.resolvedLens} panel="PositioningCrowding" />
+          <PositioningCrowding state={positioningState} />
+          {/* Theme attention crowding: sits below CFTC in the right column. The
+              two theme tables are lens-neutral, so the only book-shaped input is
+              the held-position list — every row scores a theme the MULTI-ASSET
+              book holds, whichever lens the reader picked. */}
+          <div className="mt-6">
+            <ScopeNote lens={data.resolvedLens} panel="AttentionCrowding" />
+            <AttentionCrowding
+              loading={data.loading}
+              rows={crowdingRows}
+              historyFailure={data.crowdingFailure}
+              observationNote={
+                data.positions.length === 0
+                  ? "No sized positions, so there are no book themes to score for crowding."
+                  : `The book's themes have up to ${crowdingMaxObs} of the five scored observations a within-history percentile needs; below five it reads — rather than a guess, and fills in as the daily history grows.`
+              }
+            />
+          </div>
+        </div>
       </div>
-
-      {/* 4 — Theme attention crowding: the risk-monitoring half of the engine. */}
-      {/* The two theme tables are lens-neutral, so the only book-shaped input is
-          the held-position list — which means every row here scores a theme the
-          MULTI-ASSET book holds, whichever lens the reader picked. */}
-      <ScopeNote lens={data.resolvedLens} panel="AttentionCrowding" />
-      <AttentionCrowding
-        loading={data.loading}
-        rows={crowdingRows}
-        historyFailure={data.crowdingFailure}
-        observationNote={
-          data.positions.length === 0
-            ? "No sized positions, so there are no book themes to score for crowding."
-            : `The book's themes have up to ${crowdingMaxObs} of the five scored observations a within-history percentile needs; below five it reads — rather than a guess, and fills in as the daily history grows.`
-        }
-      />
 
       {/* 5 — What-if scenario builder: live browser-side estimate. */}
       </section>
@@ -1857,32 +1833,23 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
 
       {shows("concentration") && (
       <section id="concentration" aria-label="Concentration">
+      {/* Correlation and factor tilt moved to the exposure section (paired 2-col). */}
 
-      {/* Which names move together. Full-width since ADR-0172 moved cap headroom to
-          /mandate: this was a measured PAIR, and the measurement that justified it
-          ("both are collapsed <details>, so stacking them full-width spent two rows
-          on two summary bars") stops applying when there is one card. A 2-col grid
-          with one cell does not fill the width, it halves what survived — the
-          orphaned-cell failure the pairing existed to avoid.
-
-          Full width also buys the heatmap its min-w-[560px] table without an inner
-          horizontal scroller, which is why the pair was gated at xl rather than lg. */}
-      <CorrelationMatrix
-        state={correlationState}
-        summary={bookMetrics?.correlation_summary ?? null}
-        matrix={bookMetrics?.correlation_matrix ?? null}
-      />
-
-      {/* 9 — Book factor tilt (persisted). Stays full-width: the tilt bars are a
-          diverging scale with a labelled −2.00 … +2.00 axis, and halving the
-          column halves the resolution of the only chart on the page whose whole
-          content is bar length. */}
+      {/* 9 — Book factor tilt: paired beside correlation since both are
+          portfolio-level diagnostics. 2/4 left (correlation) + 2/4 right (tilt). */}
       </section>
       )}
 
       {shows("exposure") && (
       <section id="exposure" aria-label="Factor exposure">
-      <BookFactorTilt state={bookState} />
+      <div className="grid xl:grid-cols-2 gap-6 mb-6 [&>*]:min-w-0">
+        <CorrelationMatrix
+          state={correlationState}
+          summary={bookMetrics?.correlation_summary ?? null}
+          matrix={bookMetrics?.correlation_matrix ?? null}
+        />
+        <BookFactorTilt state={bookState} />
+      </div>
       </section>
       )}
 

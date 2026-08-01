@@ -10,7 +10,6 @@
 
 "use client";
 
-import { DisclosureChevron } from "@/components/DisclosureChevron";
 import {
   buildDrawdownSeries,
   fmtSignedPct,
@@ -442,20 +441,17 @@ export function DrawdownChart({
       : null;
 
   return (
-    <details className="card mb-6 group" aria-labelledby="risk-dd-heading">
-      <summary className="card-header cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+    <section className="card mb-6" aria-labelledby="risk-dd-heading">
+      <div className="card-header">
         <h2 id="risk-dd-heading" className="card-title m-0">
           Drawdown &amp; daily P&amp;L
         </h2>
-        <span className="flex items-center gap-2">
-          <span className="text-[11px] text-text-tertiary num">
-            {series
-              ? `${series.points.length} session${series.points.length === 1 ? "" : "s"} · ${methodLabel}`
-              : "portfolio_returns"}
-          </span>
-          <DisclosureChevron className="text-text-tertiary" />
+        <span className="text-[11px] text-text-tertiary num">
+          {series
+            ? `${series.points.length} session${series.points.length === 1 ? "" : "s"} · ${methodLabel}`
+            : "portfolio_returns"}
         </span>
-      </summary>
+      </div>
 
       {loading ? (
         <SectionSkeleton height={280} />
@@ -601,6 +597,6 @@ export function DrawdownChart({
           </p>
         </div>
       )}
-    </details>
+    </section>
   );
 }

@@ -2444,10 +2444,11 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
           and `routeForAnchor` still resolves it to this chapter. */}
       {chapterOwns(chapter, "track-record") && (
         <section className="mb-7" id="track-record">
-          <h2 className="text-[18px] font-semibold m-0 mb-1.5">
-            Were the published books right?
-          </h2>
-          <p className="m-0 text-[13.5px] text-text-secondary leading-[1.65] max-w-[76ch]">
+          <div className="bg-slate-50 border-l-4 border-logo-plate rounded-r p-4 mb-4 w-full">
+            <h2 className="text-[18px] font-semibold m-0 mb-1.5">
+              Were the published books right?
+            </h2>
+            <p className="m-0 text-[13.5px] text-text-secondary leading-[1.65]">
             The forward track record now lives on{" "}
             <Link href="/attribution#track-record" className="text-accent hover:underline">
               Attribution
@@ -2457,6 +2458,7 @@ export default function MethodBody({ chapter }: { chapter: MethodChapter }) {
             written <em>pending</em> at publication so the denominator exists before any
             outcome does (ADR-0090).
           </p>
+          </div>
         </section>
       )}
 

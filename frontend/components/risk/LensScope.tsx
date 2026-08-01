@@ -76,6 +76,32 @@ export function LensScopeBanner({
   // book without asserting that all of it is.
   const partly = panels.filter((p) => scopeOf(p) !== "published").map(panelLabel);
 
+  // The standing explanation — which lens-less tables the excepted figures
+  // come from and why migration 062 left them lens-less. Extracted once so the
+  // full-width form renders it as a paragraph and the `side` form can collapse
+  // it behind a `<details>` without duplicating the text. (In `side` mode the
+  // card sits in a ~480px slot beside the page header; collapsing the
+  // explanation instead of squeezing it is what lets the card match the
+  // header's height.)
+  const why = (
+    <>
+      The multi-asset figures among them are sourced from{" "}
+      {LENS_LESS_TABLES.map((t, i) => (
+        <span key={t}>
+          {i > 0 ? (i === LENS_LESS_TABLES.length - 1 ? " and " : ", ") : ""}
+          <Ident>{t}</Ident>
+        </span>
+      ))}
+      , and migration 062 gave none of them a lens column on purpose
+      (ADR-0194): a second book must not write into the first book&rsquo;s
+      record. There is one realised return series, one set of held positions
+      and one forward track record, and they belong to the multi-asset book
+      that has published every day since inception. So whatever a panel named
+      above draws from those tables is not this book&rsquo;s risk, drawdown or
+      record &mdash; it is the multi-asset book&rsquo;s, shown beside it.
+    </>
+  );
+
   return (
     <div
       className="card mb-6"
@@ -138,24 +164,25 @@ export function LensScopeBanner({
             </div>
             {/* `m-0`, not `mt-2`: at one column the grid's own `gap-y-2` already
                 supplies exactly that gap, and at two it would push this column
-                8px below the one beside it for no reason. */}
-            <p className="m-0 max-w-[92ch]">
-              The multi-asset figures among them are sourced from{" "}
-              {LENS_LESS_TABLES.map((t, i) => (
-                <span key={t}>
-                  {i > 0 ? (i === LENS_LESS_TABLES.length - 1 ? " and " : ", ") : ""}
-                  <Ident>{t}</Ident>
-                </span>
-              ))}
-              , and migration 062 gave none of them a lens column on purpose
-              (ADR-0194): a second book must not write into the first book&rsquo;s
-              record. There is one realised return series, one set of held
-              positions and one forward track record, and they belong to the
-              multi-asset book that has published every day since inception. So
-              whatever a panel named above draws from those tables is not this
-              book&rsquo;s risk, drawdown or record — it is the multi-asset
-              book&rsquo;s, shown beside it.
-            </p>
+                8px below the one beside it for no reason.
+
+                In `side` mode the standing explanation collapses behind a
+                `<details>` — that form exists to make the card match the
+                header's height, and this paragraph is the bulk of what made it
+                tall. The full-width form keeps it as a paragraph, because its
+                two-column "WHICH panels / WHY" split is the design there. */}
+            {side ? (
+              <details className="group">
+                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-[11px] text-text-tertiary hover:text-text-primary">
+                  <span className="group-open:hidden">Show</span>
+                  <span className="hidden group-open:inline">Hide</span>
+                  {" "}why these can&rsquo;t follow the lens
+                </summary>
+                <p className="m-0 mt-2 max-w-[92ch]">{why}</p>
+              </details>
+            ) : (
+              <p className="m-0 max-w-[92ch]">{why}</p>
+            )}
           </div>
         ) : (
           // One sentence and nothing to pair it with — a two-column grid here

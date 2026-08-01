@@ -148,6 +148,31 @@ describe("LensScopeBanner under a non-default lens", () => {
     expect(side).not.toContain("lg:grid-cols-2");
   });
 
+  it("in side form the standing explanation collapses behind a details", () => {
+    // The card sits beside the page header, so it should match the header's
+    // height. The "sourced from portfolio_risk…ADR-0194" paragraph is the bulk
+    // of what made the card tall, so in `side` mode it hides behind a
+    // `<details>` summary; the full-width form keeps it as a paragraph. Both
+    // forms must still carry the text and its sources somewhere.
+    const side = renderToStaticMarkup(
+      <LensScopeBanner lens="credit" panels={PANELS} side />,
+    );
+    expect(side).toContain("<details");
+    expect(side).toContain("why these can");
+    expect(side).toContain("portfolio_risk");
+    expect(side).toContain("pick_outcomes");
+    // The explanation must not render as a visible paragraph in side form — it
+    // is inside the collapsed details, and rendering it twice (or leaving it
+    // visible) is exactly what the collapse is supposed to prevent. So nothing
+    // before the `<details>` element carries the source names.
+    const beforeDetails = side.slice(0, side.indexOf("<details"));
+    expect(beforeDetails).not.toContain("portfolio_risk");
+
+    const full = renderToStaticMarkup(<LensScopeBanner lens="credit" panels={PANELS} />);
+    expect(full).not.toContain("<details");
+    expect(full).toContain("portfolio_risk");
+  });
+
   it("states the opposite case rather than rendering an empty frame", () => {
     // A phase whose panels all follow the lens still deserves the sentence —
     // "this is the credit book" is worth saying even when there is no boundary

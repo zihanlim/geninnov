@@ -1795,12 +1795,28 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       {shows("attribution") && (
       <section id="attribution" aria-label="Per-position and per-theme attribution">
       {/* Row 1 — scatter (lens-less) + waterfall (lens-following). The scatter
-          takes the left 2/4, the waterfall the right 2/4. When the scatter
-          self-suppresses — the common case under a non-default lens — the
-          waterfall takes the full width. */}
-      <div className="grid xl:grid-cols-4 gap-6 items-start [&>*]:min-w-0">
+          takes the left half, the waterfall the right half, on the SAME
+          xl:grid-cols-2 grid Row 2 below uses, so the two cards' left and
+          right edges line up with the per-position attribution and
+          positioning cards beneath them. When the scatter self-suppresses —
+          the common case under a non-default lens — the waterfall takes the
+          full width.
+
+          The outer grid stretches (no `items-start`) so the two cards share
+          the same outer height; `h-full` on each card fills its cell. The
+          scatter SVG and the waterfall SVG have different intrinsic aspect
+          ratios (620×240 vs 720×250), so without this the smaller chart's
+          card would sit one chart-height shorter than the other and the two
+          card borders would drift apart.
+
+          The scatter wrapper is a PLAIN BLOCK, not `flex`: a `flex` row
+          wrapper makes the card a flex item that shrinks to the SVG's
+          intrinsic width, leaving its right edge short of the cell and
+          un-aligned with the per-position card below. A block wrapper lets
+          the block-level card fill the cell width, matching Row 2. */}
+      <div className="grid xl:grid-cols-2 gap-6 [&>*]:min-w-0">
         {scatterVisible && (
-          <div className="xl:col-span-2">
+          <div>
             <PositionRiskScatter
               positions={data.positions}
               decomposition={data.analyticsRow?.risk_decomposition ?? null}
@@ -1809,8 +1825,8 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         )}
         <div
           className={`${
-            scatterVisible ? "xl:col-span-2" : "xl:col-span-4"
-          } grid gap-6 [&>*]:min-w-0 [&>*]:mb-0`}
+            scatterVisible ? "" : "xl:col-span-2"
+          } grid [&>*]:min-w-0 [&>*]:mb-0`}
         >
           <RiskContributionWaterfall
             decomposition={data.analyticsRow?.risk_decomposition ?? null}

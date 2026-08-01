@@ -24,9 +24,9 @@
 // VaR horizon fan and the stress-return profile render INSIDE a host card, so
 // `ChartFrame` below is a bordered sub-section rather than a card of its own.
 // The position-risk scatter and the risk-contribution waterfall do NOT: they are
-// the two cells of the /risk attribution grid, and each owns its own
-// `<section className="card p-4">` — the same card treatment the other panels on
-// this page carry.
+// the two cells of the /risk attribution grid, and each owns its own card with a
+// `card-header` title ribbon — the same card treatment the other panels on this
+// page carry.
 
 "use client";
 
@@ -98,14 +98,18 @@ function ChartFrame({
   );
 }
 
-/** Legend row. HTML, not SVG <rect>, so a swatch never counts as a data mark. */
+/** Legend row. HTML, not SVG <rect>, so a swatch never counts as a data mark.
+ *  `className` lets a caller pin the row to the bottom of a flex column (e.g.
+ *  when the card is sized to match a sibling's height). */
 function Legend({
   items,
+  className,
 }: {
   items: Array<{ key: string; label: string; color?: string; ring?: boolean }>;
+  className?: string;
 }) {
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10.5px] text-text-tertiary mt-1">
+    <div className={`flex flex-wrap gap-x-4 gap-y-1 text-[10.5px] text-text-tertiary mt-1${className ? ` ${className}` : ""}`}>
       {items.map((item) => (
         <span key={item.key} className="inline-flex items-center gap-1.5">
           {item.color && (
@@ -501,15 +505,22 @@ export function PositionRiskScatter({
   };
 
   return (
-    <section className="card p-4" aria-label="Position risk versus conviction">
-      <h3 className="text-[13px] font-semibold mb-1">
-        Position risk versus conviction
-      </h3>
-      <p className="m-0 mb-2 text-[11px] text-text-tertiary leading-[1.55]">
-        Covariance contribution to annualised volatility versus conviction · above the zero line adds risk, below it hedges
-        {omitted > 0 ? ` · ${omitted} held name${omitted === 1 ? "" : "s"} absent from the decomposition and not plotted` : ""}
-      </p>
-      <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="w-full h-auto" role="img" aria-label="Position risk contribution plotted against conviction, by direction">
+    // h-full fills the grid cell on /risk so the two cards share the same outer
+    // height — see RiskBody's Row 1 note. The card body is the flex column, the
+    // chart sits at the top, and any extra room lands below the legend rather
+    // than on one side of an asymmetric pair.
+    <section className="card h-full flex flex-col" aria-labelledby="risk-position-conviction-heading">
+      <div className="card-header">
+        <h2 id="risk-position-conviction-heading" className="card-title m-0">
+          Position risk versus conviction
+        </h2>
+      </div>
+      <div className="p-4 flex-1 flex flex-col">
+        <p className="m-0 mb-2 text-[11px] text-text-tertiary leading-[1.55]">
+          Covariance contribution to annualised volatility versus conviction · above the zero line adds risk, below it hedges
+          {omitted > 0 ? ` · ${omitted} held name${omitted === 1 ? "" : "s"} absent from the decomposition and not plotted` : ""}
+        </p>
+        <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="w-full h-auto" role="img" aria-label="Position risk contribution plotted against conviction, by direction">
         {riskTicks.map((value) => (
           <g key={`r-${value}`}>
             <line x1={left} x2={chartWidth - right} y1={y(value)} y2={y(value)} stroke="var(--border)" opacity={value === 0 ? 1 : 0.5} />
@@ -552,15 +563,17 @@ export function PositionRiskScatter({
             {point.asset}
           </text>
         ))}
-        <text x={left} y={chartHeight - 6} fill="var(--text-tertiary)" fontSize="10">conviction</text>
-        <text x={left - 5} y={top - 5} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">risk</text>
-      </svg>
-      <Legend
-        items={[
-          { key: "long", label: "long", color: "var(--long)" },
-          { key: "short", label: "short", color: "var(--short)", ring: true },
-        ]}
-      />
+          <text x={left} y={chartHeight - 6} fill="var(--text-tertiary)" fontSize="10">conviction</text>
+          <text x={left - 5} y={top - 5} textAnchor="end" fill="var(--text-tertiary)" fontSize="9">risk</text>
+        </svg>
+        <Legend
+          className="mt-auto"
+          items={[
+            { key: "long", label: "long", color: "var(--long)" },
+            { key: "short", label: "short", color: "var(--short)", ring: true },
+          ]}
+        />
+      </div>
     </section>
   );
 }
@@ -602,15 +615,21 @@ export function RiskContributionWaterfall({
   const valueTicks = niceTicks(minScale, maxScale, 4);
 
   return (
-    <section className="card p-4" aria-label="Signed risk-contribution waterfall">
-      <h3 className="text-[13px] font-semibold mb-1">
-        Signed risk-contribution waterfall
-      </h3>
-      <p className="m-0 mb-2 text-[11px] text-text-tertiary leading-[1.55]">
-        Euler contributions accumulate to the book&apos;s ex-ante annualised volatility of{" "}
-        <span className="num text-text-secondary">{tick(total, 2)}</span> · bars below the running line reduce risk
-      </p>
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" role="img" aria-label="Signed position risk contribution waterfall ending at portfolio volatility">
+    // h-full fills the grid cell so the two cards share the same outer height —
+    // see RiskBody's Row 1 note. flex flex-col on the card so the body can take
+    // the remaining height and the legend can sit at the bottom of the column.
+    <section className="card h-full flex flex-col" aria-labelledby="risk-waterfall-heading">
+      <div className="card-header">
+        <h2 id="risk-waterfall-heading" className="card-title m-0">
+          Signed risk-contribution waterfall
+        </h2>
+      </div>
+      <div className="p-4 flex-1 flex flex-col">
+        <p className="m-0 mb-2 text-[11px] text-text-tertiary leading-[1.55]">
+          Euler contributions accumulate to the book&apos;s ex-ante annualised volatility of{" "}
+          <span className="num text-text-secondary">{tick(total, 2)}</span> · bars below the running line reduce risk
+        </p>
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" role="img" aria-label="Signed position risk contribution waterfall ending at portfolio volatility">
         {valueTicks.map((value) => (
           <g key={`t-${value}`}>
             <line x1={left} x2={width - right} y1={y(value)} y2={y(value)} stroke="var(--border)" opacity={value === 0 ? 1 : 0.5} />
@@ -643,15 +662,17 @@ export function RiskContributionWaterfall({
         <text x={totalCentre} y={y(Math.max(0, total)) - 5} fill="var(--text-secondary)" fontSize="9.5" textAnchor="middle" className="num">
           {tick(total, 2)}
         </text>
-        <text x={totalCentre} y={height - 18} fill="var(--text-secondary)" fontSize="9" textAnchor="middle">total</text>
-      </svg>
-      <Legend
-        items={[
-          { key: "adds", label: "adds risk", color: "var(--short)" },
-          { key: "reduces", label: "reduces risk", color: "var(--long)" },
-          { key: "total", label: "book volatility", color: "var(--accent)" },
-        ]}
-      />
+          <text x={totalCentre} y={height - 18} fill="var(--text-secondary)" fontSize="9" textAnchor="middle">total</text>
+        </svg>
+        <Legend
+          className="mt-auto"
+          items={[
+            { key: "adds", label: "adds risk", color: "var(--short)" },
+            { key: "reduces", label: "reduces risk", color: "var(--long)" },
+            { key: "total", label: "book volatility", color: "var(--accent)" },
+          ]}
+        />
+      </div>
     </section>
   );
 }

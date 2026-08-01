@@ -1654,66 +1654,40 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
 
       {shows("stress") && (
       <section id="stress" aria-label="Stress scenarios">
-      {/* Stress scenarios lead the page (ADR-0172). They ARE this phase's answer,
-          and they were at 2622px below a what-if builder that explores them — a
-          tool placed ahead of the finding it is for. The what-if follows, which
-          also reads better: a reader now varies a shock they have already seen.
+      {/* Stress scenarios lead the page (ADR-0172). They ARE this phase's answer.
+          The what-if follows, which reads better: a reader varies a shock they
+          have already seen.
 
-          Under a NON-DEFAULT lens the three live in the same grid: stress
-          matrix (3/4) on the left, what-if (1/4) on the right top, sanctions
-          exposure (1/4) on the right bottom. The right column is a flex column
-          pinned to the grid's row height: WhatIf sits at the top so its card top
-          aligns with the Stress card top, and the Sanctions wrapper uses
-          `mt-auto` so the card drops to the same baseline as the Stress card
-          bottom. `self-start` on the left keeps the Stress card at its natural
-          height — if the right column is naturally shorter, the gap between
-          WhatIf and Sanctions fills the empty space; if it is naturally taller
-          (the credit-lens default), the Stress card stays compact and the
-          Sanctions card drops below the row's natural size. Under the default
-          lens the layout is the original full-width stack. */}
-      {data.resolvedLens !== DEFAULT_LENS ? (
-        <div className="grid xl:grid-cols-4 gap-6 mb-6 [&>*]:min-w-0 [&_.card]:mb-0">
-          <div className="xl:col-span-3 self-start">
-            <StressScenarios compact state={scenarioState} />
-          </div>
-          <div className="xl:col-span-1 flex flex-col">
-            <WhatIfScenario
-              compact
-              loading={data.loading}
-              positions={data.positions}
-              factors={factorMap}
-              totalCapital={data.risk?.total_capital ?? null}
-              dataFailure={
-                data.positionsFailure
-                  ? `portfolio_positions read failed: ${data.positionsFailure}`
-                  : data.factorsFailure
-                    ? `factor_exposures read failed: ${data.factorsFailure}`
-                    : null
-              }
-              scopePill={
-                showScopeNote(data.resolvedLens, "WhatIfScenario") ? (
-                  <LensScopeChip lens={data.resolvedLens} panel="WhatIfScenario" pill />
-                ) : undefined
-              }
-            />
-            {/* mt-auto pushes Sanctions to the bottom of the right column so
-                its card bottom lines up with the Stress card bottom (or the
-                row bottom if the right column is naturally taller). pt-6 keeps
-                a minimum gap between the two cards. */}
-            <div className="mt-auto pt-6">
-              <SanctionsExposure state={sanctionsState} />
-            </div>
-          </div>
+          The three live in one grid on EVERY phase route, not just the
+          non-default one: stress matrix (3/4) on the left, what-if (1/4, in
+          `compact` single-column body for the narrow rail) on the right top,
+          sanctions exposure (1/4) on the right bottom. The right column is a
+          flex column: WhatIf sits at the top so its card top aligns with the
+          Stress card top, and the Sanctions wrapper uses `mt-auto` so the card
+          drops to the same baseline as the Stress card bottom. `self-start` on
+          the left keeps the Stress card at its natural height — if the right
+          column is naturally shorter, the gap between WhatIf and Sanctions
+          fills the empty space; if it is naturally taller, the Stress card
+          stays compact and the Sanctions card drops below the row's natural
+          size. */}
+      <div className="grid xl:grid-cols-4 gap-6 mb-6 [&>*]:min-w-0 [&_.card]:mb-0">
+        <div className="xl:col-span-3 self-start">
+          <StressScenarios
+            compact={data.resolvedLens !== DEFAULT_LENS}
+            state={scenarioState}
+          />
         </div>
-      ) : (
-        <>
-          <StressScenarios state={scenarioState} />
-          {/* Browser-side estimate, labelled as one — after the persisted matrix. */}
-          {/* Both figures it puts on screen — the shocked positions and the dollar
-              P&L against total_capital — come from lens-less tables, so the shock is
-              applied to the multi-asset book whatever lens is active. The marker
-              rides in the card's header pill rather than above it. */}
+        <div className="xl:col-span-1 flex flex-col">
+          {/* Browser-side estimate, labelled as one — beside the persisted
+              matrix. Both figures it puts on screen — the shocked positions
+              and the dollar P&L against total_capital — come from lens-less
+              tables, so the shock is applied to the multi-asset book whatever
+              lens is active. The marker rides in the card's header pill
+              rather than above it. `compact` is unconditional: the right rail
+              is 1/4 of the page, so the two-column sliders+result body does
+              not fit there. The 5 sliders stack vertically in compact mode. */}
           <WhatIfScenario
+            compact
             loading={data.loading}
             positions={data.positions}
             factors={factorMap}
@@ -1731,16 +1705,20 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
               ) : undefined
             }
           />
-          {/* 6b — Sanctions exposure, beside the stress table because it is the same kind of
-              claim: what the book does under a shock it did not choose. ADR-0096.
-              Under the DEFAULT lens it stays the full-width stack below the what-if.
-              Under a NON-DEFAULT lens it has already rendered inside the 1/4 column
-              under the what-if (see the stress grid above), so it is NOT repeated
-              here. PositioningCrowding moved to the attribution section (2/4 right
-              beside per-position attribution). */}
-          <SanctionsExposure state={sanctionsState} />
-        </>
-      )}
+          {/* mt-auto pushes Sanctions to the bottom of the right column so
+              its card bottom lines up with the Stress card bottom (or the
+              row bottom if the right column is naturally taller). pt-6 keeps
+              a minimum gap between the two cards.
+
+              6b — Sanctions exposure, beside the stress table because it is
+              the same kind of claim: what the book does under a shock it did
+              not choose. ADR-0096. PositioningCrowding moved to the
+              attribution section (2/4 right beside per-position attribution). */}
+          <div className="mt-auto pt-6">
+            <SanctionsExposure state={sanctionsState} />
+          </div>
+        </div>
+      </div>
       </section>
       )}
 

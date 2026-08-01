@@ -1697,6 +1697,7 @@ def allocate_and_persist_portfolio(
     candidates: list[TradeCandidate],
     run_date: date,
     cfg: ScoringConfig,
+    lens: str = "multi_asset",
 ) -> list[tuple[TradeCandidate, float, float]]:
     # size_by="conviction": weight ∝ |EdgeScore| / vol (conviction × inverse-vol),
     # not ∝ HypeScore — sizing follows edge strength and risk, not popularity
@@ -1715,8 +1716,13 @@ def allocate_and_persist_portfolio(
     # capital, and every /risk figure computed off it — gross, HHI, factor tilts,
     # per-position attribution, and a phantom "500% of the single-name cap" breach —
     # was measured against a portfolio that never existed.
+    #
+    # Scoped by lens (migration 068 / ADR-0222): a re-run for one lens must not
+    # clear another lens's book for the same date. The default 'multi_asset'
+    # reproduces the pre-068 behaviour exactly.
     try:
-        supabase.table("portfolio_positions").delete().eq("run_date", today_str).execute()
+        supabase.table("portfolio_positions").delete().eq("run_date", today_str) \
+            .eq("lens", lens).execute()
     except Exception as exc:
         print(f"[{today_str}] WARNING failed to clear portfolio_positions for this run "
               f"({exc.__class__.__name__}): {exc}")
@@ -1725,23 +1731,26 @@ def allocate_and_persist_portfolio(
     # sequential chances for a transient connection drop to abort the daily run.
     # Without run_date a stale book is indistinguishable from the current one.
     rows = [
-        {**c.to_portfolio_position_row(notional, weight), "run_date": today_str}
+        {**c.to_portfolio_position_row(notional, weight),
+         "run_date": today_str, "lens": lens}
         for c, notional, weight in positioned
     ]
     if rows:
         supabase.table("portfolio_positions").upsert(
-            rows, on_conflict="theme_id,asset,direction"
+            rows, on_conflict="lens,theme_id,asset,direction"
         ).execute()
 
-    # Prune positions left over from an EARLIER DAY. A zero-position day empties
-    # the table.
+    # Prune positions left over from an EARLIER DAY, scoped to this lens. A
+    # zero-position day empties the lens's table without touching another lens's.
     try:
-        supabase.table("portfolio_positions").delete().lt("run_date", today_str).execute()
+        supabase.table("portfolio_positions").delete().lt("run_date", today_str) \
+            .eq("lens", lens).execute()
     except Exception as exc:
         print(f"[{today_str}] WARNING failed to prune stale portfolio_positions "
               f"({exc.__class__.__name__}): {exc}")
 
-    print(f"[{today_str}] {len(positioned)} portfolio positions persisted (total capital ${cfg.total_capital:,.0f}).")
+    print(f"[{today_str}] {len(positioned)} portfolio positions persisted "
+          f"(total capital ${cfg.total_capital:,.0f}).")
     return positioned
 
 
@@ -2074,6 +2083,7 @@ def reconcile_positions_to_published_book(
     positioned: list[tuple[TradeCandidate, float, float]],
     run_date: date,
     cfg: ScoringConfig,
+    lens: str = "multi_asset",
 ) -> list[tuple[TradeCandidate, float, float]] | None:
     """Rewrite `portfolio_positions` to the book L5 published, and return it.
 
@@ -2097,6 +2107,14 @@ def reconcile_positions_to_published_book(
     book") from tilts/scenarios/correlation to the positions, returns and risk. If
     L5 produced nothing usable, the L1 book stands and is returned unchanged — a
     fallback day still has a real, coherent portfolio.
+
+    Per-lens since migration 068 / ADR-0222: `lens` defaults to 'multi_asset' for
+    the primary book, and a non-default lens (the credit book) writes its own rows
+    under `lens='credit'` — scoped delete, per-lens `on_conflict`, and a `lens`
+    value on every row — so a credit reconcile can never touch the multi-asset
+    book. `positioned` may be the multi-asset L1b pool: the credit lens filters it
+    to `LENS_TICKER_FALLBACK["credit"]` inside `q1_agent`, so every credit pick is
+    a member of it.
     """
     picks = (agent_result or {}).get("picks") or []
     if not picks:
@@ -2145,16 +2163,20 @@ def reconcile_positions_to_published_book(
 
     today_str = run_date.isoformat()
     try:
-        supabase.table("portfolio_positions").delete().eq("run_date", today_str).execute()
+        # Scoped by lens (migration 068 / ADR-0222): a credit reconcile deletes only
+        # the credit book's rows for this run_date, never the multi-asset book's.
+        supabase.table("portfolio_positions").delete().eq("run_date", today_str) \
+            .eq("lens", lens).execute()
         # One request. Per-row here is worse than elsewhere: a drop midway leaves
         # the table holding PART of the published book with the rest deleted — a
         # portfolio that has never existed, presented as the book of record.
         supabase.table("portfolio_positions").upsert(
             [
-                {**c.to_portfolio_position_row(notional, weight), "run_date": today_str}
+                {**c.to_portfolio_position_row(notional, weight),
+                 "run_date": today_str, "lens": lens}
                 for c, notional, weight in final
             ],
-            on_conflict="theme_id,asset,direction",
+            on_conflict="lens,theme_id,asset,direction",
         ).execute()
     except Exception as exc:
         print(f"[{run_date}] WARNING failed to reconcile portfolio_positions to the "
@@ -2720,14 +2742,19 @@ def run_credit_lens_book(
 
     Deliberately minimal, and NOT a copy of the primary L5 phase in `main()`: no
     `record_published_claims` (`pick_outcomes` is multi_asset-only — ADR-0090's
-    denominator must not gain a second book), no
-    `reconcile_positions_to_published_book` / risk-and-return recompute (those
-    describe the PUBLISHED `portfolio_positions` book, which stays multi_asset),
-    and no `extend_held_book` (`book_holdings_performance` has no lens column and
-    stays multi_asset-only). `run_q1_agent`'s own persist path
+    denominator must not gain a second book), and no `extend_held_book`
+    (`book_holdings_performance` has no lens column and stays multi-asset-only —
+    a credit book gets weights worth showing but no held-book P&L series, exactly
+    as ADR-0194 deferred). `run_q1_agent`'s own persist path
     (`q1_agent._persist_to_supabase`) still writes `research_recommendations` and a
-    `book_holdings` snapshot for the credit lens — see ADR-0194 for why a
-    non-multi_asset book gets a snapshot but no held-book P&L series.
+    `book_holdings` snapshot for the credit lens.
+
+    Since migration 068 / ADR-0222 the credit book ALSO gets a `portfolio_positions`
+    held-book write under `lens='credit'` — scoped so it can never touch the
+    multi-asset book. This is what lets the /risk scatter render under
+    `/risk?lens=credit`. The held book is a per-day snapshot of target weights, not
+    a track record; `pick_outcomes` / `book_signal` / `book_holdings_performance` /
+    `book_revisions` all stay multi-asset-only.
 
     THE CREDIT RUN MUST NEVER DAMAGE THE PRIMARY BOOK: by the time this is called,
     the multi_asset book has already been fully persisted (and, for its held-book
@@ -2771,6 +2798,25 @@ def run_credit_lens_book(
         if credit_result:
             print(f"[{run_date}] [L5b] Credit-lens book persisted "
                   f"({len(credit_result.get('picks') or [])} picks).")
+            # The credit held book (ADR-0222): a per-lens portfolio_positions write
+            # scoped to 'credit', so the /risk scatter can render under the credit
+            # lens. `positioned` is the multi-asset L1b pool; the credit lens
+            # filtered it to LENS_TICKER_FALLBACK['credit'] inside q1_agent, so
+            # every credit pick is a member. Wrapped by the outer try so a failure
+            # here is logged and ignored — the multi_asset book is already persisted.
+            try:
+                supabase.table("portfolio_positions").delete() \
+                    .lt("run_date", run_date.isoformat()) \
+                    .eq("lens", "credit").execute()
+                final_credit = reconcile_positions_to_published_book(
+                    credit_result, positioned, run_date, cfg, lens="credit",
+                )
+                if final_credit:
+                    print(f"[{run_date}] [L5b] Credit held book reconciled to "
+                          f"{len(final_credit)} positions (lens='credit').")
+            except Exception as exc:
+                print(f"[{run_date}] [L5b] WARNING failed to reconcile credit "
+                      f"portfolio_positions ({exc.__class__.__name__}): {exc}")
         else:
             print(f"[{run_date}] [L5b] Credit-lens agent declined to produce output "
                   f"(fallback active).")

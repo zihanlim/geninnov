@@ -452,3 +452,162 @@ def test_credit_lens_can_be_disabled_without_touching_anything(monkeypatch):
 
     assert result is None
     assert called["agent"] is False, "RUN_CREDIT_LENS=0 must not invoke the agent at all"
+
+
+# ─── The held book (portfolio_positions) is written per-lens (ADR-0222) ──────
+#
+# Migration 068 made portfolio_positions per-lens. This section asserts the two
+# write functions carry the lens through: `allocate_and_persist_portfolio` (the
+# L1b provisional book) and `reconcile_positions_to_published_book` (the
+# book-of-record reconciliation). Both now default to 'multi_asset' and write
+# `lens` on every row with the per-lens on_conflict key, so a credit write can
+# never touch the multi-asset book.
+
+
+def _cfg():
+    from backend.services.hype_calculator import ScoringConfig
+
+    return ScoringConfig(
+        hype_volume_weight=0.25, hype_sentiment_weight=0.25,
+        hype_corr_weight=0.25, hype_momentum_weight=0.25,
+        trade_hype_weight=0.5, trade_sentiment_weight=0.5,
+    )
+
+
+def _candidate(asset="LQD", direction="long"):
+    from backend.services.trade_ranker import TradeCandidate
+
+    return TradeCandidate(
+        theme_id="t1", asset=asset, direction=direction,
+        trade_score=0.6, hype_score=60.0, avg_sentiment=0.3,
+        edge_score=0.4, vol=0.01, conviction=40.0,
+    )
+
+
+def test_reconcile_writes_lens_on_every_row_and_uses_the_per_lens_key(fake_client, monkeypatch):
+    """The book-of-record write carries lens + the per-lens on_conflict key."""
+    monkeypatch.setattr(dr, "supabase", fake_client)
+    cand = _candidate()
+    picks = [{"asset": "LQD", "direction": "long", "signed_weight": 0.10,
+              "weight": 0.10, "notional": 10_000_000.0}]
+    final = dr.reconcile_positions_to_published_book(
+        {"picks": picks}, [(cand, 10_000_000.0, 0.10)],
+        __import__("datetime").date(2026, 7, 30), _cfg(),
+        lens="credit",
+    )
+    assert final is not None
+
+    rows = fake_client.store["portfolio_positions"]
+    assert len(rows) == 1
+    assert rows[0]["lens"] == "credit"
+    assert rows[0]["asset"] == "LQD"
+
+    upserts = [
+        c for c in fake_client.calls
+        if c["table"] == "portfolio_positions" and c["op"] == "upsert"
+    ]
+    assert upserts
+    assert upserts[-1]["on_conflict"] == "lens,theme_id,asset,direction"
+
+
+def test_reconcile_delete_is_scoped_by_lens(fake_client, monkeypatch):
+    """A credit reconcile must delete only the credit book's rows for the date,
+    never the multi-asset book's — the migration-062-style scoped delete."""
+    monkeypatch.setattr(dr, "supabase", fake_client)
+    # Seed a multi-asset row for the same date.
+    multi_cand = _candidate(asset="BABA")
+    multi_picks = [{"asset": "BABA", "direction": "long", "signed_weight": 0.05,
+                    "weight": 0.05, "notional": 5_000_000.0}]
+    dr.reconcile_positions_to_published_book(
+        {"picks": multi_picks}, [(multi_cand, 5_000_000.0, 0.05)],
+        __import__("datetime").date(2026, 7, 30), _cfg(),
+    )
+
+    # Credit reconcile for the same date.
+    credit_cand = _candidate(asset="LQD")
+    credit_picks = [{"asset": "LQD", "direction": "long", "signed_weight": 0.10,
+                     "weight": 0.10, "notional": 10_000_000.0}]
+    dr.reconcile_positions_to_published_book(
+        {"picks": credit_picks}, [(credit_cand, 10_000_000.0, 0.10)],
+        __import__("datetime").date(2026, 7, 30), _cfg(),
+        lens="credit",
+    )
+
+    rows = fake_client.store["portfolio_positions"]
+    by_lens = {r["lens"] for r in rows}
+    assert by_lens == {"multi_asset", "credit"}, (
+        "both books must coexist for the same run_date after a credit reconcile"
+    )
+    multi = [r for r in rows if r["lens"] == "multi_asset"]
+    assert len(multi) == 1 and multi[0]["asset"] == "BABA", (
+        "the credit reconcile must not have deleted the multi-asset row"
+    )
+    credit = [r for r in rows if r["lens"] == "credit"]
+    assert len(credit) == 1 and credit[0]["asset"] == "LQD"
+
+
+def test_allocate_persists_lens_and_uses_the_per_lens_key(fake_client, monkeypatch):
+    """The L1b provisional write carries lens + the per-lens on_conflict key.
+    Defaults to multi_asset, reproducing the pre-068 behaviour."""
+    monkeypatch.setattr(dr, "supabase", fake_client)
+    dr.allocate_and_persist_portfolio(
+        [_candidate()], __import__("datetime").date(2026, 7, 30), _cfg(),
+        lens="credit",
+    )
+
+    rows = fake_client.store["portfolio_positions"]
+    assert rows and all(r["lens"] == "credit" for r in rows)
+    upserts = [
+        c for c in fake_client.calls
+        if c["table"] == "portfolio_positions" and c["op"] == "upsert"
+    ]
+    assert upserts
+    assert upserts[-1]["on_conflict"] == "lens,theme_id,asset,direction"
+
+
+def test_run_credit_lens_book_writes_the_credit_held_book(monkeypatch):
+    """run_credit_lens_book, after L5b succeeds, writes a per-lens
+    portfolio_positions book — the thing that lets the /risk scatter render
+    under /risk?lens=credit (ADR-0222)."""
+    monkeypatch.setenv("RUN_CREDIT_LENS", "1")
+
+    class _FakeSupabase:
+        def __init__(self):
+            self.store = {}
+
+        def table(self, name):
+            return _FakeTable(self.store, [], name)
+
+    sb = _FakeSupabase()
+    monkeypatch.setattr(dr, "supabase", sb)
+    monkeypatch.setattr(dr, "SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setattr(dr, "SUPABASE_KEY", "key")
+    monkeypatch.setattr(dr, "load_mandate", lambda: None)
+
+    calls = []
+
+    class _Rec:
+        def __init__(self, _sb, _rid, _st, **kw):
+            calls.append((_st, kw))
+
+    monkeypatch.setattr(dr, "record_pipeline_run", _Rec)
+
+    def _credit_agent(**_kwargs):
+        return {"lens": "credit", "picks": [
+            {"asset": "LQD", "direction": "long", "signed_weight": 0.10,
+             "weight": 0.10, "notional": 10_000_000.0},
+        ]}
+
+    result = dr.run_credit_lens_book(
+        run_date=__import__("datetime").date(2026, 7, 30),
+        macro_snapshot={}, regime=None,
+        positioned=[(_candidate(), 10_000_000.0, 0.10)],
+        risk_metrics={}, cfg=_cfg(), _run_q1_agent=_credit_agent,
+    )
+
+    assert result is not None
+    rows = sb.store.get("portfolio_positions", [])
+    assert rows, "the credit held book must be written"
+    assert all(r["lens"] == "credit" for r in rows), (
+        "every credit held-book row must carry lens='credit'"
+    )

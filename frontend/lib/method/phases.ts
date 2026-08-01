@@ -158,7 +158,11 @@ export const PHASES: readonly Phase[] = [
   {
     n: 6,
     id: "attribution",
-    short: "Outcome",
+    // "Attrib", not "Outcome": the page, the tab and the diagram all say
+    // "Attribution", and a rail label that is a different WORD reads as a
+    // different destination. "Attribution" itself clips the 56px rail, so the
+    // label is the truncation rather than a synonym.
+    short: "Attrib",
     tab: "Attribution",
     name: "Attribution & feedback",
     question: "Was the thesis right, or was the sizing wrong?",

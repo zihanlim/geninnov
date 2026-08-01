@@ -19,6 +19,14 @@
 //    (stress rows), position above/below a baseline (waterfall, scatter y-axis), or
 //    filled-vs-ring marks (scatter). Colour alone would make these charts
 //    unreadable for ~5% of male readers.
+//
+// The five illustrations split into two homes. The Monte-Carlo distribution, the
+// VaR horizon fan and the stress-return profile render INSIDE a host card, so
+// `ChartFrame` below is a bordered sub-section rather than a card of its own.
+// The position-risk scatter and the risk-contribution waterfall do NOT: they are
+// the two cells of the /risk attribution grid, and each owns its own
+// `<section className="card p-4">` — the same card treatment the other panels on
+// this page carry.
 
 "use client";
 
@@ -493,7 +501,10 @@ export function PositionRiskScatter({
   };
 
   return (
-    <ChartFrame label="Position risk versus conviction">
+    <section className="card p-4" aria-label="Position risk versus conviction">
+      <h3 className="text-[13px] font-semibold mb-1">
+        Position risk versus conviction
+      </h3>
       <p className="m-0 mb-2 text-[11px] text-text-tertiary leading-[1.55]">
         Covariance contribution to annualised volatility versus conviction · above the zero line adds risk, below it hedges
         {omitted > 0 ? ` · ${omitted} held name${omitted === 1 ? "" : "s"} absent from the decomposition and not plotted` : ""}
@@ -550,7 +561,7 @@ export function PositionRiskScatter({
           { key: "short", label: "short", color: "var(--short)", ring: true },
         ]}
       />
-    </ChartFrame>
+    </section>
   );
 }
 
@@ -591,7 +602,10 @@ export function RiskContributionWaterfall({
   const valueTicks = niceTicks(minScale, maxScale, 4);
 
   return (
-    <ChartFrame label="Signed risk-contribution waterfall">
+    <section className="card p-4" aria-label="Signed risk-contribution waterfall">
+      <h3 className="text-[13px] font-semibold mb-1">
+        Signed risk-contribution waterfall
+      </h3>
       <p className="m-0 mb-2 text-[11px] text-text-tertiary leading-[1.55]">
         Euler contributions accumulate to the book&apos;s ex-ante annualised volatility of{" "}
         <span className="num text-text-secondary">{tick(total, 2)}</span> · bars below the running line reduce risk
@@ -638,6 +652,6 @@ export function RiskContributionWaterfall({
           { key: "total", label: "book volatility", color: "var(--accent)" },
         ]}
       />
-    </ChartFrame>
+    </section>
   );
 }

@@ -18,6 +18,11 @@
 -- fewer than two non-null closes contributes no row, so applying this against a
 -- database without FRED history cannot fail a NOT NULL column — it simply seeds
 -- nothing, and the tab appears once data flows.
+--
+-- macro_daily_history.value is real (float4), which has no round(real,
+-- integer) — the ::numeric casts make the 2dp rounding and the pct_change
+-- division exact where the column type would not (verified live 2026-08-01:
+-- round(real, 2) raises "function round(real, integer) does not exist").
 
 INSERT INTO market_assets (ticker, name, current, prev_close, pct_change, market_group, sort_order, as_of, updated_at)
 SELECT
@@ -38,7 +43,7 @@ SELECT
 FROM (
     SELECT
         series_id,
-        value,
+        value::numeric AS value,
         trading_date,
         ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY trading_date DESC) AS rn
     FROM macro_daily_history

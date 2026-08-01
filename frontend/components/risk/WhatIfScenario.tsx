@@ -22,6 +22,11 @@ import {
   estimateWhatIf,
 } from "@/lib/risk/riskBoard";
 import { isNum } from "@/lib/risk/analytics";
+import {
+  CUSTOM_PRESET_ID,
+  WHAT_IF_PRESETS,
+  type WhatIfShockState,
+} from "@/lib/risk/whatIfPresets";
 import { Ident, SectionSkeleton } from "./SectionGap";
 
 interface ShockControl {
@@ -42,7 +47,8 @@ const CONTROLS: ShockControl[] = [
   { key: "vix", label: "Volatility (VIX)", hint: "+ = vol spike", min: -20, max: 40, step: 1 },
 ];
 
-type ShockState = Record<ShockControl["key"], number>;
+/** The five macro drivers, keyed the same as `WhatIfShockState`. */
+type ShockState = WhatIfShockState;
 
 const ZERO_STATE: ShockState = { mkt: 0, rates: 0, usd: 0, credit: 0, vix: 0 };
 
@@ -115,6 +121,18 @@ export function WhatIfScenario({
   compact?: boolean;
 }) {
   const [shocks, setShocks] = useState<ShockState>(ZERO_STATE);
+  // Which named story the sliders currently describe. "custom" means the reader
+  // has moved a slider (or cleared the board), so the preset is no longer what
+  // the five values say. The dropdown reflects that honestly instead of
+  // pretending a story still holds after its shocks were hand-edited.
+  const [presetId, setPresetId] = useState<string>(CUSTOM_PRESET_ID);
+
+  /** Load a named story into the sliders. Custom keeps the current values. */
+  const applyPreset = (id: string) => {
+    const p = WHAT_IF_PRESETS.find((x) => x.id === id);
+    setPresetId(id);
+    if (p) setShocks(p.shocks);
+  };
 
   const factorShocks = useMemo(() => toFactorShocks(shocks), [shocks]);
   const result = useMemo(
@@ -166,6 +184,36 @@ export function WhatIfScenario({
           >
             {/* Sliders */}
             <div>
+              {/* Preset stories. A named path is a starting point, not a cage:
+                  the sliders underneath stay live and any manual move marks the
+                  state "custom" again, because the preset label would otherwise
+                  lie about what the five values say. */}
+              <div className="mb-4">
+                <label
+                  htmlFor="whatif-preset"
+                  className="block text-[11px] uppercase tracking-[0.09em] text-text-tertiary mb-1"
+                >
+                  Preset scenario
+                </label>
+                <select
+                  id="whatif-preset"
+                  value={presetId}
+                  onChange={(e) => applyPreset(e.target.value)}
+                  className="filter-btn w-full cursor-pointer"
+                  aria-label="Preset what-if scenario"
+                >
+                  {WHAT_IF_PRESETS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+                {presetId !== CUSTOM_PRESET_ID && (
+                  <p className="m-0 mt-2 text-[11.5px] text-text-tertiary leading-[1.55]">
+                    {WHAT_IF_PRESETS.find((p) => p.id === presetId)?.description}
+                  </p>
+                )}
+              </div>
               <p className="m-0 mb-4 text-[12px] text-text-secondary leading-[1.6] max-w-[70ch]">
                 Set a shock on each driver; the estimated book return recomputes live as
                 Σ(signed weight × factor β × factor shock) over the{" "}
@@ -211,9 +259,11 @@ export function WhatIfScenario({
                       max={c.max}
                       step={c.step}
                       value={shocks[c.key]}
-                      onChange={(e) =>
-                        setShocks((prev) => ({ ...prev, [c.key]: Number(e.target.value) }))
-                      }
+                      onChange={(e) => {
+                        // Hand-editing a shock invalidates the preset label.
+                        if (presetId !== CUSTOM_PRESET_ID) setPresetId(CUSTOM_PRESET_ID);
+                        setShocks((prev) => ({ ...prev, [c.key]: Number(e.target.value) }));
+                      }}
                       className="w-full accent-[var(--accent)] cursor-pointer"
                       aria-label={`${c.label} shock`}
                     />
@@ -223,7 +273,10 @@ export function WhatIfScenario({
               <button
                 type="button"
                 className="filter-btn mt-4"
-                onClick={() => setShocks(ZERO_STATE)}
+                onClick={() => {
+                  setShocks(ZERO_STATE);
+                  setPresetId(CUSTOM_PRESET_ID);
+                }}
                 disabled={!anyShock}
               >
                 Reset shocks

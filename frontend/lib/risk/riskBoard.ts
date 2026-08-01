@@ -23,6 +23,9 @@ import { ENFORCED, MONITORED } from "@/lib/mandate";
 /** A row of portfolio_positions with the migration-025 decision block. */
 export interface PositionRow {
   id: string;
+  // migration 068: portfolio_positions is per-lens. The column is NOT NULL with
+  // a 'multi_asset' default, so older rows surface here as 'multi_asset' too.
+  lens: string;
   theme_id: string | null;
   asset: string;
   direction: "long" | "short";

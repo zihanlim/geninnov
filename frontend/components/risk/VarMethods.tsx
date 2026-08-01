@@ -10,6 +10,7 @@
 
 "use client";
 
+import type { ReactNode } from "react";
 import type {
   MonteCarloVarRow,
   RiskDecompositionRow,
@@ -33,12 +34,15 @@ export default function VarMethods({
   monteCarlo,
   forecast,
   sessions,
+  scopePill,
 }: {
   risk: RiskRow | null;
   decomposition?: RiskDecompositionRow | null;
   monteCarlo?: MonteCarloVarRow | null;
   forecast?: VarForecastRow | null;
   sessions: number | null;
+  /** "Still the multi-asset book" marker, hosted in the card's header. */
+  scopePill?: ReactNode;
 }) {
   const rows = varMethods(
     risk, decomposition, monteCarlo, forecast, sessions, risk?.total_capital ?? null,
@@ -49,7 +53,10 @@ export default function VarMethods({
 
   return (
     <section className="card p-4" aria-label="Value at risk by method" data-testid="var-methods">
-      <h3 className="text-[13px] font-semibold mb-1">Value at risk, by method</h3>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <h3 className="text-[13px] font-semibold">Value at risk, by method</h3>
+        {scopePill}
+      </div>
       <p className="text-[11.5px] text-text-tertiary leading-[1.55] mb-3">
         Four figures, all called VaR, none interchangeable. They differ by{" "}
         <strong>method</strong>, by <strong>horizon</strong> — most of the spread below is

@@ -253,7 +253,7 @@ const RISK_COLUMNS =
   "run_date, updated_at, total_capital, var_95, cvar_95, sharpe, beta, concentration_hhi, numeric_derivations, var_95_historical, es_95_historical, sortino, max_drawdown, calmar, tracking_error, information_ratio, benchmark_comparison, conditional_vol";
 const RETURN_COLUMNS = "run_date, daily_return, cumulative_return, portfolio_value";
 const POSITION_COLUMNS =
-  "id, theme_id, asset, direction, notional, weight, hype_score, trade_score, edge_score, trend_signal, regime_bias, carry_signal, value_signal, sentiment_signal, conviction, vol";
+  "id, lens, theme_id, asset, direction, notional, weight, hype_score, trade_score, edge_score, trend_signal, regime_bias, carry_signal, value_signal, sentiment_signal, conviction, vol";
 const FACTOR_COLUMNS =
   "asset, run_date, beta_mkt, beta_smb, beta_hml, beta_rmw, beta_cma, beta_umd, r_squared";
 
@@ -613,6 +613,12 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         supabase
           .from("portfolio_positions")
           .select(POSITION_COLUMNS)
+          // portfolio_positions is per-lens since migration 068. The held book a
+          // reader sees must follow the lens they picked, and on the default
+          // (multi_asset) page this returns the same rows the lens-less read did
+          // before the column existed — every backfilled row carries
+          // lens='multi_asset' from the NOT NULL DEFAULT.
+          .eq("lens", resolved)
           .order("notional", { ascending: false }),
         // Newest factor rows across assets; factorsByAsset keeps the first per asset.
         supabase

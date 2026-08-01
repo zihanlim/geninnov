@@ -262,6 +262,9 @@ describe("LensScopeChip under a non-default lens", () => {
     expect(pill).toContain("badge-neutral");
     expect(pill).toContain("whitespace-nowrap");
     expect(pill).toContain("text-[10px]");
+    // Full rounded sides, matching the book page's SourceTag pill geometry
+    // (book?position=GEV), not the `.badge` base's 4px corners.
+    expect(pill).toContain("rounded-full");
     expect(pill).toContain('aria-label="part multi-asset"');
   });
 

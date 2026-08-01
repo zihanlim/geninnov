@@ -284,7 +284,11 @@ export function LensScopeChip({
       data-testid="lens-scope-chip"
       className={
         pill
-          ? "badge badge-neutral whitespace-nowrap text-[10px]"
+          // `rounded-full` matches the fully-rounded pill geometry of the book
+          // page's SourceTag pills (book?position=GEV) — the lens-scope chip
+          // shares the `badge` base which rounds at 4px, and `rounded-full`
+          // wins the cascade because Tailwind emits it after `rounded`.
+          ? "badge badge-neutral whitespace-nowrap text-[10px] rounded-full"
           : "text-[11px] text-text-tertiary whitespace-nowrap"
       }
     >

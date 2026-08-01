@@ -136,7 +136,14 @@ MINIMAX_ENDPOINT = "https://api.minimax.io/v1/chat/completions"
 #
 # A daily batch job can afford to wait: this is the single most important artefact
 # the pipeline produces and it runs once a day. The Actions job allows 60 minutes.
-LLM_TIMEOUT_SECONDS = int(os.environ.get("LLM_TIMEOUT_SECONDS", "900"))
+#
+# 900 was measured (2026-08-01): the live pipeline timed out at 900 on attempt 1
+# with the socket still healthy (the model was still reasoning), then the retry
+# finished in 423s and produced a verified book — reason_picks 900s + 423s = 1323s
+# across two attempts. So a full reasoning pass on the real prompt can need >15
+# minutes, and 900 sat below the observed range. 1800 clears it while staying half
+# of the 60-minute CI budget and keeps the single-timeout-retry meaningful (ADR-0160).
+LLM_TIMEOUT_SECONDS = int(os.environ.get("LLM_TIMEOUT_SECONDS", "1800"))
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 # Contingency provider only — this deployment ships no ANTHROPIC_API_KEY, so
@@ -1850,8 +1857,9 @@ def reason_picks(state: Q1State) -> Q1State:
             # A stall is NOT worth retrying, and retrying it was the real cost.
             #
             # This loop treated every exception alike, so a timeout consumed all
-            # three attempts: 3 x LLM_TIMEOUT_SECONDS. At the 900s default that is
-            # 2700s, and 45 minutes is exactly what a stalled run was measured at.
+            # three attempts: 3 x LLM_TIMEOUT_SECONDS. At the then-current 900s
+            # default that was 2700s, and 45 minutes is exactly what a stalled run
+            # was measured at. (The default is 1800s now — see the constant.)
             # ADR-0052 corrects ADR-0051, which blamed one unbounded call for that
             # observation — the wall-clock wrapper was still needed, but it was not
             # what produced the number.
@@ -4034,8 +4042,9 @@ def reason_and_verify_with_retries(
     ever exercised it — and that is why the following survived:
 
     `reason_picks` refuses to retry its own timeout (ADR-0052: three attempts at
-    `LLM_TIMEOUT_SECONDS` is 2700s, and a 45-minute stalled run is exactly what was
-    measured). But a timeout sets ``state["error"]``, and this loop retried on ANY
+    the then-current 900s `LLM_TIMEOUT_SECONDS` was 2700s, and a 45-minute stalled
+    run is exactly what was measured). But a timeout sets ``state["error"]``, and
+    this loop retried on ANY
     error, so the run could still reach 3 x 900s. The 2026-07-29 log shows both
     halves on consecutive lines — "not retrying; a stall is not fixed by asking
     again", then "Retrying reason_picks (attempt 2/3)". Neither line is wrong about

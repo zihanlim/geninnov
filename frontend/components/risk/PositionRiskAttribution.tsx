@@ -142,8 +142,11 @@ export function PositionRiskAttribution({
         <h2 id="risk-attrib-heading" className="card-title m-0">
           Per-position risk attribution
         </h2>
-        <span className="text-[11px] text-text-tertiary num">
-          {loading ? "…" : `${rows.length} position${rows.length === 1 ? "" : "s"} · β-contribution first`}
+        <span className="flex items-center gap-2 flex-wrap">
+          {scopePill}
+          <span className="text-[11px] text-text-tertiary num">
+            {loading ? "…" : `${rows.length} position${rows.length === 1 ? "" : "s"} · β-contribution first`}
+          </span>
         </span>
       </div>
 

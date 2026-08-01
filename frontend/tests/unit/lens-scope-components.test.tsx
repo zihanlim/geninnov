@@ -243,4 +243,36 @@ describe("LensScopeChip under a non-default lens", () => {
       expect(out, lens).toContain("multi-asset book");
     }
   });
+
+  it("pill variant uses badge classes instead of bare text", () => {
+    const pill = renderToStaticMarkup(
+      <LensScopeChip lens="credit" panel="RiskLimitBoard" pill />,
+    );
+    // Same text, same testid, same role, same title — only the container changes.
+    expect(pill).toContain('data-testid="lens-scope-chip"');
+    expect(pill).toContain('role="note"');
+    expect(pill).toContain(">part multi-asset<");
+    expect(pill).toContain("title=");
+    expect(pill).toContain("ADR-0194");
+    expect(pill).toContain("portfolio_risk");
+    // The pill form carries the badge utility classes (globals.css:324/330).
+    expect(pill).toContain("badge");
+    expect(pill).toContain("badge-neutral");
+    expect(pill).toContain("whitespace-nowrap");
+  });
+
+  it("pill variant is null at the default lens, same as bare text", () => {
+    const pill = renderToStaticMarkup(
+      <LensScopeChip lens="multi_asset" panel="RiskLimitBoard" pill />,
+    );
+    expect(pill).toBe("");
+  });
+
+  it("pill variant says 'multi-asset book' for a wholly-published panel", () => {
+    const published = renderToStaticMarkup(
+      <LensScopeChip lens="credit" panel="DrawdownChart" pill />,
+    );
+    expect(published).toContain(">multi-asset book<");
+    expect(published).toContain("badge-neutral");
+  });
 });

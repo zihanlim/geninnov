@@ -132,7 +132,7 @@ import PageHeader from "@/components/PageHeader";
 import { riskAnswerCards } from "@/components/risk/RiskAnswerCards";
 import { mandateAnswerCards } from "@/components/risk/MandateAnswerCards";
 import { attributionAnswerCards } from "@/components/risk/AttributionAnswerCards";
-import TrackRecord from "@/components/method/TrackRecord";
+import TrackRecord, { TrackRecordHeading } from "@/components/method/TrackRecord";
 import { buildTrackRecord, type PickOutcomeRow } from "@/lib/method/trackRecord";
 import {
   PHASE_SECTION_NAV,
@@ -1764,10 +1764,12 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       {/* Marks the SCATTER, not the waterfall beside it: the scatter plots
           portfolio_positions (lens-less) against the lens-following risk
           decomposition, while the waterfall is the decomposition alone and needs
-          no marker. Above the grid rather than inside a cell — a wrapper div
-          around one grid child would alter the default page's DOM, which this
-          may not do, and `ScopeNote` is left-aligned so at `xl` it sits over the
-          first cell and at narrower widths over the card directly below it.
+          no marker. Left-aligned above the grid, so at `xl` it sits over the
+          scatter's cell — the left 2/4 of the row below — and at narrower widths
+          over the card directly below it. (The scatter is now wrapped in a
+          col-span div for the 2026-08-01 layout; the grid is four columns, so
+          the default page's DOM has already changed and the marker no longer
+          needs to stay outside a wrapper.)
 
           GATED ON THE SCATTER ACTUALLY DRAWING, because sitting outside the grid
           is what makes that necessary. `PositionRiskScatter` returns null below
@@ -1780,30 +1782,58 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       {scatterVisible && (
         <ScopeNote lens={data.resolvedLens} panel="PositionRiskScatter" />
       )}
-      <div className="grid xl:grid-cols-2 gap-6 items-start [&>*]:min-w-0">
-        <PositionRiskScatter
-          positions={data.positions}
-          decomposition={data.analyticsRow?.risk_decomposition ?? null}
-        />
-        <RiskContributionWaterfall
-          decomposition={data.analyticsRow?.risk_decomposition ?? null}
-        />
+      {/* ONE row at `xl` (2026-08-01): the scatter takes the left 2/4 of a
+          four-column grid, and the right 2/4 stacks the risk-contribution
+          waterfall over the per-position attribution card. The attribution
+          table is the widest element in the section (min-w-[860px]); inside a
+          ~676px column it keeps its own overflow-x-auto rather than being
+          squeezed, and the waterfall's SVG scales to whatever width it is given.
+
+          When the scatter self-suppresses — the common case under a non-default
+          lens, where it needs names in BOTH the lens-less held book and the
+          lens-following decomposition — the right stack takes the FULL width. A
+          grid whose left half is an empty col-span-2 is the orphaned-cell
+          failure this file refuses, so the stack widens instead of leaving a
+          hole. */}
+      <div className="grid xl:grid-cols-4 gap-6 items-start [&>*]:min-w-0">
+        {scatterVisible && (
+          <div className="xl:col-span-2">
+            <PositionRiskScatter
+              positions={data.positions}
+              decomposition={data.analyticsRow?.risk_decomposition ?? null}
+            />
+          </div>
+        )}
+        {/* A nested single-column grid, so the waterfall and the attribution card
+            get a real 24px gap instead of relying on the card's mb-6 — which is
+            margin-bottom, so two stacked cards would otherwise sit flush. The
+            attribution card keeps its own mb-6 class (it renders full-width
+            elsewhere) but this column zeroes it. */}
+        <div
+          className={`${
+            scatterVisible ? "xl:col-span-2" : "xl:col-span-4"
+          } grid gap-6 [&>*]:min-w-0 [&>*]:mb-0`}
+        >
+          <RiskContributionWaterfall
+            decomposition={data.analyticsRow?.risk_decomposition ?? null}
+          />
+          {/* Every row is a held name from portfolio_positions, and the book beta
+              it compares against is portfolio_risk's — so the table names
+              multi-asset positions whatever lens is active. */}
+          <ScopeNote lens={data.resolvedLens} panel="PositionRiskAttribution" />
+          <PositionRiskAttribution
+            loading={data.loading}
+            rows={attribution}
+            bookBeta={data.risk?.beta ?? null}
+            // The same sample size the Beta tile and the limit board use, so all three
+            // agree about whether a regression beta is publishable (ADR-0063).
+            returnSessions={data.returns.length}
+            positionsFailure={data.positionsFailure}
+            factorsFailure={data.factorsFailure}
+            hasPositions={data.positions.length > 0}
+          />
+        </div>
       </div>
-      {/* Every row is a held name from portfolio_positions, and the book beta it
-          compares against is portfolio_risk's — so the table names multi-asset
-          positions whatever lens is active. */}
-      <ScopeNote lens={data.resolvedLens} panel="PositionRiskAttribution" />
-      <PositionRiskAttribution
-        loading={data.loading}
-        rows={attribution}
-        bookBeta={data.risk?.beta ?? null}
-        // The same sample size the Beta tile and the limit board use, so all three
-        // agree about whether a regression beta is publishable (ADR-0063).
-        returnSessions={data.returns.length}
-        positionsFailure={data.positionsFailure}
-        factorsFailure={data.factorsFailure}
-        hasPositions={data.positions.length > 0}
-      />
 
       {/* 4 — Theme attention crowding: the risk-monitoring half of the engine. */}
       {/* The two theme tables are lens-neutral, so the only book-shaped input is
@@ -1891,8 +1921,43 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       {/* The forward record, moved here from /method/evidence (ADR-0172). Phase 6
           IS "was the thesis right", and this is the only instrument that answers it
           about books we actually published. Fed the rows this page already read, so
-          it makes no second query of its own. */}
-      <TrackRecord rows={data.outcomeRows} publishedByRunDate={data.publishedByRunDate} />
+          it makes no second query of its own.
+
+          PAIRED BESIDE CostDrag since 2026-08-01: the two panels that answer "what
+          did the published books actually do" — the resolved picks and the
+          cost-netted series — sat ~800px apart as full-width stacks, with the
+          cost finding (the answer row's headline card) at the very bottom of the
+          page. Side by side they read as one row of evidence. The pairing is
+          gated on holdings: with no held-book series CostDrag renders null, and a
+          2-col grid with one cell is the orphaned-cell failure this file refuses
+          (see the stress grid's lens branch). The section heading spans the row
+          ABOVE the grid (TrackRecordHeading + framed={false}), so the two cards'
+          top edges line up — TrackRecord's h2 + intro left in the cell would push
+          its card ~190px below CostDrag's and stair-step the pair. CostDrag now
+          sits BEFORE the drawdown curve rather than directly above it — the
+          correction arriving before the chart is the same guarantee, one row
+          earlier. */}
+      {!data.loading && data.holdings.length > 0 ? (
+        <>
+          <section id="track-record">
+            <TrackRecordHeading />
+          </section>
+          <div className="grid xl:grid-cols-2 gap-6 items-start [&>*]:min-w-0 [&>*]:mb-0">
+            <TrackRecord framed={false} rows={data.outcomeRows} publishedByRunDate={data.publishedByRunDate} />
+            <CostDrag
+              rows={data.holdings}
+              publishedCumulative={
+                data.inception?.cumulative_value != null
+                  ? data.inception.cumulative_value - 1
+                  : null
+              }
+              capital={data.risk?.total_capital ?? ENFORCED.total_capital.value}
+            />
+          </div>
+        </>
+      ) : (
+        <TrackRecord rows={data.outcomeRows} publishedByRunDate={data.publishedByRunDate} />
+      )}
 
       {/* Moved off /mandate (ADR-0172). Both are BACKWARD-LOOKING, which is phase
           6's question and not phase 1's — a mandate says what the book is allowed to
@@ -1974,21 +2039,10 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           )}
         </SourceCaveat>
       )}
-      {/* Above the curve it corrects, not below it. A reader who scrolls past the
-          chart has already formed a view of the performance, and the correction
-          arriving afterwards is a footnote to a conclusion they have made. */}
-      {!data.loading && data.holdings.length > 0 && (
-        <CostDrag
-          rows={data.holdings}
-          publishedCumulative={
-            data.inception?.cumulative_value != null
-              ? data.inception.cumulative_value - 1
-              : null
-          }
-          capital={data.risk?.total_capital ?? ENFORCED.total_capital.value}
-        />
-      )}
-
+      {/* The caveat stays directly above the curve it corrects, not below it:
+          a reader who scrolls past the chart has already formed a view of the
+          performance, and the correction arriving afterwards is a footnote to
+          a conclusion they have made. */}
       <div className="grid xl:grid-cols-2 gap-6 mb-6 items-start [&>*]:mb-0">
         <DrawdownChart
           loading={data.loading}

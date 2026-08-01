@@ -1792,7 +1792,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           intrinsic width, leaving its right edge short of the cell and
           un-aligned with the per-position card below. A block wrapper lets
           the block-level card fill the cell width, matching Row 2. */}
-      <div className="grid xl:grid-cols-2 gap-6 [&>*]:min-w-0">
+      <div className="mt-6 grid xl:grid-cols-2 gap-6 [&>*]:min-w-0">
         {scatterVisible && (
           <div>
             <PositionRiskScatter

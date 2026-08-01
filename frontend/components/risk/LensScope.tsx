@@ -67,7 +67,12 @@ export function LensScopeBanner({
    */
   side?: boolean;
 }) {
-  if (lens === DEFAULT_LENS) return null;
+  // The full-width form is still default-lens-suppressed: under the default
+  // lens it would add a redundant banner under the side one (the side one
+  // now renders there too) with no boundary to disclose. The `side` form
+  // renders under every lens so the /risk header row keeps the same
+  // three-column shape on both views.
+  if (lens === DEFAULT_LENS && !side) return null;
 
   const wholly = panels.filter((p) => scopeOf(p) === "published").map(panelLabel);
   // Everything not wholly multi-asset is "mixed" — including an unclassified
@@ -113,10 +118,16 @@ export function LensScopeBanner({
         <h2 id="lens-scope-title" className="card-title m-0">
           You are reading the {lensLabel(lens)} book
         </h2>
-        <span className="num text-[11px] text-text-tertiary">
-          {panels.length} panel{panels.length === 1 ? "" : "s"} drawing on the
-          multi-asset book
-        </span>
+        {/* The "N panels drawing on the multi-asset book" subtext only makes
+            sense when there ARE lens-less panels to count. Under the default
+            lens every panel follows the lens, so the count is always 0 and
+            the line is noise. */}
+        {lens !== DEFAULT_LENS && (
+          <span className="num text-[11px] text-text-tertiary">
+            {panels.length} panel{panels.length === 1 ? "" : "s"} drawing on the
+            multi-asset book
+          </span>
+        )}
       </div>
       {/* TWO COLUMNS, because one 92ch measure inside a 1344px card left 700px of
           it empty and stacked four paragraphs into a 292px tower (measured at
@@ -142,36 +153,51 @@ export function LensScopeBanner({
           explanation as a visible paragraph. */}
       {side ? (
         <div className="flex-1 flex flex-col p-[14px] pt-2.5 text-[12px] text-text-secondary leading-[1.5] min-w-0">
-          <p className="m-0">
-            Every figure below is read from the {lensLabel(lens)} book published
-            for this run, with these exceptions.
-          </p>
-          <details className="group mt-1.5">
-            <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-[11px] text-text-tertiary hover:text-text-primary">
-              <span className="group-open:hidden">Show</span>
-              <span className="hidden group-open:inline">Hide</span>
-              {" "}which panels &amp; why
-            </summary>
-            <div className="mt-2 space-y-2">
-              {wholly.length > 0 && (
-                <p className="m-0">
-                  Entirely the <strong>multi-asset</strong> published book —
-                  nothing in them follows the lens:{" "}
-                  <span className="text-text-primary">{wholly.join(", ")}</span>.
-                </p>
-              )}
-              {partly.length > 0 && (
-                <p className="m-0">
-                  <strong>Part multi-asset</strong> — some rows follow the lens
-                  and the rest are the multi-asset book&rsquo;s, inside one panel
-                  under one heading:{" "}
-                  <span className="text-text-primary">{partly.join(", ")}</span>.
-                  Which rows are which is in each panel&rsquo;s own marker.
-                </p>
-              )}
-              <p className="m-0">{why}</p>
-            </div>
-          </details>
+          {lens === DEFAULT_LENS ? (
+            // Default-lens body: no boundary to disclose (every panel follows
+            // the lens), so the "with these exceptions" sentence and the Show
+            // disclosure below it would both be empty. A single sentence
+            // states the page's own provenance — the default book — and stops.
+            <p className="m-0">
+              Every figure below is read from the {lensLabel(lens)} book
+              published for this run. No panel on this page draws on the
+              lens-less tables (ADR-0194), so every figure here is the
+              multi-asset published book.
+            </p>
+          ) : (
+            <>
+              <p className="m-0">
+                Every figure below is read from the {lensLabel(lens)} book published
+                for this run, with these exceptions.
+              </p>
+              <details className="group mt-1.5">
+                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-[11px] text-text-tertiary hover:text-text-primary">
+                  <span className="group-open:hidden">Show</span>
+                  <span className="hidden group-open:inline">Hide</span>
+                  {" "}which panels &amp; why
+                </summary>
+                <div className="mt-2 space-y-2">
+                  {wholly.length > 0 && (
+                    <p className="m-0">
+                      Entirely the <strong>multi-asset</strong> published book —
+                      nothing in them follows the lens:{" "}
+                      <span className="text-text-primary">{wholly.join(", ")}</span>.
+                    </p>
+                  )}
+                  {partly.length > 0 && (
+                    <p className="m-0">
+                      <strong>Part multi-asset</strong> — some rows follow the lens
+                      and the rest are the multi-asset book&rsquo;s, inside one panel
+                      under one heading:{" "}
+                      <span className="text-text-primary">{partly.join(", ")}</span>.
+                      Which rows are which is in each panel&rsquo;s own marker.
+                    </p>
+                  )}
+                  <p className="m-0">{why}</p>
+                </div>
+              </details>
+            </>
+          )}
         </div>
       ) : panels.length > 0 ? (
         <div className="p-[18px] pt-3 text-[12.5px] text-text-secondary leading-[1.65]">

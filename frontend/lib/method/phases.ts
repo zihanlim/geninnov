@@ -96,8 +96,11 @@ export const PHASES: readonly Phase[] = [
   {
     n: 3,
     id: "construction",
+    // `short` and `tab` are deliberately the same word: the collapsed 56px rail
+    // cannot fit `Construction` (ADR-0086), so the phase is named "Sizing" in
+    // both nav surfaces rather than shown as two different names for one page.
     short: "Sizing",
-    tab: "Construction",
+    tab: "Sizing",
     name: "Construction & sizing",
     question: "Given the edge and the budget, what weights?",
     route: "/book",

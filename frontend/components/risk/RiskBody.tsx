@@ -1259,22 +1259,21 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       {phase === "risk" &&
       data.resolvedLens !== DEFAULT_LENS &&
       lensLessOnThisPhase.length > 0 ? (
-        <div className="grid xl:grid-cols-[minmax(0,1fr)_480px] gap-6 items-start mb-7 [&>*]:min-w-0">
-          <div>
+        <div className="grid xl:grid-cols-[minmax(0,1fr)_480px] gap-6 items-stretch mb-7 [&>*]:min-w-0 h-[175px]">
+          <div className="h-full overflow-hidden">
+            {/* No `meta`: the credit-lens side-by-side header is a fixed 175px
+                cell, and the lens is already shown by the toggle below while the
+                run date reads off the page. Keeping the meta here would push the
+                lede past the cell's height on narrower desktop widths (the
+                shared lede wraps at ~712px), forcing a clip. Title + lede only,
+                per the layout directive. */}
             <PageHeader
+              className="mb-0"
               title={PHASE_COPY[phase].title}
               lede={PHASE_COPY[phase].lede}
-              meta={[
-                { label: "Run date", value: data.loading ? "…" : (data.runDate ?? "—") },
-                {
-                  label: "Lens",
-                  value: data.loading ? "…" : (data.lens ?? "not recorded"),
-                  capitalize: true,
-                },
-              ]}
             />
           </div>
-          <div className="self-stretch">
+          <div className="h-full">
             <LensScopeBanner lens={data.resolvedLens} panels={lensLessOnThisPhase} side />
           </div>
         </div>
@@ -1484,6 +1483,16 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
               data.outcomeRows === null
                 ? null
                 : buildTrackRecord(data.outcomeRows, 21, data.publishedByRunDate),
+            // The SAME value the HHI tile on the grid below reads (ADR-0182 moved
+            // that tile here from /mandate). Sourcing the card elsewhere would let
+            // the answer row and its own evidence disagree about concentration —
+            // the exact failure AnswerRow exists to prevent. /attribution is pinned
+            // to multi_asset, so the lens-less `portfolio_risk` value is the
+            // multi-asset book's, and no scope note is required (RiskBody says so).
+            hhi:
+              typeof data.risk?.concentration_hhi === "number"
+                ? data.risk.concentration_hhi
+                : null,
             holdings: data.holdings,
             sessions: data.returns.length,
           })}
@@ -1613,28 +1622,59 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       {/* Stress scenarios lead the page (ADR-0172). They ARE this phase's answer,
           and they were at 2622px below a what-if builder that explores them — a
           tool placed ahead of the finding it is for. The what-if follows, which
-          also reads better: a reader now varies a shock they have already seen. */}
-      <StressScenarios state={scenarioState} />
+          also reads better: a reader now varies a shock they have already seen.
 
-
-      {/* Browser-side estimate, labelled as one — after the persisted matrix. */}
-      {/* Both figures it puts on screen — the shocked positions and the dollar
-          P&L against total_capital — come from lens-less tables, so the shock is
-          applied to the multi-asset book whatever lens is active. */}
-      <ScopeNote lens={data.resolvedLens} panel="WhatIfScenario" />
-      <WhatIfScenario
-        loading={data.loading}
-        positions={data.positions}
-        factors={factorMap}
-        totalCapital={data.risk?.total_capital ?? null}
-        dataFailure={
-          data.positionsFailure
-            ? `portfolio_positions read failed: ${data.positionsFailure}`
-            : data.factorsFailure
-              ? `factor_exposures read failed: ${data.factorsFailure}`
-              : null
-        }
-      />
+          Under a NON-DEFAULT lens the two sit side by side at 3/4 + 1/4 — the
+          persisted matrix is the answer and takes the wide column, the browser
+          estimate that explores it takes the narrow one (and its `compact`
+          single-column body). Under the default lens the layout is the original
+          full-width stack. */}
+      {data.resolvedLens !== DEFAULT_LENS ? (
+        <div className="grid xl:grid-cols-4 gap-6 items-start [&>*]:min-w-0 [&_.card]:mb-0">
+          <div className="xl:col-span-3">
+            <StressScenarios compact state={scenarioState} />
+          </div>
+          <div className="xl:col-span-1">
+            <ScopeNote lens={data.resolvedLens} panel="WhatIfScenario" />
+            <WhatIfScenario
+              compact
+              loading={data.loading}
+              positions={data.positions}
+              factors={factorMap}
+              totalCapital={data.risk?.total_capital ?? null}
+              dataFailure={
+                data.positionsFailure
+                  ? `portfolio_positions read failed: ${data.positionsFailure}`
+                  : data.factorsFailure
+                    ? `factor_exposures read failed: ${data.factorsFailure}`
+                    : null
+              }
+            />
+          </div>
+        </div>
+      ) : (
+        <>
+          <StressScenarios state={scenarioState} />
+          {/* Browser-side estimate, labelled as one — after the persisted matrix. */}
+          {/* Both figures it puts on screen — the shocked positions and the dollar
+              P&L against total_capital — come from lens-less tables, so the shock is
+              applied to the multi-asset book whatever lens is active. */}
+          <ScopeNote lens={data.resolvedLens} panel="WhatIfScenario" />
+          <WhatIfScenario
+            loading={data.loading}
+            positions={data.positions}
+            factors={factorMap}
+            totalCapital={data.risk?.total_capital ?? null}
+            dataFailure={
+              data.positionsFailure
+                ? `portfolio_positions read failed: ${data.positionsFailure}`
+                : data.factorsFailure
+                  ? `factor_exposures read failed: ${data.factorsFailure}`
+                  : null
+            }
+          />
+        </>
+      )}
 
       {/* 6b — Sanctions exposure, beside the stress table because it is the same kind of
           claim: what the book does under a shock it did not choose. ADR-0096. */}

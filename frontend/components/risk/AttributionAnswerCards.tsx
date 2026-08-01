@@ -17,8 +17,12 @@
 //   * hit / miss / pending counts from `pick_outcomes` — VALID, they are counts, and
 //     rows are written `pending` at publication so the denominator precedes the
 //     outcome (ADR-0090);
-//   * cumulative cost and mean turnover from `book_holdings_performance` — VALID,
-//     they are sums of what was actually charged;
+//   * concentration HHI from `portfolio_risk.concentration_hhi` — VALID, it is a
+//     pure function of the sized weights and needs no holding history. The limit it
+//     is read against is `MONITORED.hhi` (2 000 on the 0–10 000 scale — five
+//     equal-weight names), so a breach or near-breach is an attribution-relevant
+//     fact: the book is more concentrated than the mandate watches for. If the value
+//     is absent the card says why, rather than implying diversification;
 //   * Sharpe / Sortino / Calmar / drawdown / realised beta / TE / IR — REFUSED. They
 //     come from `portfolio_returns`, which is costless on a book measured at 92.7%
 //     mean daily turnover, and `CostDrag` measured what that is worth: the published
@@ -28,21 +32,20 @@
 //
 // The cost card is the one a reader should leave with. It is the finding this whole
 // surface exists to make unmissable: over the observed window gross -1.26% became net
-// -2.01%, and the difference is not a rounding error, it is the strategy.
+// -2.01%, and the difference is not a rounding error, it is the strategy. It renders
+// as "Gross against net" rather than a standalone cost card: the gross and net
+// RETURNS ARE the cost, restated, and two cards saying the same thing is the
+// duplication this row exists to avoid.
 
 import type { AnswerCard } from "@/components/AnswerRow";
-import { pctOf, usdM } from "@/components/AnswerRow";
+import { pctOf } from "@/components/AnswerRow";
 import type { HoldingsPerformanceRow } from "@/components/risk/CostDrag";
 import type { TrackRecord } from "@/lib/method/trackRecord";
 import { MIN_SESSIONS_BY_FIELD } from "@/lib/risk/sampleAdequacy";
+import { MONITORED } from "@/lib/mandate";
 
 const sum = (xs: Array<number | null | undefined>) =>
   xs.reduce<number>((a, x) => a + (typeof x === "number" ? x : 0), 0);
-
-const mean = (xs: Array<number | null | undefined>) => {
-  const ok = xs.filter((x): x is number => typeof x === "number");
-  return ok.length ? sum(ok) / ok.length : null;
-};
 
 /** The statistics still suppressed at `sessions`, cheapest threshold first. */
 function stillSuppressed(sessions: number): Array<[string, number]> {
@@ -53,11 +56,18 @@ function stillSuppressed(sessions: number): Array<[string, number]> {
 
 export function attributionAnswerCards({
   track,
+  hhi,
   holdings,
   sessions,
 }: {
   /** From `pick_outcomes` via buildTrackRecord, or null when the read failed. */
   track: TrackRecord | null;
+  /**
+   * The published book's concentration HHI (`portfolio_risk.concentration_hhi`),
+   * on the 0–10 000 scale the backend writes (`Σwᵢ²·10 000`). Null when the run
+   * predates the field or the read failed.
+   */
+  hhi: number | null;
   holdings: HoldingsPerformanceRow[];
   /** `portfolio_returns` row count — what every ratio below is gated on. */
   sessions: number;
@@ -104,34 +114,43 @@ export function attributionAnswerCards({
     ),
   };
 
-  // ── 2. What running it costs — the finding ────────────────────────────────
-  const totalCost = holdings.length ? sum(holdings.map((h) => h.cost_pct)) : null;
-  const totalCostUsd = holdings.length ? sum(holdings.map((h) => h.cost_usd)) : null;
-  const avgTurnover = mean(holdings.map((h) => h.turnover));
-  const cost: AnswerCard = {
-    label: "What running it costs",
+  // ── 2. Concentration — the one headline risk metric this phase can publish ──
+  // The four VaR/Sharpe/beta tiles on the grid above are ALL suppressed at the
+  // current session count (30–60 required), which is why the fourth card exists to
+  // say so. HHI is not gated: it is a pure function of the sized weights and needs
+  // no holding history, so it is the one number that answers "is the sizing doing
+  // what the thesis promised" on a book too young to measure any return statistic.
+  // The ceiling it is read against is MONITORED.hhi — watched, never enforced.
+  const hhiLimit = MONITORED.hhi.value; // 2 000 ≈ five equal-weight names (DOJ scale)
+  const concentration: AnswerCard = {
+    label: "Concentration",
     href: "#realised",
-    source: "book_holdings_performance.cost_pct",
-    tone: avgTurnover !== null && avgTurnover > 0.5 ? "warning" : "default",
+    source: "portfolio_risk.concentration_hhi",
+    tone: hhi !== null && hhi >= hhiLimit ? "warning" : "default",
     figure:
-      totalCost === null ? null : (
+      hhi === null ? null : (
         <>
-          −{(totalCost * 100).toFixed(2)}%
+          {hhi.toFixed(0)}
+          <span className="text-[12px] text-text-tertiary font-normal">
+            {" "}/ {hhiLimit.toLocaleString()}
+          </span>
         </>
       ),
     consequence:
-      totalCost === null ? (
+      hhi === null ? (
         <>
-          <code className="num">book_holdings_performance</code> is empty, so the cost of
-          running this book has not been measured. That is not the same as it being free.
+          <code className="num">portfolio_risk.concentration_hhi</code> is not recorded
+          for this run, so concentration is unmeasured rather than low. The risk grid
+          above reports the same absence.
         </>
       ) : (
         <>
-          {totalCostUsd === null ? "" : `${usdM(totalCostUsd)} `}charged over{" "}
-          {holdings.length} run{holdings.length === 1 ? "" : "s"} at{" "}
-          {avgTurnover === null ? "an unmeasured" : pctOf(avgTurnover, 0)} mean turnover.
-          The published curve below sums weight × price return and subtracts none of
-          this; the held book does.
+          Book HHI on the 0–10 000 scale — {pctOf(hhi / hhiLimit, 0)} of the{" "}
+          {hhiLimit.toLocaleString()} monitored ceiling (
+          {hhiLimit.toLocaleString()} ≈ five equal-weight names).{" "}
+          {hhi >= hhiLimit
+            ? "The book is more concentrated than the mandate watches for."
+            : "Inside the monitored ceiling — a book this size reads as concentrated, not broad."}
         </>
       ),
   };
@@ -201,5 +220,5 @@ export function attributionAnswerCards({
       ),
   };
 
-  return [record, cost, grossNet, judgeable];
+  return [record, concentration, grossNet, judgeable];
 }

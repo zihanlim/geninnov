@@ -323,7 +323,8 @@ const regimeTool: ToolSpec = {
       "run_date, cycle, sentiment, yield_curve_slope, hy_oas, vix_level, vix_term_diff, real_rate, spx_breadth, " +
         "debasement_pressure, debasement_real_yield_comp, debasement_dxy_decline_comp, debasement_gold_rise_comp, " +
         "debasement_comovement_comp, debasement_lookback_weeks, fed_posture, fed_pivot_delta, " +
-        "fed_rate_change_13w_bps, fed_curve_change_13w_bps, fed_curve_steepness_bps",
+        "fed_rate_change_13w_bps, fed_curve_change_13w_bps, fed_curve_steepness_bps, " +
+        "fed_rhetoric_score, fed_rhetoric_label, fed_rhetoric_evidence",
       { order: { column: "run_date", ascending: false }, limit: 1 },
     );
     const row = rows[0];

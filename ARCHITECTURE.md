@@ -180,7 +180,7 @@ flowchart TB
         direction TB
 
         subgraph L6["L6 — Writeup (per-page)"]
-            SHELL["<b>App shell</b> — app/layout.tsx<br/>TopBar (56px, sticky) + SideRail<br/><i>rail 56px collapsed / 200px expanded,<br/>hidden below wide:1424 (ADR-0086).<br/>TopBar sits OUTSIDE the grid — as a grid<br/>item its sticky containing block is a 56px<br/>row and it stops sticking.</i>"]
+            SHELL["<b>App shell</b> — app/layout.tsx<br/>TopBar (56px, sticky) + SideRail<br/><i>rail 56px collapsed / 200px expanded,<br/>hidden below wide:1424 (ADR-0086).<br/>TopBar sits OUTSIDE the grid — as a grid<br/>item its sticky containing block is a 56px<br/>row and it stops sticking. Masthead is solid<br/>navy --logo-plate (ADR-0223).</i>"]
             SHELL --> PG_HOME
             SHELL --> PG_BOOK
             SHELL --> PG_RISK

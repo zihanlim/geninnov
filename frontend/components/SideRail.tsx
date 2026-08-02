@@ -27,7 +27,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Ban, BookOpen, FileText, PanelLeftClose, PanelLeftOpen, Radar, Scale, ShieldAlert, Sigma, UserRound } from "lucide-react";
+import { Ban, BookOpen, FileText, Hexagon, PanelLeftClose, PanelLeftOpen, Radar, Scale, ShieldAlert, Sigma } from "lucide-react";
 import { PHASES } from "@/lib/method/phases";
 import ResumeWindow from "@/components/ResumeWindow";
 
@@ -153,15 +153,15 @@ export default function SideRail() {
       <div className="mt-auto flex flex-col gap-1 p-2">
         {/* Author attribution — compact text stack. */}
         {!expanded ? (
-          /* Collapsed: name label, opens resume on click */
+          /* Collapsed: hexagon icon, opens resume on click */
           <div className="flex justify-center py-1">
             <button
               type="button"
               onClick={() => setResumeOpen((o) => !o)}
               aria-label="Open Lim Zi Han's resume"
-              className="rounded-md px-1.5 py-1 text-[10px] font-medium text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
+              className="rounded-full p-2 hover:bg-bg-hover transition-colors"
             >
-              Lim Zi Han
+              <Hexagon size={22} strokeWidth={1.75} className="text-text-tertiary" />
             </button>
           </div>
         ) : (

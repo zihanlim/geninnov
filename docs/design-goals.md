@@ -119,11 +119,14 @@ dark ground in a light product
 ([ADR-0113](adrs/0113-the-mark-is-the-artwork-and-the-plate-is-fenced.md)).
 [ADR-0223](adrs/0223-the-navy-is-the-brand-ground.md) widened that fence from
 *the mark only* to *mark + masthead*: the 56px TopBar on every page is now a
-solid `#161b38` band, so `bg-logo-plate` compiles for that one surface. The navy
-is the *brand's* ground, not a second dark palette — it is still not a panel, not
-a chip, not a footer, not a card. A proposal that reaches for it for anything but
-the mark or the masthead is reaching for the dark dashboard by increments, which
-is what this goal is about.
+solid `#161b38` band, so `bg-logo-plate` compiles for that one surface.
+[ADR-0224](adrs/0224-lens-chip-borrows-the-plate.md) widened it once more to the
+active lens chip in `LensSelector` — the book-wide "which asset-class book am I
+reading?" state — with white ink. The navy is the *brand's* ground, not a second
+dark palette — it is still not a panel, not a footer, not a card, and no other
+chip may borrow it. A proposal that reaches for it for anything but the mark,
+the masthead, or the active lens chip is reaching for the dark dashboard by
+increments, which is what this goal is about.
 
 ### 5. Affordances match capability
 

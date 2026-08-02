@@ -152,11 +152,15 @@
        palette test can see — not so it becomes available. ADR-0113 fenced it to
        the mark; ADR-0223 widened the fence to the brand ground: the mark AND the
        56px TopBar masthead, which is now a solid #161b38 band on every page.
-       It is still NOT a chip, NOT an ink, NOT a panel, NOT a footer. A proposal
-       that reaches for it for anything but the mark or the masthead is reaching
-       for the dark dashboard by increments. Its call sites are
+       ADR-0224 widened it once more to the ACTIVE lens chip in LensSelector
+       (the reader-facing "this book's asset class" affordance), which now sits
+       on the plate with white ink. It is still NOT a general ink, NOT a panel,
+       NOT a footer. A proposal that reaches for it for anything but the mark,
+       the masthead, or the active lens chip is reaching for the dark dashboard
+       by increments. Its call sites are
        components/BrandMark.tsx, the two generated icons (all three asserted by
-       tests/unit/brand-mark.test.ts) and the header surface in TopBar.tsx.
+       tests/unit/brand-mark.test.ts), the header surface in TopBar.tsx, and
+       the active chip in components/LensSelector.tsx.
 
        It REPLACES --brand/--brand-dim, which ADR-0085 §3 deleted and which then
        survived in one place: the masthead's gradient `A` tile, running
@@ -165,7 +169,7 @@
        usages that made --brand a live defect (AbstentionRoster's focus ring and
        ConvictionCard's emphasis gradient, both painting "emphasis" in exactly
        the colour of a short position) had already moved to --accent. */
-    --logo-plate: #161b38;   /* brand ground — the mark's plate AND the masthead (ADR-0223) */
+    --logo-plate: #161b38;   /* brand ground — the mark's plate AND the masthead (ADR-0223); since ADR-0224 also the active lens chip in LensSelector */
 
     /* Header ladder — light on the navy masthead (ADR-0223).
        The 56px TopBar is a solid #161b38 band on every page, so its contents

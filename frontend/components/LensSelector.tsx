@@ -78,7 +78,7 @@ export default function LensSelector({
               "px-3 py-1.5 text-[12px] font-medium transition-colors",
               idx > 0 ? "border-l border-border" : "",
               isActive
-                ? "bg-accent text-bg-primary"
+                ? "bg-logo-plate text-white"
                 : "text-text-secondary hover:text-text-primary hover:bg-bg-hover",
             ].join(" ")}
             title={opt.description}

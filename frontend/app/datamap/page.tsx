@@ -359,7 +359,7 @@ function EdgeOverlay({
       width={dims.w}
       height={dims.h}
       className="absolute inset-0 pointer-events-none"
-      style={{ zIndex: 0, pointerEvents: "none" }}
+      style={{ zIndex: 30, pointerEvents: "none" }}
       aria-hidden="true"
     >
       <defs>

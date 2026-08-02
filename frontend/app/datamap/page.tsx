@@ -223,7 +223,7 @@ export default function DataMapPage() {
               className="font-mono"
               style={{ color: "var(--datamap-orange)" }}
             >
-              //
+              {'//'}
             </span>{" "}
             DATA FLOW
           </>

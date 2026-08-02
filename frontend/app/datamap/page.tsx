@@ -98,12 +98,18 @@ export default function DataMapPage() {
   // ID of the currently-hovered node (null = none).
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
-  // Set of all node IDs reachable from the hovered node via one or more edges
-  // in either direction. Empty when no node is hovered.
+  // ID of the node locked by a click (null = none). Click takes priority over hover.
+  const [clickedId, setClickedId] = useState<string | null>(null);
+
+  // The active node to trace: clicked wins over hovered.
+  const activeId = clickedId ?? hoveredId;
+
+  // Set of all node IDs reachable from the active node via one or more edges
+  // in either direction. Empty when no node is active.
   const hoveredNodeIds = useMemo(() => {
-    if (!hoveredId) return new Set<string>();
-    return traceConnected(hoveredId);
-  }, [hoveredId]);
+    if (!activeId) return new Set<string>();
+    return traceConnected(activeId);
+  }, [activeId]);
 
   // Nodes grouped by their section string (e.g. "01", "11").
   const nodesBySection = useMemo(() => {
@@ -207,6 +213,10 @@ export default function DataMapPage() {
         style={{ minHeight: 400 }}
         role="img"
         aria-label="Animated map of the research process from data sources to frontend surfaces"
+        onClick={(e) => {
+          // Clicking the map background (not a node) dismisses the lock.
+          if (e.target === e.currentTarget) setClickedId(null);
+        }}
       >
         {/* SVG overlay: sized by ResizeObserver. pointer-events=none lets clicks pass through.
             Rendered first so sections/nodes stack on top at z-0. */}
@@ -225,6 +235,7 @@ export default function DataMapPage() {
               nodes={secNodes}
               hoveredNodeIds={hoveredNodeIds}
               onHovered={setHoveredId}
+              onNodeClick={setClickedId}
             />
           );
         })}
@@ -241,11 +252,13 @@ function SectionBlock({
   nodes,
   hoveredNodeIds,
   onHovered,
+  onNodeClick,
 }: {
   section: { section: string; title: string };
   nodes: Node[];
   hoveredNodeIds: Set<string>;
   onHovered: (id: string | null) => void;
+  onNodeClick: (id: string) => void;
 }) {
   // For section 12 and section 03, group nodes by their `group` field and render sub-group labels.
   const isGrouped = section.section === "10" || section.section === "03" || section.section === "04";
@@ -298,7 +311,7 @@ function SectionBlock({
               style={{ minHeight: NODE_H + 16 }}
             >
               {groupNodes.map((n) => (
-                <NodeCard key={n.id} node={n} hoveredNodeIds={hoveredNodeIds} onHovered={onHovered} />
+                <NodeCard key={n.id} node={n} hoveredNodeIds={hoveredNodeIds} onHovered={onHovered} onNodeClick={onNodeClick} />
               ))}
             </div>
           </div>
@@ -332,7 +345,7 @@ function SectionBlock({
         style={{ minHeight: NODE_H + 16 }}
       >
         {nodes.map((n) => (
-          <NodeCard key={n.id} node={n} hoveredNodeIds={hoveredNodeIds} onHovered={onHovered} />
+          <NodeCard key={n.id} node={n} hoveredNodeIds={hoveredNodeIds} onHovered={onHovered} onNodeClick={onNodeClick} />
         ))}
       </div>
     </div>
@@ -344,10 +357,12 @@ function NodeCard({
   node,
   hoveredNodeIds,
   onHovered,
+  onNodeClick,
 }: {
   node: Node;
   hoveredNodeIds: Set<string>;
   onHovered: (id: string | null) => void;
+  onNodeClick: (id: string) => void;
 }) {
   const [hovered, setHovered] = useState(false);
 
@@ -395,6 +410,7 @@ function NodeCard({
       }}
       onMouseEnter={() => { setHovered(true); onHovered(node.id); }}
       onMouseLeave={() => { setHovered(false); onHovered(null); }}
+      onClick={() => onNodeClick(node.id)}
       tabIndex={0}
       role="button"
       aria-label={`[${node.section ?? "—"}] ${node.name}: ${node.summary}${badge ? ` →${badge}` : ""}`}

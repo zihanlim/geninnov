@@ -1,6 +1,6 @@
 # ADR-0141: A Fed rhetoric score, side-by-side with posture
 
-**Status:** Accepted (v1, dissent-based; shadow 14 days)
+**Status:** Live (vote-based; text-sentiment v2 deferred)
 **Date:** 2026-08-02
 **Related:** [ADR-0140](0140-hawkish-dovish-pivot-indicator.md), [ADR-0091](0091-breadth-must-be-a-share-of-something-named.md), [ADR-0064](0064-one-formula-one-place.md)
 
@@ -14,9 +14,11 @@ The interesting trade is not the label — it is the **gap** between what the Fe
 
 Add a second reading, `fed_rhetoric`, alongside `fed_posture`. The two are deliberately *not* the same column with a different threshold: posture is market-implied (DFF + 2s10s), rhetoric is FOMC-self-reported (statement + vote). Same vocabulary ({dovish, neutral, hawkish}) on the card so a reader can compare at a glance, different inputs, different score.
 
-### 1. The v1 source: FOMC voting record
+### 1. The source: FOMC voting record (live-fetched from federalreserve.gov)
 
-The simplest, most-auditable signal of Fed rhetoric is the **voting record of the most recent FOMC meeting**, which is published in the official press release on federalreserve.gov. The data is free, structured, and keyless — meeting the project's data posture (every L0 source is free and keyless or free-with-a-key).
+The simplest, most-auditable signal of Fed rhetoric is the **voting record of the most recent FOMC meeting**, which is published in the official press release on federalreserve.gov. The data is free, structured, and keyless — meeting the project's data posture.
+
+Implemented as a live fetcher (`_fetch_all_fomc_meetings()` in `regime_classifier.py`): the FOMC calendar page is scraped for meeting dates, each recent press release is fetched and parsed with regex, and the result is cached to `backend/services/.fomc_meetings_cache.json` (24-hour TTL). On failure the disk cache is used; if that is also absent, `classify()` writes NULL — "no meeting recordable", never "neutral" (ADR-0091).
 
 `fed_rhetoric_score` is computed from the dissents:
 
@@ -133,4 +135,4 @@ After 14 days: lift is one coordinated change, same as ADR-0140 — snapshot exc
 - **Reuse `cycle` to encode rhetoric.** Rejected — `cycle` is the business-cycle reading (early/mid/late/recession), with a four-value vocabulary chosen for cycle. Conflating cycle with rhetoric is the same class of error ADR-0140 rejected for posture.
 - **Add the gap as a single derived column.** Rejected — the gap is reader-derivable from `fed_posture` and `fed_rhetoric_score`, and a derived column would be the second-implementation-of-the-formula trap (ADR-0064). The card shows the two columns side by side; the reader computes the gap.
 - **Use the dot plot as the rhetoric signal.** Considered, deferred. The dot plot is a SEP release (four per year), too sparse to be a daily-reading signal. v1 reads the meeting vote; v2 might add a quarterly dot-plot cross-check.
-- **Recompute the score every run, no fetcher, hardcoded recent meetings.** This is what v1 actually does for the first cut. The "no fetcher" part is acknowledged as a known limitation: until a federalreserve.gov scraper lands, the table of recent meetings is maintained alongside the code (one PR per meeting). v2 introduces the fetcher and removes the manual table.
+- **Hardcode recent FOMC meetings in Python.** An earlier cut kept the `FOMC_MEETINGS` dict as a hand-maintained table, updated per PR after each meeting. That was the accepted interim state; the live fetcher (above) supersedes it.

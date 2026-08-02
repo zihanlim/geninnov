@@ -473,10 +473,11 @@ class TestFedPosture:
 
 # ── ADR-0141: Fed rhetoric (FOMC self-reported lean) ──────────────────────
 #
-# v1 source is the voting record. The classify() function is a pure
-# function of the FOMC_MEETINGS table and as_of — no supabase read, no
-# network, deterministic. The tests pin the score formula, the band
-# thresholds, the NULL semantics, and the evidence-blob shape.
+# Source is the voting record fetched from federalreserve.gov (disk-cached).
+# The classify() function reads from the module-level FOMC_MEETINGS dict,
+# which is populated lazily on first call.  Tests patch it directly to
+# inject fixtures without network I/O.  The tests pin the score formula,
+# the band thresholds, the NULL semantics, and the evidence-blob shape.
 
 class TestRhetoricScore:
     """v1 rhetoric = (hawkish_dissents - dovish_dissents) * 10 / voting_members."""
@@ -484,10 +485,26 @@ class TestRhetoricScore:
     def test_three_hawkish_dissents_unanimous_hold_is_hawkish(self):
         # The 2026-07-29 case: 9-3, all three dissents hawkish, 12 voters.
         # (3 - 0) * 10 / 12 = 2.5 -> hawkish (band +2..+5).
-        r = classify_fed_rhetoric(as_of=date(2026, 7, 30))
-        assert r.score == pytest.approx(2.5)
-        assert r.label == "hawkish"
-        assert r.meeting.meeting_date == date(2026, 7, 29)
+        from regime_classifier import FOMCMeeting
+        FOMC_MEETINGS["2026-07-29"] = FOMCMeeting(
+            meeting_date=date(2026, 7, 29),
+            vote_for=9, vote_against=3,
+            dissents=[
+                {"voter": "Daly (San Francisco)", "direction": "hawkish",
+                 "preferred_action": "hike 25bp"},
+                {"voter": "Logan (Dallas)", "direction": "hawkish",
+                 "preferred_action": "hike 25bp"},
+                {"voter": "Kashkari (Minneapolis)", "direction": "hawkish",
+                 "preferred_action": "hike 25bp"},
+            ],
+        )
+        try:
+            r = classify_fed_rhetoric(as_of=date(2026, 7, 30))
+            assert r.score == pytest.approx(2.5)
+            assert r.label == "hawkish"
+            assert r.meeting.meeting_date == date(2026, 7, 29)
+        finally:
+            FOMC_MEETINGS.pop("2026-07-29", None)
 
     def test_unanimous_vote_with_no_dissents_is_neutral(self):
         # 2026-06-17: 12-0 hold, no dissents -> score 0, label neutral.
@@ -495,9 +512,18 @@ class TestRhetoricScore:
         # but v1 doesn't read the statement) — the test pins the v1 behaviour,
         # not a corrected v2 behaviour. The under-call is disclosed in the
         # card footnote and the ADR.
-        r = classify_fed_rhetoric(as_of=date(2026, 6, 18))
-        assert r.score == pytest.approx(0.0)
-        assert r.label == "neutral"
+        from regime_classifier import FOMCMeeting
+        FOMC_MEETINGS["2026-06-17"] = FOMCMeeting(
+            meeting_date=date(2026, 6, 17),
+            vote_for=12, vote_against=0,
+            dissents=[],
+        )
+        try:
+            r = classify_fed_rhetoric(as_of=date(2026, 6, 18))
+            assert r.score == pytest.approx(0.0)
+            assert r.label == "neutral"
+        finally:
+            FOMC_MEETINGS.pop("2026-06-17", None)
 
     def test_dovish_dissent_only_makes_rhetoric_dovish(self):
         # A hypothetical: 3 dovish dissents, 0 hawkish, 12 voters.
@@ -613,8 +639,8 @@ class TestRhetoricNullSemantics:
 
     def test_future_only_meetings_are_not_yet_recordable(self):
         # as_of strictly BEFORE the latest meeting means we read the prior
-        # one, not "today's" meeting. A future-only FOMC_MEETINGS table would
-        # return None for any as_of strictly before the first meeting.
+        # one, not "today's" meeting. An empty FOMC_MEETINGS dict (no cached
+        # meetings) returns None for any as_of.
         r = classify_fed_rhetoric(as_of=date(2026, 1, 1))
         assert r.score is None
 
@@ -625,25 +651,44 @@ class TestRhetoricEvidenceBlob:
     dissents, and the formula, in the schema the migration documents."""
 
     def test_blob_matches_documented_schema(self):
-        r = classify_fed_rhetoric(as_of=date(2026, 7, 30))
-        blob = build_rhetoric_evidence(r)
-        assert blob is not None
-        # Top-level keys
-        for k in ("source", "meeting_date", "as_of", "vote", "dissents", "scoring"):
-            assert k in blob
-        assert blob["source"] == "FOMC press release"
-        assert blob["meeting_date"] == "2026-07-29"
-        assert blob["vote"] == {"for": 9, "against": 3, "voting_members": 12}
-        assert len(blob["dissents"]) == 3
-        for d in blob["dissents"]:
-            assert d["direction"] == "hawkish"
-        # Scoring matches the published number
-        assert blob["scoring"]["raw_score"] == pytest.approx(2.5)
-        assert "(hawkish_dissents - dovish_dissents)" in blob["scoring"]["formula"]
-        # Thresholds are persisted with the blob (so a reader can recover the
-        # label from the score without re-reading the source code).
-        for k in ("strongly_dovish_max", "dovish_max", "neutral_max", "hawkish_min"):
-            assert k in blob["scoring"]["thresholds"]
+        # Inject the canonical 2026-07-29 meeting (3 hawkish dissents, 9-3 vote)
+        # directly so the test is self-contained and not dependent on a
+        # production disk cache.
+        from regime_classifier import FOMCMeeting
+        FOMC_MEETINGS["2026-07-29"] = FOMCMeeting(
+            meeting_date=date(2026, 7, 29),
+            vote_for=9, vote_against=3,
+            dissents=[
+                {"voter": "Daly (San Francisco)", "direction": "hawkish",
+                 "preferred_action": "hike 25bp"},
+                {"voter": "Logan (Dallas)", "direction": "hawkish",
+                 "preferred_action": "hike 25bp"},
+                {"voter": "Kashkari (Minneapolis)", "direction": "hawkish",
+                 "preferred_action": "hike 25bp"},
+            ],
+        )
+        try:
+            r = classify_fed_rhetoric(as_of=date(2026, 7, 30))
+            blob = build_rhetoric_evidence(r)
+            assert blob is not None
+            # Top-level keys
+            for k in ("source", "meeting_date", "as_of", "vote", "dissents", "scoring"):
+                assert k in blob
+            assert blob["source"] == "FOMC press release"
+            assert blob["meeting_date"] == "2026-07-29"
+            assert blob["vote"] == {"for": 9, "against": 3, "voting_members": 12}
+            assert len(blob["dissents"]) == 3
+            for d in blob["dissents"]:
+                assert d["direction"] == "hawkish"
+            # Scoring matches the published number
+            assert blob["scoring"]["raw_score"] == pytest.approx(2.5)
+            assert "(hawkish_dissents - dovish_dissents)" in blob["scoring"]["formula"]
+            # Thresholds are persisted with the blob (so a reader can recover the
+            # label from the score without re-reading the source code).
+            for k in ("strongly_dovish_max", "dovish_max", "neutral_max", "hawkish_min"):
+                assert k in blob["scoring"]["thresholds"]
+        finally:
+            FOMC_MEETINGS.pop("2026-07-29", None)
 
 
 class TestCrosscurrentsColumnsRhetoricKeys:

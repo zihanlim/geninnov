@@ -31,6 +31,43 @@ def fixed_now() -> datetime:
     return datetime(2026, 1, 16, 16, 30, tzinfo=timezone.utc)
 
 
+# ── regime_classifier / FOMC_MEETINGS fixtures ──────────────────────────────
+
+@pytest.fixture(autouse=True)
+def _fomc_testing_mode():
+    """Disable FOMC network/disk I/O for all regime tests.
+
+    ADR-0141 tests inject fixtures directly into `FOMC_MEETINGS` (the
+    module-level dict in regime_classifier) and rely on it staying put.
+    Without this fixture, a prior production run's disk cache would
+    repopulate `FOMC_MEETINGS` between tests, causing fixture-injection
+    tests to see stale cached meetings instead of their injected data.
+
+    The fixture sets `regime_classifier._FOM_TESTING = True`, which makes
+    `_latest_meeting_on_or_before()` skip the fetch/disk-cache read entirely.
+    Individual tests inject their fixtures by directly mutating FOMC_MEETINGS
+    and clean up with `.pop()` in their own try/finally blocks.
+    """
+    import sys
+    import os
+    # Dynamically add backend/ to sys.path so we can import regime_classifier
+    backend_path = os.path.join(os.path.dirname(__file__), "..", "backend")
+    if backend_path not in sys.path:
+        sys.path.insert(0, backend_path)
+
+    import regime_classifier
+
+    # Save prior state (only _FOM_TESTING is restored; FOMC_MEETINGS is left
+    # cleared so tests that inject fixtures start from a clean slate).
+    saved_testing = regime_classifier._FOM_TESTING
+    regime_classifier._FOM_TESTING = True
+
+    yield
+
+    regime_classifier._FOM_TESTING = saved_testing
+    # Do NOT restore FOMC_MEETINGS: each test manages its own injection/cleanup.
+
+
 @pytest.fixture
 def make_book():
     """Build a synthetic long/short book for portfolio math tests.

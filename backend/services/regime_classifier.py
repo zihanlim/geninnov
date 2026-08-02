@@ -19,15 +19,21 @@ Thresholds are hand-coded. Upgradable to ML later.
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 import math
 from typing import Optional
 
 import pandas as pd
+import requests
 import yfinance as yf
 from supabase import Client, create_client
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -491,55 +497,274 @@ class FOMCMeeting:
         return sum(1 for d in self.dissents if d.get("direction") == "dovish")
 
 
-#: v1 source-of-truth: hand-maintained table of recent FOMC meetings,
-#: keyed by meeting date, until a federalreserve.gov fetcher lands
-#: (ADR-0141 §3, "Alternatives considered" last bullet). The dict is
-#: keyed on `meeting_date.isoformat()` for O(1) lookup; `as_of` is the
-#: discipline — we read the LATEST meeting with `meeting_date <= as_of`,
-#: not "today's meeting" (a future meeting is a not-yet-recordable
-#: absence, not a default of neutral).
+# ── FOMC voting-record fetcher (ADR-0141 v2) ─────────────────────────────────
+# Source: federalreserve.gov FOMC press releases.
+# Each meeting's HTML is fetched once and cached to disk so classify() does not
+# hit the site on every run.  If the site is unreachable we fall back to the
+# on-disk cache; if that is also absent we log a warning and return None (no
+# meeting recordable), never a default of neutral.
 #
-# Last update: 2026-08-02, covering meetings through 2026-07-29.
-FOMC_MEETINGS: dict[str, FOMCMeeting] = {
-    "2026-07-29": FOMCMeeting(
-        meeting_date=date(2026, 7, 29),
-        vote_for=9, vote_against=3,
-        dissents=[
-            {"voter": "Daly (San Francisco)", "direction": "hawkish",
-             "preferred_action": "hike 25bp"},
-            {"voter": "Logan (Dallas)", "direction": "hawkish",
-             "preferred_action": "hike 25bp"},
-            {"voter": "Kashkari (Minneapolis)", "direction": "hawkish",
-             "preferred_action": "hike 25bp"},
-        ],
-    ),
-    "2026-06-17": FOMCMeeting(
-        meeting_date=date(2026, 6, 17),
-        vote_for=12, vote_against=0,
-        dissents=[],
-    ),
-    "2026-04-29": FOMCMeeting(
-        meeting_date=date(2026, 4, 29),
-        vote_for=8, vote_against=4,
-        dissents=[
-            {"voter": "Miran", "direction": "dovish",
-             "preferred_action": "cut 25bp"},
-            {"voter": "Hammack (Cleveland)", "direction": "hawkish",
-             "preferred_action": "hike 25bp"},
-            {"voter": "Kashkari (Minneapolis)", "direction": "hawkish",
-             "preferred_action": "hike 25bp"},
-            {"voter": "Logan (Dallas)", "direction": "hawkish",
-             "preferred_action": "hike 25bp"},
-        ],
-    ),
-}
+# Press release URL pattern:
+#   https://www.federalreserve.gov/newsevents/pressreleases/monetary{YYYYMMDD}a.htm
+# Vote line:  "approved ... by a N – M vote"         (en-dash / em-dash)
+# Dissenters: "Voting against the monetary policy action were X, Y, and Z,
+#              who preferred to [raise|lower] ..."
+
+_FED_CALENDAR_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+_FED_PRESS_BASE = "https://www.federalreserve.gov/newsevents/pressreleases"
+
+#: Mutable module-level table of FOMC meetings.  In production it is populated
+#: lazily by `_fetch_all_fomc_meetings()` from federalreserve.gov (disk-cached).
+#: In tests it is patched directly to inject fixtures without network I/O.
+FOMC_MEETINGS: dict[str, FOMCMeeting] = {}
+
+#: Set to True by conftest fixtures during test runs.  When True,
+#: _latest_meeting_on_or_before() does NOT trigger a fetch, so tests that
+#: inject fixtures into FOMC_MEETINGS are never clobbered by disk-cache data.
+_FOM_TESTING: bool = False
+
+
+def _cache_path() -> str:
+    """Path to the on-disk FOMC meetings cache."""
+    return os.path.join(os.path.dirname(__file__), ".fomc_meetings_cache.json")
+
+
+def _read_disk_cache() -> Optional[dict[str, FOMCMeeting]]:
+    path = _cache_path()
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw: dict = json.load(f)   # type: ignore[assignment]
+        out: dict[str, FOMCMeeting] = {}
+        for iso, m in raw.items():
+            dissents = [
+                {"voter": str(d["voter"]), "direction": str(d["direction"]),
+                 "preferred_action": str(d["preferred_action"])}
+                for d in m.get("dissents", [])
+            ]
+            out[iso] = FOMCMeeting(
+                meeting_date=date.fromisoformat(m["meeting_date"]),
+                vote_for=int(m["vote_for"]),
+                vote_against=int(m["vote_against"]),
+                dissents=dissents,
+            )
+        return out
+    except Exception:
+        return None
+
+
+def _write_disk_cache(meetings: dict[str, FOMCMeeting]) -> None:
+    path = _cache_path()
+    raw: dict = {}
+    for iso, m in meetings.items():
+        raw[iso] = {
+            "meeting_date": m.meeting_date.isoformat(),
+            "vote_for": m.vote_for,
+            "vote_against": m.vote_against,
+            "dissents": m.dissents,
+        }
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(raw, f)
+    except Exception:
+        _log.warning("Could not write FOMC cache to %s", path)
+
+
+def _meeting_dates_from_calendar(html: str) -> list[tuple[date, str]]:
+    """Extract (date, press_release_url) pairs from the FOMC calendar HTML.
+
+    Dates are in the URL path: /newsevents/pressreleases/monetary{YYYYMMDD}a.htm
+    Only meetings from 2015 onward are returned (modern FOMC format).
+    """
+    results: list[tuple[date, str]] = []
+    # Pattern: monetaryYYYYMMDDa.htm — the 'a' suffix is the main statement
+    pattern = re.compile(
+        r"/newsevents/pressreleases/monetary(\d{8})a\.htm"
+    )
+    seen: set[str] = set()
+    for m in pattern.finditer(html):
+        ymd = m.group(1)   # e.g. "20260729"
+        if ymd in seen:
+            continue
+        seen.add(ymd)
+        year = int(ymd[:4])
+        if year < 2015:
+            continue
+        try:
+            d = date(int(ymd[:4]), int(ymd[4:6]), int(ymd[6:8]))
+        except ValueError:
+            continue
+        results.append((d, _FED_PRESS_BASE + f"/monetary{ymd}a.htm"))
+    # Sort oldest first so we parse chronologically
+    results.sort(key=lambda x: x[0])
+    return results
+
+
+def _parse_fomc_press_release(html: str, press_url: str) -> Optional[FOMCMeeting]:
+    """Extract vote + dissenters from a single FOMC press release HTML.
+
+    Returns None on parse failure — the caller degrades gracefully.
+    """
+    try:
+        # Strip HTML tags to get plain text, but preserve paragraphs
+        text = re.sub(r"<br\s*/?>", "\n", html)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+        # Vote line: "approved ... by a N – M vote"
+        # Normalise all dash variants (en-dash, em-dash, Unicode minus) to ASCII '-'
+        # before matching so a single simple pattern works.
+        text_normalised = re.sub(r"[\u2013\u2014\u2212]", "-", text)
+        vote_match = re.search(
+            r"approved\s+(?:the following statement\s+)?for release\s+by\s+a\s+(\d+)\s*-\s*(\d+)\s+vote",
+            text_normalised, re.IGNORECASE
+        )
+        if not vote_match:
+            _log.debug("Could not find vote line in %s", press_url)
+            return None
+        vote_for = int(vote_match.group(1))
+        vote_against = int(vote_match.group(2))
+
+        # Dissenters block: "Voting against the monetary policy action were X, Y, and Z,
+        #                    who preferred to [raise|lower] ..."
+        dissenters: list[dict] = []
+        dissent_block = re.search(
+            r"Voting against the monetary policy action were\s+(.+?)(?:\n\n|\r\n\r\n|$)",
+            text, re.IGNORECASE | re.DOTALL
+        )
+        if dissent_block:
+            block_text = dissent_block.group(1).strip()
+            # Determine direction from preferred action
+            if re.search(r"\braise\b", block_text, re.IGNORECASE):
+                direction = "hawkish"
+            elif re.search(r"\blower\b", block_text, re.IGNORECASE):
+                direction = "dovish"
+            else:
+                direction = "hold"   # unlikely but defensive
+            preferred_action = "raise" if direction == "hawkish" else "lower"
+            # Extract voter names: "X, Y, and Z, who preferred to raise/lower ..."
+            # Strip the trailing "who preferred..." clause from the entire block first.
+            block_text = re.sub(r",?\s*who\s+preferred\s+to\s+.*$", "", block_text,
+                                flags=re.IGNORECASE)
+            # Split on ", and " / ", " / " and " (handles Oxford comma and variants)
+            parts = re.split(r",\s+and\s+|,\s+|,\s+and\s+", block_text)
+            for part in parts:
+                part = part.strip().rstrip(".").strip()
+                if part and len(part) > 2:
+                    dissenters.append({
+                        "voter": part,
+                        "direction": direction,
+                        "preferred_action": preferred_action,
+                    })
+
+        # Meeting date from the press release text: "July 29, 2026"
+        date_match = re.search(
+            r"([A-Z][a-z]+)\s+(\d{1,2}),?\s+(\d{4})",
+            text[:500]   # date is near the top
+        )
+        if date_match:
+            month_str, day_str, year_str = date_match.groups()
+            try:
+                meeting_date = date(int(year_str),
+                                   {"january": 1, "february": 2, "march": 3,
+                                    "april": 4, "may": 5, "june": 6,
+                                    "july": 7, "august": 8, "september": 9,
+                                    "october": 10, "november": 11, "december": 12
+                                   }[month_str.lower()],
+                                   int(day_str))
+            except (KeyError, ValueError):
+                meeting_date = None
+        else:
+            meeting_date = None
+
+        return FOMCMeeting(
+            meeting_date=meeting_date if meeting_date else date(2000, 1, 1),
+            vote_for=vote_for,
+            vote_against=vote_against,
+            dissents=dissenters,
+        )
+    except Exception:
+        _log.debug("Exception parsing %s: %s", press_url, exc_info=True)
+        return None
+
+
+def _fetch_all_fomc_meetings() -> dict[str, FOMCMeeting]:
+    """Fetch the full FOMC meeting list and voting records from federalreserve.gov.
+
+    Caches to disk after a successful fetch.  On failure falls back to the
+    on-disk cache, then to an empty dict.  Populates the module-level
+    `FOMC_MEETINGS` dict so tests that patch it can inject fixtures freely.
+
+    Does NOT overwrite `FOMC_MEETINGS` if it already has entries (tests inject
+    fixtures directly and rely on this guard to not be clobbered).
+    Skipped entirely when `_FOM_TESTING` is True (conftest sets this flag).
+    """
+    global FOMC_MEETINGS
+    if _FOM_TESTING:
+        return FOMC_MEETINGS
+    # If FOMC_MEETINGS is already populated (e.g. by a test patch), use it.
+    if FOMC_MEETINGS:
+        return FOMC_MEETINGS
+
+    # Check disk cache
+    disk = _read_disk_cache()
+    if disk is not None:
+        FOMC_MEETINGS = disk
+        return disk
+
+    # Fetch the FOMC calendar
+    try:
+        resp = requests.get(_FED_CALENDAR_URL, timeout=15)
+        resp.raise_for_status()
+    except Exception as exc:
+        _log.warning("Could not fetch FOMC calendar (%s): falling back to empty", exc)
+        FOMC_MEETINGS = {}
+        return {}
+
+    # Force UTF-8 so HTML entities like &#8211; (en-dash) are decoded correctly.
+    resp.encoding = "utf-8"
+    meetings = _meeting_dates_from_calendar(resp.text)
+    _log.info("Found %d FOMC meetings on calendar", len(meetings))
+
+    # Fetch each press release (stop after 8 to keep run time bounded)
+    result: dict[str, FOMCMeeting] = {}
+    for _meeting_date, press_url in meetings[-8:]:   # last 8 meetings
+        try:
+            pr = requests.get(press_url, timeout=15)
+            pr.raise_for_status()
+            pr.encoding = "utf-8"   # same reason as calendar above
+        except Exception as exc:
+            _log.warning("Could not fetch %s (%s)", press_url, exc)
+            continue
+        meeting = _parse_fomc_press_release(pr.text, press_url)
+        if meeting is not None:
+            iso = meeting.meeting_date.isoformat()
+            result[iso] = meeting
+            _log.debug("Parsed %s: %d–%d, %d dissents",
+                       iso, meeting.vote_for, meeting.vote_against,
+                       len(meeting.dissents))
+
+    _write_disk_cache(result)
+    FOMC_MEETINGS = result
+    return result
 
 
 def _latest_meeting_on_or_before(as_of: date) -> FOMCMeeting | None:
-    """The most recent FOMC meeting with `meeting_date <= as_of`, from the
-    v1 hand-maintained table. Returns None when no meeting on disk satisfies
-    the bound — that is "no meeting recordable on or before run_date", a
-    documented absence, not a default of neutral (ADR-0091)."""
+    """The most recent FOMC meeting with `meeting_date <= as_of`.
+
+    Source is the module-level `FOMC_MEETINGS` dict, which is populated lazily
+    from federalreserve.gov (with disk cache) on first call.
+    Tests patch `FOMC_MEETINGS` directly to inject fixtures (no network I/O;
+    conftest sets _FOM_TESTING=True to prevent any fetch from being triggered).
+
+    Returns None when no meeting is recordable on or before `as_of` — a
+    documented absence, not a default of neutral (ADR-0091 / ADR-0141 §4)."""
+    global FOMC_MEETINGS
+    # Lazy load: if the dict is empty and not in test mode, trigger a fetch.
+    # In test mode _FOM_TESTING=True so we never fetch (tests inject fixtures).
+    if not FOMC_MEETINGS and not _FOM_TESTING:
+        _fetch_all_fomc_meetings()
     candidates = [m for m in FOMC_MEETINGS.values() if m.meeting_date <= as_of]
     if not candidates:
         return None
@@ -978,9 +1203,9 @@ class RegimeClassifier:
 
         posture_evidence = build_posture_evidence(posture, prior_posture)
 
-        # ADR-0141: rhetoric from the most recent FOMC meeting on disk. No
-        # supabase read needed — the v1 source is the hand-maintained
-        # FOMC_MEETINGS table (federalreserve.gov fetcher is v2 work).
+        # ADR-0141: rhetoric from the most recent FOMC meeting.  Fetched live
+        # from federalreserve.gov press releases (24-hour disk cache).  No
+        # supabase read needed.
         rhetoric = classify_fed_rhetoric(as_of=run_date)
         rhetoric_evidence = build_rhetoric_evidence(rhetoric)
 

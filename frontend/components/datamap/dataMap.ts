@@ -511,13 +511,13 @@ export const mapNodes: Node[] = [
   {
     id: "a2", name: "screen candidates",    summary: "lens · R²≥0.10 filter",     type: "pipeline", section: "09" },
   {
-    id: "a3", name: "classify news",        summary: "🤖 LLM step — classify",     type: "pipeline", section: "11", borderColor: "var(--datamap-purple)" },
+    id: "a3", name: "classify news",        summary: "🤖 LLM step — classify",     type: "pipeline", section: "09", borderColor: "var(--datamap-purple)" },
   {
     id: "a4", name: "book metrics",         summary: "FF5+UMD tilts computed",    type: "pipeline", section: "09" },
   {
     id: "a5", name: "scenario analysis",    summary: "6 stress scenarios run",     type: "pipeline", section: "09" },
   {
-    id: "a6", name: "reason picks",          summary: "🤖 LLM step — thesis",       type: "pipeline", section: "11", borderColor: "var(--datamap-purple)" },
+    id: "a6", name: "reason picks",          summary: "🤖 LLM step — thesis",       type: "pipeline", section: "09", borderColor: "var(--datamap-purple)" },
   {
     id: "a7", name: "verify citations",     summary: "pure-fn guardrail",          type: "pipeline", section: "09" },
   {

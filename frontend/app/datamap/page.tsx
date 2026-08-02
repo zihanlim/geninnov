@@ -153,7 +153,8 @@ export default function DataMapPage() {
         role="img"
         aria-label="Animated map of the research process from data sources to frontend surfaces"
       >
-        {/* SVG overlay: sized by ResizeObserver, pointer-events:none lets clicks pass through. */}
+        {/* SVG overlay: sized by ResizeObserver. pointer-events=none lets clicks pass through.
+            Rendered first so sections/nodes stack on top at z-0. */}
         {nodePosMap.size > 0 && (
           <EdgeOverlay edgePaths={edgePaths} mapRef={mapRef} />
         )}
@@ -182,8 +183,68 @@ function SectionBlock({
   section: { section: string; title: string };
   nodes: Node[];
 }) {
+  // For section 12 and section 03, group nodes by their `group` field and render sub-group labels.
+  const isGrouped = section.section === "12" || section.section === "03";
+
+  if (isGrouped) {
+    // Group nodes by group field; nodes without a group go into a single block.
+    const groups = new Map<string, Node[]>();
+    for (const n of nodes) {
+      const g = n.group ?? "";
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g)!.push(n);
+    }
+    const groupEntries = Array.from(groups.entries());
+
+    return (
+      <div className="relative max-w-full overflow-hidden">
+        {/* Section header. */}
+        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border"
+          style={{ background: "rgba(10,14,23,0.04)" }}>
+          <span
+            className="inline-flex items-center justify-center w-6 h-4 rounded text-[9px] font-mono font-bold shrink-0"
+            style={{ background: "rgba(10,14,23,0.10)", color: "var(--text-secondary)" }}
+          >
+            {section.section}
+          </span>
+          <span className="text-[12px] font-medium text-text-secondary">
+            {section.title}
+          </span>
+          <span className="text-[11px] text-text-tertiary ml-auto font-mono">
+            {nodes.length} node{nodes.length === 1 ? "" : "s"}
+          </span>
+        </div>
+
+        {/* Grouped node rows with sub-group labels. */}
+        {groupEntries.map(([groupLabel, groupNodes]) => (
+          <div key={groupLabel}>
+            {/* Sub-group label. */}
+            {groupLabel && (
+              <div className="px-4 pt-3 pb-1">
+                <span
+                  className="inline-flex items-center text-[9px] font-mono font-semibold tracking-widest uppercase"
+                  style={{ color: "var(--text-tertiary)" }}
+                >
+                  {groupLabel}
+                </span>
+              </div>
+            )}
+            <div
+              className="flex flex-wrap justify-center items-start gap-3 px-4 pb-3"
+              style={{ minHeight: NODE_H + 16 }}
+            >
+              {groupNodes.map((n) => (
+                <NodeCard key={n.id} node={n} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className="relative z-10 max-w-full overflow-hidden">
+    <div className="relative max-w-full overflow-hidden">
       {/* Section header. */}
       <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border"
         style={{ background: "rgba(10,14,23,0.04)" }}>
@@ -239,7 +300,7 @@ function NodeCard({ node }: { node: Node }) {
         opacity: hovered ? 1 : 0.92,
         cursor: "pointer",
         userSelect: "none",
-        zIndex: hovered ? 40 : node.tint === "purple" ? 35 : 1,
+        zIndex: hovered ? 40 : node.tint === "purple" ? 35 : 10,
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -359,7 +420,7 @@ function EdgeOverlay({
       width={dims.w}
       height={dims.h}
       className="absolute inset-0 pointer-events-none"
-      style={{ zIndex: 0, pointerEvents: "none" }}
+      style={{ zIndex: 0, pointerEvents: "none", fill: "none" }}
       aria-hidden="true"
     >
       <defs>

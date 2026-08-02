@@ -40,7 +40,6 @@ export const sectionOrder: Section[] = [
   { section: "01", title: "External Sources & Triggers" },
   { section: "02", title: "L0— Macro Ingestion" },
   { section: "03", title: "L1 — Theme Detection" },
-  { section: "04", title: "L1b — Narrative Tracker" },
   { section: "05", title: "L2 — Factor Exposure" },
   { section: "06", title: "L2b — Credit & Duration" },
   { section: "07", title: "L3 — Regime Classifier" },
@@ -275,7 +274,8 @@ export const mapNodes: Node[] = [
     name: "Doc Freq",
     summary: "1-3-gram document frequency",
     type: "pipeline",
-    section: "04",
+    section: "03",
+    group: "L1b — Narrative Tracker (Shadow)",
     doc: "backend/services/narrative_tracker.py",
   },
   {
@@ -283,7 +283,8 @@ export const mapNodes: Node[] = [
     name: "Share of Voice",
     summary: "phrase vs corpus",
     type: "pipeline",
-    section: "04",
+    section: "03",
+    group: "L1b — Narrative Tracker (Shadow)",
     doc: "backend/services/narrative_tracker.py",
   },
   {
@@ -291,7 +292,8 @@ export const mapNodes: Node[] = [
     name: "Velocity",
     summary: "vs own history",
     type: "pipeline",
-    section: "04",
+    section: "03",
+    group: "L1b — Narrative Tracker (Shadow)",
     doc: "backend/services/narrative_tracker.py",
   },
   {
@@ -299,7 +301,8 @@ export const mapNodes: Node[] = [
     name: "Status",
     summary: "new · emerging · established · fading → L1",
     type: "pipeline",
-    section: "04",
+    section: "03",
+    group: "L1b — Narrative Tracker (Shadow)",
     doc: "backend/services/narrative_tracker.py",
   },
   // L2 sub-nodes

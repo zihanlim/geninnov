@@ -484,10 +484,11 @@ function clamp(v: number, lo: number, hi: number): number {
 
 function nodeStroke(t: NodeType): string {
   switch (t) {
-    case "source": return "var(--accent)";
-    case "pipeline": return "var(--border-strong)";
-    case "table": return "var(--long)";
-    case "surface": return "var(--accent)";
+    case "source":   return "var(--datamap-source)";
+    case "pipeline": return "var(--datamap-compute)";
+    case "table":    return "var(--datamap-db)";
+    case "surface":  return "var(--datamap-frontend)";
+    case "verify":   return "var(--datamap-verify)";
   }
 }
 
@@ -505,7 +506,7 @@ function laneOf(sec: string): NodeType | null {
   if (["02","03","04","05","06","07","08","09","10","11"].includes(sec)) return "pipeline";
   if (sec === "12") return "table";
   if (sec === "13") return "surface";
-  if (sec === "14") return "surface";
+  if (sec === "14") return "verify";
   return null;
 }
 
@@ -518,23 +519,30 @@ function Legend() {
         <span className="inline-flex items-center gap-1.5">
           <span
             className="inline-block w-3.5 h-3.5 rounded"
-            style={{ background: "var(--bg-elevated)", border: "1.5px solid var(--accent)" }}
+            style={{ background: "var(--bg-elevated)", border: "1.5px solid var(--datamap-source)" }}
           />
-          <span>External source / Frontend surface</span>
+          <span>External source</span>
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span
             className="inline-block w-3.5 h-3.5 rounded"
-            style={{ background: "#ffffff", border: "1.5px solid var(--border-strong)" }}
+            style={{ background: "var(--bg-elevated)", border: "1.5px solid var(--datamap-compute)" }}
           />
           <span>L0–L8 pipeline</span>
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span
             className="inline-block w-3.5 h-3.5 rounded"
-            style={{ background: "var(--bg-elevated)", border: "1.5px solid var(--long)" }}
+            style={{ background: "var(--bg-elevated)", border: "1.5px solid var(--datamap-db)" }}
           />
           <span>Supabase table</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className="inline-block w-3.5 h-3.5 rounded"
+            style={{ background: "var(--bg-elevated)", border: "1.5px solid var(--datamap-frontend)" }}
+          />
+          <span>Frontend surface</span>
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span
@@ -542,6 +550,13 @@ function Legend() {
             style={{ background: "rgba(168,85,247,0.08)", border: "1.5px solid var(--datamap-purple)" }}
           />
           <span>LLM boundary</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className="inline-block w-3.5 h-3.5 rounded"
+            style={{ background: "var(--bg-elevated)", border: "1.5px solid var(--datamap-verify)" }}
+          />
+          <span>Verification</span>
         </span>
       </div>
 
@@ -575,7 +590,7 @@ function Legend() {
 /** ── NodeTable — accessibility companion ────────────────────────────────── */
 function NodeTable({ nodes }: { nodes: Node[] }) {
   const grouped = useMemo(() => {
-    const out: Record<NodeType, Node[]> = { source: [], pipeline: [], table: [], surface: [] };
+    const out: Record<NodeType, Node[]> = { source: [], pipeline: [], table: [], surface: [], verify: [] };
     for (const n of nodes) out[n.type].push(n);
     return out;
   }, [nodes]);
@@ -585,6 +600,7 @@ function NodeTable({ nodes }: { nodes: Node[] }) {
     pipeline: "L0–L8 pipeline",
     table: "Supabase tables (representative)",
     surface: "Frontend surfaces",
+    verify: "Offline verification",
   };
 
   return (

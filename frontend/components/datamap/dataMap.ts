@@ -25,7 +25,7 @@
 // fixed canvas — it uses flex-wrap and an SVG overlay that is sized to the
 // DOM after nodes are painted.
 
-export type NodeType = "source" | "pipeline" | "table" | "surface";
+export type NodeType = "source" | "pipeline" | "table" | "surface" | "verify";
 
 /** One row in the 01–13 layout sequence, matching the reference HTML. */
 export interface Section {
@@ -314,6 +314,29 @@ export const mapNodes: Node[] = [
     section: "11",
     doc: "ADR-0194",
   },
+
+  // Section 11 — L5 agent chain (step boxes)
+  {
+    id: "a1", name: "aggregate context",    summary: "L0→L4 inputs assembled",    type: "pipeline", section: "11" },
+  {
+    id: "a2", name: "screen candidates",    summary: "lens · R²≥0.10 filter",     type: "pipeline", section: "11" },
+  {
+    id: "a3", name: "classify news",        summary: "🤖 LLM step — classify",     type: "pipeline", section: "11", tint: "purple" },
+  {
+    id: "a4", name: "book metrics",         summary: "FF5+UMD tilts computed",    type: "pipeline", section: "11" },
+  {
+    id: "a5", name: "scenario analysis",    summary: "6 stress scenarios run",     type: "pipeline", section: "11" },
+  {
+    id: "a6", name: "reason picks",          summary: "🤖 LLM step — thesis",       type: "pipeline", section: "11", tint: "purple" },
+  {
+    id: "a7", name: "verify citations",     summary: "pure-fn guardrail",          type: "pipeline", section: "11" },
+  {
+    id: "a7b", name: "✕ retry",             summary: "max 2× on guardrail fail",   type: "pipeline", section: "11" },
+  {
+    id: "a8", name: "size positions",       summary: "mean-var cvxpy solve",       type: "pipeline", section: "11" },
+  {
+    id: "a9", name: "finalise analytics",   summary: "OUTPUT — persisted",         type: "pipeline", section: "11" },
+
   {
     id: "sizing",
     name: "Sizing · Optimizer",
@@ -631,21 +654,13 @@ export const mapNodes: Node[] = [
     section: "13",
     doc: "Phase 5 — Execution",
   },
-  {
-    id: "v-eval",
-    name: "eval battery",
-    summary: "5 frozen L0–L4 fixtures",
-    type: "surface",
-    section: "14",
-    doc: "ADR-0013",
-  },
 
   // ─────────────── VERIFICATION ───────────────
   {
     id: "v-eval",
     name: "eval battery",
     summary: "5 frozen L0–L4 fixtures",
-    type: "surface",
+    type: "verify",
     section: "14",
     doc: "ADR-0013",
   },
@@ -653,7 +668,7 @@ export const mapNodes: Node[] = [
     id: "v-repl",
     name: "replication test",
     summary: "N× frozen state",
-    type: "surface",
+    type: "verify",
     section: "14",
     doc: "ADR-0013",
   },
@@ -661,7 +676,7 @@ export const mapNodes: Node[] = [
     id: "v-bth",
     name: "backtest hype",
     summary: "IC of HypeScore signals",
-    type: "surface",
+    type: "verify",
     section: "14",
     doc: "ARCHITECTURE.md · Scoring",
   },
@@ -669,7 +684,7 @@ export const mapNodes: Node[] = [
     id: "v-bfr",
     name: "backfill regime",
     summary: "L3 history rebuild",
-    type: "surface",
+    type: "verify",
     section: "14",
     doc: "scripts/backfill_regime.py",
   },
@@ -677,7 +692,7 @@ export const mapNodes: Node[] = [
     id: "v-reso",
     name: "resolve outcomes",
     summary: "+21td forward scoring",
-    type: "surface",
+    type: "verify",
     section: "14",
     doc: "scripts/resolve_outcomes.py",
   },
@@ -846,6 +861,16 @@ export const swimlaneOrder: Record<NodeType, string[]> = {
     "L4",
     "L5",
     "L5b",
+    "a1",
+    "a2",
+    "a3",
+    "a4",
+    "a5",
+    "a6",
+    "a7",
+    "a7b",
+    "a8",
+    "a9",
     "sizing",
     "q-mandate",
     "q-signal",
@@ -889,6 +914,8 @@ export const swimlaneOrder: Record<NodeType, string[]> = {
     "f-ask",
     "f-facts",
     "f-exec",
+  ],
+  verify: [
     "v-eval",
     "v-repl",
     "v-bth",

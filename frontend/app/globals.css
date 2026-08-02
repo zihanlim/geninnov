@@ -186,9 +186,15 @@
     /* /datamap — diagram-only colours (app/datamap/page.tsx). The map draws
        in raw SVG, which has no utility classes, so its inks live here where
        the chip-contrast token sweep can see them. */
-    --datamap-purple: #a855f7;    /* LLM boundary — llms node tint + llms→L5 edge */
-    --datamap-dashed: #5d6b82;    /* shadow / optional / reference edge ink */
-    --datamap-label-bg: #f6fafe;  /* edge-label halo (SHADOW pill) */
+    --datamap-source:    #3B82F6;  /* Sources — brave, fred, yfinance, … */
+    --datamap-llm:       #A855F7;  /* LLM — minimax, anthropic, gemini */
+    --datamap-compute:   #10B981;  /* Compute — L0–L8 pipeline nodes */
+    --datamap-db:        #F59E0B;  /* Supabase — DB table nodes */
+    --datamap-frontend: #06B6D4;  /* Frontend — surface nodes */
+    --datamap-verify:   #64748B;  /* Verify — offline verification nodes */
+    --datamap-purple:   #a855f7;  /* LLM boundary — llms node tint + llms→L5 edge */
+    --datamap-dashed:   #5d6b82;  /* shadow / optional / reference edge ink */
+    --datamap-label-bg:  #f6fafe;  /* edge-label halo (SHADOW pill) */
 
     /* ── Categorical series palette (ADR-0128) ────────────────────────────────
        Five slots for charts whose series are IDENTITIES with no direction — one

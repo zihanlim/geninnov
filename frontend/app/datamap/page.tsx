@@ -125,7 +125,9 @@ export default function DataMapPage() {
       const kind = e.kind ?? "solid";
       const depth = clamp(Math.abs(tgt.y - src.bottom) * 0.55, 30, 200);
       const d = `M ${src.cx} ${src.bottom} C ${src.cx} ${src.bottom + depth}, ${tgt.cx} ${tgt.y - depth}, ${tgt.cx} ${tgt.y}`;
-      return { key: `${e.from}-${e.to}`, d, kind, label: e.label, from: e.from, to: e.to };
+      const srcNode = nodes.find(n => n.id === e.from);
+      const color = srcNode ? nodeBorderColor(srcNode) : edgeColor(kind);
+      return { key: `${e.from}-${e.to}`, d, kind, label: e.label, from: e.from, to: e.to, color };
     }).filter((p): p is EdgePath => p !== null);
   }, [nodePosMap]);
 
@@ -144,6 +146,8 @@ export default function DataMapPage() {
           </>
         }
       />
+
+      <Legend />
 
       {/* ── The map itself: sections 01→13 stacked vertically. ────────── */}
       <div
@@ -169,7 +173,6 @@ export default function DataMapPage() {
         })}
       </div>
 
-      <Legend />
       <NodeTable nodes={nodes} />
     </main>
   );
@@ -392,6 +395,8 @@ interface EdgePath {
   label?: string;
   from: string;
   to: string;
+  /** Colour inherited from the source node's border color. */
+  color: string;
 }
 
 function EdgeOverlay({
@@ -450,7 +455,7 @@ function EdgeOverlay({
 
       {edgePaths.map((ep) => {
         const animated = ep.kind !== "dashed";
-        const color = edgeColor(ep.kind);
+        const color = ep.color;
         const mid = bezierMid(ep.d);
 
         return (
@@ -541,6 +546,13 @@ function truncate(s: string, n: number): string {
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
+}
+
+/** The effective border colour of a node — mirrors the NodeCard stroke logic. */
+function nodeBorderColor(n: { borderColor?: string; tint?: string; type: NodeType }): string {
+  if (n.borderColor) return n.borderColor;
+  if (n.tint === "purple") return "var(--datamap-purple)";
+  return nodeStroke(n.type);
 }
 
 function nodeStroke(t: NodeType): string {

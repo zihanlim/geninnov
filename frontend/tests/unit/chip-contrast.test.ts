@@ -99,9 +99,10 @@ function contrast(fg: Rgba, bg: Rgba): number {
  *  a raised/hovered row (table rows use `hover:bg-bg-elevated`).
  *
  *  --bg-hover is deliberately NOT here. It is the darkest surface, so including it
- *  would look like the safest choice — but it appears in exactly five places, none
+ *  would look like the safest choice — but it appears in exactly four places, none
  *  of which contain a chip: `.filter-btn:hover`, `.filter-btn-active`, the
- *  `.skeleton` gradient, and the nav-item hover in TopBar and LensSelector. Adding
+ *  `.skeleton` gradient, and the nav-item hover in LensSelector. (TopBar's nav
+ *  hover moved to --header-raised when the masthead went navy — ADR-0223.) Adding
  *  it fails five chips (dir-pill-long, badge-long, badge-tier-anchor,
  *  badge-tier-discovered, StatusBadge.exact) and the only way to satisfy it is to
  *  darken --long and --accent for a rendering that never happens. A floor should

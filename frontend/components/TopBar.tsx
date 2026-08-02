@@ -249,7 +249,7 @@ export default function TopBar() {
   useEffect(() => setMounted(true), []);
 
   return (
-    <header className="sticky top-0 z-50 grid grid-cols-[auto_1fr_auto] gap-2 items-center px-3 sm:px-5 h-14 border-b border-border bg-bg-primary/85 backdrop-blur-md">
+    <header className="sticky top-0 z-50 grid grid-cols-[auto_1fr_auto] gap-2 items-center px-3 sm:px-5 h-14 border-b border-header-border bg-logo-plate">
       {/* The mark is the real logo now, not the gradient `A` tile that stood in
           for one. `aria-label` is unconditional because the wordmark is hidden
           below sm — under 640px the link was previously a coloured square with
@@ -272,7 +272,7 @@ export default function TopBar() {
       <Link
         href="/"
         aria-label="Andromeda Analytics — home"
-        className="flex items-center gap-2.5 text-text-primary shrink-0"
+        className="flex items-center gap-2.5 text-header-ink shrink-0"
       >
         <BrandMark />
         <span className="hidden sm:flex flex-col justify-center leading-none">
@@ -281,10 +281,10 @@ export default function TopBar() {
           </span>
           {/* Tertiary ink, not secondary: this is the descriptor under a name,
               and at secondary it competes with the four nav items beside it.
-              --text-tertiary measures 5.52:1 on the page, so the AA floor is
+              --header-tertiary measures 5.48:1 on navy, so the AA floor is
               cleared at 10px as well — goal 8 is a contrast rule, and the size
               here is bounded by the 56px bar rather than by it. */}
-          <span className="hidden lg:block mt-[3px] text-[10px] tracking-[0.14em] text-text-tertiary">
+          <span className="hidden lg:block mt-[3px] text-[10px] tracking-[0.14em] text-header-tertiary">
             QUANTITATIVE MACRO RESEARCH
           </span>
         </span>
@@ -319,11 +319,10 @@ export default function TopBar() {
         // so, which reads as a nav that HAS four items rather than one showing
         // four of six. The fade is that signal.
         //
-        // `mask-image`, not an overlay gradient. The header is
-        // `bg-bg-primary/85 backdrop-blur-md`, so a gradient would have to fake a
-        // translucent blurred backdrop and would be wrong over any scrolled
-        // content; a mask fades the CONTENT to transparent and needs to know
-        // nothing about what is behind it.
+        // `mask-image`, not an overlay gradient. The header is solid
+        // `bg-logo-plate` (ADR-0223), so an overlay gradient would have to paint
+        // exactly the navy to look seamless; a mask fades the CONTENT to
+        // transparent instead and needs to know nothing about what is behind it.
         //
         // Conditional on ACTUAL overflow and scroll position, never static. A
         // permanent right fade dims `06 Attribution` at every width where all six
@@ -348,15 +347,15 @@ export default function TopBar() {
               // until there is real room for it.
               className={`shrink-0 first:ml-auto last:mr-auto px-2.5 md:px-3 py-1.5 rounded-md font-medium text-[13px] transition-colors ${
                 isActive
-                  ? "text-text-primary bg-bg-elevated"
-                  : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                  ? "text-header-ink bg-header-raised"
+                  : "text-header-muted hover:text-header-ink hover:bg-header-raised"
               }`}
             >
               {/* The number is the point — it is what makes the strip read as a
                   sequence rather than as six unrelated places. Muted so it
                   locates without competing with the label, and aria-hidden
                   because "01 Mandate" read aloud is worse than "Mandate". */}
-              <span aria-hidden="true" className="num text-text-tertiary mr-1.5 text-[11px]">
+              <span aria-hidden="true" className="num text-header-tertiary mr-1.5 text-[11px]">
                 {item.n}
               </span>
               {item.label}
@@ -422,20 +421,22 @@ export default function TopBar() {
           onMouseLeave={closeTip}
           onFocus={(e) => openTip(e.currentTarget)}
           onBlur={closeTip}
-          className="group relative flex items-stretch text-text-secondary text-[12px] border border-border rounded-md overflow-hidden bg-bg-elevated divide-x divide-border"
+          className="group relative flex items-stretch text-header-muted text-[12px] border border-header-border rounded-md overflow-hidden bg-header-raised divide-x divide-header-border"
         >
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] whitespace-nowrap">
           {/* Was bg-long — direction green spent on a freshness state, which is
               goal 3's failure mode (ADR-0085). The words "live"/"stale" already
               carry the meaning, so the dot only has to separate the three cases:
-              neutral ink for fresh, --warning for stale, tertiary for unknown. */}
+              ink for fresh, --header-warning for stale, tertiary for unknown.
+              On navy the page's --warning is 2.5:1, so the STALE dot uses
+              --header-warning (5.65:1) — see ADR-0223. */}
           <span
             className={`w-1.5 h-1.5 rounded-full shrink-0 ${
               live === null
-                ? "bg-text-tertiary"
+                ? "bg-header-tertiary"
                 : live
-                  ? "bg-text-secondary"
-                  : "bg-warning"
+                  ? "bg-header-ink"
+                  : "bg-header-warning"
             }`}
           />
           Data {live === null ? "—" : live ? "live" : "stale"}
@@ -454,7 +455,7 @@ export default function TopBar() {
             product that publishes once a day. The cadence does. This is static
             copy on purpose — no ticking element, because the pipeline is a
             21:30 UTC weekday job and live-updating chrome would misrepresent it. */}
-        <span className="hidden md:inline-flex items-center px-2.5 py-1 text-[11px] text-text-tertiary whitespace-nowrap">
+        <span className="hidden md:inline-flex items-center px-2.5 py-1 text-[11px] text-header-tertiary whitespace-nowrap">
           Next run <span className="num ml-1">21:30 UTC</span>
         </span>
 
@@ -468,13 +469,11 @@ export default function TopBar() {
             are the SAME fixed time, so ET and UTC can never drift.
 
             Portalled to `document.body` — this is what keeps it on screen.
-            The header's `backdrop-blur-md` is a `backdrop-filter`, which per
-            the CSS spec makes it a CONTAINING BLOCK for `position: fixed`
-            descendants; a fixed tooltip left inside the header would resolve
-            against the header instead of the viewport and get clipped by the
-            run-state group's `overflow-hidden`. Outside the header, `fixed`
-            is genuinely viewport-relative and `useLayoutEffect` clamps the
-            real rendered rect to it. */}
+            A fixed tooltip left inside the header would resolve against the
+            nearest positioned ancestor and get clipped by the run-state
+            group's `overflow-hidden`; portalling is what makes `fixed`
+            genuinely viewport-relative, and `useLayoutEffect` clamps the real
+            rendered rect to the viewport. */}
         {mounted &&
           createPortal(
             <div

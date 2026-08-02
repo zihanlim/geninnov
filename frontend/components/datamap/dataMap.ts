@@ -184,7 +184,6 @@ export const mapNodes: Node[] = [
     type: "source",
     section: "10",
     badge: "🤖",
-    tint: "purple",
     doc: "ARCHITECTURE.md · LLM",
   },
   {
@@ -194,7 +193,6 @@ export const mapNodes: Node[] = [
     type: "source",
     section: "10",
     badge: "🤖",
-    tint: "purple",
     doc: "ARCHITECTURE.md · LLM",
   },
   {
@@ -204,7 +202,6 @@ export const mapNodes: Node[] = [
     type: "source",
     section: "10",
     badge: "🤖",
-    tint: "purple",
     doc: "ARCHITECTURE.md · LLM",
   },
 

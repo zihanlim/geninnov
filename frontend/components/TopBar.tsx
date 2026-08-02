@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -53,14 +54,47 @@ const NAV_ITEMS = PHASES.map((p) => ({
   n: phaseNumber(p),
 }));
 
-function formatTime(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
+/**
+ * Format an ISO instant as HH:MM in a fixed zone. `timeZone` pins the zone.
+ * The visible chips always pass "America/New_York" (the market's clock, which
+ * is what the product is about); the tooltip's "Local" line passes `undefined`
+ * so it falls back to the browser's own zone (SGT for the owner).
+ *
+ * Never formatted in the DEFAULT zone at render time — the server runs in UTC,
+ * so a default-zone string made during render would make the client disagree
+ * after hydration, the clock-mismatch class this file already documents. The
+ * tooltip's local line is browser-zone and renders only after mount.
+ */
+function formatTime(iso: string | null, timeZone?: string): string;
+function formatTime(date: Date, timeZone?: string): string;
+function formatTime(value: string | Date | null, timeZone?: string): string {
+  if (value === null) return "—";
+  const d = value instanceof Date ? value : new Date(value);
   return d.toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "America/New_York",
+    ...(timeZone ? { timeZone } : {}),
   });
+}
+
+/**
+ * The next fire of the daily-refresh cron — weekday (Mon–Fri) 21:30 UTC,
+ * `.github/workflows/daily-refresh.yml`. The exact occurrence matters, not
+ * just the time of day, for zones with DST: "21:30 UTC" is 17:30 ET in
+ * summer and 16:30 in winter, so the local rendering must know WHICH weekday.
+ * Pure; exported for test.
+ */
+export function nextRunUtc(now: Date = new Date()): Date {
+  for (let dayOffset = 0; dayOffset < 8; dayOffset++) {
+    const d = new Date(now);
+    d.setUTCDate(d.getUTCDate() + dayOffset);
+    d.setUTCHours(21, 30, 0, 0);
+    if (d <= now) continue;
+    const dow = d.getUTCDay();
+    if (dow === 0 || dow === 6) continue;
+    return d;
+  }
+  return now;
 }
 
 /** Width of the fade at each end, in px. Wide enough to read as "continues"
@@ -166,6 +200,41 @@ export default function TopBar() {
     if (!lastUpdated) return;
     setLive(Date.now() - new Date(lastUpdated).getTime() < 1000 * 60 * 60 * 36);
   }, [lastUpdated]);
+
+  // The run-state tooltip: the ET values are the visible face of the market's
+  // clock; the UTC and SGT equivalents live in a tooltip because the product's
+  // schedule is UTC while its owner works in SGT. Both anchors are computed
+  // AFTER mount (browser-zone output at render time would be a hydration
+  // mismatch — the same class `live` avoids) and are `fixed`-positioned.
+  const [tip, setTip] = useState<{ top: number; left: number } | null>(null);
+  const tipRef = useRef<HTMLDivElement | null>(null);
+  const openTip = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    setTip({ top: r.bottom + 6, left: r.right });
+  };
+  const closeTip = () => setTip(null);
+
+  // Clamp the tooltip inside the viewport using its REAL rendered rect, after
+  // paint has been computed but before it is shown. `openTip` guesses from the
+  // trigger; this corrects for the actual tooltip width, scrollbars and any
+  // containing-block drift, so `left` can never put the card off the right
+  // edge. Runs synchronously before paint, so there is no one-frame flash at
+  // the unclamped position.
+  useLayoutEffect(() => {
+    if (!tip || !tipRef.current) return;
+    const rect = tipRef.current.getBoundingClientRect();
+    const maxLeft = window.innerWidth - rect.width - 8;
+    const left = Math.max(8, Math.min(tip.left, maxLeft));
+    if (left !== tip.left) setTip((t) => (t ? { ...t, left } : t));
+  }, [tip]);
+
+  // The tooltip's "Data local" line is the browser's own zone (SGT for the
+  // owner), which differs from the SSR zone (UTC) — the hydration-mismatch
+  // class this file already documents for clock values. Gated on mount: until
+  // `mounted`, the local line falls back to the UTC value so server and client
+  // agree; after mount it swaps to the viewer's zone.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   return (
     <header className="sticky top-0 z-50 grid grid-cols-[auto_1fr_auto] gap-2 items-center px-3 sm:px-5 h-14 border-b border-border bg-bg-primary/85 backdrop-blur-md">
@@ -316,7 +385,22 @@ export default function TopBar() {
             one cluster of tools and the nav stays four destinations. It sits left of
             the run-state group, which is the order it had on `/` — tool, then state. */}
         <LiveNewsDock runDate={runDate} />
-        <div className="flex items-stretch text-text-secondary text-[12px] border border-border rounded-md overflow-hidden bg-bg-elevated divide-x divide-border">
+        {/* The visible run-state group. ET stays the face — the market trades
+            on ET, so the market's clock is the one the product is ABOUT. The
+            UTC and SGT equivalents live in the tooltip (below), reached on
+            hover and on focus, because the product's schedule is UTC while its
+            owner works in SGT — the reader who needs them gets them, and the
+            row does not spend itself on a third and fourth time. `group`
+            scopes the tooltip to this cluster so it opens exactly here. */}
+        <div
+          ref={tipRef}
+          aria-describedby="run-state-tip"
+          onMouseEnter={(e) => openTip(e.currentTarget)}
+          onMouseLeave={closeTip}
+          onFocus={(e) => openTip(e.currentTarget)}
+          onBlur={closeTip}
+          className="group relative flex items-stretch text-text-secondary text-[12px] border border-border rounded-md overflow-hidden bg-bg-elevated divide-x divide-border"
+        >
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] whitespace-nowrap">
           {/* Was bg-long — direction green spent on a freshness state, which is
               goal 3's failure mode (ADR-0085). The words "live"/"stale" already
@@ -340,7 +424,7 @@ export default function TopBar() {
               it to `lg` returns 65px and the nav fits again. */}
           <span className="hidden lg:inline">
             {" · "}
-            {formatTime(lastUpdated)} ET
+            <span className="num">{formatTime(lastUpdated)} ET</span>
           </span>
         </span>
         {/* Replaces a stamp of TODAY'S date, which told a reader nothing about a
@@ -350,6 +434,74 @@ export default function TopBar() {
         <span className="hidden md:inline-flex items-center px-2.5 py-1 text-[11px] text-text-tertiary whitespace-nowrap">
           Next run <span className="num ml-1">21:30 UTC</span>
         </span>
+
+        {/* The tooltip: the three times, on hover and focus. Follows the app's
+            tooltip convention (BookFunnel's funnel tips) — `role="tooltip"`,
+            rendered ALWAYS (once mounted) so Ctrl-F and aria-describedby can
+            reach the text, `visible`/`invisible` toggled by the group's hover
+            and by focus. `aria-describedby` on the group makes the trigger
+            keyboard- and screen-reader-reachable, not hover-only. The local
+            line uses the browser's own zone (SGT for the owner); both anchors
+            are the SAME fixed time, so ET and UTC can never drift.
+
+            Portalled to `document.body` — this is what keeps it on screen.
+            The header's `backdrop-blur-md` is a `backdrop-filter`, which per
+            the CSS spec makes it a CONTAINING BLOCK for `position: fixed`
+            descendants; a fixed tooltip left inside the header would resolve
+            against the header instead of the viewport and get clipped by the
+            run-state group's `overflow-hidden`. Outside the header, `fixed`
+            is genuinely viewport-relative and `useLayoutEffect` clamps the
+            real rendered rect to it. */}
+        {mounted &&
+          createPortal(
+            <div
+              ref={tipRef}
+              role="tooltip"
+              id="run-state-tip"
+              className={`${
+                tip ? "visible opacity-100" : "invisible opacity-0"
+              } transition-opacity fixed z-50 w-[14rem] max-w-[90vw] text-left card p-3 shadow-lg pointer-events-none`}
+              style={tip ? { left: tip.left, top: tip.top } : { left: -9999, top: -9999 }}
+            >
+          <div className="num text-[10px] uppercase tracking-[0.08em] mb-1.5 text-text-tertiary">
+            Run state
+          </div>
+          <dl className="m-0 space-y-1 text-[11px] leading-[1.4] text-text-secondary">
+            <div className="flex justify-between gap-4">
+              <dt className="text-text-tertiary">Data ET</dt>
+              <dd className="num m-0">{formatTime(lastUpdated, "America/New_York")}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-text-tertiary">Data UTC</dt>
+              <dd className="num m-0">{formatTime(lastUpdated, "UTC")}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-text-tertiary">Data local</dt>
+              {/* Browser zone (SGT for the owner). ET/UTC are zone-fixed and safe
+                  at SSR; the local line is not, so it falls back to UTC until
+                  `mounted` flips it to the viewer's zone. */}
+              <dd className="num m-0">
+                {mounted ? formatTime(lastUpdated) : formatTime(lastUpdated, "UTC")}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-4 border-t border-border pt-1 mt-1.5">
+              <dt className="text-text-tertiary">Next UTC</dt>
+              <dd className="num m-0">{formatTime(nextRunUtc(), "UTC")}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-text-tertiary">Next ET</dt>
+              <dd className="num m-0">{formatTime(nextRunUtc(), "America/New_York")}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-text-tertiary">Next local</dt>
+              <dd className="num m-0">
+                {mounted ? formatTime(nextRunUtc()) : formatTime(nextRunUtc(), "UTC")}
+              </dd>
+            </div>
+          </dl>
+            </div>,
+            document.body,
+          )}
         </div>
       </div>
     </header>

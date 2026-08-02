@@ -27,8 +27,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Ban, BookOpen, PanelLeftClose, PanelLeftOpen, Radar, Scale, ShieldAlert, Sigma } from "lucide-react";
+import { Ban, BookOpen, FileText, PanelLeftClose, PanelLeftOpen, Radar, Scale, ShieldAlert, Sigma, UserRound } from "lucide-react";
 import { PHASES } from "@/lib/method/phases";
+import ResumeWindow from "@/components/ResumeWindow";
 
 // ADR-0170: the rail mirrors the nav, and the nav is now the six phases. Order,
 // routes and labels are read from PHASES so the rail cannot drift from the
@@ -87,6 +88,11 @@ export default function SideRail() {
     });
   };
 
+  // The resume window's open state. Owned here (not in the window) because the
+  // rail lives in the layout and is not remounted on a client-side navigation,
+  // so the window — and the fact that it was open — survives a route change.
+  const [resumeOpen, setResumeOpen] = useState(false);
+
   // pb-[var(--feed-h)] below is NOT a shorter h-[]. The rail runs the full
   // viewport height on purpose — its right border and ground have to meet the
   // bottom of the window, or the column stops in mid-air above the LiveFeed
@@ -141,30 +147,73 @@ export default function SideRail() {
         })}
       </ul>
 
-      <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={expanded}
-        className="mt-auto m-2 px-2 py-2 rounded-md border border-border text-[11px] text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors flex items-center justify-center gap-1.5"
-      >
-        {/* The sr-only text names the CONSEQUENCE, not just the direction,
-            because expanding costs the two-pane layout below a 1,568px viewport
-            (ADR-0086) and a reader should not discover that by watching the
-            page reflow. */}
-        {expanded ? (
-          <>
-            <PanelLeftClose size={14} aria-hidden strokeWidth={1.75} />
-            Narrow
-          </>
-        ) : (
-          <PanelLeftOpen size={15} aria-hidden strokeWidth={1.75} />
-        )}
-        <span className="sr-only">
-          {expanded
-            ? "Collapse the rail to 56 pixels, which restores the side-by-side position tables"
-            : "Expand the rail to 200 pixels, which stacks the position tables on narrower screens"}
-        </span>
-      </button>
+      {/* The bottom group — the author card, then the rail toggle. `mt-auto`
+          lives on the GROUP (not on the toggle), so the author card sits just
+          above the Narrow button and both bottom out above the feed ribbon. */}
+      <div className="mt-auto flex flex-col gap-1 p-2">
+        {/* Author attribution — "Built by Zihan Lim", with the resume. */}
+        <div
+          className={`rounded-md border border-border bg-bg-elevated transition-colors ${
+            expanded
+              ? "flex-col gap-1 px-3 py-2"
+              : "flex-col items-center gap-1 px-1 py-2"
+          }`}
+        >
+          <span
+            className={`inline-flex items-center gap-2 text-text-secondary ${
+              expanded ? "" : "flex-col gap-1"
+            }`}
+          >
+            <UserRound size={expanded ? 15 : 17} aria-hidden strokeWidth={1.75} />
+            <span className={expanded ? "text-[12px] font-semibold text-text-primary" : "text-[10px] text-center leading-tight"}>
+              {expanded ? "Zihan Lim" : "Zihan"}
+            </span>
+          </span>
+          {expanded && (
+            <span className="text-[10px] text-text-tertiary">Built by · author of Andromeda</span>
+          )}
+          <button
+            type="button"
+            onClick={() => setResumeOpen((o) => !o)}
+            aria-expanded={resumeOpen}
+            aria-controls="resume-window-body"
+            aria-label="Open Zihan Lim's resume"
+            className={`mt-1 inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors ${
+              expanded ? "" : "flex-col gap-1 px-1"
+            }`}
+          >
+            <FileText size={expanded ? 13 : 15} aria-hidden strokeWidth={1.75} />
+            <span>{expanded ? "Resume" : "CV"}</span>
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={expanded}
+          className="px-2 py-2 rounded-md border border-border text-[11px] text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors flex items-center justify-center gap-1.5"
+        >
+          {/* The sr-only text names the CONSEQUENCE, not just the direction,
+              because expanding costs the two-pane layout below a 1,568px viewport
+              (ADR-0086) and a reader should not discover that by watching the
+              page reflow. */}
+          {expanded ? (
+            <>
+              <PanelLeftClose size={14} aria-hidden strokeWidth={1.75} />
+              Narrow
+            </>
+          ) : (
+            <PanelLeftOpen size={15} aria-hidden strokeWidth={1.75} />
+          )}
+          <span className="sr-only">
+            {expanded
+              ? "Collapse the rail to 56 pixels, which restores the side-by-side position tables"
+              : "Expand the rail to 200 pixels, which stacks the position tables on narrower screens"}
+          </span>
+        </button>
+      </div>
+
+      <ResumeWindow open={resumeOpen} onClose={() => setResumeOpen(false)} />
     </nav>
   );
 }

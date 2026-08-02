@@ -831,40 +831,48 @@ function NodeTable({ nodes }: { nodes: Node[] }) {
         Same content as the map above, in case the SVG is hard to read on your
         device or you prefer a list. Each row links to the doc that records it.
       </p>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-6">
+      {/* Five equal-height cards — one per category — scrolling vertically
+          inside the card when the list outgrows the shared height. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {(Object.keys(grouped) as NodeType[]).map((k) => (
-          <section key={k}>
-            <h3 className="text-[11px] font-mono uppercase tracking-[0.12em] text-text-tertiary m-0 mb-2">
+          <section
+            key={k}
+            className="flex flex-col min-h-0 border border-border rounded-xl overflow-hidden xl:h-[min(62vh,680px)] xl:min-h-[440px]"
+          >
+            <h3 className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.12em] text-text-tertiary m-0 px-3 py-2.5 border-b border-border shrink-0">
               {labels[k]}
+              <span className="text-[10px] ml-auto">{grouped[k].length}</span>
             </h3>
-            <ul className="m-0 p-0 list-none space-y-2">
-              {grouped[k].map((n) => (
-                <li
-                  key={n.id}
-                  className="text-[12.5px] border-l-2 border-transparent hover:border-border pl-3 py-0.5"
-                >
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="num text-text-tertiary text-[10.5px]">{n.id}</span>
-                    <span className="font-semibold text-text-primary">{n.name}</span>
-                    {n.badge && (
-                      <span
-                        className="text-[9px] font-mono font-semibold px-1 py-px rounded"
-                        style={{
-                          backgroundColor: n.badge === "🤖" ? "rgba(168,85,247,0.13)" : "rgba(0,104,122,0.13)",
-                          color: n.badge === "🤖" ? "var(--datamap-purple)" : "var(--accent)",
-                        }}
-                      >
-                        {n.badge}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-text-secondary mt-0.5">{n.summary}</div>
-                  {n.doc ? (
-                    <div className="text-text-tertiary text-[11px] mt-0.5 num">{n.doc}</div>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+            <div className="datamap-lane-scroll flex-1 min-h-0 overflow-y-auto">
+              <ul className="m-0 p-3 list-none space-y-2">
+                {grouped[k].map((n) => (
+                  <li
+                    key={n.id}
+                    className="text-[12.5px] border-l-2 border-transparent hover:border-border pl-3 py-0.5"
+                  >
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span className="num text-text-tertiary text-[10.5px]">{n.id}</span>
+                      <span className="font-semibold text-text-primary">{n.name}</span>
+                      {n.badge && (
+                        <span
+                          className="text-[9px] font-mono font-semibold px-1 py-px rounded"
+                          style={{
+                            backgroundColor: n.badge === "🤖" ? "rgba(168,85,247,0.13)" : "rgba(0,104,122,0.13)",
+                            color: n.badge === "🤖" ? "var(--datamap-purple)" : "var(--accent)",
+                          }}
+                        >
+                          {n.badge}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-text-secondary mt-0.5">{n.summary}</div>
+                    {n.doc ? (
+                      <div className="text-text-tertiary text-[11px] mt-0.5 num">{n.doc}</div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </section>
         ))}
       </div>

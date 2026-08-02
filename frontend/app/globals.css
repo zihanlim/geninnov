@@ -40,6 +40,18 @@
 .datamap-badge-txt-llm   { fill: #a855f7; }
 .datamap-badge-txt-gated { fill: #f87171; }
 
+/* /datamap — thin scrollbar on the "All nodes, in text" lane cards, so a
+   card that visibly scrolls reads as intentional rather than broken. */
+.datamap-lane-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.datamap-lane-scroll::-webkit-scrollbar { width: 8px; }
+.datamap-lane-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+}
+
 @layer base {
   /* ─────────────────────────────────────────────────────────────────────────
      Andromeda "Ledger" — a cool-paper, precision-instrument quant identity.

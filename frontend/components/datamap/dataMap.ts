@@ -274,6 +274,15 @@ export const mapNodes: Node[] = [
     group: "L1a — Theme Scoring",
     doc: "scripts/build_theme_signals()",
   },
+  {
+    id: "L1-edge",
+    name: "EdgeScore",
+    summary: "w_trend·Trend + w_regime·RegimeFit + w_carry·Carry + w_value·Value",
+    type: "pipeline",
+    section: "03",
+    group: "L1a — Theme Scoring",
+    doc: "scripts/daily_refresh.py compute_edge_score()",
+  },
   // L1b sub-nodes
   {
     id: "L1b-freq",

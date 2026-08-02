@@ -239,7 +239,7 @@ function NodeCard({ node }: { node: Node }) {
         opacity: hovered ? 1 : 0.92,
         cursor: "pointer",
         userSelect: "none",
-        zIndex: 1,
+        zIndex: hovered ? 20 : node.tint === "purple" ? 15 : 1,
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}

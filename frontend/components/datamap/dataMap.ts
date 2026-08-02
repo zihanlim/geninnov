@@ -311,6 +311,7 @@ export const mapNodes: Node[] = [
     summary: "→ L3",
     type: "pipeline",
     section: "05",
+    group: "L2a — Factor Exposure",
     doc: "backend/data/factor_fetcher.py",
   },
   {
@@ -319,6 +320,7 @@ export const mapNodes: Node[] = [
     summary: "market beta",
     type: "pipeline",
     section: "05",
+    group: "L2a — Factor Exposure",
     doc: "backend/data/factor_fetcher.py",
   },
   {
@@ -327,6 +329,7 @@ export const mapNodes: Node[] = [
     summary: "small-cap beta",
     type: "pipeline",
     section: "05",
+    group: "L2a — Factor Exposure",
     doc: "backend/data/factor_fetcher.py",
   },
   {
@@ -335,6 +338,7 @@ export const mapNodes: Node[] = [
     summary: "value beta",
     type: "pipeline",
     section: "05",
+    group: "L2a — Factor Exposure",
     doc: "backend/data/factor_fetcher.py",
   },
   {
@@ -343,6 +347,7 @@ export const mapNodes: Node[] = [
     summary: "profitability beta",
     type: "pipeline",
     section: "05",
+    group: "L2a — Factor Exposure",
     doc: "backend/data/factor_fetcher.py",
   },
   {
@@ -351,6 +356,7 @@ export const mapNodes: Node[] = [
     summary: "investment beta",
     type: "pipeline",
     section: "05",
+    group: "L2a — Factor Exposure",
     doc: "backend/data/factor_fetcher.py",
   },
   {
@@ -359,6 +365,7 @@ export const mapNodes: Node[] = [
     summary: "momentum beta",
     type: "pipeline",
     section: "05",
+    group: "L2a — Factor Exposure",
     doc: "backend/data/factor_fetcher.py",
   },
   {
@@ -367,6 +374,7 @@ export const mapNodes: Node[] = [
     summary: "regression fit",
     type: "pipeline",
     section: "05",
+    group: "L2a — Factor Exposure",
     doc: "backend/data/factor_fetcher.py",
   },
   // L2b sub-nodes

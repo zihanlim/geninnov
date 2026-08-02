@@ -177,15 +177,6 @@ export const mapNodes: Node[] = [
     doc: "ADR-0219",
   },
   {
-    id: "fedwatch",
-    name: "CME FedWatch",
-    summary: "Per-meeting rate-hike probabilities",
-    type: "source",
-    section: "01",
-    badge: "→L3",
-    doc: "ADR-0219",
-  },
-  {
     id: "minimax",
     name: "MiniMax API",
     summary: "MiniMax-M3 · primary L5 + L8 provider",

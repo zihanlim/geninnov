@@ -101,6 +101,10 @@ export default function DataMapPage() {
   // ID of the node locked by a click (null = none). Click takes priority over hover.
   const [clickedId, setClickedId] = useState<string | null>(null);
 
+  // The specific node that was just clicked — cleared after the animation window so
+  // a second click on the same node retriggers the flash.
+  const [justClickedId, setJustClickedId] = useState<string | null>(null);
+
   // The active node to trace: clicked wins over hovered.
   const activeId = clickedId ?? hoveredId;
 
@@ -246,6 +250,7 @@ export default function DataMapPage() {
               hoveredNodeIds={hoveredNodeIds}
               onHovered={setHoveredId}
               onNodeClick={setClickedId}
+              justClickedId={justClickedId}
             />
           );
         })}
@@ -269,6 +274,7 @@ function SectionBlock({
   hoveredNodeIds: Set<string>;
   onHovered: (id: string | null) => void;
   onNodeClick: (id: string) => void;
+  justClickedId: string | null;
 }) {
   // For section 12 and section 03, group nodes by their `group` field and render sub-group labels.
   const isGrouped = section.section === "10" || section.section === "03" || section.section === "04";
@@ -321,7 +327,7 @@ function SectionBlock({
               style={{ minHeight: NODE_H + 16 }}
             >
               {groupNodes.map((n) => (
-                <NodeCard key={n.id} node={n} hoveredNodeIds={hoveredNodeIds} onHovered={onHovered} onNodeClick={onNodeClick} />
+                <NodeCard key={n.id} node={n} hoveredNodeIds={hoveredNodeIds} onHovered={onHovered} onNodeClick={onNodeClick} justClickedId={justClickedId} />
               ))}
             </div>
           </div>
@@ -355,7 +361,7 @@ function SectionBlock({
         style={{ minHeight: NODE_H + 16 }}
       >
         {nodes.map((n) => (
-          <NodeCard key={n.id} node={n} hoveredNodeIds={hoveredNodeIds} onHovered={onHovered} onNodeClick={onNodeClick} />
+          <NodeCard key={n.id} node={n} hoveredNodeIds={hoveredNodeIds} onHovered={onHovered} onNodeClick={onNodeClick} justClickedId={justClickedId} />
         ))}
       </div>
     </div>
@@ -373,6 +379,7 @@ function NodeCard({
   hoveredNodeIds: Set<string>;
   onHovered: (id: string | null) => void;
   onNodeClick: (id: string) => void;
+  justClickedId: string | null;
 }) {
   const [hovered, setHovered] = useState(false);
 
@@ -402,7 +409,7 @@ function NodeCard({
   return (
     <div
       data-node-id={node.id}
-      className={`relative flex flex-col gap-0.5 px-3 pt-2 pb-2 rounded-lg border datamap-card transition-all${isHighlighted ? " active" : ""}`}
+      className={`relative flex flex-col gap-0.5 px-3 pt-2 pb-2 rounded-lg border datamap-card transition-all${node.id === justClickedId ? " active" : ""}`}
       style={{
         width: NODE_W,
         height: NODE_H,
@@ -420,7 +427,7 @@ function NodeCard({
       }}
       onMouseEnter={() => { setHovered(true); onHovered(node.id); }}
       onMouseLeave={() => { setHovered(false); onHovered(null); }}
-      onClick={(e) => { e.stopPropagation(); onNodeClick(node.id); }}
+      onClick={(e) => { e.stopPropagation(); onNodeClick(node.id); setJustClickedId(node.id); setTimeout(() => setJustClickedId(null), 750); }}
       tabIndex={0}
       role="button"
       aria-label={`[${node.section ?? "—"}] ${node.name}: ${node.summary}${badge ? ` →${badge}` : ""}`}

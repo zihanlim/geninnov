@@ -43,6 +43,47 @@ interface NodePos {
   bottom: number; // y + h
 }
 
+/** Walk mapEdges from a starting node in both directions to find all reachable
+ *  node IDs and the edge keys that form the traced path. */
+function traceConnected(hoveredId: string): Set<string> {
+  const upstream = new Set<string>();
+  const downstream = new Set<string>();
+  const visitedUp = new Set<string>();
+  const visitedDown = new Set<string>();
+  const queueUp: string[] = [hoveredId];
+  const queueDown: string[] = [hoveredId];
+
+  while (queueUp.length) {
+    const cur = queueUp.shift()!;
+    if (visitedUp.has(cur)) continue;
+    visitedUp.add(cur);
+    for (const e of mapEdges) {
+      if (e.to === cur && !visitedUp.has(e.from)) {
+        upstream.add(e.from);
+        queueUp.push(e.from);
+      }
+    }
+  }
+
+  while (queueDown.length) {
+    const cur = queueDown.shift()!;
+    if (visitedDown.has(cur)) continue;
+    visitedDown.add(cur);
+    for (const e of mapEdges) {
+      if (e.from === cur && !visitedDown.has(e.to)) {
+        downstream.add(e.to);
+        queueDown.push(e.to);
+      }
+    }
+  }
+
+  // The hovered node itself is in both sets; union keeps it highlighted.
+  const connected = new Set<string>([hoveredId]);
+  upstream.forEach(id => connected.add(id));
+  downstream.forEach(id => connected.add(id));
+  return connected;
+}
+
 const NODE_W = 168;
 const NODE_H = 70;
 const NODE_GAP = 14;
@@ -53,6 +94,16 @@ const NODE_ROW_H = NODE_H + NODE_GAP; // used for section row-height estimate
 export default function DataMapPage() {
   const nodes = useMemo(() => mapNodes, []);
   const edges = useMemo(() => mapEdges, []);
+
+  // ID of the currently-hovered node (null = none).
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  // Set of all node IDs reachable from the hovered node via one or more edges
+  // in either direction. Empty when no node is hovered.
+  const hoveredNodeIds = useMemo(() => {
+    if (!hoveredId) return new Set<string>();
+    return traceConnected(hoveredId);
+  }, [hoveredId]);
 
   // Nodes grouped by their section string (e.g. "01", "11").
   const nodesBySection = useMemo(() => {
@@ -160,7 +211,7 @@ export default function DataMapPage() {
         {/* SVG overlay: sized by ResizeObserver. pointer-events=none lets clicks pass through.
             Rendered first so sections/nodes stack on top at z-0. */}
         {nodePosMap.size > 0 && (
-          <EdgeOverlay edgePaths={edgePaths} mapRef={mapRef} />
+          <EdgeOverlay edgePaths={edgePaths} mapRef={mapRef} hoveredNodeIds={hoveredNodeIds} />
         )}
 
         {/* Sections stacked top-to-bottom. */}
@@ -168,7 +219,13 @@ export default function DataMapPage() {
           const secNodes = nodesBySection.get(sec.section) ?? [];
           if (!secNodes.length) return null;
           return (
-            <SectionBlock key={sec.section} section={sec} nodes={secNodes} />
+            <SectionBlock
+              key={sec.section}
+              section={sec}
+              nodes={secNodes}
+              hoveredNodeIds={hoveredNodeIds}
+              onHovered={setHoveredId}
+            />
           );
         })}
       </div>
@@ -182,9 +239,13 @@ export default function DataMapPage() {
 function SectionBlock({
   section,
   nodes,
+  hoveredNodeIds,
+  onHovered,
 }: {
   section: { section: string; title: string };
   nodes: Node[];
+  hoveredNodeIds: Set<string>;
+  onHovered: (id: string | null) => void;
 }) {
   // For section 12 and section 03, group nodes by their `group` field and render sub-group labels.
   const isGrouped = section.section === "10" || section.section === "03" || section.section === "04";
@@ -237,7 +298,7 @@ function SectionBlock({
               style={{ minHeight: NODE_H + 16 }}
             >
               {groupNodes.map((n) => (
-                <NodeCard key={n.id} node={n} />
+                <NodeCard key={n.id} node={n} hoveredNodeIds={hoveredNodeIds} onHovered={onHovered} />
               ))}
             </div>
           </div>
@@ -271,7 +332,7 @@ function SectionBlock({
         style={{ minHeight: NODE_H + 16 }}
       >
         {nodes.map((n) => (
-          <NodeCard key={n.id} node={n} />
+          <NodeCard key={n.id} node={n} hoveredNodeIds={hoveredNodeIds} onHovered={onHovered} />
         ))}
       </div>
     </div>
@@ -279,8 +340,21 @@ function SectionBlock({
 }
 
 /** ── One node card. ───────────────────────────────────────────────────── */
-function NodeCard({ node }: { node: Node }) {
+function NodeCard({
+  node,
+  hoveredNodeIds,
+  onHovered,
+}: {
+  node: Node;
+  hoveredNodeIds: Set<string>;
+  onHovered: (id: string | null) => void;
+}) {
   const [hovered, setHovered] = useState(false);
+
+  // Dim nodes that are neither hovered themselves nor connected to the hovered node.
+  const isHovered = hoveredNodeIds.size > 0;
+  const isHighlighted = isHovered && hoveredNodeIds.has(node.id);
+  const isDimmed = isHovered && !hoveredNodeIds.has(node.id);
 
   const stroke = node.borderColor ?? (node.fill === "purple" ? "var(--datamap-purple)" : nodeStroke(node.type));
   const badge = node.badge;
@@ -313,19 +387,19 @@ function NodeCard({ node }: { node: Node }) {
           ? "#ffffff"
           : "var(--bg-elevated)",
         borderColor: stroke,
-        borderWidth: 1,
-        opacity: hovered ? 1 : 0.92,
+        borderWidth: isHighlighted ? 2 : 1,
+        opacity: isDimmed ? 0.25 : isHighlighted ? 1 : 0.92,
         cursor: "pointer",
         userSelect: "none",
-        zIndex: hovered ? 40 : node.fill === "purple" ? 35 : 10,
+        zIndex: isHighlighted ? 50 : hovered ? 40 : node.fill === "purple" ? 35 : 10,
       }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={() => { setHovered(true); onHovered(node.id); }}
+      onMouseLeave={() => { setHovered(false); onHovered(null); }}
       tabIndex={0}
       role="button"
       aria-label={`[${node.section ?? "—"}] ${node.name}: ${node.summary}${badge ? ` →${badge}` : ""}`}
-      onFocus={() => setHovered(true)}
-      onBlur={() => setHovered(false)}
+      onFocus={() => { setHovered(true); onHovered(node.id); }}
+      onBlur={() => { setHovered(false); onHovered(null); }}
     >
       {/* Section number badge — top-left, coloured to match node border. */}
       {node.section && (
@@ -416,9 +490,11 @@ interface EdgePath {
 function EdgeOverlay({
   edgePaths,
   mapRef,
+  hoveredNodeIds,
 }: {
   edgePaths: EdgePath[];
   mapRef: React.RefObject<HTMLDivElement>;
+  hoveredNodeIds: Set<string>;
 }) {
   const [dims, setDims] = useState({ w: 0, h: 0 });
 
@@ -471,9 +547,14 @@ function EdgeOverlay({
         const animated = ep.kind !== "dashed";
         const color = ep.color;
         const mid = bezierMid(ep.d);
+        // Highlight only edges where both endpoints are in the traced set.
+        const isConnected = hoveredNodeIds.size > 0
+          ? hoveredNodeIds.has(ep.from) && hoveredNodeIds.has(ep.to)
+          : true;
+        const edgeOpacity = isConnected ? 0.85 : 0.08;
 
         return (
-          <g key={ep.key} style={{ color }} opacity={0.75}>
+          <g key={ep.key} style={{ color }} opacity={edgeOpacity}>
             {animated ? (
               <>
                 {/* Dim static spine. */}

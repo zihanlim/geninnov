@@ -7,8 +7,9 @@ The owner wanted to be credited as the app's author in the persistent left rail
 `docs/cv/LIMZIHAN_Resume_2026.pdf` (untracked, 336K).
 
 **Decisions (confirmed with owner):**
-- A card in the SideRail **above the "Narrow" toggle**, reading **"Built by
-  Zihan Lim"**, with a **"Resume"** button.
+- A card in the SideRail **above the "Narrow" toggle**, reading:
+  `Built by / Lim Zi Han / Andromeda / Analytics` with the `//` in accent teal,
+  with a **"Resume"** button.
 - The resume opens **in a floating card** — a PDF `<iframe>` inside a
   `FloatingWindow`, reusing the exact window pattern from `LiveNewsWindow`.
 
@@ -21,7 +22,7 @@ owner's source of record; the `public/cv/` copy is the tracked, served artifact.
 
 ### 2. `ResumeWindow` is a floating window, `keepMounted` OFF
 `frontend/components/ResumeWindow.tsx` mounts a `FloatingWindow` (`id="resume"`,
-title "Zihan Lim · Resume", `corner="top-right"`, `keepMounted={false}`) with a
+title "Lim Zi Han · Resume", `corner="top-right"`, `keepMounted={false}`) with a
 PDF `<iframe>` and an "Open in new tab" link. **`keepMounted` OFF, exactly as the
 live-news TV does it**: closing or collapsing UNMOUNTS the iframe, so a closed
 panel makes no request for the document — ADR-0104's "nothing loads until you
@@ -31,11 +32,11 @@ open it" principle. `corner="top-right"` keeps it off the Ask window
 ### 3. The rail author card owns the window
 `SideRail` (in the layout, not remounted on nav) holds the `resumeOpen` state
 and renders `ResumeWindow`, like `AskDock`/`LiveNewsDock` own their windows. The
-card sits **above the `mt-auto` Narrow toggle**: a small avatar/`UserRound` icon
-+ "Zihan Lim" ("Zihan" when collapsed) + "Built by · author of Andromeda" when
-expanded, and a "Resume" / "CV" button. It stays reachable in both the 56px
-collapsed and 200px expanded rail states. Uses the existing rail tokens and
-lucide icons; no new dependency.
+card sits **above the `mt-auto` Narrow toggle** as a compact text stack — no avatar icon:
+
+- **Collapsed (56px):** "Lim Zi Han" text in a bare hover button; opens resume on click.
+- **Expanded (200px):** Three-line centered stack: `Built by` → `Lim Zi Han` (semibold) →
+  `Andromeda / Analytics` with the `//` in `text-accent` (teal), then a full-width "Resume" button.
 
 ## Consequences
 

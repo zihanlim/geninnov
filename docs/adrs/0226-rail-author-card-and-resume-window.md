@@ -8,7 +8,7 @@ The owner wanted to be credited as the app's author in the persistent left rail
 
 **Decisions (confirmed with owner):**
 - A card in the SideRail **above the "Narrow" toggle**, reading:
-  `Built by / Lim Zi Han / Andromeda / Analytics` with the `//` in accent teal,
+  `Built by / Lim Zi Han / Andromeda // Analytics` with the `//` in orange,
   with a **"Resume"** button.
 - The resume opens **in a floating card** — a PDF `<iframe>` inside a
   `FloatingWindow`, reusing the exact window pattern from `LiveNewsWindow`.
@@ -36,7 +36,7 @@ card sits **above the `mt-auto` Narrow toggle** as a compact text stack — no a
 
 - **Collapsed (56px):** "Lim Zi Han" text in a bare hover button; opens resume on click.
 - **Expanded (200px):** Three-line centered stack: `Built by` → `Lim Zi Han` (semibold) →
-  `Andromeda / Analytics` with the `//` in `text-accent` (teal), then a full-width "Resume" button.
+  `Andromeda // Analytics` with the `//` in `text-orange-500`, then a full-width "Resume" button.
 
 ## Consequences
 

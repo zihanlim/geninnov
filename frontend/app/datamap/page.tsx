@@ -111,6 +111,20 @@ export default function DataMapPage() {
     return traceConnected(activeId);
   }, [activeId]);
 
+  // Document-level click listener: clear clickedId when clicking anything
+  // that is not a node card. This fires regardless of where the click lands.
+  useEffect(() => {
+    function handleDocClick(e: MouseEvent) {
+      if (!clickedId) return;
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-node-id]")) {
+        setClickedId(null);
+      }
+    }
+    document.addEventListener("click", handleDocClick);
+    return () => document.removeEventListener("click", handleDocClick);
+  }, [clickedId]);
+
   // Nodes grouped by their section string (e.g. "01", "11").
   const nodesBySection = useMemo(() => {
     const out = new Map<string, Node[]>();
@@ -213,10 +227,6 @@ export default function DataMapPage() {
         style={{ minHeight: 400 }}
         role="img"
         aria-label="Animated map of the research process from data sources to frontend surfaces"
-        onClick={(e) => {
-          // Clicking the map background (not a node) dismisses the lock.
-          if (e.target === e.currentTarget) setClickedId(null);
-        }}
       >
         {/* SVG overlay: sized by ResizeObserver. pointer-events=none lets clicks pass through.
             Rendered first so sections/nodes stack on top at z-0. */}

@@ -285,9 +285,19 @@ function NodeCard({ node }: { node: Node }) {
   const stroke = node.borderColor ?? (node.fill === "purple" ? "var(--datamap-purple)" : nodeStroke(node.type));
   const badge = node.badge;
   const isLlmBadge = badge === "🤖";
-  const badgeFill = isLlmBadge ? "rgba(168,85,247,0.13)" : "rgba(0,104,122,0.13)";
-  const badgeStroke = isLlmBadge ? "rgba(168,85,247,0.45)" : "rgba(0,104,122,0.40)";
-  const badgeTextColor = isLlmBadge ? "var(--datamap-purple)" : "var(--accent)";
+  // Badge follows the node border when it is overridden (cron TRIGGER → red);
+  // otherwise the layer-target ink (purple for LLM, accent otherwise).
+  const badgeFill = isLlmBadge
+    ? "rgba(168,85,247,0.13)"
+    : node.borderColor
+    ? `color-mix(in srgb, ${node.borderColor} 13%, transparent)`
+    : "rgba(0,104,122,0.13)";
+  const badgeStroke = isLlmBadge
+    ? "rgba(168,85,247,0.45)"
+    : node.borderColor
+    ? `color-mix(in srgb, ${node.borderColor} 45%, transparent)`
+    : "rgba(0,104,122,0.40)";
+  const badgeTextColor = isLlmBadge ? "var(--datamap-purple)" : node.borderColor ?? "var(--accent)";
   const isShadow = node.id === "L1b";
 
   return (

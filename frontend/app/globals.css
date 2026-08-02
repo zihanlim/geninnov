@@ -199,6 +199,7 @@
     --datamap-purple:   #a855f7;  /* LLM boundary — llms node tint + llms→L5 edge */
     --datamap-dashed:   #5d6b82;  /* shadow / optional / reference edge ink */
     --datamap-label-bg:  #f6fafe;  /* edge-label halo (SHADOW pill) */
+    --datamap-cron:     #dc2626;  /* trigger / scheduler — cron node border */
 
     /* ── Categorical series palette (ADR-0128) ────────────────────────────────
        Five slots for charts whose series are IDENTITIES with no direction — one

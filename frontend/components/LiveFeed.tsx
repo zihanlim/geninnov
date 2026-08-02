@@ -206,12 +206,24 @@ export default function LiveFeed() {
           </span>
         )}
       </span>
-      <Link
-        href="/method"
-        className="ml-auto text-text-tertiary hover:text-text-primary shrink-0"
-      >
-        Pipeline detail →
-      </Link>
+      {/* /facts is a reference surface, not a phase — it lives beside the nav
+          like /method, and is surfaced here as a data-layer presence signal
+          (ADR-0222). Same style as Pipeline detail so the two read as one
+          right-aligned cluster of reference links. */}
+      <div className="ml-auto flex gap-3">
+        <Link
+          href="/facts"
+          className="text-text-tertiary hover:text-text-primary shrink-0"
+        >
+          Facts →
+        </Link>
+        <Link
+          href="/method"
+          className="text-text-tertiary hover:text-text-primary shrink-0"
+        >
+          Pipeline detail →
+        </Link>
+      </div>
     </div>
   );
 }

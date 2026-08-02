@@ -239,7 +239,7 @@ function NodeCard({ node }: { node: Node }) {
         opacity: hovered ? 1 : 0.92,
         cursor: "pointer",
         userSelect: "none",
-        zIndex: hovered ? 20 : node.tint === "purple" ? 15 : 1,
+        zIndex: hovered ? 40 : node.tint === "purple" ? 35 : 1,
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -359,7 +359,7 @@ function EdgeOverlay({
       width={dims.w}
       height={dims.h}
       className="absolute inset-0 pointer-events-none"
-      style={{ zIndex: 30, pointerEvents: "none" }}
+      style={{ zIndex: 0, pointerEvents: "none" }}
       aria-hidden="true"
     >
       <defs>

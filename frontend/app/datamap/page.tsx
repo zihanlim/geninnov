@@ -216,7 +216,18 @@ export default function DataMapPage() {
   return (
     <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 wide:px-5 pt-7 pb-20">
       <PageHeader
-        title="Data Map"
+        title={
+          <>
+            ANDROMEDA{" "}
+            <span
+              className="font-mono"
+              style={{ color: "var(--datamap-orange)" }}
+            >
+              //
+            </span>{" "}
+            DATA FLOW
+          </>
+        }
         lede="Every part of the research process, end to end. Hover a node to trace it; the page animates so a flow is legible at a glance."
         fine={
           <>

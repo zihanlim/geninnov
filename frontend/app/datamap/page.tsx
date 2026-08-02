@@ -826,7 +826,7 @@ function NodeTable({ nodes }: { nodes: Node[] }) {
 
   return (
     <div className="mt-10">
-      <h2 className="text-[15px] font-semibold m-0 mb-3">All nodes, in text</h2>
+      <h2 className="text-[15px] font-semibold m-0 mb-3">Glossary of nodes</h2>
       <p className="m-0 mb-5 text-[12.5px] text-text-secondary max-w-[80ch]">
         Same content as the map above, in case the SVG is hard to read on your
         device or you prefer a list. Each row links to the doc that records it.

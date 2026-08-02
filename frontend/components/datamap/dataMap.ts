@@ -521,7 +521,7 @@ export const mapNodes: Node[] = [
   {
     id: "a7", name: "verify citations",     summary: "pure-fn guardrail",          type: "pipeline", section: "09" },
   {
-    id: "a7b", name: "✕ retry",             summary: "max 2× on guardrail fail",   type: "pipeline", section: "11" },
+    id: "a7b", name: "✕ retry",             summary: "max 2× on guardrail fail",   type: "pipeline", section: "09" },
   {
     id: "a8", name: "size positions",       summary: "mean-var cvxpy solve",       type: "pipeline", section: "09" },
   {

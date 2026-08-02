@@ -507,25 +507,25 @@ export const mapNodes: Node[] = [
   },
   // Section 11 — L5 agent chain (step boxes)
   {
-    id: "a1", name: "aggregate context",    summary: "L0→L4 inputs assembled",    type: "pipeline", section: "11" },
+    id: "a1", name: "aggregate context",    summary: "L0→L4 inputs assembled",    type: "pipeline", section: "09" },
   {
-    id: "a2", name: "screen candidates",    summary: "lens · R²≥0.10 filter",     type: "pipeline", section: "11" },
+    id: "a2", name: "screen candidates",    summary: "lens · R²≥0.10 filter",     type: "pipeline", section: "09" },
   {
     id: "a3", name: "classify news",        summary: "🤖 LLM step — classify",     type: "pipeline", section: "11", borderColor: "var(--datamap-purple)" },
   {
-    id: "a4", name: "book metrics",         summary: "FF5+UMD tilts computed",    type: "pipeline", section: "11" },
+    id: "a4", name: "book metrics",         summary: "FF5+UMD tilts computed",    type: "pipeline", section: "09" },
   {
-    id: "a5", name: "scenario analysis",    summary: "6 stress scenarios run",     type: "pipeline", section: "11" },
+    id: "a5", name: "scenario analysis",    summary: "6 stress scenarios run",     type: "pipeline", section: "09" },
   {
     id: "a6", name: "reason picks",          summary: "🤖 LLM step — thesis",       type: "pipeline", section: "11", borderColor: "var(--datamap-purple)" },
   {
-    id: "a7", name: "verify citations",     summary: "pure-fn guardrail",          type: "pipeline", section: "11" },
+    id: "a7", name: "verify citations",     summary: "pure-fn guardrail",          type: "pipeline", section: "09" },
   {
     id: "a7b", name: "✕ retry",             summary: "max 2× on guardrail fail",   type: "pipeline", section: "11" },
   {
-    id: "a8", name: "size positions",       summary: "mean-var cvxpy solve",       type: "pipeline", section: "11" },
+    id: "a8", name: "size positions",       summary: "mean-var cvxpy solve",       type: "pipeline", section: "09" },
   {
-    id: "a9", name: "finalise analytics",   summary: "OUTPUT — persisted",         type: "pipeline", section: "11" },
+    id: "a9", name: "finalise analytics",   summary: "OUTPUT — persisted",         type: "pipeline", section: "09" },
   {
     id: "sizing",
     name: "Sizing · Optimizer",

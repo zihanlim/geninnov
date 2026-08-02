@@ -772,7 +772,7 @@ export const mapNodes: Node[] = [
   // ─────────────── FRONTEND SURFACES ───────────────
   {
     id: "f-home",
-    name: "/ (Themes)",
+    name: "/themes",
     summary: "Theme board, tape, regime, narrative",
     type: "surface",
     section: "11",

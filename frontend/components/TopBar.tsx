@@ -211,20 +211,31 @@ export default function TopBar() {
   const tipRef = useRef<HTMLDivElement | null>(null);
   const openTip = (el: HTMLElement) => {
     const r = el.getBoundingClientRect();
-    setTip({ top: r.bottom + 6, left: r.right });
+    // Right-anchor the card instead of hanging its left edge off `r.right`.
+    // The trigger sits at the far right of the bar, so a left-anchored tooltip
+    // starts flush against the screen edge and reads as cut off; anchoring its
+    // right edge just inside the trigger's keeps it on-screen at every width.
+    // `tipRef.current` is the card (its only consumer), so the measured width
+    // stays honest even when `max-w-[90vw]` has shrunk it.
+    const w = tipRef.current?.getBoundingClientRect().width ?? 192;
+    setTip({ top: r.bottom + 6, left: r.right - w - 8 });
   };
   const closeTip = () => setTip(null);
 
   // Clamp the tooltip inside the viewport using its REAL rendered rect, after
   // paint has been computed but before it is shown. `openTip` guesses from the
-  // trigger; this corrects for the actual tooltip width, scrollbars and any
-  // containing-block drift, so `left` can never put the card off the right
-  // edge. Runs synchronously before paint, so there is no one-frame flash at
-  // the unclamped position.
+  // trigger; this corrects for the actual tooltip width and any containing-block
+  // drift, so `left` can never put the card off the right edge. Runs synchronously
+  // before paint, so there is no one-frame flash at the unclamped position.
+  //
+  // Clamp against `clientWidth`, not `innerWidth`: the bar's page scrolls
+  // vertically, so the scrollbar takes ~15px off `innerWidth` and an unclamped
+  // `left` could otherwise sit under it, cut off to the eye. `clientWidth` is
+  // the viewport the browser will actually paint into.
   useLayoutEffect(() => {
     if (!tip || !tipRef.current) return;
     const rect = tipRef.current.getBoundingClientRect();
-    const maxLeft = window.innerWidth - rect.width - 8;
+    const maxLeft = document.documentElement.clientWidth - rect.width - 8;
     const left = Math.max(8, Math.min(tip.left, maxLeft));
     if (left !== tip.left) setTip((t) => (t ? { ...t, left } : t));
   }, [tip]);
@@ -472,7 +483,7 @@ export default function TopBar() {
               id="run-state-tip"
               className={`${
                 tip ? "visible opacity-100" : "invisible opacity-0"
-              } transition-opacity fixed z-50 w-[14rem] max-w-[90vw] text-left card p-3 shadow-lg pointer-events-none`}
+              } transition-opacity fixed z-50 w-48 max-w-[90vw] text-left card p-3 shadow-lg pointer-events-none`}
               style={tip ? { left: tip.left, top: tip.top } : { left: -9999, top: -9999 }}
             >
           <div className="num text-[10px] uppercase tracking-[0.08em] mb-1.5 text-text-tertiary">

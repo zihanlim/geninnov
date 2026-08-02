@@ -218,7 +218,7 @@ function SectionBlock({
 function NodeCard({ node }: { node: Node }) {
   const [hovered, setHovered] = useState(false);
 
-  const stroke = node.tint === "purple" ? "rgba(168,85,247,0.85)" : nodeStroke(node.type);
+  const stroke = node.tint === "purple" ? "var(--datamap-purple)" : nodeStroke(node.type);
   const badge = node.badge;
   const isLlmBadge = badge === "🤖";
   const badgeFill = isLlmBadge ? "rgba(168,85,247,0.13)" : "rgba(0,104,122,0.13)";
@@ -233,7 +233,7 @@ function NodeCard({ node }: { node: Node }) {
       style={{
         width: NODE_W,
         height: NODE_H,
-        background: node.tint === "purple" ? "rgba(168,85,247,0.18)" : node.type === "surface" ? "#ffffff" : "var(--bg-elevated)",
+        background: node.tint === "purple" ? "rgba(168,85,247,0.05)" : node.type === "surface" ? "#ffffff" : "var(--bg-elevated)",
         borderColor: stroke,
         borderWidth: 1,
         opacity: hovered ? 1 : 0.92,

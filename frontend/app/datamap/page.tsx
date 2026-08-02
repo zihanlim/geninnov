@@ -279,7 +279,7 @@ function SectionBlock({
 function NodeCard({ node }: { node: Node }) {
   const [hovered, setHovered] = useState(false);
 
-  const stroke = node.tint === "purple" ? "var(--datamap-purple)" : nodeStroke(node.type);
+  const stroke = node.borderColor ?? (node.tint === "purple" ? "var(--datamap-purple)" : nodeStroke(node.type));
   const badge = node.badge;
   const isLlmBadge = badge === "🤖";
   const badgeFill = isLlmBadge ? "rgba(168,85,247,0.13)" : "rgba(0,104,122,0.13)";

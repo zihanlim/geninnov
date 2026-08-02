@@ -62,6 +62,8 @@ export interface Node {
   section?: string;
   /** Card tint override; "purple" marks an LLM-boundary node. */
   tint?: "purple";
+  /** Override border colour independently of fill (e.g. grey fill + purple border). */
+  borderColor?: string;
   doc?: string;
   /** Optional sub-group label within a section (e.g. Supabase table groups). */
   group?: string;
@@ -184,6 +186,7 @@ export const mapNodes: Node[] = [
     type: "source",
     section: "10",
     badge: "🤖",
+    borderColor: "var(--datamap-purple)",
     doc: "ARCHITECTURE.md · LLM",
   },
   {
@@ -193,6 +196,7 @@ export const mapNodes: Node[] = [
     type: "source",
     section: "10",
     badge: "🤖",
+    borderColor: "var(--datamap-purple)",
     doc: "ARCHITECTURE.md · LLM",
   },
   {
@@ -202,6 +206,7 @@ export const mapNodes: Node[] = [
     type: "source",
     section: "10",
     badge: "🤖",
+    borderColor: "var(--datamap-purple)",
     doc: "ARCHITECTURE.md · LLM",
   },
 
@@ -496,13 +501,13 @@ export const mapNodes: Node[] = [
   {
     id: "a2", name: "screen candidates",    summary: "lens · R²≥0.10 filter",     type: "pipeline", section: "11" },
   {
-    id: "a3", name: "classify news",        summary: "🤖 LLM step — classify",     type: "pipeline", section: "11", tint: "purple" },
+    id: "a3", name: "classify news",        summary: "🤖 LLM step — classify",     type: "pipeline", section: "11", borderColor: "var(--datamap-purple)" },
   {
     id: "a4", name: "book metrics",         summary: "FF5+UMD tilts computed",    type: "pipeline", section: "11" },
   {
     id: "a5", name: "scenario analysis",    summary: "6 stress scenarios run",     type: "pipeline", section: "11" },
   {
-    id: "a6", name: "reason picks",          summary: "🤖 LLM step — thesis",       type: "pipeline", section: "11", tint: "purple" },
+    id: "a6", name: "reason picks",          summary: "🤖 LLM step — thesis",       type: "pipeline", section: "11", borderColor: "var(--datamap-purple)" },
   {
     id: "a7", name: "verify citations",     summary: "pure-fn guardrail",          type: "pipeline", section: "11" },
   {

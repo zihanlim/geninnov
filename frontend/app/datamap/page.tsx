@@ -402,7 +402,7 @@ function NodeCard({
   return (
     <div
       data-node-id={node.id}
-      className="relative flex flex-col gap-0.5 px-3 pt-2 pb-2 rounded-lg border datamap-card transition-all"
+      className={`relative flex flex-col gap-0.5 px-3 pt-2 pb-2 rounded-lg border datamap-card transition-all${isHighlighted ? " active" : ""}`}
       style={{
         width: NODE_W,
         height: NODE_H,

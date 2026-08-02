@@ -20,6 +20,18 @@
   transform: translateY(-2px);
 }
 
+/* /datamap — flash-highlight animation for a connected node card.
+   Matched to the --warning (orange) pulse used in the reference HTML. */
+.datamap-card.active {
+  animation: datamap-node-glow 0.75s ease-out;
+}
+
+@keyframes datamap-node-glow {
+  0%   { box-shadow: 0 0 0 0 rgba(168,50,9,0.75); border-color: var(--warning); }
+  55%  { box-shadow: 0 0 0 9px rgba(168,50,9,0); border-color: var(--warning); }
+  100% { box-shadow: 0 0 0 0 rgba(168,50,9,0); }
+}
+
 /* /datamap — badge colours keyed by prefix */
 .datamap-badge-layer  { fill: rgba(0,104,122,0.13); stroke: rgba(0,104,122,0.40); }
 .datamap-badge-llm   { fill: rgba(168,85,247,0.13);  stroke: rgba(168,85,247,0.45); }

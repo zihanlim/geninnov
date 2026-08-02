@@ -95,10 +95,11 @@ that drew it — *"reaching for it for anything but the mark is reaching for the
 dark dashboard by increments"* — now reads *"reaching for it for anything but
 the mark or the masthead"*. What the goal still protects is intact: no panel,
 footer or card may borrow the navy, and the Tailwind utilities that consume it
-are `bg-logo-plate` on the header alone and (since ADR-0224) the active lens
-chip in `LensSelector`. ADR-0113 itself is not rewritten — it stays the
-historical record of the mark adoption; this ADR and ADR-0224 are the
-amendments, as the index will show.
+are `bg-logo-plate` on the header alone, (since ADR-0224) the active lens chip
+in `LensSelector`, and (since ADR-0225) the bottom-right Ask pill in
+`AskProvider`. ADR-0113 itself is not rewritten — it stays the historical
+record of the mark adoption; this ADR and ADRs 0224, 0225 are the amendments,
+as the index will show.
 
 **The product now has a dark band in it, on every page.** That is the point of
 the reference and the cost of it. It is bounded — one surface, the bar that

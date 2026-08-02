@@ -5,6 +5,7 @@ import "./globals.css";
 import TopBar from "@/components/TopBar";
 import SideRail from "@/components/SideRail";
 import LiveFeed from "@/components/LiveFeed";
+import AskProvider from "@/components/chat/AskProvider";
 
 // Hanken Grotesk for prose, JetBrains Mono for every figure (the "tape").
 const sans = Hanken_Grotesk({
@@ -46,11 +47,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             is nowhere for it to stick. Verified empirically — wrapping it in a
             col-span-2 div sent the header to top:-1200 after a 1200px scroll,
             while the deployed build held it at top:0. Leave it a sibling. */}
-        <TopBar />
-        <div className="min-h-[calc(100vh-56px)] grid grid-cols-[auto_minmax(0,1fr)]">
-          <SideRail />
-          <div className="min-w-0">{children}</div>
-        </div>
+        {/* AskProvider owns the single Ask window's open state (shared by the
+            TopBar Ask control and the bottom-right Ask pill) and renders that
+            one window + the pill. It must wrap the page content so the FAB and
+            the window are present on every route; the layout does not remount
+            across client-side navigations, so the window and its transcript
+            survive a route change. */}
+        <AskProvider>
+          <TopBar />
+          <div className="min-h-[calc(100vh-56px)] grid grid-cols-[auto_minmax(0,1fr)]">
+            <SideRail />
+            <div className="min-w-0">{children}</div>
+          </div>
+        </AskProvider>
         {/* Suspense, because `LiveFeed` calls `useSearchParams` to learn whether a
             non-default `?lens=` is on screen (it qualifies its "Held tickers" count
             when one is). A client component reading search params under a server

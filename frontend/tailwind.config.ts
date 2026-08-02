@@ -109,15 +109,16 @@ const config: Config = {
         "accent-dim": "rgba(0,104,122,0.10)",
         // BRAND GROUND — the supplied mark artwork's plate AND the 56px masthead
         // (ADR-0223, widening ADR-0113's fence from "the mark only"). Since
-        // ADR-0224 also the ACTIVE lens chip in LensSelector (white ink). Not a
+        // ADR-0224 also the ACTIVE lens chip in LensSelector (white ink); since
+        // ADR-0225 the bottom-right Ask pill in AskProvider (white ink). Not a
         // general ink, not a panel; see globals.css for why it is fenced and for
         // what it replaced (--brand/--brand-dim, the last survivors of ADR-0085
         // §3, which lived in the masthead tile the real mark replaced). Its
-        // utility consumers are the header surface (`bg-logo-plate` in TopBar.tsx)
-        // and the active lens chip (`bg-logo-plate` in LensSelector.tsx);
-        // BrandMark reads var(--logo-plate) directly. Declared here so the
-        // palette-drift test in chip-contrast.test.ts compares it against
-        // globals.css.
+        // utility consumers are the header surface (`bg-logo-plate` in TopBar.tsx),
+        // the active lens chip (`bg-logo-plate` in LensSelector.tsx), and the Ask
+        // pill (`bg-logo-plate` in AskProvider.tsx); BrandMark reads
+        // var(--logo-plate) directly. Declared here so the palette-drift test in
+        // chip-contrast.test.ts compares it against globals.css.
         "logo-plate": "#161b38",
         // Header ladder — light on the navy masthead (ADR-0223). The TopBar is
         // solid --logo-plate on every page, so its contents use these instead of

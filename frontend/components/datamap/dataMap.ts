@@ -867,116 +867,139 @@ export interface MapEdge {
 }
 
 export const mapEdges: MapEdge[] = [
-  // Sources → L0
-  { from: "fred", to: "L0" },
-  { from: "yfinance", to: "L0" },
-  // Sources → L1
-  { from: "brave", to: "L1" },
-  { from: "reddit", to: "L1" },
-  // Sources → L1b (un-themed corpus)
-  { from: "brave", to: "L1b" },
-  { from: "gdelt", to: "L1b" },
-  { from: "rss", to: "L1b", label: "SHADOW", kind: "dashed" },
-  // Sources → L2
-  { from: "kenfrench", to: "L2" },
-  { from: "yfinance", to: "L2" },
-  // Sources → L2b
-  { from: "fred", to: "L2b" },
-  { from: "yfinance", to: "L2b" },
-  // Sources → L3
-  { from: "fred", to: "L3" },
-  { from: "fedwatch", to: "L3" },
-  // Sources → L4 (book returns)
-  { from: "yfinance", to: "L4" },
-  // LLM providers → L5
-  { from: "minimax", to: "L5", kind: "purple" },
-  { from: "anthropic", to: "L5", kind: "purple" },
-  { from: "gemini", to: "L5", kind: "purple" },
-  // External positioning → sizing
-  { from: "cftc", to: "sizing" },
-  { from: "worldmonitor", to: "L5", kind: "dashed" },
-  { from: "polymarket", to: "L5", kind: "dashed" },
+  // Sources -> L0 (section 02)
+  { from: "fred",       to: "L0-macroindicators" },
+  { from: "yfinance",   to: "L0-macroindicators" },
 
-  // Pipeline internal
-  { from: "L0", to: "L1" },
-  { from: "L0", to: "L1b" },
-  { from: "L0", to: "L3" },
-  { from: "L1", to: "L5" },
-  { from: "L1b", to: "L5", kind: "dashed" },
-  { from: "L2", to: "L5" },
-  { from: "L2b", to: "L5", kind: "dashed" },
-  { from: "L3", to: "L5" },
-  { from: "L4", to: "L5" },
-  { from: "L5", to: "L5b" },
-  { from: "L5", to: "sizing" },
-  { from: "L5b", to: "sizing" },
+  // Sources -> L1 (section 03)
+  { from: "brave",      to: "L1-hype" },
+  { from: "reddit",     to: "L1-hype" },
+
+  // Sources -> L1b (section 04)
+  { from: "brave",      to: "L1b-freq" },
+  { from: "gdelt",      to: "L1b-freq" },
+  { from: "rss",        to: "L1b-freq",  label: "SHADOW", kind: "dashed" },
+
+  // Sources -> L2 (section 05)
+  { from: "kenfrench",  to: "L2-ols" },
+  { from: "yfinance",   to: "L2-ols" },
+
+  // L2 feeds L2b credit/duration (section 06)
+  { from: "L2-ols",     to: "L2b-legs" },
+  { from: "fred",       to: "L2b-legs" },
+  { from: "yfinance",   to: "L2b-legs" },
   // L2b sub-nodes
-  { from: "L2b", to: "L2b-legs" },
-  { from: "L2b", to: "L2b-total" },
-  { from: "L2b", to: "L2b-marg" },
-  { from: "L2b-marg", to: "L2b-s7", kind: "dashed" },
+  { from: "L2b-legs",   to: "L2b-total" },
+  { from: "L2b-legs",   to: "L2b-marg" },
+  { from: "L2b-marg",   to: "L2b-s7",   kind: "dashed" },
+
+  // Sources -> L3 (section 07)
+  { from: "fred",       to: "L3-cycle" },
+  { from: "fedwatch",   to: "L3-cycle" },
+
+  // Sources -> L4 (section 08)
+  { from: "yfinance",   to: "L4-var" },
+
+  // External signals -> L5 aggregate context (a1)
+  { from: "worldmonitor", to: "a1",  kind: "dashed" },
+  { from: "polymarket",  to: "a1",  kind: "dashed" },
+
+  // LLM providers call the L5 reasoning step (a6), not feed it
+  { from: "minimax",   to: "a6",  kind: "purple" },
+  { from: "anthropic", to: "a6",  kind: "purple" },
+  { from: "gemini",    to: "a6",  kind: "purple" },
+
+  // External positioning -> sizing
+  { from: "cftc",      to: "sizing" },
+
+  // Pipeline internal -- L0 feeds downstream layers
+  { from: "L0-macroindicators", to: "L1-hype" },
+  { from: "L0-macroindicators", to: "L1b-freq" },
+  { from: "L0-macroindicators", to: "L3-cycle" },
+
+  // L1 chain: hype -> trade -> candidates
+  { from: "L1-hype",    to: "L1-trade" },
+  { from: "L1-trade",   to: "L1-mom" },
+
+  // L5 section 11 internal chain
+  { from: "a1",         to: "a2" },
+  { from: "a2",         to: "a3" },
+  { from: "a3",         to: "a4" },
+  { from: "a4",         to: "a5" },
+  { from: "a5",         to: "a6" },
+  { from: "a6",         to: "a7" },
+  { from: "a7",         to: "a7b" },
+  { from: "a7b",        to: "a8" },
+  { from: "a8",         to: "a9" },
+  { from: "a9",         to: "sizing" },
+
   // Section 09 sub-nodes
-  { from: "sizing", to: "q-mandate" },
-  { from: "sizing", to: "q-signal" },
-  { from: "sizing", to: "q-mu" },
-  { from: "sizing", to: "q-opt" },
-  { from: "sizing", to: "q-cost" },
-  { from: "sizing", to: "q-crowd" },
-  { from: "sizing", to: "q-sanc" },
-  { from: "sizing", to: "q-choke" },
-  { from: "sizing", to: "L6" },
-  { from: "L6", to: "L7" },
-  { from: "L7", to: "L8" },
+  { from: "sizing",    to: "q-mandate" },
+  { from: "sizing",    to: "q-signal" },
+  { from: "sizing",    to: "q-mu" },
+  { from: "sizing",    to: "q-opt" },
+  { from: "sizing",    to: "q-cost" },
+  { from: "sizing",    to: "q-crowd" },
+  { from: "sizing",    to: "q-sanc" },
+  { from: "sizing",    to: "q-choke" },
 
-  // Pipeline → Tables (writes)
-  { from: "L0", to: "t-macro" },
-  { from: "L1", to: "t-themes" },
-  { from: "L1b", to: "t-narrative" },
-  { from: "L2", to: "t-factors" },
-  { from: "L2b", to: "t-factors" },
-  { from: "L3", to: "t-regime" },
-  { from: "L1", to: "t-candidates" },
-  { from: "sizing", to: "t-positions" },
-  { from: "sizing", to: "t-book" },
-  { from: "L4", to: "t-risk" },
-  { from: "L5", to: "t-signal" },
-  { from: "sizing", to: "t-signal" },
-  { from: "L5", to: "t-picks" },
-  { from: "L5", to: "t-runs" },
-  { from: "t-facts", to: "L5" },
+  // Book surfaces (L6 -> L7 -> L8)
+  { from: "sizing",     to: "f-book" },
+  { from: "f-book",     to: "f-attr" },
+  { from: "f-attr",     to: "f-ask" },
 
-  // Tables → Frontend (reads)
-  { from: "t-themes", to: "f-home" },
-  { from: "t-macro", to: "f-home" },
-  { from: "t-narrative", to: "f-home" },
-  { from: "t-regime", to: "f-home" },
-  { from: "t-book", to: "f-book" },
-  { from: "t-candidates", to: "f-book" },
-  { from: "t-positions", to: "f-book" },
-  { from: "t-signal", to: "f-book" },
-  { from: "t-picks", to: "f-book" },
-  { from: "t-factors", to: "f-book" },
-  { from: "t-book", to: "f-mandate" },
-  { from: "t-risk", to: "f-mandate" },
-  { from: "t-positions", to: "f-mandate" },
-  { from: "t-risk", to: "f-risk" },
-  { from: "t-book", to: "f-risk" },
-  { from: "t-positions", to: "f-risk" },
-  { from: "t-factors", to: "f-risk" },
-  { from: "t-signal", to: "f-risk" },
-  { from: "t-picks", to: "f-attr" },
-  { from: "t-book", to: "f-attr" },
-  { from: "t-risk", to: "f-attr" },
-  { from: "t-themes", to: "f-method" },
-  { from: "t-factors", to: "f-method" },
-  { from: "t-book", to: "f-method" },
-  { from: "t-picks", to: "f-method" },
-  { from: "t-themes", to: "f-ask" },
-  { from: "t-book", to: "f-ask" },
-  { from: "t-positions", to: "f-ask" },
-  { from: "t-risk", to: "f-ask" },
-  { from: "t-macro", to: "f-ask" },
-  { from: "t-facts", to: "f-facts" },
+  // Pipeline -> Tables (writes)
+  { from: "L0-macroindicators", to: "t-macro" },
+  { from: "L1-hype",    to: "t-themes" },
+  { from: "L1-trade",   to: "t-themes" },
+  { from: "L1b-freq",   to: "t-narrative" },
+  { from: "L2-ols",     to: "t-factors" },
+  { from: "L2b-legs",   to: "t-factors" },
+  { from: "L3-cycle",   to: "t-regime" },
+  { from: "L1-hype",    to: "t-candidates" },
+  { from: "L1-trade",   to: "t-candidates" },
+  { from: "sizing",     to: "t-positions" },
+  { from: "a9",         to: "t-book" },
+  { from: "L4-var",     to: "t-risk" },
+  { from: "a8",         to: "t-signal" },
+  { from: "a9",         to: "t-signal" },
+  { from: "a6",         to: "t-picks" },
+  { from: "a9",         to: "t-picks" },
+  { from: "a9",         to: "t-runs" },
+  { from: "t-facts",    to: "a6" },
+
+  // Tables -> Frontend (reads)
+  { from: "t-themes",   to: "f-home" },
+  { from: "t-macro",    to: "f-home" },
+  { from: "t-narrative",to: "f-home" },
+  { from: "t-regime",   to: "f-home" },
+  { from: "t-book",     to: "f-book" },
+  { from: "t-candidates",to: "f-book" },
+  { from: "t-positions",to: "f-book" },
+  { from: "t-signal",   to: "f-book" },
+  { from: "t-picks",    to: "f-book" },
+  { from: "t-factors",  to: "f-book" },
+  { from: "t-book",     to: "f-mandate" },
+  { from: "t-risk",     to: "f-mandate" },
+  { from: "t-positions",to: "f-mandate" },
+  { from: "t-risk",     to: "f-risk" },
+  { from: "t-book",     to: "f-risk" },
+  { from: "t-positions",to: "f-risk" },
+  { from: "t-factors",  to: "f-risk" },
+  { from: "t-signal",   to: "f-risk" },
+  { from: "t-picks",    to: "f-attr" },
+  { from: "t-book",     to: "f-attr" },
+  { from: "t-risk",     to: "f-attr" },
+  { from: "t-themes",   to: "f-method" },
+  { from: "t-factors",  to: "f-method" },
+  { from: "t-book",     to: "f-method" },
+  { from: "t-picks",    to: "f-method" },
+  { from: "t-themes",   to: "f-ask" },
+  { from: "t-book",     to: "f-ask" },
+  { from: "t-positions",to: "f-ask" },
+  { from: "t-risk",     to: "f-ask" },
+  { from: "t-macro",    to: "f-ask" },
+  { from: "t-facts",    to: "f-facts" },
 ];
 
 /**

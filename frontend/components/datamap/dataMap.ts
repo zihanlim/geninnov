@@ -41,7 +41,6 @@ export const sectionOrder: Section[] = [
   { section: "02", title: "L0— Macro Ingestion" },
   { section: "03", title: "L1 — Theme Detection" },
   { section: "05", title: "L2 — Factor Exposure" },
-  { section: "06", title: "L2b — Credit & Duration" },
   { section: "07", title: "L3 — Regime Classifier" },
   { section: "08", title: "L4 — Risk Engine" },
   { section: "09", title: "Quant Sizing Services" },
@@ -376,7 +375,8 @@ export const mapNodes: Node[] = [
     name: "Credit Legs",
     summary: "d_ust · d_ig · d_qual",
     type: "pipeline",
-    section: "06",
+    section: "05",
+    group: "L2b — Credit & Duration",
     doc: "ADR-0193",
   },
   {
@@ -384,7 +384,8 @@ export const mapNodes: Node[] = [
     name: "Total Beta",
     summary: "3 univariate fits",
     type: "pipeline",
-    section: "06",
+    section: "05",
+    group: "L2b — Credit & Duration",
     doc: "ADR-0192",
   },
   {
@@ -392,7 +393,8 @@ export const mapNodes: Node[] = [
     name: "Marginal Beta",
     summary: "FF5+UMD residualised",
     type: "pipeline",
-    section: "06",
+    section: "05",
+    group: "L2b — Credit & Duration",
     doc: "ADR-0193",
   },
   {
@@ -400,7 +402,8 @@ export const mapNodes: Node[] = [
     name: "S7 fallen angel",
     summary: "ADR-0192 · |t|≥2 threshold",
     type: "pipeline",
-    section: "06",
+    section: "05",
+    group: "L2b — Credit & Duration",
     doc: "ADR-0192",
   },
   // L3 sub-nodes

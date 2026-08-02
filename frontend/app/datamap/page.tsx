@@ -184,7 +184,7 @@ function SectionBlock({
   nodes: Node[];
 }) {
   // For section 12 and section 03, group nodes by their `group` field and render sub-group labels.
-  const isGrouped = section.section === "12" || section.section === "03";
+  const isGrouped = section.section === "12" || section.section === "03" || section.section === "05";
 
   if (isGrouped) {
     // Group nodes by group field; nodes without a group go into a single block.

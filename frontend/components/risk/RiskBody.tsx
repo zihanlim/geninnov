@@ -316,15 +316,21 @@ interface PageData {
   /** The held book's cost-netted series (m056 / ADR-0150), for the comparison. */
   holdings: HoldingsPerformanceRow[];
   /**
-   * The MULTI-ASSET book's pick list, whatever lens the page is on.
+   * The ACTIVE lens's pick list, whatever lens the page is on.
    *
-   * Only ADR-0040's reconciliation check reads this, and it needs the
-   * multi-asset one specifically: the other side of that comparison is
-   * `portfolio_positions`, which has no lens column (ADR-0194). Kept apart from
-   * `analyticsRow.picks` — the ACTIVE lens's picks — because collapsing the two
-   * is precisely what made the check cross-book under a lens.
+   * Only ADR-0040's reconciliation check reads this, and it must be the same
+   * book as the other side of the comparison — the ACTIVE lens's
+   * `portfolio_positions` (per-lens since migration 068 / ADR-0222). Both
+   * sides are read at `resolved`, so under `?lens=credit` the held rows and
+   * this list are both the credit book and the check is same-book under every
+   * lens. The cross-book failure mode ADR-0194 prevents here is the
+   * *published* one — `pick_outcomes`, `book_holdings_performance` — which
+   * the credit book must not write into. Under the default lens the dedicated
+   * read is skipped and this is `analyticsRow.picks` (the same row, same
+   * lens); one field, so "which picks does the reconciliation use" has a
+   * single answer on every path.
    */
-  defaultLensPicks: ResearchAnalyticsRow["picks"];
+  picksAtResolved: ResearchAnalyticsRow["picks"];
   /** pick_outcomes at the 21-day horizon; null when the read failed. */
   outcomeRows: PickOutcomeRow[] | null;
   /** run_date -> assets in the book finally published for it. Empty map on a
@@ -363,7 +369,7 @@ const INITIAL: PageData = {
   returnsFailure: null,
   inception: null,
   holdings: [],
-  defaultLensPicks: null,
+  picksAtResolved: null,
   outcomeRows: null,
   publishedByRunDate: new Map(),
   benchmark: [],
@@ -701,22 +707,25 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           .eq("lens", "multi_asset")
           .order("run_date", { ascending: false })
           .limit(1000),
-        // The MULTI-ASSET book's pick list, pinned — the one read on this page
-        // that deliberately ignores `resolved`.
+        // The ACTIVE lens's pick list — the one read on this page that was
+        // briefly pinned to multi_asset and is now read at `resolved`.
         //
         // ADR-0040's provisional-positions check compares `portfolio_positions`
-        // against a pick list, and `portfolio_positions` has no lens column
-        // (ADR-0194): it is always the multi-asset book. Comparing it to the
-        // ACTIVE lens's picks is therefore cross-book, reads "unreconciled" on
-        // every credit run, and the first answer to that was to suppress the
-        // alert under a non-default lens — which threw away the real mid-run
-        // warning along with the false one. The pipeline writes L1's full
-        // candidate set here at 21:30 and reconciles it to the picked book only
-        // when L5 returns, so in that window /risk?lens=credit showed ~60
-        // candidate names under chips positively asserting they ARE the
-        // multi-asset published book. Pinning the pick side makes the
-        // comparison same-book, so the alert renders under every lens and says
-        // something true.
+        // against a pick list. BOTH tables are per-lens since migrations 062 +
+        // 068 / ADR-0222, so the comparison is same-book under every lens:
+        // positions at `resolved` vs picks at `resolved`. The pin predates the
+        // migration: when `portfolio_positions` had no lens column (ADR-0194)
+        // it was always the multi-asset book, so the ACTIVE lens's picks were
+        // cross-book and the check read "unreconciled" on every credit run.
+        // Pinning the pick side to multi_asset made that comparison same-book
+        // THEN. It became a stale pin the day migration 068 gave
+        // `portfolio_positions` a lens column: the held side followed the lens
+        // again while the pick side stayed pinned, so /risk?lens=credit showed
+        // a permanent "3 held · 9 published" — the credit book's held names
+        // against the multi-asset pick list, an alarm on every credit run.
+        // With both sides read at `resolved`, the check is same-book under
+        // every lens and the alert fires only in the true L1→L5 mid-run
+        // window, saying something true.
         //
         // Skipped entirely under the default lens: `analyticsRes` above already
         // IS this read there, so the default page fires the same twelve queries
@@ -726,7 +735,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
           : supabase
               .from("research_recommendations")
               .select("run_date, picks")
-              .eq("lens", DEFAULT_LENS)
+              .eq("lens", resolved)
               .order("run_date", { ascending: false })
               .limit(1),
       ]);
@@ -764,10 +773,10 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       const analyticsRow =
         (analyticsRes.data?.[0] as ResearchAnalyticsRow | undefined) ?? null;
 
-      // Under the default lens the pinned read was skipped, because the
+      // Under the default lens the dedicated read was skipped, because the
       // analytics row above already is it. One expression, so "which picks does
       // the reconciliation check use" has a single answer on every path.
-      const defaultLensPicks: ResearchAnalyticsRow["picks"] =
+      const picksAtResolved: ResearchAnalyticsRow["picks"] =
         resolved === DEFAULT_LENS
           ? (analyticsRow?.picks ?? null)
           : ((defaultPicksRes?.data?.[0] as
@@ -838,7 +847,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
         // Absent until migration 056 is applied and the held book has run; the
         // panel renders nothing rather than an empty frame in that case.
         holdings: (holdingsRes.data as HoldingsPerformanceRow[] | null) ?? [],
-        defaultLensPicks,
+        picksAtResolved,
         outcomeRows: outcomesRes.error
           ? null
           : ((outcomesRes.data as PickOutcomeRow[] | null) ?? []),
@@ -1142,10 +1151,13 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
   // DOES follow the lens, and the banner names a panel that is not on the page.
   //
   // Under a lens that is the normal case rather than an edge one. The scatter
-  // plots held positions (lens-less) against the risk decomposition (lens
-  // following), so it needs names in BOTH; on 2026-07-30 the held book was
-  // {BABA, F, GEV, GLD, NOC, PDD, SMH, UNG, UNH} and the credit decomposition
-  // {BIL, BKLN, EMB}, an empty intersection. The predicate is imported, not
+  // plots held positions against the risk decomposition, and both follow the
+  // lens (portfolio_positions per-lens since migration 068 / ADR-0222), so it
+  // needs names in BOTH from the SAME book. Before 068 the held book was the
+  // multi-asset one whatever the lens said, so under credit the intersection
+  // was empty — on 2026-07-30 the held book was {BABA, F, GEV, GLD, NOC, PDD,
+  // SMH, UNG, UNH} and the credit decomposition {BIL, BKLN, EMB} — and the
+  // chart was always suppressed there. The predicate is imported, not
   // rewritten: one implementation, so the chart and the disclosures cannot
   // disagree about whether the chart exists.
   const scatterVisible = useMemo(
@@ -1160,13 +1172,24 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
   // ADR-0040's invariant, checked rather than assumed: the names this page computes
   // risk on must be the names the book publishes.
   //
-  // BOTH SIDES ARE THE MULTI-ASSET BOOK, under every lens. `portfolio_positions`
-  // has no lens column, so the pick side is read pinned to multi_asset (see the
-  // last entry in the Promise.all above) rather than at the active lens. A
-  // cross-book comparison here would report "provisional" on every credit run,
-  // and an alert that fires every run is one a reader learns to scroll past.
+  // BOTH SIDES ARE THE ACTIVE BOOK, under every lens. `portfolio_positions` is
+  // per-lens since migration 068 / ADR-0222 and the read above is `.eq("lens",
+  // resolved)`, and the pick read below it follows `resolved` too — so the held
+  // side and the pick side are the same book whatever the page's lens is. On
+  // the default page that is the multi-asset book; on `?lens=credit` it is the
+  // credit book's own held-versus-published check. It fires while the pipeline
+  // is mid-run — L1 writes the full candidate set to the held table, L5
+  // reconciles it to the picked book — and clears when that lens's reconcile
+  // finishes. It was briefly cross-book, twice: when only the pick side
+  // followed the lens (before migration 068 the held table was lens-less, and
+  // the ACTIVE lens's picks made the check read "unreconciled" on every credit
+  // run), and when the pin then outlived the migration (held at `resolved`,
+  // picks pinned to multi_asset → a permanent "3 held · 9 published" on the
+  // credit page). An alert that fires every run is one a reader learns to
+  // scroll past; one that fires only in the real mid-run window says something
+  // true.
   const reconciliation = useMemo(() => {
-    const raw = data.defaultLensPicks;
+    const raw = data.picksAtResolved;
     const parsed = Array.isArray(raw)
       ? raw
       : typeof raw === "string"
@@ -1182,7 +1205,7 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       data.positions.map((p) => p.asset).filter((a): a is string => Boolean(a)),
       parsed ? parsed.map((p) => p.asset ?? "").filter(Boolean) : null,
     );
-  }, [data.defaultLensPicks, data.positions]);
+  }, [data.picksAtResolved, data.positions]);
 
   const failures = [
     data.analyticsFailure,
@@ -1202,20 +1225,20 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
   // below", and the file's own rule is that a disclosure a reader can falsify
   // by scrolling is worse than no disclosure — so a panel that self-suppresses
   // on its data must be excluded by the same predicate the panel uses, not
-  // assumed present because its section renders. Three do:
+  // assumed present because its section renders. Two do:
   //   ReconciliationBanner — renders only on a real disagreement between
-  //     `portfolio_positions` and the pinned multi-asset pick list.
+  //     `portfolio_positions` and the active lens's pick list.
   //   ReadErrorsBanner     — renders only when a read actually failed.
-  //   PositionRiskScatter  — returns null below SCATTER_MIN_POINTS, which under
-  //     a non-default lens is the common case rather than the edge one (see
-  //     `scatterVisible`). It was the reason this rule got written: the banner
-  //     read "6 panels still multi-asset" and named a chart that was not there.
+  // (PositionRiskScatter used to be the third — before migration 068 its held
+  // side was the multi-asset book's, so under a non-default lens it always
+  // self-suppressed and the banner named a chart that was not there. It is
+  // book-scoped now and never in `lensLessPanels()`, so the predicate that
+  // still gates its render lives at `scatterVisible` and needs no entry here.)
   const lensLessOnThisPhase = lensLessPanels().filter((panel) => {
     if (panel === "ReconciliationBanner") {
       return !data.loading && !reconciliation.reconciled;
     }
     if (panel === "ReadErrorsBanner") return failures.length > 0;
-    if (panel === "PositionRiskScatter") return shows("attribution") && scatterVisible;
     const gate = PANEL_SECTION[panel];
     // Unclassified panels are assumed to render, matching `scopeOf`'s
     // over-disclose default: naming a panel the reader cannot find is a
@@ -1383,23 +1406,26 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
       {/* Every number below is computed on portfolio_positions. When that table has
           not been reconciled to the published book, they describe a portfolio nobody
           selected — say so before the reader reads them, not after. */}
-      {/* RENDERS UNDER EVERY LENS, because the comparison behind it is
-          same-book under every lens. `portfolio_positions` is lens-less
-          (ADR-0194), so the pick side is read pinned to multi_asset — see the
-          last entry in the Promise.all above — rather than at the page's lens.
+      {/* RENDERS UNDER EVERY LENS, because the comparison behind it is same-book
+          under every lens. `portfolio_positions` is per-lens since migration
+          068 (ADR-0222) and the pick read follows `resolved` too — so on the
+          default page both sides are the multi-asset book, and on
+          `?lens=credit` both sides are the credit book's own
+          held-versus-published check.
 
           It was briefly gated on `resolvedLens === DEFAULT_LENS` instead, and
-          that was the wrong repair. The problem it addressed was real: compared
-          against the ACTIVE lens's picks the check is cross-book and reads
-          "provisional" on every credit run, and an alert that fires every run
-          is one a reader learns to scroll past. But suppressing it threw away
-          the true signal with the false one. The pipeline writes L1's full
-          candidate set here at 21:30 and reconciles it to the picked book only
-          when L5 returns, so at 21:35 /risk?lens=credit showed ~60 candidate
-          names across the what-if builder, the attribution table and the answer
-          row — each under a chip whose title asserted they ARE the multi-asset
-          published book, which in that window they are not. Fixing the
-          comparison keeps the alert AND makes it true. */}
+          that was the wrong repair. The problem it addressed was real: before
+          migration 068 `portfolio_positions` was lens-less, so against the
+          ACTIVE lens's picks the check was cross-book and read "provisional"
+          on every credit run — and an alert that fires every run is one a
+          reader learns to scroll past. The first repair pinned the pick side
+          to multi_asset to match the then-lens-less held table. That pin
+          outlived migration 068: once the held side followed the lens again,
+          /risk?lens=credit showed a permanent "3 held · 9 published" — an
+          alarm on every credit run, not just mid-run. Reading both sides at
+          `resolved` keeps the alert AND makes it true: it fires only in the
+          pipeline's L1→L5 window, under every lens, and clears when the
+          reconcile finishes. */}
       {!data.loading && !reconciliation.reconciled && (
         <div
           className="card mb-6"
@@ -1446,11 +1472,14 @@ function RiskPageInner({ phase }: { phase: RiskPhase }) {
             {data.resolvedLens !== DEFAULT_LENS && (
               <>
                 {" "}
-                Both sides of that count are the <strong>multi-asset</strong>{" "}
-                book — the held positions have no lens column (ADR-0194) and the
-                pick list is read pinned to match them — so this is the
-                multi-asset book mid-run, not a disagreement between it and the{" "}
-                {data.resolvedLens} book.
+                The held positions and the pick list both follow the active
+                lens (portfolio_positions gained a lens column in migration 068
+                / ADR-0222), so on{" "}
+                <code className="text-[12px]">?lens={data.resolvedLens}</code>{" "}
+                both sides of this count are the {data.resolvedLens} book: its
+                pipeline&apos;s candidate set against its published picks. The
+                alert is the {data.resolvedLens} pipeline mid-run — it clears
+                when that lens&apos;s L5 reconcile finishes.
               </>
             )}
           </p>

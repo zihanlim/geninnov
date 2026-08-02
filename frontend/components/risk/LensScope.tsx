@@ -99,11 +99,14 @@ export function LensScopeBanner({
       ))}
       , and migration 062 gave none of them a lens column on purpose
       (ADR-0194): a second book must not write into the first book&rsquo;s
-      record. There is one realised return series, one set of held positions
-      and one forward track record, and they belong to the multi-asset book
-      that has published every day since inception. So whatever a panel named
-      above draws from those tables is not this book&rsquo;s risk, drawdown or
-      record &mdash; it is the multi-asset book&rsquo;s, shown beside it.
+      record. There is one realised return series and one forward track
+      record, and they belong to the multi-asset book that has published
+      every day since inception. The held positions are the exception:
+      migration 068 / ADR-0222 gave <Ident>portfolio_positions</Ident> a lens
+      column, so it is not one of the lens-less tables above. So whatever a
+      panel named above draws from the lens-less tables is not this
+      book&rsquo;s risk, drawdown or record &mdash; it is the multi-asset
+      book&rsquo;s, shown beside it.
     </>
   );
 

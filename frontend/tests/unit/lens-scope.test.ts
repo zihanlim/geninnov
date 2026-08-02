@@ -18,6 +18,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  LENS_KEYED_TABLES,
   LENS_LESS_TABLES,
   LENS_NEUTRAL_TABLES,
   PANEL_SCOPE,
@@ -37,21 +38,11 @@ const PANELS = Object.keys(PANEL_SCOPE);
  *   `(static) path`            — not a table at all, a constant module. Lets
  *                                "this panel reads no table" be distinguished
  *                                from "table nobody classified".
- *   `(pinned) table.column`    — a lens-KEYED table read at a FIXED lens rather
- *                                than the page's, so the figure is the
- *                                multi-asset book's even though the table
- *                                follows the lens.
- *
- * The second form is an escape hatch, so the test below pins who may use it by
- * name — the same shape as lens-qualified-reads.test.ts' single exempt file.
  */
 function tableOf(source: string): string | null {
   if (source.startsWith("(")) return null;
   return source.split(".")[0];
 }
-
-/** Panels entitled to read a lens-keyed table at a pinned lens (see `tableOf`). */
-const PINNED_PANELS = ["ReconciliationBanner"];
 
 const isLensLess = (table: string) => LENS_LESS_TABLES.includes(table);
 
@@ -79,50 +70,21 @@ describe("PANEL_SCOPE", () => {
 
   it("names every source as a known table or an explicit static constant", () => {
     // Fails when someone adds a source naming a table this module has never
-    // classified as lens-less or lens-neutral, AND that is not
-    // research_recommendations. That table is the whole question — is it keyed
-    // on lens or not — so it must be answered here, not left to the reader.
+    // classified. A source must name one of: the lens-keyed tables
+    // (research_recommendations, book_holdings, portfolio_positions — the
+    // tables that ARE the lens question), a lens-less table, or a lens-neutral
+    // one. Anything else is an unclassified table and must be added to the
+    // right list here before it can appear in a panel.
     for (const panel of PANELS) {
       for (const source of PANEL_SCOPE[panel].sources) {
         const table = tableOf(source);
         if (table === null) continue;
         const known =
           table === "research_recommendations" ||
+          LENS_KEYED_TABLES.includes(table) ||
           isLensLess(table) ||
           LENS_NEUTRAL_TABLES.includes(table);
         expect(known, `${panel} names unclassified table "${table}"`).toBe(true);
-      }
-    }
-  });
-
-  it("only the panels named here may pin a lens-keyed read", () => {
-    // `(pinned)` takes a source out of every table check below it, so without
-    // this assertion it would be a way to relabel any lens-following source as
-    // multi-asset — the exact misstatement this module exists to prevent, made
-    // by typing six characters. The entitlement is a list compared by identity:
-    // adding a second pinned source fails here with the panel's name, which is
-    // the conversation that ought to happen. The pin itself has to be REAL in
-    // RiskBody (the read carries `.eq("lens", DEFAULT_LENS)`, not the page's
-    // resolved lens); this asserts who is allowed to claim it.
-    const pinned = PANELS.filter((p) =>
-      PANEL_SCOPE[p].sources.some((s) => s.startsWith("(pinned)")),
-    );
-    expect(pinned.sort()).toEqual([...PINNED_PANELS].sort());
-  });
-
-  it("a pinned source still names a real, lens-keyed table", () => {
-    // The mirror: an entitlement nobody needs is a standing licence with no
-    // justification. A `(pinned)` source that names a LENS-LESS table has
-    // nothing to pin — it should just be written plainly.
-    for (const panel of PINNED_PANELS) {
-      const pinned = PANEL_SCOPE[panel].sources.filter((s) => s.startsWith("(pinned)"));
-      expect(pinned.length, `${panel} claims no pinned source`).toBeGreaterThan(0);
-      for (const source of pinned) {
-        const table = source.replace(/^\(pinned\)\s*/, "").split(".")[0];
-        expect(
-          table,
-          `${panel} pins "${table}", which is not the lens-keyed table`,
-        ).toBe("research_recommendations");
       }
     }
   });
@@ -205,20 +167,13 @@ describe("showScopeNote — the default-lens invariant", () => {
 describe("source classification agrees with the scope", () => {
   it("every table a PUBLISHED panel names is lens-less", () => {
     // "published" means the panel's figures are the multi-asset published
-    // record whatever the lens says. A research_recommendations source in one
-    // would make the claim false in the direction that misleads: the marker
-    // would say "multi-asset book" over a figure that did follow the lens.
+    // record whatever the lens says. A research_recommendations, book_holdings
+    // or portfolio_positions source in one would make the claim false in the
+    // direction that misleads: the marker would say "multi-asset book" over a
+    // figure that did follow the lens.
     //
     // Lens-NEUTRAL tables are exempt because they are not a third book — one
-    // FF5 beta per asset per run is the same fact under every lens. The one
-    // panel this exemption exists for today is WhatIfScenario, which shocks
-    // portfolio_positions (lens-less) through factor_exposures (neutral); both
-    // figures it renders are multi-asset, so "published" is the honest label.
-    //
-    // A `(pinned)` source is skipped for a different reason: the table DOES
-    // follow the lens, but the read does not — RiskBody pins it to multi_asset
-    // — so the figure is the multi-asset book's all the same. Who may claim
-    // that is asserted by name above, not left to the source string.
+    // FF5 beta per asset per run is the same fact under every lens.
     for (const panel of PANELS.filter((p) => scopeOf(p) === "published")) {
       for (const source of PANEL_SCOPE[panel].sources) {
         const table = tableOf(source);
@@ -260,6 +215,8 @@ describe("source classification agrees with the scope", () => {
     // "book" and carry no marker at all. Either mistake is over-disclosure
     // rather than under-, which is why it is checked here and not in the
     // fail-loud default above.
+    const isLensFollowing = (t: string) =>
+      t === "research_recommendations" || LENS_KEYED_TABLES.includes(t);
     for (const panel of PANELS.filter((p) => scopeOf(p) === "mixed")) {
       const tables = PANEL_SCOPE[panel].sources
         .map(tableOf)
@@ -269,7 +226,7 @@ describe("source classification agrees with the scope", () => {
         `${panel} is "mixed" but names no lens-less table`,
       ).toBe(true);
       expect(
-        tables.some((t) => t === "research_recommendations"),
+        tables.some(isLensFollowing),
         `${panel} is "mixed" but names no lens-following source`,
       ).toBe(true);
     }

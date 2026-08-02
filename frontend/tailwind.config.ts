@@ -107,14 +107,26 @@ const config: Config = {
         accent: "#00687a",          // interactive / active (teal)
         // Same colour at 10%. The tint-drift test asserts this rgb matches `accent`.
         "accent-dim": "rgba(0,104,122,0.10)",
-        // LOGO PLATE ONLY — the ground of the supplied mark artwork. Not a
-        // surface, not a chip, not an ink; see globals.css for why it is fenced
-        // and for what it replaced (--brand/--brand-dim, the last survivors of
-        // ADR-0085 §3, which lived in the masthead tile the real mark replaced).
-        // No utility class consumes it — BrandMark reads var(--logo-plate)
-        // directly — but it is declared here so the palette-drift test in
-        // chip-contrast.test.ts compares it against globals.css.
+        // BRAND GROUND — the supplied mark artwork's plate AND the 56px masthead
+        // (ADR-0223, widening ADR-0113's fence from "the mark only"). Not a chip,
+        // not an ink, not a panel; see globals.css for why it is fenced and for
+        // what it replaced (--brand/--brand-dim, the last survivors of ADR-0085
+        // §3, which lived in the masthead tile the real mark replaced). Its one
+        // utility consumer is the header surface (`bg-logo-plate` in TopBar.tsx);
+        // BrandMark reads var(--logo-plate) directly. Declared here so the
+        // palette-drift test in chip-contrast.test.ts compares it against
+        // globals.css.
         "logo-plate": "#161b38",
+        // Header ladder — light on the navy masthead (ADR-0223). The TopBar is
+        // solid --logo-plate on every page, so its contents use these instead of
+        // paper ink. Header-only; see globals.css for the measured contrast.
+        "header-ink": "#ffffff",
+        "header-muted": "#b6bbca",
+        "header-tertiary": "#8d93a3",
+        "header-raised": "#1f2740",
+        "header-border": "rgba(255,255,255,0.12)",
+        "header-focus": "#9ad9e4",
+        "header-warning": "#e07a4a",
         // Direction (ledger ink: green long / crimson short)
         // 4.81:1 over its own 11% tint (badge-long / dir-pill-long); was #147a5c
         // at 4.14:1. --short needs no change at 6.07:1 tinted.

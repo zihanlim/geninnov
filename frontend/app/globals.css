@@ -133,15 +133,18 @@
        Full derivation, including the pairings the chip test does not cover and the
        candidates that lost, is in ADR-0164. */
     --accent: #00687a;       /* interactive / links / active nav (teal) */
-    /* THE GROUND OF THE LOGO ARTWORK, AND NOTHING ELSE.
+    /* THE GROUND OF THE BRAND — THE LOGO ARTWORK AND THE MASTHEAD (ADR-0223).
        Measured off the supplied mark (andromeda-analytics.png): 717,750 of its
        799,232 pixels are exactly #161b38, and the figure on it is exactly #fff.
        It is here as a token so the one navy in this project is a thing the
-       palette test can see — not so it becomes available. It is NOT a surface,
-       NOT a chip, NOT an ink: goal 4 is cool paper, and a second dark ground
-       borrowed for a panel is how a light product acquires a dark dashboard by
-       increments. Its only call sites are components/BrandMark.tsx and the two
-       generated icons, all three asserted by tests/unit/brand-mark.test.ts.
+       palette test can see — not so it becomes available. ADR-0113 fenced it to
+       the mark; ADR-0223 widened the fence to the brand ground: the mark AND the
+       56px TopBar masthead, which is now a solid #161b38 band on every page.
+       It is still NOT a chip, NOT an ink, NOT a panel, NOT a footer. A proposal
+       that reaches for it for anything but the mark or the masthead is reaching
+       for the dark dashboard by increments. Its call sites are
+       components/BrandMark.tsx, the two generated icons (all three asserted by
+       tests/unit/brand-mark.test.ts) and the header surface in TopBar.tsx.
 
        It REPLACES --brand/--brand-dim, which ADR-0085 §3 deleted and which then
        survived in one place: the masthead's gradient `A` tile, running
@@ -150,7 +153,34 @@
        usages that made --brand a live defect (AbstentionRoster's focus ring and
        ConvictionCard's emphasis gradient, both painting "emphasis" in exactly
        the colour of a short position) had already moved to --accent. */
-    --logo-plate: #161b38;   /* logo plate only — the supplied artwork's ground */
+    --logo-plate: #161b38;   /* brand ground — the mark's plate AND the masthead (ADR-0223) */
+
+    /* Header ladder — light on the navy masthead (ADR-0223).
+       The 56px TopBar is a solid #161b38 band on every page, so its contents
+       flip from paper ink to light-on-navy. These tokens are the ONLY ones
+       allowed in the header, and they are used nowhere else. Kept in step with
+       tailwind.config.ts by the palette-integrity test.
+
+       Measured (asserted by the header-ladder block in
+       tests/unit/chip-contrast.test.ts):
+         ink #ffffff      16.83:1 on #161b38
+         muted #b6bbca     8.77:1 on #161b38
+         tertiary #8d93a3  5.48:1 on #161b38, 4.80:1 on raised
+       --header-raised #1f2740 is the SECOND surface of the bar — the nav active
+       block and the run-state group. It exists because the dimmest ink (tertiary)
+       fails AA 4.5 on a lighter raised; #1f2740 is the darkest step that still
+       reads as raised (1.70x the navy's luminance).
+       --header-focus #9ad9e4: the global ring is teal --accent, 2.6:1 on navy —
+       the header scopes its own ring to clear WCAG 1.4.11 (3:1); 10.75:1 here.
+       --header-warning #e07a4a: the page's --warning is 2.5:1 on navy, so the
+       STALE freshness dot lightens; 5.65:1 on navy, 4.96:1 on raised. */
+    --header-ink: #ffffff;
+    --header-muted: #b6bbca;
+    --header-tertiary: #8d93a3;
+    --header-raised: #1f2740;
+    --header-border: rgba(255, 255, 255, 0.12);
+    --header-focus: #9ad9e4;
+    --header-warning: #e07a4a;
     /* Was #f97316 at 2.53:1 — the worst offender on the site, and it labels the
        things a reader most needs to read ("Not yet validated", near-limit
        chips, HypeScore caveats). Darkened to #c2410c on 2026-07-24, then to
@@ -441,5 +471,13 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
     border-radius: 4px;
+  }
+
+  /* The masthead is navy (ADR-0223); teal --accent measures 2.6:1 on #161b38 —
+     under the 3:1 non-text floor. The header scopes its own ring to a light
+     cyan. The descendant selector is more specific than the rule above, so it
+     wins for anything inside the bar. */
+  header :focus-visible {
+    outline-color: var(--header-focus);
   }
 }

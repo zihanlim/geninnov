@@ -40,7 +40,7 @@ export const sectionOrder: Section[] = [
   { section: "01", title: "External Sources & Triggers" },
   { section: "02", title: "L0— Macro Ingestion" },
   { section: "03", title: "L1 — Theme Detection" },
-  { section: "05", title: "L2 — Factor Exposure" },
+  { section: "05", title: "L2 — Factor Exposure & Credit" },
   { section: "07", title: "L3 — Regime Classifier" },
   { section: "08", title: "L4 — Risk Engine" },
   { section: "09", title: "Quant Sizing Services" },
@@ -233,6 +233,7 @@ export const mapNodes: Node[] = [
     summary: "sentiment on headlines",
     type: "pipeline",
     section: "03",
+    group: "L1a — Theme Scoring",
     doc: "scripts/build_theme_signals()",
   },
   {
@@ -241,6 +242,7 @@ export const mapNodes: Node[] = [
     summary: "per-class · ADR-0127",
     type: "pipeline",
     section: "03",
+    group: "L1a — Theme Scoring",
     doc: "ADR-0127",
   },
   {
@@ -249,6 +251,7 @@ export const mapNodes: Node[] = [
     summary: "abs(corr) × return",
     type: "pipeline",
     section: "03",
+    group: "L1a — Theme Scoring",
     doc: "scripts/build_theme_signals()",
   },
   {
@@ -257,6 +260,7 @@ export const mapNodes: Node[] = [
     summary: "attn × sent × corr × mom",
     type: "pipeline",
     section: "03",
+    group: "L1a — Theme Scoring",
     doc: "scripts/build_theme_signals()",
   },
   {
@@ -265,6 +269,7 @@ export const mapNodes: Node[] = [
     summary: "direction + size",
     type: "pipeline",
     section: "03",
+    group: "L1a — Theme Scoring",
     doc: "scripts/build_theme_signals()",
   },
   // L1b sub-nodes

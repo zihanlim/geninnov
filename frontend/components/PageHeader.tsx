@@ -86,7 +86,8 @@ export default function PageHeader({
   aside,
   className,
 }: {
-  title: string;
+  /** The page's title. A ReactNode so a caller can colour a word within it. */
+  title: ReactNode;
   /** The page's summary sentence. One line of prose, not a caption. */
   lede: ReactNode;
   /** Optional second line — how to read the page, in fine print. */

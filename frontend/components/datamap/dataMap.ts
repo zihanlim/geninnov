@@ -78,6 +78,7 @@ export const mapNodes: Node[] = [
     type: "source",
     section: "01",
     badge: "TRIGGER",
+    borderColor: "var(--datamap-cron)",
     doc: "ARCHITECTURE.md · Scheduling",
   },
   {
@@ -898,6 +899,15 @@ export interface MapEdge {
 }
 
 export const mapEdges: MapEdge[] = [
+  // Pipeline trigger — cron kicks off MacroFetcher which writes to L0-macroindicators
+  { from: "cron",       to: "L0" },
+
+  // L0 container feeds both the macro table and downstream layers
+  { from: "L0",         to: "L0-macroindicators" },
+  { from: "L0-macroindicators", to: "L2-ols" },
+  { from: "L0-macroindicators", to: "L3-cycle" },
+  { from: "L0-macroindicators", to: "L4-var" },
+
   // Sources -> L0 (section 02)
   { from: "fred",       to: "L0-macroindicators" },
   { from: "yfinance",   to: "L0-macroindicators" },
@@ -928,13 +938,23 @@ export const mapEdges: MapEdge[] = [
   { from: "L2-ols",     to: "L2-bsmb" },
   { from: "L2-ols",     to: "L2-bhml" },
   { from: "L2-ols",     to: "L2-brmw" },
-  { from: "L2-ols",     to: "L2-bcma" },
   { from: "L2-ols",     to: "L2-bumd" },
   { from: "L2-ols",     to: "L2-r2" },
+  // All L2 outputs write to factor_exposures table
+  { from: "L2-bmkt",   to: "t-factors" },
+  { from: "L2-bsmb",   to: "t-factors" },
+  { from: "L2-bhml",   to: "t-factors" },
+  { from: "L2-brmw",   to: "t-factors" },
+  { from: "L2-bcma",   to: "t-factors" },
+  { from: "L2-bumd",   to: "t-factors" },
+  { from: "L2-r2",     to: "t-factors" },
   // L2b sub-nodes
   { from: "L2b-legs",   to: "L2b-total" },
   { from: "L2b-legs",   to: "L2b-marg" },
   { from: "L2b-marg",   to: "L2b-s7",   kind: "dashed" },
+  { from: "L2b-total",  to: "t-factors" },
+  { from: "L2b-marg",   to: "t-factors" },
+  { from: "L2b-s7",    to: "t-factors" },
 
   // Sources -> L3 (section 07)
   { from: "fred",       to: "L3-cycle" },
@@ -942,9 +962,24 @@ export const mapEdges: MapEdge[] = [
   // L3 sub-signals derived from the cycle × sentiment matrix
   { from: "L3-cycle",   to: "L3-debase" },
   { from: "L3-cycle",   to: "L3-fed" },
+  // L3 outputs write to regime_classifications
+  { from: "L3-cycle",   to: "t-regime" },
+  { from: "L3-debase",  to: "t-regime" },
+  { from: "L3-fed",     to: "t-regime" },
 
   // Sources -> L4 (section 08)
   { from: "yfinance",   to: "L4-var" },
+  // L4 sub-nodes: all write to portfolio_risk
+  { from: "L4-var",     to: "L4-mc" },
+  { from: "L4-var",     to: "L4-fan" },
+  { from: "L4-var",     to: "L4-vol" },
+  { from: "L4-var",     to: "L4-bcmp" },
+  { from: "L4-var",     to: "L4-wbt" },
+  { from: "L4-mc",      to: "t-risk" },
+  { from: "L4-fan",     to: "t-risk" },
+  { from: "L4-vol",     to: "t-risk" },
+  { from: "L4-bcmp",    to: "t-risk" },
+  { from: "L4-wbt",     to: "t-risk" },
 
   // External signals -> L5 aggregate context (a1)
   { from: "worldmonitor", to: "a1",  kind: "dashed" },
@@ -985,15 +1020,15 @@ export const mapEdges: MapEdge[] = [
   { from: "a8",         to: "a9" },
   { from: "a9",         to: "sizing" },
 
-  // Section 09 sub-nodes
-  { from: "sizing",    to: "q-mandate" },
-  { from: "sizing",    to: "q-signal" },
-  { from: "sizing",    to: "q-mu" },
-  { from: "sizing",    to: "q-opt" },
-  { from: "sizing",    to: "q-cost" },
-  { from: "sizing",    to: "q-crowd" },
-  { from: "sizing",    to: "q-sanc" },
-  { from: "sizing",    to: "q-choke" },
+  // Section 07 sizing sub-services — all feed into the optimizer
+  { from: "q-mandate", to: "sizing" },
+  { from: "q-signal",  to: "sizing" },
+  { from: "q-mu",      to: "sizing" },
+  { from: "q-opt",     to: "sizing" },
+  { from: "q-cost",    to: "sizing" },
+  { from: "q-crowd",  to: "sizing" },
+  { from: "q-sanc",   to: "sizing" },
+  { from: "q-choke",  to: "sizing" },
 
   // Book surfaces (L6 -> L7 -> L8)
   { from: "sizing",     to: "f-book" },
@@ -1052,6 +1087,8 @@ export const mapEdges: MapEdge[] = [
   { from: "t-risk",     to: "f-ask" },
   { from: "t-macro",    to: "f-ask" },
   { from: "t-facts",    to: "f-facts" },
+  { from: "t-picks",    to: "f-exec" },
+  { from: "t-book",     to: "f-exec" },
 ];
 
 /**

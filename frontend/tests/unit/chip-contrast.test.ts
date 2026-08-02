@@ -247,6 +247,55 @@ describe("chip contrast", () => {
   });
 });
 
+// ── the header ladder on the navy masthead (ADR-0223) ──────────────────────────
+//
+// The 56px TopBar is a solid #161b38 band on every page, so its contents use a
+// light-on-navy ladder (--header-*) instead of paper ink. Goal 8's floor must be
+// measured here too — a ladder of ink-over-surface pairs the page never had. The
+// three text inks are checked on BOTH grounds the header has: plain navy and the
+// raised block (--header-raised) that the run-state group and active nav sit on.
+// The two non-text tokens (focus ring, stale dot) clear the 3:1 WCAG 1.4.11 floor.
+
+describe("header ladder on the navy masthead (ADR-0223)", () => {
+  const NAVY = parseColor(PALETTE["logo-plate"])!;
+  const RAISED = parseColor(PALETTE["header-raised"])!;
+  const head = (token: string) => parseColor(PALETTE[token])!;
+
+  it.each([
+    ["header-ink", 4.5],
+    ["header-muted", 4.5],
+    ["header-tertiary", 4.5],
+  ] as const)("%s clears AA on navy and on the raised surface", (token, floor) => {
+    const fg = head(token);
+    for (const [label, surface] of [
+      ["navy", NAVY],
+      ["raised", RAISED],
+    ] as const) {
+      const ratio = contrast(fg, surface);
+      expect(
+        ratio,
+        `${token} is ${ratio.toFixed(2)}:1 on ${label}`,
+      ).toBeGreaterThanOrEqual(floor);
+    }
+  });
+
+  it.each([
+    ["header-focus", 3],
+    ["header-warning", 3],
+  ] as const)("%s clears the 3:1 non-text floor on the raised surface", (token, floor) => {
+    const ratio = contrast(head(token), RAISED);
+    expect(ratio, `${token} is ${ratio.toFixed(2)}:1 on raised`).toBeGreaterThanOrEqual(floor);
+  });
+
+  it("keeps the three freshness dots distinct values", () => {
+    // Goal 3: the words carry the meaning, the colour only separates the cases —
+    // but a dot that equals another dot's value separates nothing.
+    expect(head("header-ink")).not.toEqual(head("header-warning"));    // live vs stale
+    expect(head("header-warning")).not.toEqual(head("header-tertiary")); // stale vs unknown
+    expect(head("header-ink")).not.toEqual(head("header-tertiary"));   // live vs unknown
+  });
+});
+
 /** Colours a component is allowed to hardcode, each with the reason. Anything else
  *  fails, which is the point: a raw hex is invisible to a token sweep, so the
  *  2026-07-24 AA pass over globals.css/tailwind.config.ts moved the tokens and left

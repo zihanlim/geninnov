@@ -996,7 +996,6 @@ export const mapEdges: MapEdge[] = [
   // Pipeline internal -- L0 feeds downstream layers
   { from: "L0-macroindicators", to: "L1-hype" },
   { from: "L0-macroindicators", to: "L1b-freq" },
-  { from: "L0-macroindicators", to: "L3-cycle" },
 
   // L1 chain: components → hype → trade → edge → candidates
   // L1-vader/corr/mom are the four HypeScore components (attn × sent × corr × mom)
@@ -1042,7 +1041,6 @@ export const mapEdges: MapEdge[] = [
   { from: "L1b-freq",   to: "t-narrative" },
   { from: "L2-ols",     to: "t-factors" },
   { from: "L2b-legs",   to: "t-factors" },
-  { from: "L3-cycle",   to: "t-regime" },
   { from: "L1-hype",    to: "t-candidates" },
   { from: "L1-trade",   to: "t-candidates" },
   { from: "sizing",     to: "t-positions" },

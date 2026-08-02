@@ -242,9 +242,6 @@
     --datamap-dashed:   #5d6b82;  /* shadow / optional / reference edge ink */
     --datamap-label-bg:  #f6fafe;  /* edge-label halo (SHADOW pill) */
     --datamap-cron:     #dc2626;  /* trigger / scheduler — cron node border */
-    --datamap-orange:   #F97316;  /* the page-title // separator — matches the
-                                     reference diagram's data-flow accent
-                                     (docs/andromeda-dataflow.html --packet) */
 
     /* ── Categorical series palette (ADR-0128) ────────────────────────────────
        Five slots for charts whose series are IDENTITIES with no direction — one

@@ -35,7 +35,7 @@ export default function ResumeWindow({
   return (
     <FloatingWindow
       id="resume"
-      title="Zihan Lim · Resume"
+      title="Lim Zi Han · Resume"
       open={open}
       onClose={onClose}
       corner="top-right"
@@ -47,7 +47,7 @@ export default function ResumeWindow({
       <div className="p-0">
         <iframe
           src={RESUME_PATH}
-          title="Zihan Lim's resume"
+          title="Lim Zi Han's resume"
           className="w-full h-[min(72vh,680px)] border-0 bg-bg-surface"
         />
         <div className="px-3 py-2 border-t border-border bg-bg-elevated flex items-center gap-2">

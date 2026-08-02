@@ -151,41 +151,48 @@ export default function SideRail() {
           lives on the GROUP (not on the toggle), so the author card sits just
           above the Narrow button and both bottom out above the feed ribbon. */}
       <div className="mt-auto flex flex-col gap-1 p-2">
-        {/* Author attribution — "Built by Zihan Lim", with the resume. */}
-        <div
-          className={`rounded-md border border-border bg-bg-elevated transition-colors ${
-            expanded
-              ? "flex-col gap-1 px-3 py-2"
-              : "flex-col items-center gap-1 px-1 py-2"
-          }`}
-        >
-          <span
-            className={`inline-flex items-center gap-2 text-text-secondary ${
-              expanded ? "" : "flex-col gap-1"
-            }`}
-          >
-            <UserRound size={expanded ? 15 : 17} aria-hidden strokeWidth={1.75} />
-            <span className={expanded ? "text-[12px] font-semibold text-text-primary" : "text-[10px] text-center leading-tight"}>
-              {expanded ? "Zihan Lim" : "Zihan"}
+        {/* Author attribution — compact text stack. */}
+        {!expanded ? (
+          /* Collapsed: name label, opens resume on click */
+          <div className="flex justify-center py-1">
+            <button
+              type="button"
+              onClick={() => setResumeOpen((o) => !o)}
+              aria-label="Open Lim Zi Han's resume"
+              className="rounded-md px-1.5 py-1 text-[10px] font-medium text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
+            >
+              Lim Zi Han
+            </button>
+          </div>
+        ) : (
+          /* Expanded: stacked name / byline / resume button */
+          <div className="rounded-md border border-border bg-bg-elevated flex flex-col items-center gap-1 px-2 py-3">
+            {/* Built by */}
+            <span className="text-[10px] text-text-tertiary text-center leading-tight">
+              Built by
             </span>
-          </span>
-          {expanded && (
-            <span className="text-[10px] text-text-tertiary">Built by · author of Andromeda</span>
-          )}
-          <button
-            type="button"
-            onClick={() => setResumeOpen((o) => !o)}
-            aria-expanded={resumeOpen}
-            aria-controls="resume-window-body"
-            aria-label="Open Zihan Lim's resume"
-            className={`mt-1 inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors ${
-              expanded ? "" : "flex-col gap-1 px-1"
-            }`}
-          >
-            <FileText size={expanded ? 13 : 15} aria-hidden strokeWidth={1.75} />
-            <span>{expanded ? "Resume" : "CV"}</span>
-          </button>
-        </div>
+            {/* Name */}
+            <span className="text-[13px] font-semibold text-text-primary text-center leading-tight">
+              Lim Zi Han
+            </span>
+            {/* Brand */}
+            <span className="text-[10px] text-text-tertiary text-center leading-tight">
+              Andromeda <span className="text-accent">/</span> Analytics
+            </span>
+            {/* Resume button */}
+            <button
+              type="button"
+              onClick={() => setResumeOpen((o) => !o)}
+              aria-expanded={resumeOpen}
+              aria-controls="resume-window-body"
+              aria-label="Open Lim Zi Han's resume"
+              className="mt-0.5 inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors w-full justify-center"
+            >
+              <FileText size={12} aria-hidden strokeWidth={1.75} />
+              <span>Resume</span>
+            </button>
+          </div>
+        )}
 
         <button
           type="button"

@@ -958,7 +958,7 @@ export const mapEdges: MapEdge[] = [
 
   // Sources -> L3 (section 07)
   { from: "fred",       to: "L3-cycle" },
-  { from: "fedwatch",   to: "L3-cycle" },
+  // fedwatch → L3-cycle: REMOVED — ADR-0219 FedWatch is m011 not deployed
   // L3 sub-signals derived from the cycle × sentiment matrix
   { from: "L3-cycle",   to: "L3-debase" },
   { from: "L3-cycle",   to: "L3-fed" },
@@ -969,6 +969,8 @@ export const mapEdges: MapEdge[] = [
 
   // Sources -> L4 (section 08)
   { from: "yfinance",   to: "L4-var" },
+  { from: "yfinance",   to: "t-mkt" },  // market_assets ticker master populated from yfinance closes
+  { from: "t-bench",    to: "L4-bcmp" },  // benchmark_returns read by benchmark_compare.py
   // L4 sub-nodes: all write to portfolio_risk
   { from: "L4-var",     to: "L4-mc" },
   { from: "L4-var",     to: "L4-fan" },
@@ -995,10 +997,11 @@ export const mapEdges: MapEdge[] = [
 
   // Pipeline internal -- L0 feeds downstream layers
   { from: "L0-macroindicators", to: "L1-hype" },
-  { from: "L0-macroindicators", to: "L1b-freq" },
+  // L0-macroindicators → L1b-freq: REMOVED — narrative_tracker reads market_news, not macro_indicators
 
   // L1 chain: components → hype → trade → edge → candidates
   // L1-vader/corr/mom are the four HypeScore components (attn × sent × corr × mom)
+  { from: "t-sc",       to: "L1-hype" },  // scoring_config weights + lookbacks drive HypeScore
   { from: "L1-vader",   to: "L1-hype" },
   { from: "L1-corr",    to: "L1-hype" },
   { from: "L1-mom",     to: "L1-hype" },
@@ -1048,7 +1051,7 @@ export const mapEdges: MapEdge[] = [
   { from: "L4-var",     to: "t-risk" },
   { from: "a8",         to: "t-signal" },
   { from: "a9",         to: "t-signal" },
-  { from: "a6",         to: "t-picks" },
+  // a6 → t-picks: REMOVED — actual DB write is at a9 (finalise_analytics)
   { from: "a9",         to: "t-picks" },
   { from: "a9",         to: "t-runs" },
   { from: "t-facts",    to: "a6" },

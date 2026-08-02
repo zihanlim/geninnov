@@ -10,12 +10,14 @@ test the orchestration:
     failure
   - a persist failure is reported but does not blow up the call
 """
+import json
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 
 sys.path.insert(0, "backend/services")
 
 from computable_macro_runner import (
+    _json_safe,
     _latest,
     _try_read_trailing_eps,
     _values,
@@ -281,3 +283,101 @@ def test_run_is_idempotent_and_never_raises() -> None:
     assert "erp" in out
     assert "equity_bond_corr" in out
     assert "ndx_seasonality" in out
+
+
+# ── JSON-boundary sanitisation (ADR-0098: absence beats fabrication, but
+#    a payload that raises on the way to the database is also a defect) ──
+
+
+def test_json_safe_converts_date_and_datetime_to_iso() -> None:
+    """_json_safe turns date / datetime into ISO strings and walks
+    nested dicts and lists. Everything else (int, float, str, bool,
+    None) passes through unchanged — the helper exists ONLY to
+    bridge the JSON boundary, not to mutate domain data.
+    """
+    payload = {
+        "as_of": date(2026, 8, 1),
+        "eps_as_of": date(2026, 6, 30),
+        "ts": datetime(2026, 8, 1, 13, 0, 0, tzinfo=timezone.utc),
+        "nested": {"inner_date": date(2026, 1, 1), "x": 1.0},
+        "listy": [date(2026, 1, 1), "str", 42, None, True, False],
+        "n": 1.0,
+        "s": "ok",
+        "b": True,
+        "none": None,
+    }
+    out = _json_safe(payload)
+    assert out["as_of"] == "2026-08-01"
+    assert out["eps_as_of"] == "2026-06-30"
+    assert out["ts"] == "2026-08-01T13:00:00+00:00"
+    assert out["nested"]["inner_date"] == "2026-01-01"
+    assert out["nested"]["x"] == 1.0
+    assert out["listy"][0] == "2026-01-01"
+    assert out["listy"][1:] == ["str", 42, None, True, False]
+    # Round-trip through json.dumps, the operation that the supabase
+    # client's update() does under the hood. THIS is the regression:
+    # without _json_safe, this line raised TypeError.
+    json.dumps(out)
+
+
+def test_persist_payload_is_json_serializable_when_services_return_dates() -> None:
+    """Regression test for the 2026-08-01 empty-card incident.
+
+    The ERP and equity_bond_corr services deliberately return
+    ``as_of`` (and ERP also ``eps_as_of``) as ``datetime.date``
+    objects — a real type for callers that aren't serialising. The
+    supabase client's ``update()`` calls ``json.dumps`` under the
+    hood, which has no encoder for ``date`` and raises
+    ``TypeError: Object of type date is not JSON serializable``.
+    The runner's ``run()`` swallows that, attaches
+    ``persist_error`` to the in-memory payload, and writes NOTHING
+    to the database — the JSONB column stays NULL and the
+    homepage card renders the empty state.
+
+    Pin the contract: whatever ``persist_computable_macro`` sends
+    to the supabase client must round-trip through ``json.dumps``.
+    The test mimics the real service output (a payload with
+    ``as_of`` and ``eps_as_of`` as ``date`` objects), captures the
+    update payload on the fake, and asserts the round-trip.
+    """
+    sb = _FakeSupabase(
+        regime_rows=[{"run_date": "2026-08-01", "computable_macro": None}],
+    )
+    payload = {
+        "erp": {
+            "status": "measured",
+            "as_of": date(2026, 8, 1),                # <-- date, the regression
+            "eps_as_of": date(2026, 6, 30),           # <-- date, the regression
+            "erp_pct": -1.42,
+            "earnings_yield_pct": 3.26,
+            "ust10_pct": 4.68,
+            "spx_pe": 30.63,
+        },
+        "equity_bond_corr": {
+            "status": "unknown",
+            "as_of": date(2026, 8, 1),                # <-- date, the regression
+            "corr": None,
+            "n_pairs": 0,
+            "lookback_days": 60,
+        },
+        "ndx_seasonality": {
+            "n_observations": 438,
+            "per_month": [{"month": 8, "mean_pct": 0.32}],
+            "window": {"start_year": 1990, "end_year": 2025},
+        },
+    }
+    n = persist_computable_macro(sb, as_of=date(2026, 8, 1), payload=payload)
+    assert n == 1
+    # Pull the actual payload the supabase client would have been
+    # asked to serialise. The fake records one entry per .execute(),
+    # keyed by table name.
+    recorder = sb.recorder["regime_classifications"]
+    assert len(recorder) == 1
+    sent = recorder[0]["update_payload"]["computable_macro"]
+    # The fix: every date is now an ISO string in the sent payload.
+    assert sent["erp"]["as_of"] == "2026-08-01"
+    assert sent["erp"]["eps_as_of"] == "2026-06-30"
+    assert sent["equity_bond_corr"]["as_of"] == "2026-08-01"
+    # And the whole thing round-trips through json.dumps, which is
+    # the operation the supabase client performs.
+    json.dumps(sent)

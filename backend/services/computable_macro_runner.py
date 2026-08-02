@@ -21,7 +21,7 @@ function augments it. An exception here must not abort the pipeline
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pandas as pd
@@ -89,6 +89,37 @@ def _latest(series: list[tuple[date, float]]) -> float | None:
 
 def _values(series: list[tuple[date, float]]) -> list[float]:
     return [v for _, v in series]
+
+
+def _json_safe(obj: Any) -> Any:
+    """Recursively convert date / datetime to ISO strings for JSON.
+
+    The supabase client's ``update()`` serialises the payload through
+    ``json.dumps``, which has no encoder for ``datetime.date`` or
+    ``datetime.datetime`` (the stdlib encoder raises ``TypeError``).
+    The pure-function services deliberately return ``as_of`` (and ERP
+    also ``eps_as_of``) as ``date`` objects — callers that aren't
+    crossing a JSON boundary want the real type — so the conversion
+    happens here, at the persist boundary, where the services don't
+    have to know about JSON. Lists and dicts are walked; everything
+    else (floats, ints, str, bool, None) passes through unchanged.
+
+    Resolved the "L3a card empty on 2026-08-01" regression: the
+    compute step produced a valid payload (ERP ``measured`` at -1.42%,
+    eq_bond_corr ``unknown``, ndx_seasonality ``measured``), but the
+    payload's ``as_of`` and ``eps_as_of`` were ``date`` objects and
+    the supabase update raised ``Object of type date is not JSON
+    serializable`` — the runner caught it, wrote ``persist_error`` to
+    the in-memory payload, and persisted nothing, so the JSONB
+    column stayed NULL and the homepage card rendered the empty state.
+    """
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, (date, datetime)) and not isinstance(obj, bool):
+        return obj.isoformat()
+    return obj
 
 
 def _try_read_trailing_eps(
@@ -243,10 +274,18 @@ def persist_computable_macro(
     Returns 1 on success, 0 if no row was updated (e.g. as_of has no
     regime row). The function is idempotent — re-running replaces
     the column rather than appending.
+
+    The payload is sanitised through ``_json_safe`` before the
+    update: the supabase client serialises through ``json.dumps``,
+    which has no encoder for ``date`` / ``datetime``, and the ERP /
+    eq-bond-corr services deliberately return those types. The
+    conversion lives here rather than in the services because the
+    JSON boundary is a property of THIS function.
     """
+    safe_payload = _json_safe(payload)
     resp = (
         supabase.table("regime_classifications")
-        .update({"computable_macro": payload})
+        .update({"computable_macro": safe_payload})
         .eq("run_date", as_of.isoformat())
         .execute()
     )

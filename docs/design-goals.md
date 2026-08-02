@@ -113,15 +113,17 @@ compiles colours to literal RGB and does not read the `:root` variables.
 This supersedes ADR-0009's "dark mode retained" clause; the rest of ADR-0009
 (research-first, auditable, narrative over density) still holds.
 
-**One navy exists, and it is fenced to the logo.** The supplied mark is a white
-figure on `#161b38`, so adopting it put a dark ground in a light product
-([ADR-0113](adrs/0113-the-mark-is-the-artwork-and-the-plate-is-fenced.md)). That
-is a real widening of this goal and is recorded rather than absorbed. `--logo-plate`
-is a token *only* so the palette test can see it — it is not a surface, not a chip,
-not an ink, and **no Tailwind utility compiles from it**, so `bg-logo-plate` gets
-you nothing and there is no accidental path from the mark to a navy panel. A
-proposal that reaches for it for anything but the mark is reaching for the dark
-dashboard by increments, which is what this goal is about.
+**One navy exists, and it is fenced to the brand ground — the mark and the
+masthead.** The supplied mark is a white figure on `#161b38`, so adopting it put a
+dark ground in a light product
+([ADR-0113](adrs/0113-the-mark-is-the-artwork-and-the-plate-is-fenced.md)).
+[ADR-0223](adrs/0223-the-navy-is-the-brand-ground.md) widened that fence from
+*the mark only* to *mark + masthead*: the 56px TopBar on every page is now a
+solid `#161b38` band, so `bg-logo-plate` compiles for that one surface. The navy
+is the *brand's* ground, not a second dark palette — it is still not a panel, not
+a chip, not a footer, not a card. A proposal that reaches for it for anything but
+the mark or the masthead is reaching for the dark dashboard by increments, which
+is what this goal is about.
 
 ### 5. Affordances match capability
 

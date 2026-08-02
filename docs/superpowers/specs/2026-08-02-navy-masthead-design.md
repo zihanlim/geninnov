@@ -28,7 +28,7 @@ this spec is the build recipe.
 | `--header-ink` | `#ffffff` | wordmark, active nav, control labels | ≈ 16.8:1 |
 | `--header-muted` | `#b6bbca` | inactive nav, run-state body | ≈ 8.8:1 |
 | `--header-tertiary` | `#8d93a3` | descriptor, nav numbers, "Next run" | ≈ 5.5:1 |
-| `--header-raised` | `#28304d` | nav active block, run-state group, control bg | surface |
+| `--header-raised` | `#1f2740` | nav active block, run-state group, control bg | surface (tertiary on it 4.80:1, muted 7.70:1) |
 | `--header-border` | `rgba(255,255,255,0.12)` | hairlines / divides | decorative |
 | `--header-focus` | `#9ad9e4` | scoped header focus ring | ≈ 10.8:1 |
 | `--header-warning` | `#e07a4a` | *stale* freshness dot | ≈ 5.7:1 |

@@ -108,6 +108,21 @@ export default function ProcessMap() {
             <em>every</em> phase, so naming them as one would be false.
           </Note>
         </div>
+        <div className="mt-3">
+          <Note label="The system as one picture">
+            <Link href="/datamap" className="text-accent hover:underline">
+              /datamap
+            </Link>{" "}
+            is the animated map of every part of the research process end to end —
+            sources, the L0–L8 pipeline, the Supabase tables, the frontend
+            surfaces. Hover any node to trace its path. Cross-cutting like this
+            page and{" "}
+            <Link href="/facts" className="text-accent hover:underline">
+              /facts
+            </Link>
+            , which is why none of the three are in the top-bar nav.
+          </Note>
+        </div>
       </div>
     </main>
   );

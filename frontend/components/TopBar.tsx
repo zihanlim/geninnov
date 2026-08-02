@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import BrandMark from "@/components/BrandMark";
 import LiveNewsDock from "@/components/live/LiveNewsDock";
 import AskDock from "@/components/chat/AskDock";
+import DataMapDock from "@/components/datamap/DataMapDock";
 import { resolveRunDates } from "@/lib/homeFreshness";
 import { PHASES, phaseNumber } from "@/lib/method/phases";
 
@@ -374,6 +375,17 @@ export default function TopBar() {
             the only mount that can hold a Ctrl+F-able, deep-linkable transcript.
             Both mount the same `AskConsole`. */}
         <AskDock />
+        {/* The data map. Cross-cutting like /method and /facts, so it is not in
+            `lib/method/phases.ts` and the four-destination rule holds; but the
+            only place it is reachable today is the bottom Note on /method, which
+            is two clicks from a reader on a different page. A TopBar tool
+            surfaces it without burning a nav slot. Order: `Ask` then `Data map`
+            then `Live news` — Ask first because it is the read-side of the book,
+            Data map second because it explains the system that produced it, Live
+            news third because it is the most ephemeral of the three. Same
+            `RibbonControl` look as the other two; the only difference is the
+            click is a Link, not a panel. */}
+        <DataMapDock />
         {/* /facts is reachable from /alpha (the theme heatmap) and from /ask's
             "What it reads" sidebar — see ThemeHeatmap's per-row fact link and
             AskPage's layer-count block. A top-bar entry is redundant: the badge

@@ -1,8 +1,20 @@
 # Andromeda — response to the two questions
 
-**Live system:** https://andromeda-analytics.vercel.app
-**Book shown below:** run date 2026-07-30, multi-asset lens. Every figure is read from the
-published run, not composed for this document.
+**Author:** Lim Zi Han
+**Submission:** 2026-08-03
+**Live system:** https://andromeda-analytics.vercel.app — every route named below lives there (`/book` → https://andromeda-analytics.vercel.app/book)
+**Code:** https://github.com/zihanlim/andromeda
+
+**Book shown:** run date 2026-07-30, multi-asset lens. Every Q1 figure is read from the
+published run, not composed for this document. The Q2 live figures are dated 2026-07-28,
+the run the methodology is written against.
+
+**The short answer.** Q1: nine positions — four long, five short — at 44.4% gross and
+−7.7% net. The system selected five and five; the turnover cap removed the fifth long,
+not the screen. Q2: a two-path daily engine — anchored scoring of nine named themes,
+plus an un-themed discovery path that can surface a narrative nobody configured — with
+a price-link gate so attention alone does not qualify. Both answers are read from the
+published runs below, in the order the process actually runs.
 
 ---
 
@@ -47,9 +59,9 @@ enforced one holds.
 
 **42 candidates** cleared the L1 screen, of which **11 came from themes below the attention
 gate** — admitted anyway because the name's own |EdgeScore| was decisive. Attention chooses
-what we look at; it does not decide what is tradable. That is a standing rule (ADR-0046), not a
-one-off override. The pool is ordered by conviction before truncation, so the truncation cannot
-quietly re-impose the gate it exists to overrule.
+what we look at; it does not decide what is tradable. That is a standing rule (ADR-0046), not
+a one-off override. The pool is ordered by conviction before it is truncated to 30 for the
+reasoning step, so the truncation cannot quietly re-impose the gate it exists to overrule.
 
 ### 03 — Risk & scenario · *what could go wrong, and what would it cost?* → `/risk`
 
@@ -105,8 +117,8 @@ The optimizer then deleted it. `optimizer_result` records the act plainly:
 > `"zeroed": ["EMB"]` · `"binding_constraints": ["turnover at cap"]`
 > `"realised_turnover": 0.59999997` against a `"turnover_cap": 0.6`
 
-Realised turnover landed within three parts in ten million of the limit. **35.2 percentage
-points of that 60 were `forced_exit_turnover`** — unwinding yesterday's book — leaving roughly
+Realised turnover landed within three parts in ten million of the limit. **35.2 points of the
+60% cap were `forced_exit_turnover`** — unwinding yesterday's book — leaving roughly
 25 points to fund everything new. EMB at 20% did not fit in what remained.
 
 So the honest answer is not "only four ideas cleared the bar." It is that **five did, and a
@@ -177,22 +189,90 @@ reporting arithmetic on noise.
 
 ## Q2 — a daily process for identifying themes and quantifying hype
 
-**Full answer: [`docs/theme-hype-methodology.md`](../docs/theme-hype-methodology.md)** — data
-gathering through to the quantification framework, written against live figures rather than
-illustrations, and explicit about what is not yet measurable.
-
-The three failures the design is a response to:
+The brief defines a theme as *"the narrative driving cross-asset moves"*. The design is a
+response to three failures of informal theme identification — and the third one is the
+load-bearing constraint:
 
 | Failure | What it looks like | Response |
 |---|---|---|
 | **You only find what you named** | A keyword list returns the themes you already believe in and calls everything else "no signal" | An un-themed corpus is tracked in parallel, so a narrative nobody configured can surface on its own |
 | **A score that moves when its peers move** | Cross-sectional normalisation makes "Inflation fell" indistinguishable from "something else rose" | Sub-scores are absolute, not relative to the day's peer group |
-| **Attention that means nothing** | A loud narrative that moves no prices is a media artefact, not a market theme | A price-link gate: the brief defines a theme as *"the narrative driving cross-asset moves"*, so attention alone does not qualify |
+| **Attention that means nothing** | A loud narrative that moves no prices is a media artefact, not a market theme | A price-link gate: attention alone does not qualify |
 
-The last one is the load-bearing constraint. The system tracks phrase-level attention daily,
-but will not call a phrase a *theme* until it has enough sessions to test whether attention
-and prices move together — and below that floor it reports `insufficient_history` as the
-verdict rather than as a caveat on a number it prints anyway.
+### The process, in one shape
+
+One job runs each weekday at 21:30 UTC, after the US close, along **two paths that fail
+differently**:
+
+- **Anchored path.** Nine named themes are queried per-theme, and each is scored on
+  mentions, sentiment, cross-asset correlation and momentum → HypeScore. This measures
+  well, but only what it was told to look for.
+- **Discovery path.** A separate market corpus is collected from queries that name *no
+  theme*, so it is not circular by construction. The discovery layer reads only that
+  corpus: 1–3-gram document frequency → share of voice → velocity against each phrase's
+  *own* history → `new` / `emerging` / `established` / `fading`. It finds what nobody
+  named. It is deliberately **shadow** — it sizes nothing, and the board says so.
+
+Neither path alone is a systematic process; the second is what stops the first from
+being a mirror.
+
+### The quantification framework
+
+```
+HypeScore = 100 × [ 0.30·volume + 0.20·sentiment + 0.30·correlation + 0.20·momentum ]
+```
+
+Weights live in the database, not in code. Three decisions carry the design:
+
+- **Sub-scores are absolute, never cross-sectionally normalised.** A cross-sectional
+  score is a statement about the day's peer group, not about the theme. Observed
+  directly: China Growth's mention count was byte-identical to the previous day while
+  its normalised score moved, because *other* themes moved. (ADR-0042)
+- **A missing component is dropped and the remainder renormalised — never scored
+  zero.** With correlation at 0.30, scoring an unmeasurable correlation as 0 silently
+  deducts up to 30 points and is indistinguishable from a measured absence.
+- **Momentum is MAD-scaled, not std-scaled.** On a short window one viral day inflates
+  the mean and one quiet day shrinks the std, so a naive z-score swings on noise.
+
+### The gate: does attention move prices?
+
+The decisive test is economic, not linguistic: per-class correlation between instrument
+returns and the phrase's attention series, with two floors — **5 sessions to compute,
+20 to believe**. Below the lower floor the verdict *is* `insufficient_history`, not an
+optional flag. The reason is empirical: the first live run returned `linked` for all 14
+phrases at n=5, and a test that always passes is not a test. (ADR-0143)
+
+A live illustration of why the score is not the whole answer: on the 2026-07-28 run
+the methodology is written against, *US Election* was **third on attention** (6.71
+mentions/day) and **last on evidence** (zero asset classes moving with it). Under the
+brief's own definition that is a story, not yet a theme — a single ranked number would
+have hidden that.
+
+### One output, two uses
+
+- **Idea generation.** HypeScore gates which themes are in scope; direction comes from
+  a separate EdgeScore (trend, regime-fit, carry, value, sentiment — attention has no
+  sign), and `conviction = |EdgeScore| / vol` is the mandate-free handoff to sizing.
+- **Risk monitoring.** The same score read against how much attention that theme
+  normally gets: percentile within its *own* history. A long in a theme the crowd is
+  already loud about is a crowded long — mean-reversion risk the book is walking into.
+
+### What this does not claim
+
+- Attention rests on one news provider; corroboration across independent sources is not
+  yet a gate.
+- The anchored queries are biased by construction — the board is captioned as *relative
+  attention among the anchors*, not share of an unbiased corpus.
+- Discovery is real but not mature: 358 phrases tracked, 279 covered by no anchor theme,
+  velocity measurable on 0 — the board reports that rather than showing an empty list as
+  a finding.
+- The price-link gate is mostly abstaining, by design, until 20 sessions accumulate.
+
+**The full methodology** — data sources, the discovery tracker, live output tables — is in
+the repository at `docs/theme-hype-methodology.md`
+(https://github.com/zihanlim/andromeda/blob/main/docs/theme-hype-methodology.md).
+**The prototype is the live site**: the run reproduces with one command, and every
+formula on `/method` is rendered from the database at request time, against live data.
 
 ---
 

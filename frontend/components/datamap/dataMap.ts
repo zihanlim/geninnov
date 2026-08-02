@@ -938,6 +938,7 @@ export const mapEdges: MapEdge[] = [
   { from: "L2-ols",     to: "L2-bsmb" },
   { from: "L2-ols",     to: "L2-bhml" },
   { from: "L2-ols",     to: "L2-brmw" },
+  { from: "L2-ols",     to: "L2-bcma" },
   { from: "L2-ols",     to: "L2-bumd" },
   { from: "L2-ols",     to: "L2-r2" },
   // All L2 outputs write to factor_exposures table
@@ -1061,6 +1062,7 @@ export const mapEdges: MapEdge[] = [
   { from: "t-macro",    to: "f-home" },
   { from: "t-narrative",to: "f-home" },
   { from: "t-regime",   to: "f-home" },
+  { from: "t-mkt",      to: "f-home" },  // market_assets tape read by MarketBar
   { from: "t-book",     to: "f-book" },
   { from: "t-candidates",to: "f-book" },
   { from: "t-positions",to: "f-book" },

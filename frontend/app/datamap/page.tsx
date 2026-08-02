@@ -615,7 +615,7 @@ function Legend() {
             className="inline-block w-3.5 h-3.5 rounded"
             style={{ background: "var(--bg-elevated)", border: "1.5px solid var(--datamap-compute)" }}
           />
-          <span>L0–L8 pipeline</span>
+          <span>Deterministic quantitative pipeline</span>
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span
@@ -684,7 +684,7 @@ function NodeTable({ nodes }: { nodes: Node[] }) {
 
   const labels: Record<NodeType, string> = {
     source: "External data sources",
-    pipeline: "L0–L8 pipeline",
+    pipeline: "Deterministic quantitative pipeline",
     table: "Supabase tables (representative)",
     surface: "Frontend surfaces",
     verify: "Offline verification",

@@ -212,6 +212,16 @@ export const mapNodes: Node[] = [
   },
 
   // ─────────────── L0–L8 PIPELINE ───────────────
+  // Ingestion boundary — all external sources converge here before branching to their fetchers
+  {
+    id: "L0-ingest",
+    name: "External Data",
+    summary: "Ingestion boundary · cron dispatches all fetchers",
+    type: "pipeline",
+    section: "02",
+    borderColor: "var(--datamap-cron)",
+    doc: "ARCHITECTURE.md · Scheduling",
+  },
   {
     id: "L0",
     name: "MacroFetcher",
@@ -899,8 +909,25 @@ export interface MapEdge {
 }
 
 export const mapEdges: MapEdge[] = [
-  // Pipeline trigger — cron kicks off MacroFetcher which writes to L0-macroindicators
-  { from: "cron",       to: "L0" },
+  // L0-ingest: all external sources converge here (dashed = dispatch, not direct read)
+  { from: "cron",       to: "L0-ingest" },
+  { from: "fred",       to: "L0-ingest",  kind: "dashed" },
+  { from: "yfinance",   to: "L0-ingest",  kind: "dashed" },
+  { from: "brave",      to: "L0-ingest",  kind: "dashed" },
+  { from: "gdelt",      to: "L0-ingest",  kind: "dashed" },
+  { from: "reddit",     to: "L0-ingest",  kind: "dashed" },
+  { from: "rss",        to: "L0-ingest",  kind: "dashed" },
+  { from: "kenfrench",  to: "L0-ingest",  kind: "dashed" },
+  { from: "polymarket", to: "L0-ingest",  kind: "dashed" },
+  { from: "cftc",       to: "L0-ingest",  kind: "dashed" },
+  { from: "worldmonitor",to: "L0-ingest",  kind: "dashed" },
+  { from: "fedwatch",   to: "L0-ingest",  kind: "dashed" },
+
+  // L0-ingest fans out to the actual fetchers (dashed = dispatch signal)
+  { from: "L0-ingest",  to: "L0" },
+  { from: "L0-ingest",  to: "L1-hype" },
+  { from: "L0-ingest",  to: "L1b-freq" },
+  { from: "L0-ingest",  to: "L2-ols" },
 
   // L0 container feeds both the macro table and downstream layers
   { from: "L0",         to: "L0-macroindicators" },
@@ -908,15 +935,11 @@ export const mapEdges: MapEdge[] = [
   { from: "L0-macroindicators", to: "L3-cycle" },
   { from: "L0-macroindicators", to: "L4-var" },
 
-  // Sources -> L0 (section 02) — all flow through the ingestion boundary first
-  { from: "fred",       to: "L0" },
-  { from: "yfinance",   to: "L0" },
-
-  // Sources -> L1 (section 03)
+  // Sources -> L1 (section 03) — actual data reads
   { from: "brave",      to: "L1-hype" },
   { from: "reddit",     to: "L1-hype" },
 
-  // Sources -> L1b (section 04)
+  // Sources -> L1b (section 04) — actual data reads
   { from: "brave",      to: "L1b-freq" },
   { from: "gdelt",      to: "L1b-freq" },
   { from: "rss",        to: "L1b-freq",  label: "SHADOW", kind: "dashed" },
@@ -925,7 +948,7 @@ export const mapEdges: MapEdge[] = [
   { from: "L1b-voice",  to: "L1b-vel" },
   { from: "L1b-vel",    to: "L1b-status" },
 
-  // Sources -> L2 (section 05)
+  // Sources -> L2 (section 05) — actual data reads
   { from: "kenfrench",  to: "L2-ols" },
   { from: "yfinance",   to: "L2-ols" },
 
@@ -1119,6 +1142,7 @@ export const swimlaneOrder: Record<NodeType, string[]> = {
     "gemini",
   ],
   pipeline: [
+    "L0-ingest",
     "L0",
     "L1",
     "L1b",

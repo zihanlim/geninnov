@@ -908,9 +908,9 @@ export const mapEdges: MapEdge[] = [
   { from: "L0-macroindicators", to: "L3-cycle" },
   { from: "L0-macroindicators", to: "L4-var" },
 
-  // Sources -> L0 (section 02)
-  { from: "fred",       to: "L0-macroindicators" },
-  { from: "yfinance",   to: "L0-macroindicators" },
+  // Sources -> L0 (section 02) — all flow through the ingestion boundary first
+  { from: "fred",       to: "L0" },
+  { from: "yfinance",   to: "L0" },
 
   // Sources -> L1 (section 03)
   { from: "brave",      to: "L1-hype" },

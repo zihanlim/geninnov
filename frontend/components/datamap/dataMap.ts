@@ -910,6 +910,10 @@ export const mapEdges: MapEdge[] = [
   { from: "brave",      to: "L1b-freq" },
   { from: "gdelt",      to: "L1b-freq" },
   { from: "rss",        to: "L1b-freq",  label: "SHADOW", kind: "dashed" },
+  // L1b internal chain: doc freq → share of voice → velocity → status
+  { from: "L1b-freq",   to: "L1b-voice" },
+  { from: "L1b-voice",  to: "L1b-vel" },
+  { from: "L1b-vel",    to: "L1b-status" },
 
   // Sources -> L2 (section 05)
   { from: "kenfrench",  to: "L2-ols" },
@@ -919,6 +923,14 @@ export const mapEdges: MapEdge[] = [
   { from: "L2-ols",     to: "L2b-legs" },
   { from: "fred",       to: "L2b-legs" },
   { from: "yfinance",   to: "L2b-legs" },
+  // L2a factor outputs (rolling_ols() per-asset regressions)
+  { from: "L2-ols",     to: "L2-bmkt" },
+  { from: "L2-ols",     to: "L2-bsmb" },
+  { from: "L2-ols",     to: "L2-bhml" },
+  { from: "L2-ols",     to: "L2-brmw" },
+  { from: "L2-ols",     to: "L2-bcma" },
+  { from: "L2-ols",     to: "L2-bumd" },
+  { from: "L2-ols",     to: "L2-r2" },
   // L2b sub-nodes
   { from: "L2b-legs",   to: "L2b-total" },
   { from: "L2b-legs",   to: "L2b-marg" },
@@ -927,6 +939,9 @@ export const mapEdges: MapEdge[] = [
   // Sources -> L3 (section 07)
   { from: "fred",       to: "L3-cycle" },
   { from: "fedwatch",   to: "L3-cycle" },
+  // L3 sub-signals derived from the cycle × sentiment matrix
+  { from: "L3-cycle",   to: "L3-debase" },
+  { from: "L3-cycle",   to: "L3-fed" },
 
   // Sources -> L4 (section 08)
   { from: "yfinance",   to: "L4-var" },
@@ -948,10 +963,13 @@ export const mapEdges: MapEdge[] = [
   { from: "L0-macroindicators", to: "L1b-freq" },
   { from: "L0-macroindicators", to: "L3-cycle" },
 
-  // L1 chain: hype -> trade -> edge -> candidates
+  // L1 chain: components → hype → trade → edge → candidates
+  // L1-vader/corr/mom are the four HypeScore components (attn × sent × corr × mom)
+  { from: "L1-vader",   to: "L1-hype" },
+  { from: "L1-corr",    to: "L1-hype" },
+  { from: "L1-mom",     to: "L1-hype" },
   { from: "L1-hype",    to: "L1-trade" },
   { from: "L1-trade",   to: "L1-edge" },
-  { from: "L1-edge",    to: "L1-mom" },
   { from: "L1-edge",    to: "t-themes" },
   { from: "L1-edge",    to: "t-candidates" },
 

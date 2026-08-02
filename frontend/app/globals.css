@@ -200,12 +200,12 @@
     --datamap-dashed:   #5d6b82;  /* shadow / optional / reference edge ink */
     --datamap-label-bg:  #f6fafe;  /* edge-label halo (SHADOW pill) */
 
-    /* ── Node fill overrides — solid colour background replacing the grey card ───── */
-    --datamap-fill-purple: rgba(168, 85, 247, 0.12);
-    --datamap-fill-blue:   rgba( 59, 130, 246, 0.12);
-    --datamap-fill-green:  rgba( 16, 185, 129, 0.12);
-    --datamap-fill-amber:  rgba(245, 158,  11, 0.12);
-    --datamap-fill-red:    rgba(239,  68,  68, 0.12);
+    /* ── Node fill overrides — colour background replacing the grey card ───── */
+    --datamap-fill-purple: rgba(168, 85, 247, 0.28);
+    --datamap-fill-blue:   rgba( 59, 130, 246, 0.28);
+    --datamap-fill-green:  rgba( 16, 185, 129, 0.28);
+    --datamap-fill-amber:  rgba(245, 158,  11, 0.28);
+    --datamap-fill-red:    rgba(239,  68,  68, 0.28);
 
     /* ── Categorical series palette (ADR-0128) ────────────────────────────────
        Five slots for charts whose series are IDENTITIES with no direction — one

@@ -235,6 +235,7 @@ def test_build_computable_macro_with_all_inputs() -> None:
     assert "midterm" in ndx
     assert "window" in ndx
     assert ndx["n_observations"] >= 0
+    assert ndx["status"] in ("measured", "insufficient_history")  # never "unknown"
     assert len(ndx["per_month"]) == 12
 
 
@@ -248,6 +249,10 @@ def test_build_computable_macro_with_no_inputs_returns_unknown_shape() -> None:
     assert payload["erp"]["status"] == "unknown"
     assert payload["erp"]["erp_pct"] is None
     assert payload["equity_bond_corr"]["status"] in ("unknown", "insufficient_history")
+    # NDX reads from the parquet cache or yfinance directly (not Supabase),
+    # so an empty fake-Supabase does NOT make it insufficient_history.
+    # Assert the status is always one of the two meaningful states.
+    assert payload["ndx_seasonality"]["status"] in ("measured", "insufficient_history")
 
 
 def test_persist_writes_to_regime_table() -> None:

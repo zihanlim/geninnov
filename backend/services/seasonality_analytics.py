@@ -234,6 +234,9 @@ def compute_ndx_seasonality(
     )
     midterm = compute_midterm_year_stats(monthly_returns)
 
+    n = len(monthly_returns)
+    status: str = "measured" if n >= 12 else "insufficient_history"
+
     return {
         "current_month": current_month,
         "current_month_label": _month_label(current_month),
@@ -243,7 +246,8 @@ def compute_ndx_seasonality(
             "start_year": start_year,
             "end_year": end_year,
         },
-        "n_observations": len(monthly_returns),
+        "n_observations": n,
+        "status": status,
     }
 
 

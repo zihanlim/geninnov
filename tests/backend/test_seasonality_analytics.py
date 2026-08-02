@@ -110,10 +110,12 @@ def test_full_seasonality_call_returns_combined_shape() -> None:
     assert s["window"]["start_year"] == 1990
     assert s["window"]["end_year"] == 2025
     assert s["n_observations"] == 36 * 12
+    assert s["status"] == "measured"  # 432 obs >= 12 → measured
 
 
 def test_empty_input_returns_safe_shape() -> None:
     s = compute_ndx_seasonality([])
     assert s["n_observations"] == 0
+    assert s["status"] == "insufficient_history"  # 0 < 12
     assert all(p["mean_pct"] is None for p in s["per_month"])
     assert s["midterm"]["aug_nov_median_pct"] is None

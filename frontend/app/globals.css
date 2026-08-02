@@ -200,6 +200,12 @@
     --datamap-dashed:   #5d6b82;  /* shadow / optional / reference edge ink */
     --datamap-label-bg:  #f6fafe;  /* edge-label halo (SHADOW pill) */
 
+    /* ── Node tint overlays (subtle rgba fills on the grey card) ───────────────── */
+    --datamap-tint-blue:   rgba(59, 130, 246, 0.07);   /* blue  */
+    --datamap-tint-green:  rgba(16, 185, 129, 0.07);   /* green */
+    --datamap-tint-amber:  rgba(245, 158, 11, 0.07);   /* amber */
+    --datamap-tint-red:    rgba(239,  68, 68, 0.07);   /* red   */
+
     /* ── Categorical series palette (ADR-0128) ────────────────────────────────
        Five slots for charts whose series are IDENTITIES with no direction — one
        line per narrative on the trends board. Assigned in fixed order and never

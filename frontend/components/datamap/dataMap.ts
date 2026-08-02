@@ -60,8 +60,8 @@ export interface Node {
   badge?: string;
   /** Top-left badge: position in the 01–13 section sequence. */
   section?: string;
-  /** Card tint override; "purple" marks an LLM-boundary node. */
-  tint?: "purple";
+  /** Card tint overlay; "purple" marks an LLM-boundary node; named colours apply a subtle rgba fill. */
+  tint?: "purple" | "blue" | "green" | "amber" | "red";
   /** Override border colour independently of fill (e.g. grey fill + purple border). */
   borderColor?: string;
   doc?: string;
@@ -281,6 +281,7 @@ export const mapNodes: Node[] = [
     type: "pipeline",
     section: "03",
     group: "L1a — Theme Scoring",
+    tint: "blue",
     doc: "scripts/daily_refresh.py compute_edge_score()",
   },
   // L1b sub-nodes

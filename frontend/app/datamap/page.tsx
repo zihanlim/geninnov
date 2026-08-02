@@ -289,6 +289,7 @@ function NodeCard({ node }: { node: Node }) {
   const badgeStroke = isLlmBadge ? "rgba(168,85,247,0.45)" : "rgba(0,104,122,0.40)";
   const badgeTextColor = isLlmBadge ? "var(--datamap-purple)" : "var(--accent)";
   const isShadow = node.id === "L1b";
+  const isTinted = node.tint && node.tint !== "purple";
 
   return (
     <div
@@ -297,7 +298,13 @@ function NodeCard({ node }: { node: Node }) {
       style={{
         width: NODE_W,
         height: NODE_H,
-        background: node.tint === "purple" ? "rgba(168,85,247,0.05)" : node.type === "surface" ? "#ffffff" : "var(--bg-elevated)",
+        background: node.tint === "purple"
+          ? "rgba(168,85,247,0.05)"
+          : isTinted
+          ? `var(--datamap-tint-${node.tint})`
+          : node.type === "surface"
+          ? "#ffffff"
+          : "var(--bg-elevated)",
         borderColor: stroke,
         borderWidth: 1,
         opacity: hovered ? 1 : 0.92,

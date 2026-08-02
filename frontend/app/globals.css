@@ -12,6 +12,10 @@
 }
 
 /* /datamap — hover lift on SVG node cards */
+.datamap-card {
+  position: relative;
+}
+
 .datamap-card:hover {
   transform: translateY(-2px);
 }

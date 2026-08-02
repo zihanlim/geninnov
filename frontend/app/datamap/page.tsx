@@ -297,8 +297,8 @@ function NodeCard({ node }: { node: Node }) {
       style={{
         width: NODE_W,
         height: NODE_H,
-        background: node.fill
-          ? `var(--datamap-fill-${node.fill})`
+        background: node.fill === "purple"
+          ? "rgba(168,85,247,0.08)"
           : node.type === "surface"
           ? "#ffffff"
           : "var(--bg-elevated)",
@@ -317,15 +317,15 @@ function NodeCard({ node }: { node: Node }) {
       onFocus={() => setHovered(true)}
       onBlur={() => setHovered(false)}
     >
-      {/* Section number badge — top-left. */}
+      {/* Section number badge — top-left, coloured to match node border. */}
       {node.section && (
         <span
           className="absolute top-1.5 left-1.5 inline-flex items-center justify-center rounded text-[8px] font-mono font-bold"
           style={{
             width: 20,
             height: 13,
-            background: "rgba(10,14,23,0.10)",
-            color: "var(--text-secondary)",
+            background: stroke,
+            color: "#ffffff",
           }}
         >
           {node.section}

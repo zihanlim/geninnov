@@ -129,6 +129,13 @@ export default function DataMapPage() {
     return () => document.removeEventListener("click", handleDocClick);
   }, [clickedId]);
 
+  // Handle a node-card click: lock the node as active AND start the flash window.
+  const handleNodeClick = (id: string) => {
+    setClickedId(id);
+    setJustClickedId(id);
+    window.setTimeout(() => setJustClickedId(null), 750);
+  };
+
   // Nodes grouped by their section string (e.g. "01", "11").
   const nodesBySection = useMemo(() => {
     const out = new Map<string, Node[]>();
@@ -249,7 +256,7 @@ export default function DataMapPage() {
               nodes={secNodes}
               hoveredNodeIds={hoveredNodeIds}
               onHovered={setHoveredId}
-              onNodeClick={setClickedId}
+              onNodeClick={handleNodeClick}
               justClickedId={justClickedId}
             />
           );
@@ -268,6 +275,7 @@ function SectionBlock({
   hoveredNodeIds,
   onHovered,
   onNodeClick,
+  justClickedId,
 }: {
   section: { section: string; title: string };
   nodes: Node[];
@@ -374,6 +382,7 @@ function NodeCard({
   hoveredNodeIds,
   onHovered,
   onNodeClick,
+  justClickedId,
 }: {
   node: Node;
   hoveredNodeIds: Set<string>;
@@ -427,7 +436,7 @@ function NodeCard({
       }}
       onMouseEnter={() => { setHovered(true); onHovered(node.id); }}
       onMouseLeave={() => { setHovered(false); onHovered(null); }}
-      onClick={(e) => { e.stopPropagation(); onNodeClick(node.id); setJustClickedId(node.id); setTimeout(() => setJustClickedId(null), 750); }}
+      onClick={(e) => { e.stopPropagation(); onNodeClick(node.id); }}
       tabIndex={0}
       role="button"
       aria-label={`[${node.section ?? "—"}] ${node.name}: ${node.summary}${badge ? ` →${badge}` : ""}`}

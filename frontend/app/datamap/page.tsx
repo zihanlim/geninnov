@@ -410,7 +410,7 @@ function NodeCard({
       }}
       onMouseEnter={() => { setHovered(true); onHovered(node.id); }}
       onMouseLeave={() => { setHovered(false); onHovered(null); }}
-      onClick={() => onNodeClick(node.id)}
+      onClick={(e) => { e.stopPropagation(); onNodeClick(node.id); }}
       tabIndex={0}
       role="button"
       aria-label={`[${node.section ?? "—"}] ${node.name}: ${node.summary}${badge ? ` →${badge}` : ""}`}

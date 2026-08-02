@@ -75,4 +75,3 @@
 
 # Large binaries that must never reach a deployment.
 *.zip
-*.pdf

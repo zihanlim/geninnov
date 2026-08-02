@@ -60,8 +60,8 @@ export interface Node {
   badge?: string;
   /** Top-left badge: position in the 01–13 section sequence. */
   section?: string;
-  /** Card tint overlay; "purple" marks an LLM-boundary node; named colours apply a subtle rgba fill. */
-  tint?: "purple" | "blue" | "green" | "amber" | "red";
+  /** Card fill override; "purple" marks an LLM-boundary node; named colours apply a solid rgba fill. */
+  fill?: "purple" | "blue" | "green" | "amber" | "red";
   /** Override border colour independently of fill (e.g. grey fill + purple border). */
   borderColor?: string;
   doc?: string;
@@ -281,7 +281,7 @@ export const mapNodes: Node[] = [
     type: "pipeline",
     section: "03",
     group: "L1a — Theme Scoring",
-    tint: "blue",
+    fill: "green",
     doc: "scripts/daily_refresh.py compute_edge_score()",
   },
   // L1b sub-nodes
@@ -948,9 +948,12 @@ export const mapEdges: MapEdge[] = [
   { from: "L0-macroindicators", to: "L1b-freq" },
   { from: "L0-macroindicators", to: "L3-cycle" },
 
-  // L1 chain: hype -> trade -> candidates
+  // L1 chain: hype -> trade -> edge -> candidates
   { from: "L1-hype",    to: "L1-trade" },
-  { from: "L1-trade",   to: "L1-mom" },
+  { from: "L1-trade",   to: "L1-edge" },
+  { from: "L1-edge",    to: "L1-mom" },
+  { from: "L1-edge",    to: "t-themes" },
+  { from: "L1-edge",    to: "t-candidates" },
 
   // L5 section 11 internal chain
   { from: "a1",         to: "a2" },

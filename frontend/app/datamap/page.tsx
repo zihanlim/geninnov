@@ -282,14 +282,13 @@ function SectionBlock({
 function NodeCard({ node }: { node: Node }) {
   const [hovered, setHovered] = useState(false);
 
-  const stroke = node.borderColor ?? (node.tint === "purple" ? "var(--datamap-purple)" : nodeStroke(node.type));
+  const stroke = node.borderColor ?? (node.fill === "purple" ? "var(--datamap-purple)" : nodeStroke(node.type));
   const badge = node.badge;
   const isLlmBadge = badge === "🤖";
   const badgeFill = isLlmBadge ? "rgba(168,85,247,0.13)" : "rgba(0,104,122,0.13)";
   const badgeStroke = isLlmBadge ? "rgba(168,85,247,0.45)" : "rgba(0,104,122,0.40)";
   const badgeTextColor = isLlmBadge ? "var(--datamap-purple)" : "var(--accent)";
   const isShadow = node.id === "L1b";
-  const isTinted = node.tint && node.tint !== "purple";
 
   return (
     <div
@@ -298,10 +297,8 @@ function NodeCard({ node }: { node: Node }) {
       style={{
         width: NODE_W,
         height: NODE_H,
-        background: node.tint === "purple"
-          ? "rgba(168,85,247,0.05)"
-          : isTinted
-          ? `var(--datamap-tint-${node.tint})`
+        background: node.fill
+          ? `var(--datamap-fill-${node.fill})`
           : node.type === "surface"
           ? "#ffffff"
           : "var(--bg-elevated)",
@@ -310,7 +307,7 @@ function NodeCard({ node }: { node: Node }) {
         opacity: hovered ? 1 : 0.92,
         cursor: "pointer",
         userSelect: "none",
-        zIndex: hovered ? 40 : node.tint === "purple" ? 35 : 10,
+        zIndex: hovered ? 40 : node.fill === "purple" ? 35 : 10,
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -556,9 +553,9 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /** The effective border colour of a node — mirrors the NodeCard stroke logic. */
-function nodeBorderColor(n: { borderColor?: string; tint?: string; type: NodeType }): string {
+function nodeBorderColor(n: { borderColor?: string; fill?: string; type: NodeType }): string {
   if (n.borderColor) return n.borderColor;
-  if (n.tint === "purple") return "var(--datamap-purple)";
+  if (n.fill === "purple") return "var(--datamap-purple)";
   return nodeStroke(n.type);
 }
 

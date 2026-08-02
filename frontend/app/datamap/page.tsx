@@ -187,7 +187,7 @@ function SectionBlock({
   nodes: Node[];
 }) {
   // For section 12 and section 03, group nodes by their `group` field and render sub-group labels.
-  const isGrouped = section.section === "12" || section.section === "03" || section.section === "05";
+  const isGrouped = section.section === "11" || section.section === "03" || section.section === "05";
 
   if (isGrouped) {
     // Group nodes by group field; nodes without a group go into a single block.
@@ -580,10 +580,10 @@ function edgeColor(kind: EdgeKind): string {
 /** Which swimlane a section belongs to (for ordering within a section). */
 function laneOf(sec: string): NodeType | null {
   if (sec === "01") return "source";
-  if (["02","03","04","05","06","07","08","09","10","11"].includes(sec)) return "pipeline";
-  if (sec === "12") return "table";
-  if (sec === "13") return "surface";
-  if (sec === "14") return "verify";
+  if (["02","03","04","05","06","07","08","09","10"].includes(sec)) return "pipeline";
+  if (sec === "11") return "table";
+  if (sec === "12") return "surface";
+  if (sec === "13") return "verify";
   return null;
 }
 

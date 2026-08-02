@@ -501,9 +501,10 @@ function edgeColor(kind: EdgeKind): string {
 /** Which swimlane a section belongs to (for ordering within a section). */
 function laneOf(sec: string): NodeType | null {
   if (sec === "01") return "source";
-  if (["02","03","04","05","06","07","08","09","11"].includes(sec)) return "pipeline";
+  if (["02","03","04","05","06","07","08","09","10","11"].includes(sec)) return "pipeline";
   if (sec === "12") return "table";
   if (sec === "13") return "surface";
+  if (sec === "14") return "surface";
   return null;
 }
 

@@ -1388,10 +1388,15 @@ Sentiment: {sentiment}
   SPX breadth: {breadth}%
   Fed posture (13w DFF trajectory x 2s10s repricing): {fed_posture}
   Fed pivot delta vs 13w ago (+2 = hawkish->dovish, sign(dovish)=+1): {fed_pivot_delta}
+  Fed rhetoric (FOMC self-reported lean, dissent-based, -10..+10): {fed_rhetoric_score}
+  Fed rhetoric label (5-band): {fed_rhetoric_label}
   Dollar-debasement pressure (0-100 composite): {debasement_pressure}
 If you claim the Fed is pivoting or characterise its posture, cite
 regime:fed_posture and regime:fed_pivot_delta; if either reads N/A above, you
-may not make a pivot claim. If you claim dollar debasement, cite
+may not make a pivot claim. If you claim the Fed is hawkish/dovish and need
+the FOMC's OWN self-reported lean (separate from the market-implied posture),
+cite regime:fed_rhetoric_label and regime:fed_rhetoric_score; N/A means you
+may not make a rhetoric claim. If you claim dollar debasement, cite
 regime:debasement_pressure; N/A means you may not make a debasement claim.
 
 === THEME SCORES (L1, sorted by HypeScore) ===
@@ -1715,6 +1720,9 @@ def reason_picks(state: Q1State) -> Q1State:
         "fed_posture": regime.get("fed_posture") or "N/A",
         "fed_pivot_delta": regime["fed_pivot_delta"]
         if regime.get("fed_pivot_delta") is not None else "N/A",
+        "fed_rhetoric_score": regime["fed_rhetoric_score"]
+        if regime.get("fed_rhetoric_score") is not None else "N/A",
+        "fed_rhetoric_label": regime.get("fed_rhetoric_label") or "N/A",
         "debasement_pressure": regime["debasement_pressure"]
         if regime.get("debasement_pressure") is not None else "N/A",
         "theme_table": _make_theme_table(themes),
@@ -2396,7 +2404,8 @@ def verify_citations(state: Q1State) -> Q1State:
         source_map[key] = risk.get(key)
     for k in ("vix_level", "hy_oas", "yield_curve_slope", "real_rate", "spx_breadth", "vix_term_diff",
               "fed_posture", "fed_pivot_delta", "debasement_pressure",
-              "fed_rate_change_13w_bps", "fed_curve_change_13w_bps", "fed_curve_steepness_bps"):
+              "fed_rate_change_13w_bps", "fed_curve_change_13w_bps", "fed_curve_steepness_bps",
+              "fed_rhetoric_score", "fed_rhetoric_label"):
         if regime.get(k) is not None:
             source_map[f"regime:{k}"] = regime[k]
 
@@ -4211,6 +4220,8 @@ def run_q1_agent(
             "fed_rate_change_13w_bps": regime.fed_rate_change_13w_bps,
             "fed_curve_change_13w_bps": regime.fed_curve_change_13w_bps,
             "fed_curve_steepness_bps": regime.fed_curve_steepness_bps,
+            "fed_rhetoric_score": regime.fed_rhetoric_score,
+            "fed_rhetoric_label": regime.fed_rhetoric_label,
         }
 
     # Flatten candidates (they come in as (TradeCandidate, notional, weight) tuples)

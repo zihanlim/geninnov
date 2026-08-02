@@ -54,6 +54,13 @@ class RegimeOutput:
     fed_curve_change_13w_bps: float | None = None
     fed_curve_steepness_bps: float | None = None
     fed_posture_evidence: dict | None = None
+    # ADR-0141: Fed rhetoric (FOMC self-reported lean). None = NO MEETING ON
+    # DISK on or before run_date, never "neutral". Deliberately a different
+    # sensor from fed_posture: posture is market-implied (DFF + 2s10s), rhetoric
+    # is FOMC-self-reported (vote + dissents).
+    fed_rhetoric_score: float | None = None   # -10 (strongly dovish) to +10 (strongly hawkish)
+    fed_rhetoric_label: str | None = None     # strongly_dovish | dovish | neutral | hawkish | strongly_hawkish
+    fed_rhetoric_evidence: dict | None = None
 
 
 def _fetch_latest_series(
@@ -429,19 +436,218 @@ def build_posture_evidence(posture: PostureReading, prior_posture: str | None) -
     }
 
 
+# ---------------------------------------------------------------------------
+# ADR-0141: Fed rhetoric (FOMC self-reported lean)
+# ---------------------------------------------------------------------------
+#
+# Where posture is the MARKET-IMPLIED posture (DFF + 2s10s over 13w,
+# ADR-0140), rhetoric is the FOMC's OWN self-reported lean. v1 source is
+# the voting record of the most recent FOMC meeting, which is published
+# in the official press release on federalreserve.gov — free, keyless,
+# structured. v2 plans to add a text-based sentiment score from the
+# statement; v1 ships with a known under-call on meetings where the chair
+# is hawkish but the committee votes unanimously (e.g. 2026-06-17).
+#
+# The score and the label are derived from the same formula; both are
+# persisted so a card reader and a SQL auditor never derive the same
+# thing twice (ADR-0064).
+
+#: Band thresholds on the -10..+10 score (Yardeni-style round numbers,
+#: hand-coded for the same auditability reason as the posture thresholds
+#: — moving a band is a code change and a re-run, not a config update).
+RHETORIC_STRONGLY_DOVISH_MAX = -5.0   # score <= this  -> strongly_dovish
+RHETORIC_DOVISH_MAX = -2.0            # -this..(excl) -> dovish
+RHETORIC_NEUTRAL_MAX = 2.0            # -this..+this   -> neutral
+RHETORIC_HAWKISH_MIN = 5.0            # +this..(excl)  -> hawkish
+                                     # >= +this        -> strongly_hawkish
+
+
+@dataclass
+class FOMCMeeting:
+    """The minimal voting record needed to score rhetoric (ADR-0141 v1).
+
+    `voting_members` is the size of the voting bloc at the meeting
+    (typically 12, sometimes 10 when seats are vacant). Each dissent is
+    classified as hawkish (preferred a hike) or dovish (preferred a cut);
+    the source for the classification is the press release's "Voting
+    against" sentence, which names each dissenter and the action they
+    would have preferred.
+    """
+    meeting_date: date
+    vote_for: int
+    vote_against: int
+    dissents: list[dict]   # [{voter, direction, preferred_action}, ...]
+
+    @property
+    def voting_members(self) -> int:
+        return self.vote_for + self.vote_against
+
+    @property
+    def hawkish_dissents(self) -> int:
+        return sum(1 for d in self.dissents if d.get("direction") == "hawkish")
+
+    @property
+    def dovish_dissents(self) -> int:
+        return sum(1 for d in self.dissents if d.get("direction") == "dovish")
+
+
+#: v1 source-of-truth: hand-maintained table of recent FOMC meetings,
+#: keyed by meeting date, until a federalreserve.gov fetcher lands
+#: (ADR-0141 §3, "Alternatives considered" last bullet). The dict is
+#: keyed on `meeting_date.isoformat()` for O(1) lookup; `as_of` is the
+#: discipline — we read the LATEST meeting with `meeting_date <= as_of`,
+#: not "today's meeting" (a future meeting is a not-yet-recordable
+#: absence, not a default of neutral).
+#
+# Last update: 2026-08-02, covering meetings through 2026-07-29.
+FOMC_MEETINGS: dict[str, FOMCMeeting] = {
+    "2026-07-29": FOMCMeeting(
+        meeting_date=date(2026, 7, 29),
+        vote_for=9, vote_against=3,
+        dissents=[
+            {"voter": "Daly (San Francisco)", "direction": "hawkish",
+             "preferred_action": "hike 25bp"},
+            {"voter": "Logan (Dallas)", "direction": "hawkish",
+             "preferred_action": "hike 25bp"},
+            {"voter": "Kashkari (Minneapolis)", "direction": "hawkish",
+             "preferred_action": "hike 25bp"},
+        ],
+    ),
+    "2026-06-17": FOMCMeeting(
+        meeting_date=date(2026, 6, 17),
+        vote_for=12, vote_against=0,
+        dissents=[],
+    ),
+    "2026-04-29": FOMCMeeting(
+        meeting_date=date(2026, 4, 29),
+        vote_for=8, vote_against=4,
+        dissents=[
+            {"voter": "Miran", "direction": "dovish",
+             "preferred_action": "cut 25bp"},
+            {"voter": "Hammack (Cleveland)", "direction": "hawkish",
+             "preferred_action": "hike 25bp"},
+            {"voter": "Kashkari (Minneapolis)", "direction": "hawkish",
+             "preferred_action": "hike 25bp"},
+            {"voter": "Logan (Dallas)", "direction": "hawkish",
+             "preferred_action": "hike 25bp"},
+        ],
+    ),
+}
+
+
+def _latest_meeting_on_or_before(as_of: date) -> FOMCMeeting | None:
+    """The most recent FOMC meeting with `meeting_date <= as_of`, from the
+    v1 hand-maintained table. Returns None when no meeting on disk satisfies
+    the bound — that is "no meeting recordable on or before run_date", a
+    documented absence, not a default of neutral (ADR-0091)."""
+    candidates = [m for m in FOMC_MEETINGS.values() if m.meeting_date <= as_of]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda m: m.meeting_date)
+
+
+@dataclass
+class RhetoricReading:
+    """ADR-0141's rhetoric with its provenance. None means NO MEETING ON
+    DISK on or before run_date, never "neutral" (ADR-0091). The label is a
+    derived field of the score; both are persisted so a card reader and a
+    SQL auditor never derive the same thing twice (ADR-0064)."""
+    score: float | None            # -10..+10
+    label: str | None              # strongly_dovish | dovish | neutral | hawkish | strongly_hawkish
+    meeting: FOMCMeeting | None    # for evidence blob
+
+
+def _score_to_label(score: float) -> str:
+    """Map a score in [-10, +10] to a five-value label, using the ADR-0141
+    band thresholds. The boundaries are inclusive on the side of the more
+    extreme band (e.g. a score of exactly -5 is `strongly_dovish`, not
+    `dovish`); the inner bands are open on the more extreme side and
+    closed on the milder side (e.g. -3 is `dovish`, +2 is `neutral`)."""
+    if score <= RHETORIC_STRONGLY_DOVISH_MAX:
+        return "strongly_dovish"
+    if score < RHETORIC_DOVISH_MAX:
+        return "dovish"
+    if score <= RHETORIC_NEUTRAL_MAX:
+        return "neutral"
+    if score < RHETORIC_HAWKISH_MIN:
+        return "hawkish"
+    return "strongly_hawkish"
+
+
+def classify_fed_rhetoric(as_of: date) -> RhetoricReading:
+    """Fed rhetoric (ADR-0141) from the most recent FOMC meeting on or
+    before `as_of`. v1 source is the voting record (dissent count); v2
+    plans a statement-text sentiment score that augments, not replaces,
+    this one. None when no meeting is on disk on or before `as_of` —
+    "no meeting recordable", not a default of neutral (ADR-0091).
+    """
+    meeting = _latest_meeting_on_or_before(as_of)
+    if meeting is None:
+        return RhetoricReading(score=None, label=None, meeting=None)
+
+    score = round(
+        (meeting.hawkish_dissents - meeting.dovish_dissents) * 10.0
+        / meeting.voting_members,
+        2,
+    )
+    # Clamp defensively. A score of exactly +10 would require 12 hawkish
+    # dissents and 0 dovish, which is not what we have on disk, but a
+    # future meeting could plausibly push the bound.
+    score = max(-10.0, min(10.0, score))
+    label = _score_to_label(score)
+    return RhetoricReading(score=score, label=label, meeting=meeting)
+
+
+def build_rhetoric_evidence(rhetoric: RhetoricReading) -> dict | None:
+    """The `fed_rhetoric_evidence` blob, in migration 054's documented schema.
+
+    ONE builder, used by the live `classify()` and by the backfill alike, so
+    the two cannot drift (ADR-0064). Returns None when the rhetoric reading
+    is itself None — "no meeting on disk" is the honest reading for both
+    the columns and the blob.
+    """
+    if rhetoric is None or rhetoric.meeting is None:
+        return None
+    m = rhetoric.meeting
+    return {
+        "source": "FOMC press release",
+        "meeting_date": m.meeting_date.isoformat(),
+        "as_of": m.meeting_date.isoformat(),
+        "vote": {
+            "for": m.vote_for,
+            "against": m.vote_against,
+            "voting_members": m.voting_members,
+        },
+        "dissents": m.dissents,
+        "scoring": {
+            "formula": "(hawkish_dissents - dovish_dissents) * 10 / voting_members",
+            "raw_score": rhetoric.score,
+            "thresholds": {
+                "strongly_dovish_max": RHETORIC_STRONGLY_DOVISH_MAX,
+                "dovish_max": RHETORIC_DOVISH_MAX,
+                "neutral_max": RHETORIC_NEUTRAL_MAX,
+                "hawkish_min": RHETORIC_HAWKISH_MIN,
+            },
+        },
+    }
+
+
+
 def crosscurrents_columns(
     debasement: DebasementReading,
     posture: PostureReading,
     fed_pivot_delta: int | None,
     posture_evidence: dict,
+    rhetoric: "RhetoricReading | None" = None,
+    rhetoric_evidence: dict | None = None,
 ) -> dict:
-    """The twelve ADR-0139/0140 columns, keyed by column name.
+    """The fifteen ADR-0139/0140/0141 columns, keyed by column name.
 
     ONE mapping shared by `classify()`'s upsert and the backfill's fill-only
     UPDATE. Its key set must equal `q1_agent.REGIME_SHADOW_KEYS` and the
-    columns migrations 052/053 add — tests assert both, because a column that
-    exists in one list and not another either never gets written or leaks to
-    the LLM mid-shadow.
+    columns migrations 052/053/054 add — tests assert both, because a column
+    that exists in one list and not another either never gets written or
+    leaks to the LLM mid-shadow.
     """
     return {
         "debasement_pressure": debasement.pressure,
@@ -456,6 +662,12 @@ def crosscurrents_columns(
         "fed_curve_change_13w_bps": posture.curve_change_13w_bps,
         "fed_curve_steepness_bps": posture.curve_steepness_bps,
         "fed_posture_evidence": posture_evidence,
+        # ADR-0141: rhetoric (rhetoric and evidence are None when no meeting
+        # is on disk on or before run_date; the column write is the same
+        # NULL as posture, never a default of neutral — ADR-0091).
+        "fed_rhetoric_score": rhetoric.score if rhetoric is not None else None,
+        "fed_rhetoric_label": rhetoric.label if rhetoric is not None else None,
+        "fed_rhetoric_evidence": rhetoric_evidence,
     }
 
 
@@ -766,6 +978,12 @@ class RegimeClassifier:
 
         posture_evidence = build_posture_evidence(posture, prior_posture)
 
+        # ADR-0141: rhetoric from the most recent FOMC meeting on disk. No
+        # supabase read needed — the v1 source is the hand-maintained
+        # FOMC_MEETINGS table (federalreserve.gov fetcher is v2 work).
+        rhetoric = classify_fed_rhetoric(as_of=run_date)
+        rhetoric_evidence = build_rhetoric_evidence(rhetoric)
+
         output = RegimeOutput(
             cycle=cycle,
             sentiment=sentiment,
@@ -786,11 +1004,15 @@ class RegimeClassifier:
             fed_curve_change_13w_bps=posture.curve_change_13w_bps,
             fed_curve_steepness_bps=posture.curve_steepness_bps,
             fed_posture_evidence=posture_evidence,
+            fed_rhetoric_score=rhetoric.score,
+            fed_rhetoric_label=rhetoric.label,
+            fed_rhetoric_evidence=rhetoric_evidence,
         )
 
-        # Persist. The ADR-0139/0140 columns ship behind migrations 052/053;
-        # if the schema predates them, keep the L3 write alive on the base row
-        # and say so — degraded with a warning, never silent, never fabricated.
+        # Persist. The ADR-0139/0140/0141 columns ship behind migrations
+        # 052/053/054; if the schema predates any of them, keep the L3 write
+        # alive on the base row and say so — degraded with a warning, never
+        # silent, never fabricated.
         base_row = {
             "run_date": run_date.isoformat(),
             "cycle": cycle,
@@ -803,15 +1025,17 @@ class RegimeClassifier:
             "spx_breadth": spx_breadth,
         }
         adr_row = crosscurrents_columns(
-            debasement, posture, fed_pivot_delta, posture_evidence)
+            debasement, posture, fed_pivot_delta, posture_evidence,
+            rhetoric=rhetoric, rhetoric_evidence=rhetoric_evidence,
+        )
         try:
             self.supabase.table("regime_classifications").upsert(
                 {**base_row, **adr_row}, on_conflict="run_date",
             ).execute()
         except Exception as exc:
             print(
-                f"[regime] debasement/posture columns not persisted "
-                f"({exc.__class__.__name__}: {exc}) — apply migrations 052/053; "
+                f"[regime] debasement/posture/rhetoric columns not persisted "
+                f"({exc.__class__.__name__}: {exc}) — apply migrations 052/053/054; "
                 f"writing base regime row only"
             )
             self.supabase.table("regime_classifications").upsert(
@@ -830,6 +1054,7 @@ if __name__ == "__main__":
         print(f"Regime: cycle={r.cycle}, sentiment={r.sentiment}")
         print(f"  YC slope={r.yield_curve_slope}, HY OAS={r.hy_oas}, VIX={r.vix_level}")
         print(f"  Debasement={r.debasement_pressure}, FedPosture={r.fed_posture}, "
-              f"PivotDelta={r.fed_pivot_delta}")
+              f"PivotDelta={r.fed_pivot_delta}, Rhetoric={r.fed_rhetoric_label} "
+              f"({r.fed_rhetoric_score})")
     else:
         print("Set SUPABASE_URL and SUPABASE_SERVICE_KEY")

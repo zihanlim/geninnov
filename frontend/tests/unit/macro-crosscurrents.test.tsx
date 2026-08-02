@@ -29,6 +29,22 @@ const LIVE: CrossCurrents = {
     inputs: { dff_pct: 4.33, dgs2_pct: 3.64, dgs10_pct: 4.0 },
     prior_posture: null,
   },
+  // ADR-0141: 2026-07-29 meeting: 9-3 hold, all three dissents hawkish
+  // (Daly, Logan, Kashkari). Score = (3-0) * 10 / 12 = +2.5 -> "hawkish".
+  // The card shows posture (market-implied) AND rhetoric (FOMC self-report)
+  // side by side, so a reader can see the gap when they disagree.
+  fed_rhetoric_score: 2.5,
+  fed_rhetoric_label: "hawkish",
+  fed_rhetoric_evidence: {
+    source: "FOMC press release",
+    meeting_date: "2026-07-29",
+    vote: { for: 9, against: 3, voting_members: 12 },
+    dissents: [
+      { voter: "Daly (San Francisco)", direction: "hawkish", preferred_action: "hike 25bp" },
+      { voter: "Logan (Dallas)", direction: "hawkish", preferred_action: "hike 25bp" },
+      { voter: "Kashkari (Minneapolis)", direction: "hawkish", preferred_action: "hike 25bp" },
+    ],
+  },
 };
 
 // SSR inserts `<!-- -->` between adjacent text segments; strip them so the
@@ -96,6 +112,76 @@ describe("MacroCrossCurrents — posture card", () => {
     const html = render(LIVE);
     expect(html).toContain("DFF 4.33%");
     expect(html).toContain("bp / 13w");
+  });
+});
+
+describe("MacroCrossCurrents — rhetoric card (ADR-0141)", () => {
+  it("prints the rhetoric WORD in the directional ink — same channel discipline as posture", () => {
+    const html = render(LIVE);
+    // The 2026-07-29 meeting scored +2.5 -> "hawkish" band, not "strongly_hawkish".
+    expect(html).toContain("HAWKISH");
+    // Strongly-dovish and strongly-hawkish reuse the directional ink of their
+    // milder cousins; the qualifier is in the WORD, not the colour.
+    const sd = render({ ...LIVE, fed_rhetoric_label: "strongly_dovish", fed_rhetoric_score: -7.5 });
+    expect(sd).toContain("STRONGLY DOVISH");
+    expect(sd).toContain("text-long");
+    const sh = render({ ...LIVE, fed_rhetoric_label: "strongly_hawkish", fed_rhetoric_score: 7.5 });
+    expect(sh).toContain("STRONGLY HAWKISH");
+    expect(sh).toContain("text-short");
+  });
+
+  it("prints the rhetoric score with sign and the dissent count from the evidence", () => {
+    const html = render(LIVE);
+    // +2.5 with the explicit sign — the negative case is tested below.
+    expect(html).toContain("+2.5");
+    expect(html).toContain("3 dissents");
+    expect(html).toContain("2026-07-29");
+  });
+
+  it("a negative score carries the minus sign in front of the number", () => {
+    const html = render({
+      ...LIVE,
+      fed_rhetoric_score: -3.5,
+      fed_rhetoric_label: "dovish",
+    });
+    expect(html).toContain("(-3.5)");
+  });
+
+  it("a singular dissent reads 'dissent', not 'dissents'", () => {
+    const html = render({
+      ...LIVE,
+      fed_rhetoric_evidence: {
+        source: "FOMC press release",
+        meeting_date: "2026-05-15",
+        vote: { for: 11, against: 1, voting_members: 12 },
+        dissents: [{ voter: "Miran", direction: "dovish", preferred_action: "cut 25bp" }],
+      },
+    });
+    expect(html).toContain("1 dissent");
+    expect(html).not.toContain("1 dissents");
+  });
+
+  it("a NULL rhetoric never reads as NEUTRAL — 'no meeting on disk' is its own absence", () => {
+    // Drop the rhetoric fields entirely. The card should render "—" and
+    // name the absence, mirroring how a NULL posture renders "—" with
+    // "Never defaulted to neutral" (ADR-0091).
+    const { fed_rhetoric_score, fed_rhetoric_label, fed_rhetoric_evidence, ...rest } = LIVE;
+    const html = render(rest);
+    expect(html).toContain("Rhetoric");
+    expect(html).toContain("—");
+    expect(html).toContain("no FOMC meeting on disk");
+  });
+
+  it("rhetoric is rendered side-by-side with posture, not collapsed into it", () => {
+    // The two readings must BOTH be visible on the card so the gap is
+    // visible (ADR-0141 §5). A future reader who flattens them to a single
+    // label would lose the tradeable signal.
+    const html = render(LIVE);
+    expect(html).toContain("Rhetoric");
+    // Both lines (posture and rhetoric) are in the HTML; we don't pin a
+    // specific ordering here because the test file reads only as a
+    // contract — the visual ordering is a styling decision.
+    expect(html).toMatch(/posture[\s\S]*Rhetoric|Rhetoric[\s\S]*posture/);
   });
 });
 

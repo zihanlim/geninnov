@@ -1,10 +1,11 @@
 /**
- * MacroCrossCurrents — the ADR-0139/0140 readings, presented together.
+ * MacroCrossCurrents — the ADR-0139/0140/0141 readings, presented together.
  *
  * Three cards under RegimeHero: dollar-debasement pressure (0–100 composite
  * with its four components as a weighted stacked bar), Fed posture with the
- * 13-week pivot delta, and the cycle × posture readout that keeps the three
- * independent readings (cycle, posture, debasement) from being conflated.
+ * 13-week pivot delta AND the Fed rhetoric reading, and the cycle × posture
+ * readout that keeps the three independent readings (cycle, posture,
+ * debasement) from being conflated.
  *
  * Provenance rules, inherited from RegimeHero:
  *  - NULL renders "—" AND names what was missing (ADR-0091 — absence is not
@@ -17,6 +18,10 @@
  *    hawkish = --short) per ADR-0140: both are a financial-liquidity claim.
  *    The word is always printed beside the colour — colour is never the only
  *    channel (the ADR-0126 discipline).
+ *  - Posture and rhetoric are deliberately a PAIR, not a single label
+ *    (ADR-0141): posture is market-implied (DFF + 2s10s), rhetoric is
+ *    FOMC-self-reported (vote). The gap between them is the tradeable
+ *    signal; collapsing them would lose that.
  */
 
 export interface CrossCurrents {
@@ -38,6 +43,17 @@ export interface CrossCurrents {
       dgs10_pct?: number | null;
     };
     prior_posture?: string | null;
+  } | null;
+  // ADR-0141: rhetoric (FOMC self-reported lean). NULL renders as "—"
+  // (ADR-0091), same as posture — "no meeting on disk on or before run_date"
+  // is the honest reading, never a default of neutral.
+  fed_rhetoric_score?: number | null;
+  fed_rhetoric_label?: string | null;
+  fed_rhetoric_evidence?: {
+    source?: string | null;
+    meeting_date?: string | null;
+    vote?: { for?: number | null; against?: number | null; voting_members?: number | null } | null;
+    dissents?: Array<{ voter?: string; direction?: string; preferred_action?: string }> | null;
   } | null;
 }
 
@@ -68,6 +84,24 @@ const POSTURE_STYLE: Record<string, { text: string; label: string }> = {
   hawkish: { text: "text-short", label: "HAWKISH" },
 };
 
+/** ADR-0141: five-value rhetoric vocabulary (vote-based, dissent count).
+ *  Strongly-dovish/strongly-hawkish inherit the same directional ink as
+ *  dovish/hawkish per ADR-0140's "posture ink = financial-liquidity claim"
+ *  rule — a strongly-hawkish Fed is the same colour as a hawkish one,
+ *  just louder. The qualifier is in the WORD, not the colour. */
+const RHETORIC_STYLE: Record<string, { text: string; label: string }> = {
+  strongly_dovish: { text: "text-long", label: "STRONGLY DOVISH" },
+  dovish: { text: "text-long", label: "DOVISH" },
+  neutral: { text: "text-text-secondary", label: "NEUTRAL" },
+  hawkish: { text: "text-short", label: "HAWKISH" },
+  strongly_hawkish: { text: "text-short", label: "STRONGLY HAWKISH" },
+};
+
+/** Count the dissents from the evidence blob, for the card caption. */
+function dissentCount(cc: CrossCurrents): number {
+  return cc.fed_rhetoric_evidence?.dissents?.length ?? 0;
+}
+
 function cap(s: string): string {
   return s ? s[0].toUpperCase() + s.slice(1) : s;
 }
@@ -96,6 +130,15 @@ export default function MacroCrossCurrents({ cycle, cc }: MacroCrossCurrentsProp
 
   const trajectory =
     curveChange == null ? null : curveChange > 15 ? "↑ steepening" : curveChange < -15 ? "↓ flattening" : "→ range-bound";
+
+  // ADR-0141: rhetoric (FOMC self-reported lean) is read alongside posture
+  // so the reader sees posture (market-implied) AND rhetoric (FOMC's own
+  // self-report) on the same card. The gap between the two is the
+  // tradeable signal — collapsing them would lose that (ADR-0141 §5).
+  const rhetoricLabel = cc?.fed_rhetoric_label ?? null;
+  const rhetoricScore = cc?.fed_rhetoric_score ?? null;
+  const rhetoricMeeting = cc?.fed_rhetoric_evidence?.meeting_date ?? null;
+  const nDissents = dissentCount(cc ?? {});
 
   return (
     <div
@@ -180,6 +223,32 @@ export default function MacroCrossCurrents({ cycle, cc }: MacroCrossCurrentsProp
                 <> · 2s10s {curveChange >= 0 ? "+" : ""}{curveChange.toFixed(0)} bp / 13w</>
               )}
               {steep != null && <> · now {steep >= 0 ? "+" : ""}{steep.toFixed(0)} bp</>}
+            </div>
+            {/* ADR-0141: rhetoric, the FOMC's own self-reported lean, side by
+                side with the market-implied posture above. The gap between
+                the two labels is the tradeable signal — when posture is
+                neutral and rhetoric is hawkish, the curve is range-bound but
+                the Fed is talking tough; when both agree, conviction. */}
+            <div className="text-[11px] mt-1.5">
+              <span className="text-text-tertiary">Rhetoric: </span>
+              {rhetoricLabel != null && rhetoricScore != null ? (
+                <>
+                  <span className={`font-semibold ${RHETORIC_STYLE[rhetoricLabel]?.text ?? ""}`}>
+                    {RHETORIC_STYLE[rhetoricLabel]?.label ?? rhetoricLabel.toUpperCase()}
+                  </span>
+                  <span className="num text-text-secondary">
+                    {rhetoricScore > 0 ? ` (+${rhetoricScore.toFixed(1)})` : ` (${rhetoricScore.toFixed(1)})`}
+                  </span>
+                  {nDissents > 0 && (
+                    <span className="text-text-tertiary"> · {nDissents} dissent{nDissents === 1 ? "" : "s"}</span>
+                  )}
+                  {rhetoricMeeting && (
+                    <span className="text-text-tertiary"> · {rhetoricMeeting}</span>
+                  )}
+                </>
+              ) : (
+                <span className="text-text-tertiary">— (no FOMC meeting on disk on or before run_date)</span>
+              )}
             </div>
             {inputs && (
               <div className="text-[10.5px] text-text-tertiary mt-2">

@@ -261,9 +261,17 @@ from datetime import timedelta  # noqa: E402
 from regime_classifier import (  # noqa: E402
     DEBASEMENT_MIN_COMOVEMENT_PAIRS,
     POSTURE_SIGN,
+    RHETORIC_DOVISH_MAX,
+    RHETORIC_HAWKISH_MIN,
+    RHETORIC_NEUTRAL_MAX,
+    RHETORIC_STRONGLY_DOVISH_MAX,
+    FOMC_MEETINGS,
+    build_rhetoric_evidence,
     classify_debasement,
     classify_fed_posture,
+    classify_fed_rhetoric,
     _fetch_series_window,
+    _score_to_label,
     _value_at_or_before,
 )
 
@@ -461,3 +469,233 @@ class TestFedPosture:
         assert POSTURE_SIGN["dovish"] - POSTURE_SIGN["hawkish"] == 2
         assert POSTURE_SIGN["hawkish"] - POSTURE_SIGN["dovish"] == -2
         assert POSTURE_SIGN["neutral"] == 0
+
+
+# ── ADR-0141: Fed rhetoric (FOMC self-reported lean) ──────────────────────
+#
+# v1 source is the voting record. The classify() function is a pure
+# function of the FOMC_MEETINGS table and as_of — no supabase read, no
+# network, deterministic. The tests pin the score formula, the band
+# thresholds, the NULL semantics, and the evidence-blob shape.
+
+class TestRhetoricScore:
+    """v1 rhetoric = (hawkish_dissents - dovish_dissents) * 10 / voting_members."""
+
+    def test_three_hawkish_dissents_unanimous_hold_is_hawkish(self):
+        # The 2026-07-29 case: 9-3, all three dissents hawkish, 12 voters.
+        # (3 - 0) * 10 / 12 = 2.5 -> hawkish (band +2..+5).
+        r = classify_fed_rhetoric(as_of=date(2026, 7, 30))
+        assert r.score == pytest.approx(2.5)
+        assert r.label == "hawkish"
+        assert r.meeting.meeting_date == date(2026, 7, 29)
+
+    def test_unanimous_vote_with_no_dissents_is_neutral(self):
+        # 2026-06-17: 12-0 hold, no dissents -> score 0, label neutral.
+        # v1 is a known under-call here (the statement was hawkish by text,
+        # but v1 doesn't read the statement) — the test pins the v1 behaviour,
+        # not a corrected v2 behaviour. The under-call is disclosed in the
+        # card footnote and the ADR.
+        r = classify_fed_rhetoric(as_of=date(2026, 6, 18))
+        assert r.score == pytest.approx(0.0)
+        assert r.label == "neutral"
+
+    def test_dovish_dissent_only_makes_rhetoric_dovish(self):
+        # A hypothetical: 3 dovish dissents, 0 hawkish, 12 voters.
+        # (0 - 3) * 10 / 12 = -2.5 -> dovish (band -5..-2, open lower bound).
+        # One dovish dissent would land at -0.83 in the NEUTRAL band — a
+        # single dissenter doesn't move the label out of neutral, by design
+        # (same dead-band logic as the posture thresholds: one FOMC step is
+        # not enough to flip the label).
+        from regime_classifier import FOMCMeeting
+        FOMC_MEETINGS["2026-05-15"] = FOMCMeeting(
+            meeting_date=date(2026, 5, 15),
+            vote_for=9, vote_against=3,
+            dissents=[
+                {"voter": "A", "direction": "dovish", "preferred_action": "cut 25bp"},
+                {"voter": "B", "direction": "dovish", "preferred_action": "cut 25bp"},
+                {"voter": "C", "direction": "dovish", "preferred_action": "cut 25bp"},
+            ],
+        )
+        try:
+            r = classify_fed_rhetoric(as_of=date(2026, 5, 16))
+            assert r.score == pytest.approx(-2.5, abs=0.01)
+            assert r.label == "dovish"
+        finally:
+            FOMC_MEETINGS.pop("2026-05-15", None)
+
+    def test_single_dovish_dissent_does_not_exit_neutral_band(self):
+        # Pinned because the band design (same dead-band logic as posture)
+        # is deliberate: one dissenter is a real signal that the score reads
+        # (a negative number), but the LABEL stays neutral. The reader sees
+        # the score separately from the label — the evidence blob carries
+        # the dissent count, the card prints the signed number with the
+        # word — so a careful reader is not misled by "neutral" hiding
+        # "-0.83".
+        from regime_classifier import FOMCMeeting
+        FOMC_MEETINGS["2026-05-15"] = FOMCMeeting(
+            meeting_date=date(2026, 5, 15),
+            vote_for=11, vote_against=1,
+            dissents=[{"voter": "Miran", "direction": "dovish",
+                       "preferred_action": "cut 25bp"}],
+        )
+        try:
+            r = classify_fed_rhetoric(as_of=date(2026, 5, 16))
+            assert r.score == pytest.approx(-0.83, abs=0.01)
+            assert r.label == "neutral"  # in the ±2 dead band
+        finally:
+            FOMC_MEETINGS.pop("2026-05-15", None)
+
+    def test_mixed_dissents_net_out(self):
+        # 3 hawkish + 1 dovish out of 12: (3-1)*10/12 = +1.67 -> neutral
+        # (band -2..+2 inclusive). Mirrors the 2026-04-29 meeting shape but
+        # the actual meeting has its own test below.
+        from regime_classifier import FOMCMeeting
+        FOMC_MEETINGS["2026-04-15"] = FOMCMeeting(
+            meeting_date=date(2026, 4, 15),
+            vote_for=8, vote_against=4,
+            dissents=[
+                {"voter": "X", "direction": "hawkish", "preferred_action": "hike"},
+                {"voter": "Y", "direction": "hawkish", "preferred_action": "hike"},
+                {"voter": "Z", "direction": "hawkish", "preferred_action": "hike"},
+                {"voter": "W", "direction": "dovish", "preferred_action": "cut"},
+            ],
+        )
+        try:
+            r = classify_fed_rhetoric(as_of=date(2026, 4, 16))
+            assert r.score == pytest.approx(1.67, abs=0.01)
+            assert r.label == "neutral"
+        finally:
+            FOMC_MEETINGS.pop("2026-04-15", None)
+
+
+class TestRhetoricBands:
+    """The five band thresholds live in the source so a SQL auditor can
+    see them in the evidence blob (ADR-0141 §4). The mapping function
+    _score_to_label is the one place the bands are applied."""
+
+    def test_band_boundaries(self):
+        # inclusive on the more-extreme side, open on the milder side
+        assert _score_to_label(-10.0) == "strongly_dovish"
+        assert _score_to_label(-5.0) == "strongly_dovish"   # exact boundary
+        assert _score_to_label(-4.99) == "dovish"
+        assert _score_to_label(-2.0) == "neutral"          # -2 is in neutral
+        assert _score_to_label(0.0) == "neutral"
+        assert _score_to_label(2.0) == "neutral"           # +2 is in neutral
+        assert _score_to_label(2.01) == "hawkish"
+        assert _score_to_label(5.0) == "strongly_hawkish"  # exact boundary
+        assert _score_to_label(10.0) == "strongly_hawkish"
+
+    def test_thresholds_match_module_constants(self):
+        # The thresholds used in the band map are the same numbers the
+        # evidence blob records, so a reader can recover the label from the
+        # score and the blob, and vice versa. (ADR-0064: one-formula-one-place.)
+        assert _score_to_label(RHETORIC_STRONGLY_DOVISH_MAX) == "strongly_dovish"
+        assert _score_to_label(RHETORIC_DOVISH_MAX) == "neutral"
+        assert _score_to_label(RHETORIC_NEUTRAL_MAX) == "neutral"
+        assert _score_to_label(RHETORIC_HAWKISH_MIN) == "strongly_hawkish"
+
+
+class TestRhetoricNullSemantics:
+    """ADR-0091 applied to rhetoric: no meeting on disk is a documented
+    absence, not a default of neutral."""
+
+    def test_no_meeting_on_disk_is_null_not_neutral(self):
+        # as_of before the earliest meeting we have on disk -> None
+        r = classify_fed_rhetoric(as_of=date(2025, 1, 1))
+        assert r.score is None
+        assert r.label is None
+        assert r.meeting is None
+
+    def test_evidence_blob_is_none_when_no_meeting(self):
+        from regime_classifier import RhetoricReading
+        rhetoric = RhetoricReading(score=None, label=None, meeting=None)
+        assert build_rhetoric_evidence(rhetoric) is None
+
+    def test_future_only_meetings_are_not_yet_recordable(self):
+        # as_of strictly BEFORE the latest meeting means we read the prior
+        # one, not "today's" meeting. A future-only FOMC_MEETINGS table would
+        # return None for any as_of strictly before the first meeting.
+        r = classify_fed_rhetoric(as_of=date(2026, 1, 1))
+        assert r.score is None
+
+
+class TestRhetoricEvidenceBlob:
+    """The blob is what a card reader (and a future LLM auditor) sees when
+    it asks "why this label?" — it must contain the meeting, the vote, the
+    dissents, and the formula, in the schema the migration documents."""
+
+    def test_blob_matches_documented_schema(self):
+        r = classify_fed_rhetoric(as_of=date(2026, 7, 30))
+        blob = build_rhetoric_evidence(r)
+        assert blob is not None
+        # Top-level keys
+        for k in ("source", "meeting_date", "as_of", "vote", "dissents", "scoring"):
+            assert k in blob
+        assert blob["source"] == "FOMC press release"
+        assert blob["meeting_date"] == "2026-07-29"
+        assert blob["vote"] == {"for": 9, "against": 3, "voting_members": 12}
+        assert len(blob["dissents"]) == 3
+        for d in blob["dissents"]:
+            assert d["direction"] == "hawkish"
+        # Scoring matches the published number
+        assert blob["scoring"]["raw_score"] == pytest.approx(2.5)
+        assert "(hawkish_dissents - dovish_dissents)" in blob["scoring"]["formula"]
+        # Thresholds are persisted with the blob (so a reader can recover the
+        # label from the score without re-reading the source code).
+        for k in ("strongly_dovish_max", "dovish_max", "neutral_max", "hawkish_min"):
+            assert k in blob["scoring"]["thresholds"]
+
+
+class TestCrosscurrentsColumnsRhetoricKeys:
+    """The columns function is the SHARED source of truth for the regime
+    row payload. Its key set must include every ADR-0139/0140/0141 column
+    the schema carries — a key that exists in one but not the other either
+    never gets written or leaks to the LLM mid-shadow (the drift
+    ADR-0064 / ADR-0100 was written to prevent)."""
+
+    def test_rhetoric_keys_are_in_columns_dict(self):
+        from regime_classifier import (
+            crosscurrents_columns,
+            DebasementReading,
+            PostureReading,
+            RhetoricReading,
+            FOMCMeeting,
+        )
+        rhetoric = RhetoricReading(
+            score=2.5, label="hawkish",
+            meeting=FOMCMeeting(
+                meeting_date=date(2026, 7, 29), vote_for=9, vote_against=3,
+                dissents=[]),
+        )
+        blob = build_rhetoric_evidence(rhetoric)
+        cols = crosscurrents_columns(
+            DebasementReading(pressure=0, real_yield_comp=0, dxy_decline_comp=0,
+                              gold_rise_comp=0, comovement_comp=0),
+            PostureReading(posture="neutral", rate_change_13w_bps=0,
+                           curve_change_13w_bps=0, curve_steepness_bps=0,
+                           dff_pct=0, dgs2_pct=0, dgs10_pct=0),
+            fed_pivot_delta=0, posture_evidence={},
+            rhetoric=rhetoric, rhetoric_evidence=blob,
+        )
+        for k in ("fed_rhetoric_score", "fed_rhetoric_label", "fed_rhetoric_evidence"):
+            assert k in cols, f"missing rhetoric key {k} from crosscurrents_columns()"
+
+    def test_no_rhetoric_means_null_columns(self):
+        from regime_classifier import (
+            crosscurrents_columns,
+            DebasementReading,
+            PostureReading,
+        )
+        cols = crosscurrents_columns(
+            DebasementReading(pressure=0, real_yield_comp=0, dxy_decline_comp=0,
+                              gold_rise_comp=0, comovement_comp=0),
+            PostureReading(posture="neutral", rate_change_13w_bps=0,
+                           curve_change_13w_bps=0, curve_steepness_bps=0,
+                           dff_pct=0, dgs2_pct=0, dgs10_pct=0),
+            fed_pivot_delta=0, posture_evidence={},
+        )
+        # rhetoric is None -> three columns are None, NOT a default of neutral
+        # (ADR-0091).
+        assert cols["fed_rhetoric_score"] is None
+        assert cols["fed_rhetoric_label"] is None
+        assert cols["fed_rhetoric_evidence"] is None

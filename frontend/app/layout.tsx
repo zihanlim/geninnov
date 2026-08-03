@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
+import { inject } from "@vercel/analytics";
 import "./globals.css";
 import TopBar from "@/components/TopBar";
 import SideRail from "@/components/SideRail";
@@ -23,6 +24,11 @@ export const metadata: Metadata = {
   title: "Andromeda Analytics — Quantitative Macro Research",
   description: "Systematic theme identification and trade generation · macro research at conviction scale.",
 };
+
+// inject() must run once per page load in the browser.
+// Calling at module level (not inside the component) is safe: the layout
+// does not re-render on navigation, so the script is injected exactly once.
+if (typeof window !== "undefined") inject();
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

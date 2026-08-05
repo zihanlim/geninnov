@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
-import { inject } from "@vercel/analytics";
 import "./globals.css";
 import TopBar from "@/components/TopBar";
+import Analytics from "@/components/Analytics";
 import SideRail from "@/components/SideRail";
 import LiveFeed from "@/components/LiveFeed";
 import AskProvider from "@/components/chat/AskProvider";
@@ -25,15 +25,11 @@ export const metadata: Metadata = {
   description: "Systematic theme identification and trade generation · macro research at conviction scale.",
 };
 
-// inject() must run once per page load in the browser.
-// Calling at module level (not inside the component) is safe: the layout
-// does not re-render on navigation, so the script is injected exactly once.
-if (typeof window !== "undefined") inject();
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className={`${sans.variable} ${mono.variable} font-sans antialiased`}>
+        <Analytics />
         {/* grid-cols-[minmax(0,1fr)] pins the single column to the viewport
             (its default `auto` would size to min-content and blow past a phone).
             The min-w-0 wrapper is the other half: a grid *item* still has

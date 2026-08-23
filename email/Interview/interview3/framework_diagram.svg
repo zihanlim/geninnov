@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 980">
+  <style>text{font-family:"Segoe UI",Arial,sans-serif}</style>
+  <defs>
+    <marker id="arrB" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,3.5 L0,7 z" fill="#2563eb"/></marker>
+    <marker id="arrO" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,3.5 L0,7 z" fill="#ea580c"/></marker>
+    <marker id="arrP" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,3.5 L0,7 z" fill="#7c3aed"/></marker>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.18"/></filter>
+  </defs>
+  <rect x="0" y="0" width="1200" height="980" fill="#ffffff"/>
+  <text x="600" y="34" text-anchor="middle" font-size="18" font-weight="700" fill="#0f172a">THE MACRO STACK &#8212; READING FRAMEWORK BEHIND INTERVIEW_3_ANDREA.MD</text>
+  <text x="600" y="54" text-anchor="middle" font-size="12.5" fill="#475569">Six layers, bottom-up &#183; expert-team adversarial read &#183; consistency checks between layers &#183; live citations as of 21 Aug 2026</text>
+  <text x="550" y="126" text-anchor="middle" font-size="11" letter-spacing="2" fill="#334155">ANALYSIS SPINE &#8212; SLOWEST MOVING AT THE BOTTOM</text>
+  <rect x="320" y="48" width="480" height="56" rx="10" fill="#1e293b" filter="url(#soft)"/>
+  <text x="560" y="71" text-anchor="middle" font-size="13.5" font-weight="700" fill="#f8fafc">OUTPUT &#8212; THE BOOK &amp; THE SPOKEN ANSWER</text>
+  <text x="560" y="91" text-anchor="middle" font-size="11" fill="#94a3b8">lead line &#8594; full answer &#8594; expert read &#8594; honest version &#8594; citations</text>
+  <rect x="310" y="800" width="490" height="90" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="330" y="828" font-size="14" font-weight="700" fill="#1e40af">L0 &#183; PLUMBING &#8212; the machinery</text>
+  <text x="330" y="850" font-size="11" fill="#334155">RRP $0.2B &#183; TGA $929B&#8594;1.05T &#183; reserves &#183; dealer SLR capacity &#183; swap lines</text>
+  <text x="330" y="869" font-size="10.5" fill="#64748b">slowest moving &#183; determines what is possible above</text>
+  <rect x="310" y="668" width="490" height="90" rx="12" fill="#f0fdf4" stroke="#059669" stroke-width="2"/>
+  <text x="330" y="696" font-size="14" font-weight="700" fill="#14532d">L1 &#183; REGIMES &amp; CYCLES &#8212; half-life 6&#8211;18 months</text>
+  <text x="330" y="718" font-size="11" fill="#334155">late cycle &#183; HY 269bp &#183; supply-shock CPI &#183; Warsh hold (3 hike dissents)</text>
+  <text x="330" y="737" font-size="10.5" fill="#64748b">business &#183; credit &#183; inflation &#183; policy &#183; market-vol regimes overlap</text>
+  <rect x="310" y="536" width="490" height="90" rx="12" fill="#faf5ff" stroke="#7c3aed" stroke-width="2"/>
+  <text x="330" y="564" font-size="14" font-weight="700" fill="#4c1d95">L2 &#183; FACTORS &amp; CROSS-ASSET STRUCTURE</text>
+  <text x="330" y="586" font-size="11" fill="#334155">FF5+UMD &#183; curve slope &#183; ACM term premium ~80bp &#183; IG/HY OAS &#183; carry</text>
+  <text x="330" y="605" font-size="10.5" fill="#64748b">what the market is paying for inside the regime</text>
+  <rect x="310" y="404" width="490" height="90" rx="12" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+  <text x="330" y="432" font-size="14" font-weight="700" fill="#7c2d12">L3 &#183; THEMES &amp; NARRATIVES</text>
+  <text x="330" y="454" font-size="11" fill="#334155">HypeScore attention &#183; EdgeScore direction &#183; price-link gate (20 sessions)</text>
+  <text x="330" y="473" font-size="10.5" fill="#64748b">a story is not a theme until prices move with it</text>
+  <rect x="310" y="272" width="490" height="90" rx="12" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/>
+  <text x="330" y="300" font-size="14" font-weight="700" fill="#7f1d1d">L4 &#183; NAMES &amp; MICROSTRUCTURE</text>
+  <text x="330" y="322" font-size="11" fill="#334155">binaries (SMCI probe cleared) &#183; borrow 0.31% &#183; SI 18% &#183; crowding &#183; 20% ADV</text>
+  <text x="330" y="341" font-size="10.5" fill="#64748b">where paper loss becomes real loss</text>
+  <rect x="310" y="140" width="490" height="90" rx="12" fill="#ecfeff" stroke="#0891b2" stroke-width="2.5"/>
+  <rect x="315" y="145" width="480" height="80" rx="9" fill="none" stroke="#67e8f9" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="330" y="168" font-size="14" font-weight="700" fill="#155e75">L5 &#183; SYNTHESIS &#8212; THE PM OWNS CONVICTION</text>
+  <text x="330" y="190" font-size="11" fill="#334155">thesis &#183; size &#183; stop written before the ticket &#183; machine measures, human decides</text>
+  <text x="330" y="209" font-size="10.5" fill="#64748b">citation guardrail: publish nothing the data cannot back</text>
+  <line x1="555" y1="800" x2="555" y2="762" stroke="#2563eb" stroke-width="2" marker-end="url(#arrB)"/>
+  <rect x="562" y="772" width="176" height="17" fill="#ffffff" opacity="0.95"/>
+  <text x="568" y="785" font-size="10.5" font-style="italic" fill="#2563eb">can dealers absorb supply?</text>
+  <line x1="555" y1="668" x2="555" y2="630" stroke="#2563eb" stroke-width="2" marker-end="url(#arrB)"/>
+  <rect x="562" y="640" width="172" height="17" fill="#ffffff" opacity="0.95"/>
+  <text x="568" y="653" font-size="10.5" font-style="italic" fill="#2563eb">which factor is being paid?</text>
+  <line x1="555" y1="536" x2="555" y2="498" stroke="#2563eb" stroke-width="2" marker-end="url(#arrB)"/>
+  <rect x="562" y="508" width="252" height="17" fill="#ffffff" opacity="0.95"/>
+  <text x="568" y="521" font-size="10.5" font-style="italic" fill="#2563eb">does attention move prices? &#8212; THE GATE</text>
+  <line x1="555" y1="404" x2="555" y2="366" stroke="#2563eb" stroke-width="2" marker-end="url(#arrB)"/>
+  <rect x="562" y="376" width="134" height="17" fill="#ffffff" opacity="0.95"/>
+  <text x="568" y="389" font-size="10.5" font-style="italic" fill="#2563eb">cleanest expression?</text>
+  <line x1="555" y1="272" x2="555" y2="234" stroke="#2563eb" stroke-width="2" marker-end="url(#arrB)"/>
+  <rect x="562" y="244" width="144" height="17" fill="#ffffff" opacity="0.95"/>
+  <text x="568" y="257" font-size="10.5" font-style="italic" fill="#2563eb">is the gap survivable?</text>
+  <line x1="555" y1="140" x2="555" y2="110" stroke="#2563eb" stroke-width="2" marker-end="url(#arrB)"/>
+  <rect x="30" y="140" width="250" height="750" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="155" y="168" text-anchor="middle" font-size="12.5" font-weight="700" fill="#334155">LIVE DATA &#8212; PRIMARY SOURCES</text>
+  <text x="155" y="186" text-anchor="middle" font-size="10.5" font-style="italic" fill="#64748b">every number traces here (guardrail)</text>
+  <rect x="40" y="204" width="230" height="76" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="52" y="226" font-size="12" font-weight="700" fill="#0f172a">FRED</text>
+  <text x="52" y="246" font-size="10.5" fill="#475569">RRP 0.2B &#183; ACM TP10 0.84</text>
+  <text x="52" y="264" font-size="10.5" fill="#64748b">VIX 16.01 &#183; DGS10 4.71</text>
+  <rect x="40" y="296" width="230" height="76" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="52" y="318" font-size="12" font-weight="700" fill="#0f172a">Federal Reserve</text>
+  <text x="52" y="338" font-size="10.5" fill="#475569">Warsh chair since 22 May 26</text>
+  <text x="52" y="356" font-size="10.5" fill="#64748b">9&#8211;3 hold &#183; 3 hike dissents</text>
+  <rect x="40" y="388" width="230" height="76" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="52" y="410" font-size="12" font-weight="700" fill="#0f172a">CBO &#183; Treasury</text>
+  <text x="52" y="430" font-size="10.5" fill="#475569">debt $40T &#183; int $963B FY26</text>
+  <text x="52" y="448" font-size="10.5" fill="#64748b">FY26 deficit &#8594; $2.1T</text>
+  <rect x="40" y="480" width="230" height="76" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="52" y="502" font-size="12" font-weight="700" fill="#0f172a">BLS &#183; BEA</text>
+  <text x="52" y="522" font-size="10.5" fill="#475569">CPI 3.4% YoY &#183; core 2.5%</text>
+  <text x="52" y="540" font-size="10.5" fill="#64748b">10y TIPS 2.45% (2007 high)</text>
+  <rect x="40" y="572" width="230" height="76" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="52" y="594" font-size="12" font-weight="700" fill="#0f172a">Treasury TIC</text>
+  <text x="52" y="614" font-size="10.5" fill="#475569">foreign UST $9.30T &#8722;72B MoM</text>
+  <text x="52" y="632" font-size="10.5" fill="#64748b">China $633B &#183; gold &gt; UST res.</text>
+  <rect x="40" y="664" width="230" height="76" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="52" y="686" font-size="12" font-weight="700" fill="#0f172a">SEC &#183; FINRA &#183; IBKR</text>
+  <text x="52" y="706" font-size="10.5" fill="#475569">SMCI SI 18% &#183; borrow 0.31%</text>
+  <text x="52" y="724" font-size="10.5" fill="#64748b">KMX EPS 1.31 vs 0.96 est.</text>
+  <rect x="40" y="756" width="230" height="76" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="52" y="778" font-size="12" font-weight="700" fill="#0f172a">EIA &#183; AGA</text>
+  <text x="52" y="798" font-size="10.5" fill="#475569">Henry Hub 2.65&#8211;2.81</text>
+  <text x="52" y="816" font-size="10.5" fill="#64748b">sub-$3 forecast thru Nov</text>
+  <line x1="284" y1="465" x2="304" y2="465" stroke="#2563eb" stroke-width="2" marker-end="url(#arrB)"/>
+  <rect x="880" y="140" width="290" height="750" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="1025" y="168" text-anchor="middle" font-size="12.5" font-weight="700" fill="#334155">EXPERT-TEAM PANEL</text>
+  <text x="1025" y="186" text-anchor="middle" font-size="10.5" font-style="italic" fill="#64748b">adversarial read, applied to every layer</text>
+  <rect x="894" y="206" width="128" height="50" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="958" y="226" text-anchor="middle" font-size="11" font-weight="700" fill="#111827">Druckenmiller</text>
+  <text x="958" y="243" text-anchor="middle" font-size="10" fill="#6b7280">macro &#183; asymmetry</text>
+  <rect x="1032" y="206" width="128" height="50" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="1096" y="226" text-anchor="middle" font-size="11" font-weight="700" fill="#111827">Munger</text>
+  <text x="1096" y="243" text-anchor="middle" font-size="10" fill="#6b7280">inversion</text>
+  <rect x="894" y="264" width="128" height="50" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="958" y="284" text-anchor="middle" font-size="11" font-weight="700" fill="#111827">Burry</text>
+  <text x="958" y="301" text-anchor="middle" font-size="10" fill="#6b7280">tails &#183; gaps</text>
+  <rect x="1032" y="264" width="128" height="50" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="1096" y="284" text-anchor="middle" font-size="11" font-weight="700" fill="#111827">Damodaran</text>
+  <text x="1096" y="301" text-anchor="middle" font-size="10" fill="#6b7280">valuation &#183; ERP</text>
+  <rect x="894" y="322" width="128" height="50" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="958" y="342" text-anchor="middle" font-size="11" font-weight="700" fill="#111827">Pabrai</text>
+  <text x="958" y="359" text-anchor="middle" font-size="10" fill="#6b7280">asymmetric payoff</text>
+  <rect x="1032" y="322" width="128" height="50" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="1096" y="342" text-anchor="middle" font-size="11" font-weight="700" fill="#111827">Graham</text>
+  <text x="1096" y="359" text-anchor="middle" font-size="10" fill="#6b7280">margin of safety</text>
+  <rect x="894" y="380" width="128" height="50" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="958" y="400" text-anchor="middle" font-size="11" font-weight="700" fill="#111827">Buffett</text>
+  <text x="958" y="417" text-anchor="middle" font-size="10" fill="#6b7280">process compounds</text>
+  <rect x="1032" y="380" width="128" height="50" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="1096" y="400" text-anchor="middle" font-size="11" font-weight="700" fill="#111827">Fisher</text>
+  <text x="1096" y="417" text-anchor="middle" font-size="10" fill="#6b7280">quality growth</text>
+  <text x="894" y="452" font-size="11" font-weight="700" fill="#334155">ANALYSTS</text>
+  <rect x="894" y="462" width="266" height="38" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="906" y="486" font-size="10.5" fill="#334155">Fundamental &#8212; margins &#183; credit</text>
+  <rect x="894" y="508" width="266" height="38" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="906" y="532" font-size="10.5" fill="#334155">Risk manager &#8212; VaR vs LVaR &#183; gap risk</text>
+  <rect x="894" y="554" width="266" height="38" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="906" y="578" font-size="10.5" fill="#334155">Sentiment &#8212; ERP &#183; skew &#183; positioning</text>
+  <rect x="894" y="620" width="266" height="64" rx="10" fill="#ecfeff" stroke="#0891b2" stroke-width="2"/>
+  <text x="1027" y="646" text-anchor="middle" font-size="12.5" font-weight="700" fill="#155e75">PORTFOLIO MANAGER</text>
+  <text x="1027" y="666" text-anchor="middle" font-size="10.5" fill="#0e7490">owns the conviction &#183; sizes the book</text>
+  <text x="1027" y="704" text-anchor="middle" font-size="10" font-style="italic" fill="#64748b">reads every layer, not just the trade</text>
+  <path d="M 876 300 L 806 300" fill="none" stroke="#ea580c" stroke-width="1.8" marker-end="url(#arrO)"/>
+  <path d="M 876 600 L 806 600" fill="none" stroke="#ea580c" stroke-width="1.8" marker-end="url(#arrO)"/>
+  <rect x="850" y="290" width="16" height="20" fill="#ffffff"/>
+  <rect x="837" y="590" width="16" height="20" fill="#ffffff"/>
+  <path d="M 795 98 C 850 120, 864 300, 858 460 C 854 580, 845 660, 798 713" fill="none" stroke="#7c3aed" stroke-width="1.8" marker-end="url(#arrP)"/>
+  <rect x="812" y="318" width="70" height="16" fill="#ffffff" opacity="0.95"/>
+  <text x="847" y="330" text-anchor="middle" font-size="10.5" font-style="italic" fill="#7c3aed">re-evaluate</text>
+  <rect x="820" y="338" width="54" height="16" fill="#ffffff" opacity="0.95"/>
+  <text x="847" y="350" text-anchor="middle" font-size="10.5" font-style="italic" fill="#7c3aed">on news</text>
+  <line x1="40" y1="926" x2="80" y2="926" stroke="#2563eb" stroke-width="2" marker-end="url(#arrB)"/>
+  <text x="88" y="930" font-size="11" fill="#334155">analysis flows upward</text>
+  <line x1="300" y1="926" x2="340" y2="926" stroke="#ea580c" stroke-width="1.8" marker-end="url(#arrO)"/>
+  <text x="348" y="930" font-size="11" fill="#334155">expert-team adversarial check</text>
+  <path d="M 600 926 q 20 -14 40 0" fill="none" stroke="#7c3aed" stroke-width="1.8" marker-end="url(#arrP)"/>
+  <text x="650" y="930" font-size="11" fill="#334155">re-evaluation feedback (Q11 &#183; Q18)</text>
+  <rect x="880" y="914" width="26" height="18" fill="none" stroke="#94a3b8" stroke-dasharray="4,3"/>
+  <text x="914" y="930" font-size="11" fill="#334155">source / grouping</text>
+  <text x="600" y="962" text-anchor="middle" font-size="10.5" fill="#64748b">Source: email/Interview/interview3/interview_3_andrea.md &#8212; Model answers section &#183; generated 23 Aug 2026 &#183; commit 52bc49cb</text>
+</svg>

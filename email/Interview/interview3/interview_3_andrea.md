@@ -436,6 +436,70 @@ Three threads to weave through every answer:
 >
 > **Method.** Each answer runs the 18-expert panel as a contrarian check on the prep-doc draft — the masters that pressure-test the cleanest answer, the four analysts that fact-check the numbers, the risk manager that names what is unmeasured, and the portfolio manager that decides what the room should remember. The 17 answers keep the voice of the prep doc (one line you lead with, one paragraph you land it on) and add a "live data, not prep-doc" block for the numbers that have moved.
 
+### The framework on one page
+
+Every answer below climbs the same stack — plumbing up to conviction, with a consistency check at each hop, primary sources everything must trace back to, and the expert panel applying the adversarial read. Same diagram as `framework_diagram.svg` / `.png` in this folder, inline so it renders anywhere the markdown does:
+
+```mermaid
+flowchart BT
+    subgraph SRC["LIVE DATA — PRIMARY SOURCES · every number traces here"]
+        direction TB
+        S1["FRED — RRP $0.2B · ACM TP10 0.84 · VIX 16.01"]
+        S2["Federal Reserve — Warsh chair · 9–3 hold · 3 hike dissents"]
+        S3["CBO / Treasury — debt $40T · net interest $963B FY26"]
+        S4["BLS / BEA — CPI 3.4% YoY · 10y real 2.45%"]
+        S5["Treasury TIC — foreign UST $9.30T · China $633B"]
+        S6["SEC / FINRA / IBKR — SMCI SI 18% · borrow 0.31%"]
+        S7["EIA / AGA — Henry Hub $2.65–2.81 · sub-$3 through Nov"]
+    end
+
+    L0["L0 · PLUMBING — the machinery<br/>RRP drained · TGA $929B to $1.05T · reserves · dealer SLR capacity · swap lines"]
+    L1["L1 · REGIMES — half-life 6–18 months<br/>late cycle · HY 269bp · supply-shock CPI · Warsh hold with 3 hike dissents"]
+    L2["L2 · FACTORS — what the regime is paying for<br/>FF5+UMD · curve slope · ACM term premium ~80bp · IG/HY OAS · carry"]
+    L3["L3 · THEMES — attention with prices behind it<br/>HypeScore · EdgeScore · price-link gate = 20 sessions"]
+    L4["L4 · NAMES — where paper loss becomes real loss<br/>binaries · borrow 0.31% · SI 18% · crowding · 20% ADV cap"]
+    L5["L5 · SYNTHESIS — the PM owns conviction<br/>thesis · size · stop written before the ticket · citation guardrail"]
+    OUT["OUTPUT — THE BOOK AND THE SPOKEN ANSWER<br/>lead line → full answer → expert read → honest version → citations"]
+
+    SRC --> L0
+    L0 -->|"can dealers absorb supply?"| L1
+    L1 -->|"which factor is being paid?"| L2
+    L2 -->|"does attention move prices? — THE GATE"| L3
+    L3 -->|"cleanest expression?"| L4
+    L4 -->|"is the gap survivable?"| L5
+    L5 --> OUT
+    OUT -.->|"re-evaluate / on news"| L1
+
+    subgraph EXP["EXPERT-TEAM PANEL — adversarial read on every layer"]
+        direction TB
+        M["Druckenmiller · Munger · Burry · Damodaran · Pabrai<br/>Graham · Buffett · Fisher"]
+        AN["ANALYSTS — fundamental · risk VaR vs LVaR · sentiment ERP and skew"]
+        PM["PORTFOLIO MANAGER — reads every layer, not just the trade"]
+        M --> AN
+        AN --> PM
+    end
+
+    EXP -.-> L2
+    EXP -.-> L4
+
+    classDef srcbox fill:#f8fafc,stroke:#94a3b8,color:#334155;
+    classDef lay0 fill:#eff6ff,stroke:#2563eb,color:#1e40af;
+    classDef lay1 fill:#f0fdf4,stroke:#059669,color:#14532d;
+    classDef lay2 fill:#faf5ff,stroke:#7c3aed,color:#4c1d95;
+    classDef lay3 fill:#fff7ed,stroke:#ea580c,color:#7c2d12;
+    classDef lay4 fill:#fef2f2,stroke:#dc2626,color:#7f1d1d;
+    classDef lay5 fill:#ecfeff,stroke:#0891b2,stroke-width:2px,color:#155e75;
+    classDef outbox fill:#1e293b,stroke:#0f172a,color:#f8fafc;
+    class S1,S2,S3,S4,S5,S6,S7 srcbox;
+    class L0 lay0;
+    class L1 lay1;
+    class L2 lay2;
+    class L3 lay3;
+    class L4 lay4;
+    class L5 lay5;
+    class OUT outbox;
+```
+
 ### Updated live numbers to print on the table (as of 21 Aug 2026)
 
 - **Debt** — $40.047T (crossed $40T 19 Aug 2026); debt/GDP 101%; ~$32.2T held by the public. [Guardian, 19 Aug 2026](https://www.theguardian.com/us-news/2026/aug/19/us-debt-40-trillion); [Charles Schwab, Aug 2026](https://www.schwab.com/learn/story/americas-new-debt-reality)

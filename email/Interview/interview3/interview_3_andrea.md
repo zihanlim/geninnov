@@ -36,6 +36,66 @@ The blindspots from the round-2 review fall into four clusters. The first three 
 
 **Connect to:** Q2 Bessent, Q7 (yield curve term premium). The plumbing is what makes the curve move, not just the policy.
 
+#### The plumbing, drawn
+
+One balance sheet, three accounts, one private bid. Everything here is a claim on the same reserves: the TGA build drains them 1:1, the RRP has nothing left to give back, and whatever dealers cannot warehouse prices itself into the term premium. Live anchors as of 21 Aug 2026:
+
+```mermaid
+flowchart TB
+    FEDQ["Fed — declined reserve-management purchases for Aug–Sept<br/>'comfortable with reserves': chose not to refill what drains"]
+
+    subgraph ACCTS["FED ACCOUNTS — all claims on the same reserves"]
+        direction LR
+        TGA["TGA — the government's checking account<br/>$929B on 5 Aug · forecast ~$1.05T peak late Oct"]
+        RES["BANK RESERVES — THE variable<br/>abundant keeps the bid working"]
+        RRP["RRP — the money funds' spare tire<br/>$0.2B left of the $2.4T peak"]
+    end
+
+    subgraph UST["TREASURY — BESSENT'S SIDE"]
+        direction LR
+        ISS["Net long-end supply ahead<br/>~$7–8T of coupons to be warehoused"]
+        BUY["Liquidity-support buybacks DOUBLED<br/>$2B → $4B per op · window 9 Sep – 4 Nov"]
+    end
+
+    subgraph BID["THE PRIVATE BID"]
+        direction LR
+        MMF["Money-market funds<br/>cash that needs a home"]
+        DL["DEALER BALANCE-SHEET CAPACITY<br/>SLR relief on Treasuries/reserves still in place"]
+    end
+
+    TP["TERM PREMIUM ~80bp — near a 12-year high<br/>the ONLY piece of the yield that plumbing moves"]
+    Y30["The 30y — touched 5.337% on 19 Aug<br/>fell ~10bp on the buyback announcement"]
+    RM["RISK-MANAGER GAP — which dealers absorb it?<br/>SLR relief removed or a debt-ceiling rerun: back end re-widens 30–50bp"]
+
+    TGA -->|"rises $120B = reserves fall $120B, one-for-one"| RES
+    FEDQ -.->|"no offset to the drain"| RES
+    RRP -->|"flat tire: MMF cash has nowhere left to park"| MMF
+    MMF -->|"forced bid — cushions the bill market only"| ISS
+    ISS -->|"coupons must sit on someone's balance sheet"| DL
+    RES -->|"scarce reserves shrink what dealers can intermediate"| DL
+    BUY -.->|"shrinks the float AND signals the bid gets defended —<br/>a plumbing intervention, not a yield-level one"| DL
+    DL -->|"the structural reason term premium can spike on a single auction"| TP
+    TP -->|"10y = ~4.0% expected short-rate path + 80bp premium"| Y30
+    DL -.->|"capacity going into the buyback window is unmeasured"| RM
+
+    classDef fed fill:#eff6ff,stroke:#2563eb,color:#1e40af;
+    classDef res fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px,color:#1e3a8a;
+    classDef ust fill:#f0fdf4,stroke:#059669,color:#14532d;
+    classDef bid fill:#fffbeb,stroke:#d97706,color:#78350f;
+    classDef dl fill:#fef3c7,stroke:#b45309,stroke-width:2px,color:#78350f;
+    classDef tp fill:#faf5ff,stroke:#7c3aed,color:#4c1d95;
+    classDef out fill:#1e293b,stroke:#0f172a,color:#f8fafc;
+    classDef rm fill:#fef2f2,stroke:#dc2626,color:#7f1d1d;
+    class FEDQ,TGA,RRP fed;
+    class RES res;
+    class ISS,BUY ust;
+    class MMF bid;
+    class DL dl;
+    class TP tp;
+    class Y30 out;
+    class RM rm;
+```
+
 ---
 
 ### 2. Cross-asset correlation regimes — what the book looks like when everything correlates

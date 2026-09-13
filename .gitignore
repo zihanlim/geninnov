@@ -72,3 +72,4 @@ stitch_remix*
 # Playwright run artifacts — regenerated every run, never reviewed.
 frontend/test-results/
 frontend/playwright-report/
+.env*

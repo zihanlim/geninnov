@@ -1,0 +1,4 @@
+{
+  "rootDirectory": "frontend",
+  "buildCommand": "npm install --include=dev && npm run build"
+}

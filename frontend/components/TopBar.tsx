@@ -271,13 +271,13 @@ export default function TopBar() {
           which is why this is a lockup and not two stray labels. */}
       <Link
         href="/"
-        aria-label="Andromeda Analytics — home"
+        aria-label="geninnov — home"
         className="flex items-center gap-2.5 text-header-ink shrink-0"
       >
         <BrandMark />
         <span className="hidden sm:flex flex-col justify-center leading-none">
           <span className="font-semibold tracking-[0.08em]">
-            ANDROMEDA<span className="hidden lg:inline"> ANALYTICS</span>
+            geninnov
           </span>
           {/* Tertiary ink, not secondary: this is the descriptor under a name,
               and at secondary it competes with the four nav items beside it.

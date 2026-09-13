@@ -34,7 +34,7 @@ const GLOBAL_CAP = Number(process.env.CHAT_GLOBAL_DAILY_CAP || 200);
  * lightly obfuscated address rather than an anonymous one.
  */
 export function hashIp(ip: string): string {
-  const salt = process.env.CHAT_IP_SALT || "andromeda-ask";
+  const salt = process.env.CHAT_IP_SALT || "geninnov-ask";
   return createHash("sha256").update(`${salt}:${ip}`).digest("hex").slice(0, 32);
 }
 

@@ -49,7 +49,7 @@ describe("initialize", () => {
     expect(res.status).toBe(200);
     expect(body.jsonrpc).toBe("2.0");
     expect(body.result.protocolVersion).toBe(PROTOCOL);
-    expect(body.result.serverInfo.name).toBe("andromeda");
+    expect(body.result.serverInfo.name).toBe("geninnov");
     expect(body.result.capabilities.tools).toBeDefined();
   });
 

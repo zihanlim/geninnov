@@ -111,8 +111,8 @@ export default function FloatingWindow({
   keepMounted = false,
   children,
 }: FloatingWindowProps) {
-  const POS_KEY = `andromeda.win.${id}.pos`;
-  const COLLAPSED_KEY = `andromeda.win.${id}.collapsed`;
+  const POS_KEY = `geninnov.win.${id}.pos`;
+  const COLLAPSED_KEY = `geninnov.win.${id}.collapsed`;
 
   // Portals need a DOM. Rendering nothing on the server and on the first client
   // pass keeps hydration identical on both sides; storage is read in an effect

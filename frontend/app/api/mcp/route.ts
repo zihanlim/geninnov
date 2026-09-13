@@ -42,8 +42,8 @@ const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26"] as const;
 const LATEST = SUPPORTED_PROTOCOL_VERSIONS[0];
 
 const SERVER_INFO = {
-  name: "andromeda",
-  title: "Andromeda — the published $100M book",
+  name: "geninnov",
+  title: "geninnov — the published $100M book",
   version: "1.0.0",
 } as const;
 
@@ -51,7 +51,7 @@ const SERVER_INFO = {
 // the tools trustworthy, because a client that does not know it will treat an absence as
 // a failure and retry instead of reporting it.
 const INSTRUCTIONS = [
-  "Andromeda publishes one $100M long-short book per weekday, after the US close.",
+  "geninnov publishes one $100M long-short book per weekday, after the US close.",
   "Every tool here reads that published run and returns FACTS, each carrying the",
   "`table.column` it came from. Quote those numbers; do not recompute or combine them —",
   "a figure you derive yourself is not traceable to a source and the platform treats it",

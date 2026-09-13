@@ -1,4 +1,4 @@
-// Regenerate the Andromeda mark from its source artwork.
+// Regenerate the geninnov mark from its source artwork.
 //
 //   node scripts/trace-brand-mark.mjs ../docs/brand/andromeda-mark-source.png
 //

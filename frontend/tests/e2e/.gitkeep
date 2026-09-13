@@ -1,2 +1,2 @@
-# Playwright E2E tests for Andromeda frontend.
+# Playwright E2E tests for geninnov frontend.
 # Tests run against PLAYWRIGHT_BASE_URL (default http://localhost:3000).

@@ -24,7 +24,7 @@ export default function ExecutionPage() {
           Execution &amp; Microstructure
         </h1>
         <p className="m-0 text-text-secondary text-[13px] max-w-[80ch]">
-          Can this be put on without the impact eating the thesis? Andromeda does
+          Can this be put on without the impact eating the thesis? geninnov does
           not answer that, and this page exists to say so rather than let a gap in
           the sequence imply the question was forgotten.
         </p>

@@ -4,7 +4,7 @@
 //
 // The case for it is empirical: reviewing worldmonitor.app, its /docs/llms.txt let one
 // fetch enumerate ~200 documented operations across 37 service groups, where crawling the
-// HTML would have taken many. An agent pointed at Andromeda currently has to guess which
+// HTML would have taken many. An agent pointed at geninnov currently has to guess which
 // pages exist and what a number on them means.
 //
 // GENERATED, not authored, for the part that can drift: the tool list comes from the same
@@ -18,14 +18,14 @@ export const dynamic = "force-static";
 export const revalidate = 3600;
 
 const BODY = () =>
-  `# Andromeda
+  `# geninnov
 
 > Systematic market-theme identification that publishes a $100M long-short book once per
 > weekday, after the US close, with every numeric claim traceable to the row it came from.
 
 ## What this is
 
-Andromeda ingests news and social data daily, scores themes by attention x sentiment x
+geninnov ingests news and social data daily, scores themes by attention x sentiment x
 market correlation x momentum (HypeScore), ranks trade candidates (EdgeScore), and has an
 LLM agent synthesise the deterministic L0-L4 inputs into a sized book with a per-trade
 thesis. The LLM is invoked at exactly one point in that pipeline; everything before it is
@@ -178,7 +178,7 @@ weights: they are denominated in the mandate above and are not yours.
   $100M and at $5bn, and it is what any sizer takes as input.
 - size_book — sizes that signal under a mandate YOU supply. Pass any of
   total_capital, max_single_name, max_sector, max_geo, max_gross; anything omitted
-  falls back to Andromeda's own value. It runs the same constrained optimizer that
+  falls back to geninnov's own value. It runs the same constrained optimizer that
   produced the published book, stores nothing, and changes no published figure.
 
 The $100M book is one instantiation of the signal under one mandate, not the answer.

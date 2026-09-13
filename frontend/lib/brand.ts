@@ -1,5 +1,5 @@
 /**
- * The Andromeda mark — the figure on the horizon, traced from the supplied
+ * The geninnov mark — the figure on the horizon, traced from the supplied
  * artwork (`docs/brand/andromeda-mark-source.png`, 892×896, white silhouette on
  * #161b38) by `scripts/trace-brand-mark.mjs`, which is deterministic: re-running
  * it on the same source reproduces this string byte for byte.

@@ -1033,7 +1033,7 @@ const sizingProvenance: ToolSpec = {
 /**
  * The research, without this book's mandate on it.
  *
- * Every other tool here returns figures denominated in Andromeda's own mandate —
+ * Every other tool here returns figures denominated in geninnov's own mandate —
  * $100M, 20/30/35 caps, gross ≤ 100%. Those constraints belong to one hypothetical
  * fund, so a caller running their own capital base could not use any of it without
  * reverse-engineering back to the research underneath. This is that research: names,
@@ -1050,7 +1050,7 @@ const sizingProvenance: ToolSpec = {
 const signalTool: ToolSpec = {
   name: "signal",
   description:
-    "The research WITHOUT this book's mandate applied: for each name the agent chose, its side, EdgeScore, conviction (|EdgeScore| / vol) and the thesis that argued it — but no weights, notionals or capital base. Call this when you want to size these ideas under a DIFFERENT mandate than Andromeda's $100M / 20-30-35, or when you want the research view rather than the portfolio view. conviction is a ratio, so it is the same at any capital base.",
+    "The research WITHOUT this book's mandate applied: for each name the agent chose, its side, EdgeScore, conviction (|EdgeScore| / vol) and the thesis that argued it — but no weights, notionals or capital base. Call this when you want to size these ideas under a DIFFERENT mandate than geninnov's $100M / 20-30-35, or when you want the research view rather than the portfolio view. conviction is a ratio, so it is the same at any capital base.",
   args: {},
   async run(args, { db }) {
     // Latest run only. An older vintage would return names that were never in
@@ -1113,7 +1113,7 @@ const signalTool: ToolSpec = {
       // Stated rather than left to inference: a caller seeing no weights might
       // otherwise conclude the book has none.
       absence:
-        "This tool deliberately returns no weights or notionals. For Andromeda's own sizing of the same names, call book_summary or sizing_provenance.",
+        "This tool deliberately returns no weights or notionals. For geninnov's own sizing of the same names, call book_summary or sizing_provenance.",
     };
   },
 };
@@ -1123,9 +1123,9 @@ const signalTool: ToolSpec = {
  *
  * The counterpart to `signal`: that tool hands over the research with no mandate on
  * it, this one turns it into weights under whichever mandate the caller supplies.
- * Together they are what makes Andromeda usable by a portfolio app that runs its own
+ * Together they are what makes geninnov usable by a portfolio app that runs its own
  * capital base — previously impossible, because every tool emitted a book already
- * denominated in Andromeda's $100M and 20/30/35.
+ * denominated in geninnov's $100M and 20/30/35.
  *
  * It PROXIES to `/api/compute/size` rather than sizing here. That is the whole
  * design: `optimizer.py` is cvxpy, and a TypeScript reimplementation is the failure
@@ -1135,10 +1135,10 @@ const signalTool: ToolSpec = {
 const sizeBook: ToolSpec = {
   name: "size_book",
   description:
-    "Size today's signal under YOUR mandate rather than Andromeda's. Optionally pass any of total_capital, max_single_name, max_sector, max_geo, max_gross as a JSON object; anything you omit falls back to Andromeda's own value ($100M, 20%, 30%, 35%, 100%). Returns signed weights and notionals from the same constrained optimizer that produced the published book. Call this when the question is 'what would this look like at my size' or 'under my limits'. Read-only: nothing is stored and no published book changes.",
+    "Size today's signal under YOUR mandate rather than geninnov's. Optionally pass any of total_capital, max_single_name, max_sector, max_geo, max_gross as a JSON object; anything you omit falls back to geninnov's own value ($100M, 20%, 30%, 35%, 100%). Returns signed weights and notionals from the same constrained optimizer that produced the published book. Call this when the question is 'what would this look like at my size' or 'under my limits'. Read-only: nothing is stored and no published book changes.",
   args: {
     mandate:
-      'Optional JSON object of mandate overrides, e.g. {"total_capital": 500000000, "max_single_name": 0.10}. Omit for Andromeda\'s own mandate.',
+      'Optional JSON object of mandate overrides, e.g. {"total_capital": 500000000, "max_single_name": 0.10}. Omit for geninnov\'s own mandate.',
   },
   async run(args, { db }) {
     const { rows, error } = await db.select(
@@ -1178,7 +1178,7 @@ const sizeBook: ToolSpec = {
       facts: [],
       absence:
         `The sizing service is unavailable (${why}). This does not affect the published ` +
-        `book — call book_summary for Andromeda's own weights, or signal for the ` +
+        `book — call book_summary for geninnov's own weights, or signal for the ` +
         `mandate-free research to size yourself.`,
     });
 

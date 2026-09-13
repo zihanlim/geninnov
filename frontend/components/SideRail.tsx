@@ -57,7 +57,7 @@ const DESTINATIONS = PHASES.map((p) => ({
   Icon: ICONS[p.id],
 }));
 
-const STORAGE_KEY = "andromeda:rail-expanded";
+const STORAGE_KEY = "geninnov:rail-expanded";
 
 export default function SideRail() {
   const pathname = usePathname();
@@ -177,7 +177,7 @@ export default function SideRail() {
             </span>
             {/* Brand */}
             <span className="text-[10px] text-text-tertiary text-center leading-tight">
-              Andromeda <span className="font-bold text-orange-500">{'//'}</span> Analytics
+              geninnov <span className="font-bold text-orange-500">{'//'}</span> Analytics
             </span>
             {/* Resume button */}
             <button

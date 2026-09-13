@@ -3,7 +3,7 @@ import { MARK_SIZE_PX } from "@/lib/brand";
 /**
  * The masthead's brand mark, currently rendered from
  * `public/logo_infinity_ribbon_bold.png` (the geninnov mark source). The previous
- * inline-SVG path traced from `docs/brand/andromeda-mark-source.png` is still in
+ * inline-SVG path traced from `docs/brand/geninnov-mark-source.png` is still in
  * `lib/brand.ts` for `--logo-plate` colour callers; the visual masthead mark is
  * now this raster. Regenerate the PNG and re-deploy to change it.
  *

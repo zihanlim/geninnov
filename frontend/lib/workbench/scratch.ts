@@ -13,7 +13,7 @@
 //
 // THREE TIERS OF NAME, AND WHY THE DISTINCTION IS NOT NEGOTIABLE
 // -------------------------------------------------------------
-// Any ticker may be added. What differs is what Andromeda can honestly say:
+// Any ticker may be added. What differs is what geninnov can honestly say:
 //
 //   held       — in the published book. Full analytics, full signal.
 //   candidate  — cleared the screen, was not taken. Full analytics, full signal.

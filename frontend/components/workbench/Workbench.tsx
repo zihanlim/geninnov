@@ -24,7 +24,7 @@ import {
   type Tier,
 } from "@/lib/workbench/scratch";
 
-const STORAGE_KEY = "andromeda.workbench.v1";
+const STORAGE_KEY = "geninnov.workbench.v1";
 
 const pct = (v: number, dp = 1) => `${(v * 100).toFixed(dp)}%`;
 const usd = (v: number) =>
@@ -519,7 +519,7 @@ export default function Workbench({
           <p className="m-0 px-4 py-3 text-[11.5px] text-text-tertiary leading-[1.6] border-t border-border">
             <span className="num">{metrics.unscored.join(", ")}</span>{" "}
             {metrics.unscored.length === 1 ? "is" : "are"} not in the candidate pool, so
-            Andromeda has no EdgeScore or conviction for{" "}
+            geninnov has no EdgeScore or conviction for{" "}
             {metrics.unscored.length === 1 ? "it" : "them"} — those need a theme, news
             mentions and a HypeScore. That is an absence, not a zero. Exposure and cap
             usage still count{" "}

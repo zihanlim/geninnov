@@ -194,7 +194,7 @@ export default function AskConsole({
               </p>
             </div>
 
-            {/* Assistant turn — left-aligned with the Andromeda mark. Chat now,
+            {/* Assistant turn — left-aligned with the geninnov mark. Chat now,
                 but STILL not an h-screen chat-app shell: no stream (the citation
                 guardrail must check a figure before it is on screen). On the page
                 the document scrolls, so Ctrl+F and deep links survive (goal 7); in

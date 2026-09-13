@@ -218,7 +218,7 @@ export default function DataMapPage() {
       <PageHeader
         title={
           <>
-            ANDROMEDA{" "}
+            geninnov{" "}
             <span
               className="font-mono"
               style={{ color: "var(--datamap-orange)" }}

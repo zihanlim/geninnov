@@ -21,6 +21,7 @@ export default function BrandMark({ size = MARK_SIZE_PX }: { size?: number }) {
       alt=""
       aria-hidden="true"
       className="shrink-0"
+      style={{ filter: "invert(1)" }}
     />
   );
 }

@@ -23,6 +23,11 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "geninnov Analytics — Quantitative Macro Research",
   description: "Systematic theme identification and trade generation · macro research at conviction scale.",
+  manifest: "/manifest.json",
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/icon-192.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

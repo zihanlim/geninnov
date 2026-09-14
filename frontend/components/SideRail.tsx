@@ -195,11 +195,11 @@ export default function SideRail() {
         )}
 
         {/* Footer wordmark band — only in expanded mode; the 56px collapsed rail
-            has no room for the 1406×240 wordmark at any legible size. Black
-            background so the SVG's white→grey gradient text reads (it would
-            otherwise vanish on the rail's paper surface). Decorative only. */}
+            has no room for the 1406×240 wordmark at any legible size. Sits on
+            the rail's paper surface, so the SVG's white→grey gradient renders
+            mostly the trailing grey tail — decorative watermark only. */}
         {expanded && (
-          <div className="rounded-md bg-black p-2" aria-hidden="true">
+          <div className="p-2" aria-hidden="true">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/brand/geninnov-wordmark.svg"

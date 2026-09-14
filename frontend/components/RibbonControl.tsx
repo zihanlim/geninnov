@@ -35,8 +35,8 @@ const RibbonControl = forwardRef<HTMLButtonElement, RibbonControlProps>(
         aria-label={label}
         className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-medium whitespace-nowrap transition-colors ${
           active
-            ? "border-header-border bg-header-raised text-header-ink"
-            : "border-header-border bg-transparent text-header-muted hover:text-header-ink hover:bg-header-raised"
+            ? "border-white bg-white text-black"
+            : "border-white/15 bg-white/5 text-white hover:bg-white/10 hover:border-white/30"
         } ${className}`}
         {...rest}
       >

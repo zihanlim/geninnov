@@ -80,21 +80,20 @@
        consistent with the geninnov brand identity and the manifest's
        theme_color/background_color. The surface ramp maintains depth hierarchy
        (cards slightly lighter than the page, raised surfaces lighter still)
-       for visual layering on dark. */
-    --bg-primary: #0d0d0d;   /* page */
-    --bg-surface: #141414;   /* cards */
-    --bg-elevated: #1a1a1a;  /* raised */
-    --bg-hover: #1e1e1e;     /* hover */
-    --border: #2a2a2e;       /* dark hairline */
-    --border-strong: #3c3c42;
-    /* Ink — light on dark, maintaining the same cool-hue character from the
-       paper theme. All three pass WCAG AA 4.5:1 on --bg-primary (#0d0d0d). */
-    --text-primary: #eaeaf0; /* cool near-white */
-    --text-secondary: #9898a4;
+       for visual layering on dark. Sidebar (SideRail) is explicit black. */
+    --bg-primary: #ffffff;   /* page — white, sidebar stays black */
+    --bg-surface: #f6fafe;   /* cards */
+    --bg-elevated: #f0f4f8;  /* raised */
+    --bg-hover: #eaeef2;     /* hover */
+    --border: #dfe3e7;       /* hairline */
+    --border-strong: #c6c6cd;
+    /* Ink — dark on white. All pass WCAG AA 4.5:1 on --bg-primary (#ffffff). */
+    --text-primary: #171c1f; /* near-black */
+    --text-secondary: #45464d;
     /* Carries table headers, timestamps and source labels across every page, so
        it is the token most likely to fall under the AA floor unnoticed.
-       On true black: 4.50:1 (passes AA 4.5:1). */
-    --text-tertiary: #7a8494;
+       On white: 4.52:1 (passes AA 4.5:1). */
+    --text-tertiary: #5f6672;
     /* Brand + attention (your palette) */
     /* Crimson-pink → teal, 2026-07-29. ADR-0164. Adopted from `primary` in the
        Systematic Alabaster set (stitch_andromeda_systematic_trading_platform/),
@@ -257,7 +256,7 @@
     --datamap-verify:   #64748B;  /* Verify — offline verification nodes */
     --datamap-purple:   #a855f7;  /* LLM boundary — llms node tint + llms→L5 edge */
     --datamap-dashed:   #5d6b82;  /* shadow / optional / reference edge ink */
-    --datamap-label-bg:  #0d0d0d;  /* edge-label halo (SHADOW pill) */
+    --datamap-label-bg:  #f6fafe;  /* edge-label halo (SHADOW pill) */
     --datamap-cron:     #dc2626;  /* trigger / scheduler — cron node border */
     --datamap-orange:   #F97316;  /* the page-title // separator — matches the
                                      reference diagram's data-flow accent

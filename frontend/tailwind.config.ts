@@ -83,21 +83,20 @@ const config: Config = {
       colors: {
         // "Ledger" light theme — see app/globals.css for the design rationale.
         // Surfaces (cool paper — adopted from stitch_remix technical_precision)
-        "bg-primary": "#0d0d0d",
-        "bg-surface": "#141414",
-        "bg-elevated": "#1a1a1a",
-        "bg-hover": "#1e1e1e",
-        // Borders (dark)
-        border: "#2a2a2e",
-        "border-strong": "#3c3c42",
+        "bg-primary": "#ffffff",
+        "bg-surface": "#f6fafe",
+        "bg-elevated": "#f0f4f8",
+        "bg-hover": "#eaeef2",
+        // Borders (light)
+        border: "#dfe3e7",
+        "border-strong": "#c6c6cd",
         // Ink
-        "text-primary": "#eaeaf0",
-        "text-secondary": "#9898a4",
-        // Darkened for WCAG AA on true black (#0d0d0d). Tailwind
-        // compiles these to literal RGB at build time — the utility classes do
-        // NOT read the :root variables — so this file and globals.css must be
-        // changed together or only var() call sites move.
-        "text-tertiary": "#7a8494",
+        "text-primary": "#171c1f",
+        "text-secondary": "#45464d",
+        // WCAG AA on white (#ffffff). Tailwind compiles these to literal RGB
+        // at build time — the utility classes do NOT read the :root variables —
+        // so this file and globals.css must be changed together.
+        "text-tertiary": "#5f6672",
         // Brand / attention
         // Crimson-pink #c50c3e → teal, 2026-07-29, from the Systematic Alabaster comp
         // set. ADR-0164. 5.04:1 over its own 10% tint (badge-tier-anchor) where the

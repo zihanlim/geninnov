@@ -63,8 +63,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AskProvider>
           <TopBar />
           <div className="min-h-[calc(100vh-56px)] grid grid-cols-[auto_minmax(0,1fr)]">
-            <SideRail />
-            <div className="min-w-0">{children}</div>
+            <div className="bg-black"><SideRail /></div>
+            <div className="min-w-0 bg-white">{children}</div>
           </div>
         </AskProvider>
         {/* Suspense, because `LiveFeed` calls `useSearchParams` to learn whether a

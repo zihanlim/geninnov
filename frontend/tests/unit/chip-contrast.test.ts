@@ -248,16 +248,17 @@ describe("chip contrast", () => {
   });
 });
 
-// ── the header ladder on the navy masthead (ADR-0223) ──────────────────────────
+// ── the header ladder on the dark masthead ────────────────────────────────────
 //
-// The 56px TopBar is a solid #161b38 band on every page, so its contents use a
-// light-on-navy ladder (--header-*) instead of paper ink. Goal 8's floor must be
-// measured here too — a ladder of ink-over-surface pairs the page never had. The
-// three text inks are checked on BOTH grounds the header has: plain navy and the
-// raised block (--header-raised) that the run-state group and active nav sit on.
-// The two non-text tokens (focus ring, stale dot) clear the 3:1 WCAG 1.4.11 floor.
+// The 56px TopBar is solid --logo-plate (#0d0d0d) on every page, so its
+// contents use a light-on-dark ladder (--header-*) instead of paper ink. Goal 8's
+// floor must be measured here too — a ladder of ink-over-surface pairs the page
+// never had. The three text inks are checked on BOTH grounds the header has:
+// plain logo-plate and the raised block (--header-raised) that the run-state group
+// and active nav sit on. The two non-text tokens (focus ring, stale dot) clear
+// the 3:1 WCAG 1.4.11 floor.
 
-describe("header ladder on the navy masthead (ADR-0223)", () => {
+describe("header ladder on the dark masthead", () => {
   const NAVY = parseColor(PALETTE["logo-plate"])!;
   const RAISED = parseColor(PALETTE["header-raised"])!;
   const head = (token: string) => parseColor(PALETTE[token])!;

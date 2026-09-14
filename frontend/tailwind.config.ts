@@ -83,21 +83,21 @@ const config: Config = {
       colors: {
         // "Ledger" light theme — see app/globals.css for the design rationale.
         // Surfaces (cool paper — adopted from stitch_remix technical_precision)
-        "bg-primary": "#f6fafe",
-        "bg-surface": "#ffffff",
-        "bg-elevated": "#f0f4f8",
-        "bg-hover": "#eaeef2",
-        // Borders (cool hairline)
-        border: "#dfe3e7",
-        "border-strong": "#c6c6cd",
+        "bg-primary": "#0d0d0d",
+        "bg-surface": "#141414",
+        "bg-elevated": "#1a1a1a",
+        "bg-hover": "#1e1e1e",
+        // Borders (dark)
+        border: "#2a2a2e",
+        "border-strong": "#3c3c42",
         // Ink
-        "text-primary": "#171c1f",
-        "text-secondary": "#45464d",
-        // Darkened for WCAG AA (was #9c9182 at 2.80:1 on paper). Tailwind
+        "text-primary": "#eaeaf0",
+        "text-secondary": "#9898a4",
+        // Darkened for WCAG AA on true black (#0d0d0d). Tailwind
         // compiles these to literal RGB at build time — the utility classes do
         // NOT read the :root variables — so this file and globals.css must be
         // changed together or only var() call sites move.
-        "text-tertiary": "#5f6672",
+        "text-tertiary": "#7a8494",
         // Brand / attention
         // Crimson-pink #c50c3e → teal, 2026-07-29, from the Systematic Alabaster comp
         // set. ADR-0164. 5.04:1 over its own 10% tint (badge-tier-anchor) where the
@@ -120,13 +120,13 @@ const config: Config = {
         // var(--logo-plate) directly. Declared here so the palette-drift test in
         // chip-contrast.test.ts compares it against globals.css.
         "logo-plate": "#000000",
-        // Header ladder — light on the navy masthead (ADR-0223). The TopBar is
+        // Header ladder — light on the dark masthead. The TopBar is
         // solid --logo-plate on every page, so its contents use these instead of
         // paper ink. Header-only; see globals.css for the measured contrast.
         "header-ink": "#ffffff",
-        "header-muted": "#b6bbca",
-        "header-tertiary": "#8d93a3",
-        "header-raised": "#1f2740",
+        "header-muted": "#b0b8c4",
+        "header-tertiary": "#7a8494",
+        "header-raised": "#1f1f1f",
         "header-border": "rgba(255,255,255,0.12)",
         "header-focus": "#9ad9e4",
         "header-warning": "#e07a4a",

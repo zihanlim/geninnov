@@ -119,7 +119,7 @@ const config: Config = {
         // pill (`bg-logo-plate` in AskProvider.tsx); BrandMark reads
         // var(--logo-plate) directly. Declared here so the palette-drift test in
         // chip-contrast.test.ts compares it against globals.css.
-        "logo-plate": "#161b38",
+        "logo-plate": "#000000",
         // Header ladder — light on the navy masthead (ADR-0223). The TopBar is
         // solid --logo-plate on every page, so its contents use these instead of
         // paper ink. Header-only; see globals.css for the measured contrast.

@@ -172,7 +172,7 @@
        usages that made --brand a live defect (AbstentionRoster's focus ring and
        ConvictionCard's emphasis gradient, both painting "emphasis" in exactly
        the colour of a short position) had already moved to --accent. */
-    --logo-plate: #161b38;   /* brand ground — the mark's plate AND the masthead (ADR-0223); since ADR-0224 also the active lens chip in LensSelector, since ADR-0225 the Ask pill in AskProvider */
+    --logo-plate: #000000;   /* brand ground — the masthead, the Ask pill (ADR-0225), and the active lens chip (ADR-0224). Was navy (#161b38) under ADR-0223; rebrand to true black 2026-09-14. */
 
     /* Header ladder — light on the navy masthead (ADR-0223).
        The 56px TopBar is a solid #161b38 band on every page, so its contents
